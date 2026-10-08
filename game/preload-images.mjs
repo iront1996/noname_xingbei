@@ -1,12 +1,15 @@
 /**
  * Complete built-in image preparation for the dedicated browser lobby.
- * Uses a versioned Cache Storage namespace. A later service worker will
- * consume the same cache for actual gameplay image requests.
+ * Uses a versioned Cache Storage namespace shared with the scoped image
+ * service worker, which serves verified cached assets during gameplay.
  */
 const CACHE_PREFIX = "xingbei-image-assets-v1-";
+const STATE_CACHE = "xingbei-image-cache-state-v1";
 const CONCURRENCY = 4;
 const IMAGE_ROOT = new URL("../", import.meta.url);
 const MANIFEST_URL = new URL("./preload-manifest.json", import.meta.url);
+const STATE_URL = new URL("__xingbei-image-cache-state__", IMAGE_ROOT).href;
+const WORKER_URL = new URL("xingbei-image-sw.js", IMAGE_ROOT).href;
 const encoder = new TextEncoder();
 
 function assetURL(path) {
@@ -120,7 +123,7 @@ export async function prepareImageAssets(onProgress = () => {}) {
 			if (current) await cache.delete(url);
 			for (const oldCache of olderCaches) {
 				const older = await oldCache.match(url);
-				if (await verifiedResponse(older.clone(), item, false)) {
+				if (older && await verifiedResponse(older.clone(), item, false)) {
 					await cache.put(url, older);
 					status.cached++;
 					status.ready++;
@@ -149,7 +152,75 @@ export async function prepareImageAssets(onProgress = () => {}) {
 		error.failures = failures;
 		throw error;
 	}
-	// Only remove previous complete generations after the new one succeeds.
+	// Atomically publish a cache version only after the complete inventory passes.
+	// The service worker never serves unverified versions or caches arbitrary fetches.
+	const state = await caches.open(STATE_CACHE);
+	await state.put(STATE_URL, new Response(JSON.stringify({ cacheName, version: manifest.version, count: manifest.count }), {
+		headers: { "content-type": "application/json" },
+	}));
+	// Previous generations are deleted only after the new one is active.
 	await Promise.allSettled(previousNames.map(name => caches.delete(name)));
 	return { total: manifest.count, cached: status.cached, downloaded: status.downloaded, version: manifest.version };
+}
+
+/**
+ * Register the image-only worker and require active control of this page.
+ * Connection is not enabled until the worker confirms the completed cache.
+ * @param {string} version The verified image manifest version.
+ */
+export async function ensureImageCacheWorker(version) {
+	if (!("serviceWorker" in navigator) || !("MessageChannel" in window)) {
+		throw new Error("此瀏覽器不支援離線圖片快取服務");
+	}
+	const expectedCacheName = CACHE_PREFIX + version;
+	if (!/^[a-f0-9]{40}-[a-f0-9]{40}$/.test(version)) {
+		throw new Error("無效的圖片快取版本");
+	}
+
+	await navigator.serviceWorker.register(WORKER_URL, {
+		scope: IMAGE_ROOT.pathname,
+		updateViaCache: "none",
+	});
+
+	const controller = await new Promise((resolve, reject) => {
+		const worker = navigator.serviceWorker;
+		const timeout = setTimeout(() => {
+			worker.removeEventListener("controllerchange", check);
+			reject(new Error("圖片快取服務尚未接管本頁，請重新整理後重試"));
+		}, 20000);
+
+		function check() {
+			const active = worker.controller;
+			if (!active || active.scriptURL !== WORKER_URL) return;
+			clearTimeout(timeout);
+			worker.removeEventListener("controllerchange", check);
+			resolve(active);
+		}
+
+		worker.addEventListener("controllerchange", check);
+		check();
+	});
+
+	const response = await new Promise((resolve, reject) => {
+		const channel = new MessageChannel();
+		const timeout = setTimeout(() => {
+			channel.port1.close();
+			reject(new Error("圖片快取服務驗證逾時"));
+		}, 10000);
+		channel.port1.onmessage = event => {
+			clearTimeout(timeout);
+			channel.port1.close();
+			resolve(event.data);
+		};
+		try {
+			controller.postMessage({ type: "XINGBEI_IMAGE_CACHE_STATUS" }, [channel.port2]);
+		} catch (error) {
+			clearTimeout(timeout);
+			channel.port1.close();
+			reject(error);
+		}
+	});
+	if (response?.type !== "XINGBEI_IMAGE_CACHE_STATUS" || response.cacheName !== expectedCacheName) {
+		throw new Error("圖片快取服務未識別已驗證的素材版本，請重試");
+	}
 }
