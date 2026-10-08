@@ -156,11 +156,13 @@ export default () => {
 				// Block the manual Connect action until the complete image inventory is verified.
 				// This UI is deliberately independent from the multiplayer server.
 				const overlay = document.createElement("div");
+				// Isolate all dialog elements from legacy game CSS (which positions divs globally).
+				const overlayShadow = overlay.attachShadow({ mode: "open" });
 				overlay.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:rgba(9,15,25,.91);display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;font-family:Arial,sans-serif;color:#f8fafc;";
 				overlay.setAttribute("role", "dialog");
 				overlay.setAttribute("aria-label", "星杯傳說圖片資源準備");
 				const panel = document.createElement("div");
-				panel.style.cssText = "width:min(480px,100%);background:#172334;border:1px solid #496077;border-radius:14px;padding:24px;box-sizing:border-box;box-shadow:0 18px 48px #0008;text-align:left;";
+				panel.style.cssText = "display:block;position:relative;width:min(480px,100%);background:#172334;border:1px solid #496077;border-radius:14px;padding:24px;box-sizing:border-box;box-shadow:0 18px 48px #0008;text-align:left;font-size:16px;line-height:1.5;";
 				const heading = document.createElement("div");
 				heading.textContent = "星杯傳說｜遊戲圖片準備";
 				heading.style.cssText = "font-weight:700;font-size:20px;margin-bottom:12px;";
@@ -183,7 +185,7 @@ export default () => {
 				retry.textContent = "重試失敗圖片";
 				retry.style.cssText = "display:none;margin-top:12px;padding:10px 16px;border:0;border-radius:8px;background:#3b82f6;color:white;cursor:pointer;font:inherit;font-size:14px;";
 				panel.append(heading, description, progress, status, details, retry);
-				overlay.appendChild(panel);
+				overlayShadow.appendChild(panel);
 				document.body.appendChild(overlay);
 
 				let preparing = false;
@@ -194,7 +196,8 @@ export default () => {
 					details.textContent = "";
 					status.textContent = "正在檢查圖片清單…";
 					try {
-						const { prepareImageAssets, ensureImageCacheWorker } = await import("../game/preload-images.mjs");
+						// The connect mode runs in a synthetic GameEvent module context, so relative imports resolve incorrectly.
+						const { prepareImageAssets, ensureImageCacheWorker } = await import("/game/preload-images.mjs");
 						const summary = await prepareImageAssets(snapshot => {
 							if (!overlay.isConnected) return;
 							progress.value = Math.floor((snapshot.ready / snapshot.total) * 100);
