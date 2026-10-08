@@ -206,7 +206,7 @@ export default () => {
 						imageAssetsReady = true;
 						button.style.opacity = "";
 						button.style.pointerEvents = "";
-						event.textnode.textContent = "圖片準備完成，請按「連接」";
+						text.textContent = "圖片準備完成，請按「連接」";
 						console.info("[Xingbei image preload]", summary);
 						overlay.remove();
 					} catch (error) {
