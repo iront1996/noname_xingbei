@@ -6,8 +6,10 @@
 const CACHE_PREFIX = "xingbei-image-assets-v1-";
 const STATE_CACHE = "xingbei-image-cache-state-v1";
 const CONCURRENCY = 4;
-const IMAGE_ROOT = new URL("../", import.meta.url);
-const MANIFEST_URL = new URL("./preload-manifest.json", import.meta.url);
+// Branch preview assets can be served from a deployment URL with another hostname.
+// Cache storage and service-worker registration must always use the current page origin.
+const IMAGE_ROOT = new URL("/", window.location.href);
+const MANIFEST_URL = new URL("game/preload-manifest.json", IMAGE_ROOT);
 const STATE_URL = new URL("__xingbei-image-cache-state__", IMAGE_ROOT).href;
 const WORKER_URL = new URL("xingbei-image-sw.js", IMAGE_ROOT).href;
 const encoder = new TextEncoder();
