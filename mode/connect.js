@@ -194,7 +194,7 @@ export default () => {
 					details.textContent = "";
 					status.textContent = "正在檢查圖片清單…";
 					try {
-						const { prepareImageAssets } = await import("../game/preload-images.mjs");
+						const { prepareImageAssets, ensureImageCacheWorker } = await import("../game/preload-images.mjs");
 						const summary = await prepareImageAssets(snapshot => {
 							if (!overlay.isConnected) return;
 							progress.value = Math.floor((snapshot.ready / snapshot.total) * 100);
@@ -203,6 +203,8 @@ export default () => {
 								"｜新下載 " + snapshot.downloaded +
 								(snapshot.failed ? "｜失敗 " + snapshot.failed : "");
 						});
+						status.textContent = "所有圖片已驗證，正在啟用遊戲圖片快取…";
+						await ensureImageCacheWorker(summary.version);
 						imageAssetsReady = true;
 						button.style.opacity = "";
 						button.style.pointerEvents = "";
