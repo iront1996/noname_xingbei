@@ -29,13 +29,16 @@ async function decodeImage(buffer, mimeType) {
 	const url = URL.createObjectURL(new Blob([buffer], { type: mimeType || "application/octet-stream" }));
 	const image = new Image();
 	try {
-		const loaded = new Promise((resolve, reject) => {
-			image.onload = resolve;
-			image.onerror = () => reject(new Error("圖片無法解碼"));
-		});
-		image.src = url;
-		if (typeof image.decode === "function") await image.decode();
-		else await loaded;
+		if (typeof image.decode === "function") {
+			image.src = url;
+			await image.decode();
+		} else {
+			await new Promise((resolve, reject) => {
+				image.onload = resolve;
+				image.onerror = () => reject(new Error("圖片無法解碼"));
+				image.src = url;
+			});
+		}
 		if (!image.naturalWidth || !image.naturalHeight) throw new Error("圖片尺寸無效");
 	} finally {
 		image.onload = null;
