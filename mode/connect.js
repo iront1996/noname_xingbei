@@ -47,7 +47,9 @@ export default () => {
 				node.style.left = "calc(50% - 210px)";
 				node.style.top = "calc(50% - 20px)";
 				node.style.whiteSpace = "nowrap";
-				node.textContent = lib.config.last_ip || lib.hallURL;
+				// The dedicated web entry always uses the private lobby.
+				const autoLobbyAddress = "wss://myxingbei.com:443";
+				node.textContent = autoLobbyAddress;
 				node.contentEditable = true;
 				node.style.webkitUserSelect = "text";
 				node.style.textAlign = "center";
@@ -187,6 +189,11 @@ export default () => {
 						}
 					}
 				}
+				// Run after start() initializes the player key and reconnect handler.
+				// Only try once; if the server is unavailable, manual retry remains possible.
+				setTimeout(() => {
+					if (!game.online && node.isConnected) connect();
+				}, 0);
 				lib.init.onfree();
 			};
 			if (window.isNonameServer) {
