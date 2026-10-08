@@ -55,7 +55,12 @@ export default () => {
 				node.style.textAlign = "center";
 				node.style.overflow = "hidden";
 
+				let imageAssetsReady = false;
 				var connect = function (e) {
+					if (!imageAssetsReady) {
+						if (e) e.preventDefault();
+						return;
+					}
 					event.textnode.textContent = "正在连接...";
 					clearTimeout(event.timeout);
 					if (e) e.preventDefault();
@@ -103,6 +108,8 @@ export default () => {
 				button.style.left = "calc(50% - 35px)";
 				button.style.top = "calc(50% + 60px)";
 				ui.window.appendChild(button);
+				button.style.opacity = "0.4";
+				button.style.pointerEvents = "none";
 				ui.ipbutton = button;
 
 				ui.hall_button = ui.create.system(
@@ -146,8 +153,74 @@ export default () => {
 					},
 					220
 				);
-				// Keep the private lobby address visible and wait for the player to click Connect.
-				// Clipboard invitation handling is disabled to prevent automatic connection.
+				// Block the manual Connect action until the complete image inventory is verified.
+				// This UI is deliberately independent from the multiplayer server.
+				const overlay = document.createElement("div");
+				overlay.style.cssText = "position:fixed;inset:0;z-index:2147483646;background:rgba(9,15,25,.91);display:flex;align-items:center;justify-content:center;padding:18px;box-sizing:border-box;font-family:Arial,sans-serif;color:#f8fafc;";
+				overlay.setAttribute("role", "dialog");
+				overlay.setAttribute("aria-label", "星杯傳說圖片資源準備");
+				const panel = document.createElement("div");
+				panel.style.cssText = "width:min(480px,100%);background:#172334;border:1px solid #496077;border-radius:14px;padding:24px;box-sizing:border-box;box-shadow:0 18px 48px #0008;text-align:left;";
+				const heading = document.createElement("div");
+				heading.textContent = "星杯傳說｜遊戲圖片準備";
+				heading.style.cssText = "font-weight:700;font-size:20px;margin-bottom:12px;";
+				const description = document.createElement("div");
+				description.textContent = "首次使用需準備全部內建圖片，約 75 MiB。此後會先驗證已儲存的圖片，不重複下載正確檔案。";
+				description.style.cssText = "font-size:14px;line-height:1.6;color:#cbd5e1;margin-bottom:16px;";
+				const progress = document.createElement("progress");
+				progress.max = 100;
+				progress.value = 0;
+				progress.style.cssText = "width:100%;height:18px;display:block;accent-color:#42a5f5;";
+				const status = document.createElement("div");
+				status.setAttribute("role", "status");
+				status.setAttribute("aria-live", "polite");
+				status.style.cssText = "font-size:14px;margin:12px 0;line-height:1.5;";
+				status.textContent = "正在檢查圖片清單…";
+				const details = document.createElement("div");
+				details.style.cssText = "font-size:12px;color:#fca5a5;white-space:pre-wrap;overflow-wrap:anywhere;max-height:90px;overflow:auto;";
+				const retry = document.createElement("button");
+				retry.type = "button";
+				retry.textContent = "重試失敗圖片";
+				retry.style.cssText = "display:none;margin-top:12px;padding:10px 16px;border:0;border-radius:8px;background:#3b82f6;color:white;cursor:pointer;font:inherit;font-size:14px;";
+				panel.append(heading, description, progress, status, details, retry);
+				overlay.appendChild(panel);
+				document.body.appendChild(overlay);
+
+				let preparing = false;
+				async function startImagePreparation() {
+					if (preparing || imageAssetsReady) return;
+					preparing = true;
+					retry.style.display = "none";
+					details.textContent = "";
+					status.textContent = "正在檢查圖片清單…";
+					try {
+						const { prepareImageAssets } = await import("../game/preload-images.mjs");
+						const summary = await prepareImageAssets(snapshot => {
+							if (!overlay.isConnected) return;
+							progress.value = Math.floor((snapshot.ready / snapshot.total) * 100);
+							status.textContent = "已驗證 " + snapshot.ready + "／" + snapshot.total +
+								" 張（" + progress.value + "%）｜快取 " + snapshot.cached +
+								"｜新下載 " + snapshot.downloaded +
+								(snapshot.failed ? "｜失敗 " + snapshot.failed : "");
+						});
+						imageAssetsReady = true;
+						button.style.opacity = "";
+						button.style.pointerEvents = "";
+						event.textnode.textContent = "圖片準備完成，請按「連接」";
+						console.info("[Xingbei image preload]", summary);
+						overlay.remove();
+					} catch (error) {
+						status.textContent = error instanceof Error ? error.message : "圖片準備失敗";
+						const failed = Array.isArray(error?.failures) ? error.failures : [];
+						if (failed.length) details.textContent = failed.slice(0, 4).map(x => x.path + "：" + x.message).join("\n");
+						retry.style.display = "inline-block";
+					} finally {
+						preparing = false;
+					}
+				}
+				retry.addEventListener("click", startImagePreparation);
+				void startImagePreparation();
+				// Clipboard invitations remain disabled to prevent automatic connections.
 				lib.init.onfree();
 			};
 			if (window.isNonameServer) {
