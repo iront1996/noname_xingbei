@@ -48,9 +48,9 @@ export default () => {
 				node.style.top = "calc(50% - 20px)";
 				node.style.whiteSpace = "nowrap";
 				// The dedicated web entry always uses the private lobby.
-				const autoLobbyAddress = "wss://myxingbei.com:443";
+				const autoLobbyAddress = "wss://v3.myxingbei.com:443";
 				node.textContent = autoLobbyAddress;
-				node.contentEditable = true;
+				node.contentEditable = false;
 				node.style.webkitUserSelect = "text";
 				node.style.textAlign = "center";
 				node.style.overflow = "hidden";
@@ -64,7 +64,7 @@ export default () => {
 					event.textnode.textContent = "正在连接...";
 					clearTimeout(event.timeout);
 					if (e) e.preventDefault();
-					const ip = node.textContent;
+					const ip = autoLobbyAddress;
 					game.saveConfig("last_ip", ip);
 					game.connect(ip, function (success) {
 						if (success) {
@@ -120,10 +120,9 @@ export default () => {
 					},
 					true
 				);
-				if (!get.config("hall_button")) {
-					ui.hall_button.style.display = "none";
-				}
+				ui.hall_button.style.display = "none";
 				ui.recentIP = ui.create.system("最近连接", null, true);
+				ui.recentIP.style.display = "none";
 				var clickLink = function () {
 					node.textContent = this.textContent;
 					connect();
