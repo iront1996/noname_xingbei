@@ -43,11 +43,16 @@ async function decodeImage(buffer, mimeType) {
 
 async function verifiedResponse(response, item, decode) {
 	if (!response || !response.ok || response.type === "opaque") return false;
-	const buffer = await response.arrayBuffer();
-	if (buffer.byteLength !== item.bytes) return false;
-	if (await sha1GitBlob(buffer) !== item.gitBlobSha) return false;
-	if (decode) await decodeImage(buffer, response.headers.get("content-type"));
-	return true;
+	try {
+		const buffer = await response.arrayBuffer();
+		if (buffer.byteLength !== item.bytes) return false;
+		if (await sha1GitBlob(buffer) !== item.gitBlobSha) return false;
+		if (decode) await decodeImage(buffer, response.headers.get("content-type"));
+		return true;
+	} catch {
+		// Corrupted cached entries must be treated as misses, not permanent blockers.
+		return false;
+	}
 }
 
 function validateManifest(manifest) {
@@ -115,7 +120,7 @@ export async function prepareImageAssets(onProgress = () => {}) {
 			if (current) await cache.delete(url);
 			for (const oldCache of olderCaches) {
 				const older = await oldCache.match(url);
-				if (await verifiedResponse(older, item, false)) {
+				if (await verifiedResponse(older.clone(), item, false)) {
 					await cache.put(url, older);
 					status.cached++;
 					status.ready++;
