@@ -135,7 +135,7 @@ function captureCandidate(kind = "periodic") {
     guestSockets.add(socketId);
     guestBindings.push({ playerId, socketId });
   }
-  if (game.players.length > 1 && guestBindings.length !== game.players.length - 1) {
+  if (ids.length > 1 && guestBindings.length !== ids.length - 1) {
     // Avoid optimistic restoration when a peer has already disconnected.
     throw new Error("PEER_COUNT_MISMATCH");
   }
