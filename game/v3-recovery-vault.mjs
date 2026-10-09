@@ -144,8 +144,8 @@ function captureCandidate(kind = "periodic") {
       guestIds.has(game.me.playerid)) {
     throw new Error("HOST_PLAYER_MAPPING_INVALID");
   }
-  const arenaEncoded = get.stringifiedResult(arena);
-  const skillsEncoded = get.stringifiedResult(skills);
+  const arenaEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(arena)));
+  const skillsEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(skills)));
   const auditArena = auditV3Serialization(arena, arenaEncoded, get.itemtype);
   const auditSkills = auditV3Serialization(skills, skillsEncoded, get.itemtype);
   if (!auditArena.ok || !auditSkills.ok) {
@@ -158,9 +158,9 @@ function captureCandidate(kind = "periodic") {
     const stat = player.stat || [];
     const history = player.actionHistory || [];
     const skipped = player.skipList || [];
-    const statEncoded = get.stringifiedResult(stat);
-    const historyEncoded = get.stringifiedResult(history);
-    const skipEncoded = get.stringifiedResult(skipped);
+    const statEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(stat)));
+    const historyEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(history)));
+    const skipEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(skipped)));
     const checks = [
       auditV3Serialization(stat, statEncoded, get.itemtype),
       auditV3Serialization(history, historyEncoded, get.itemtype),
