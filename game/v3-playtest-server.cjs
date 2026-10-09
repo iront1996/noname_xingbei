@@ -469,6 +469,9 @@
 		}, 60000);
 		ws.on("message", function (message) {
 			if (!clients[this.wsid]) return;
+			// ws@8 supplies Buffer by default; relay the original JSON text,
+			// not Buffer.toJSON() output, to the browser's message parser.
+			message = typeof message === "string" ? message : message.toString("utf8");
 			if (message == "heartbeat") {
 				this.beat = false;
 			} else if (this.room && this.room.paused && this.room.owner !== this) {
