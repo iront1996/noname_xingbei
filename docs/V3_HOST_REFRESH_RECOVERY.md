@@ -114,6 +114,21 @@
 
 目前不應以 `v3ready` 解除等待。後續必須設計與實作可靠事件續行／重播及重建後與各玩家的 revision/ack 同步。所有遊戲效果都必須證明不重複、不遺漏。
 
+## 原分頁權威身分證明（最新安全修正）
+
+在最新 V3 Playtest 中，**原分頁網路暫斷**與**房主重新整理後**不再使用同一張通行證：
+
+- VPS 專用 8081 的 `room.ownerToken`（256-bit）可存在房主 `sessionStorage`，只供暫停房間查詢、原玩家 socket 核對、或主動結束無法恢復的舊房間。
+- VPS 在建立房間時另外產生 `room.runtimeTicket`（獨立 256-bit）。房主只保留於 `game/v3-owner-connection.mjs` 的 JavaScript module heap **局部變數**。嚴禁寫入 `sessionStorage`、`localStorage`、IndexedDB、加密快照、日誌或對其他玩家廣播。
+- 原分頁短暫斷線後執行 `server/v3resume(roomId,ownerToken,runtimeTicket)`，兩份都有效才可重新接管原 Socket；成功後兩份隨機憑證都輪替。
+- 只允許新接管 Socket 以**新 runtimeTicket** 回覆 `server/v3ready` 才能解除玩家等待；持舊 ticket 的封包不生效。
+- 房主刷新後，JS module heap 已經銷毀，沒有 runtimeTicket；即使 sessionStorage 仍有原 ownerToken，伺服器也應拒絕直接 `v3resume`。但經 ownerToken 驗證的 `v3restoreprobe` 仍可取得原 socket 名單供後續真正冷啟動恢復使用。
+- 新增 `tools/test-v3-runtime-ticket.cjs`，包含原房主原分頁合法續線、只持久化 ownerToken 的刷新分頁被拒、冒名 ticket 被拒、憑證輪替、舊 ticket 無法解除等待，以及原房主冷恢復 preflight 不觸發續線，共 5 項自動化 regression。
+
+**尚未解決的核心問題：**刷新後完整重建並續行 `GameEvent` / Promise / 選擇／技能效果、阻止重複結算及各個客户端的一致性核對。雙憑證只防止錯誤續線，不代表已實作完整刷新續局。
+
+**相容性注意：**此協定將 `v3resume`、`v3ready` 改為帶有 JS heap ticket 的新版本，前端與 VPS 必須同時更新。跨版本舊分頁不能被視為已驗證可靠恢復，更新部署將終止既有 V3 測試房間。V1、V2、原 V3 及生產用 8080 不受影響。
+
 ## 尚未實作（核心阻塞）
 
 1. **Authoritative runtime rehydration.** Existing `lib.message.client.reinit` makes a *client* view; cannot simply reuse it as a host. Need proper host-side reconstruction and mapping of original player IDs, remote `Client`/NodeWS objects, guest response channels, card references, UI & game helpers.
