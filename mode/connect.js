@@ -8,7 +8,7 @@ export default () => {
 		name: "connect",
 		start() {
 			// V3 Playtest-only transport resilience; never imported by V1/V2.
-			void import("/game/v3-owner-connection.mjs")
+			void import("/game/v3-owner-connection.mjs?v=live-runtime-ticket-1")
 				.then(({ installV3OwnerConnection }) => installV3OwnerConnection())
 				.catch(error => console.error("[V3 playtest] reconnect setup failed:", error));
 			// Local encrypted candidate snapshots; NOT restorable checkpoints.
