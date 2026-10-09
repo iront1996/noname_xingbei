@@ -87,6 +87,33 @@
 
 下一步核心工程是具回滾保證的權威狀態交易式安裝、技能儲存參照解析及事件續行／回放。這些未完成前，不得觸發 `v3ready`。
 
+## 權威狀態安裝準備與事件安全性（本輪最新進展）
+
+本輪在上述原生物件預建之上，完成了**仍不會啟動遊戲**的完整預備流程：
+
+1. `game/v3-serialization-integrity.mjs`：審查 `get.stringifiedResult` 與實際 JSON 存檔前後的資料欄位完整性；若深層已定義欄位因預設深度 8 截斷、JSON 陣列有 undefined、事件／函式參照不可恢復，則拒絕候選資料。一般物件中的 undefined 屬性仍遵守原定「省略並計數」政策。
+2. `game/v3-recovery-vault.mjs`：在加密候選資料前比對 arena、skillState 與每名玩家的 stat/actionHistory/skipList；新增 `structuralAudit` 覆蓋標記。嚴格檢查可能使複雜對局的候選資料**無法儲存**，這是刻意的 fail closed，不應改成假陽性。
+3. `game/v3-skill-references.mjs`：只將序列化的 `_noname_player` / `_noname_card` 參照還原到**隔離環境內原生物件**；拒絕任意 `_noname_func`、`_noname_event`、`_noname_vcard` 與找不到的參照；所有玩家成功驗證後才一次套用技能與歷史資料，失敗則回滾。
+4. `game/v3-detached-zones.mjs`：在畫面外的 Player 子節點組裝原手牌、裝備、判定與擴充區；將原抽牌堆、棄牌堆依原始順序放到隔離 DocumentFragment；任何不一致不觸碰正式畫面。
+5. `game/v3-host-registry-transaction.mjs`：建立原玩家、死亡角色、原卡牌和**停用遠端 Client** 的影子權威註冊表。可在測試用注入環境執行「同步安裝 → 核對 → 還原所有原有 property descriptor」的回滾乾跑；**沒有呼叫正式的 game/lib 全域物件永久安裝**。
+6. `game/v3-owner-connection.mjs`：在既有房主驗證之後依序串接物件、技能、卡牌區域與影子註冊表預備流程。成功與失敗均不呼叫 `v3resume`、`v3ready`，也不解除其他玩家等待。
+7. `tools/deploy-v3-playtest.sh`：限定更新 `xingbei-hall-v3.service` / 8081 的部署腳本，新增服務重啟後 TCP 8081 健康檢查，未就緒時自動回滾。V1 / V2 / 正式 tunnel 不動。
+
+### 已通過的隔離模擬回歸測試
+
+- 原玩家 socket 驗證與牌堆／座位藍圖：6 個案例。
+- 原生 Player/Card/NodeWS/Client 的隔離預建：6 個案例。
+- 技能參照還原、禁止執行式參照、回滾：6 個案例。
+- 序列化截斷與未定義欄位政策：6 個案例。
+- 影子註冊表／測試環境屬性描述符回滾：5 個案例。
+- 合計 29 個獨立測試案例由 JavaScript 隔離 harness 驗證。由於當前執行容器無法連接 GitHub，尚未在真實瀏覽器與此 VPS 上執行完整 Node / WebSocket / DOM 整合測試；不可稱為實際續局驗收。
+
+### 仍然無法續局的原因
+
+原房主刷新後的 **GameEvent 執行堆疊、未完成 async/Promise、技能結算副作用、等待中的遠端操作與精確回應順序**沒有可靠的可重建事件日誌。只有隔離物件與影子註冊表尚不足以重啟權威遊戲。
+
+目前不應以 `v3ready` 解除等待。後續必須設計與實作可靠事件續行／重播及重建後與各玩家的 revision/ack 同步。所有遊戲效果都必須證明不重複、不遺漏。
+
 ## 尚未實作（核心阻塞）
 
 1. **Authoritative runtime rehydration.** Existing `lib.message.client.reinit` makes a *client* view; cannot simply reuse it as a host. Need proper host-side reconstruction and mapping of original player IDs, remote `Client`/NodeWS objects, guest response channels, card references, UI & game helpers.
