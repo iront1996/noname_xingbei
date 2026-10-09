@@ -59,6 +59,49 @@
 		util.updaterooms();
 	}
 	var messages = {
+		v3restoreprobe: function (key, token) {
+			// A read-only, owner-authenticated inventory of existing peer sockets.
+			// This does NOT transfer the room's authority or unblock guests.
+			if (this.room || this.onlineKey !== key) {
+				this.sendl("v3restoreprobeDenied", "NOT_AUTHORIZED");
+				return;
+			}
+			var room = findRoomByKey(key);
+			if (!room || !room.paused || room.owner || room.resuming ||
+				!room.config || !room.config.gameStarted ||
+				!validOwnerToken(room, token)) {
+				this.sendl("v3restoreprobeDenied", "ROOM_UNAVAILABLE");
+				return;
+			}
+			if (room.bufferOverflow) {
+				this.sendl("v3restoreprobeDenied", "BUFFER_OVERFLOW");
+				return;
+			}
+			var peerIds = [];
+			for (var id in clients) {
+				var guest = clients[id];
+				if (guest.room === room && guest !== room.owner) {
+					if (!guest.wsid || peerIds.includes(guest.wsid)) {
+						this.sendl("v3restoreprobeDenied", "ROSTER_INVALID");
+						return;
+					}
+					peerIds.push(guest.wsid);
+				}
+			}
+			if (peerIds.length < 1 || peerIds.length > 7) {
+				this.sendl("v3restoreprobeDenied", "ROSTER_SIZE_INVALID");
+				return;
+			}
+			peerIds.sort();
+			this.sendl("v3restoreprobe", {
+				schema: "xingbei-v3-authority-preflight-1",
+				roomId: key,
+				state: "paused_owner_missing",
+				roomStarted: true,
+				guestSocketIds: peerIds,
+				bufferedGuestMessageCount: room.bufferedGuestMessages?.length || 0,
+			});
+		},
 		v3roomstatus: function (key, token) {
 			if (this.onlineKey !== key || this.room) return;
 			var room = findRoomByKey(key);
