@@ -18,6 +18,7 @@ let retryTimer = null;
 let connecting = false;
 let retryCount = 0;
 let pauseOwned = false;
+let simulatedHoldUntil = 0;
 
 function getToken(roomId) {
   try {
@@ -89,7 +90,10 @@ function scheduleRetry() {
     displayOverlay("房主暫時離線", "無法找到本分頁的重新連線憑證。請勿重新整理；此局目前無法自動恢復。");
     return;
   }
-  const delay = Math.min(8000, 700 * Math.pow(1.5, Math.min(retryCount++, 7)));
+  const delay = Math.max(
+    Math.min(8000, 700 * Math.pow(1.5, Math.min(retryCount++, 7))),
+    simulatedHoldUntil - Date.now()
+  );
   retryTimer = setTimeout(() => {
     retryTimer = null;
     void reconnectOwner();
@@ -171,9 +175,38 @@ function reconnectOwner() {
   };
 }
 
+function installPlaytestButton() {
+  if (!document.body || document.getElementById("v3-playtest-owner-drop")) return;
+  const button = document.createElement("button");
+  button.id = "v3-playtest-owner-drop";
+  button.type = "button";
+  button.textContent = "V3 測試：模擬房主斷線";
+  button.style.cssText =
+    "position:fixed;bottom:14px;right:14px;z-index:999999;" +
+    "border:1px solid #64748b;border-radius:8px;background:#182638;" +
+    "color:#f8fafc;padding:8px 12px;font:13px system-ui,sans-serif;" +
+    "box-shadow:0 2px 10px #0007;cursor:pointer;display:none;";
+  button.addEventListener("click", () => {
+    if (!isLiveOwner() || game.ws?.readyState !== WebSocket.OPEN) return;
+    if (!window.confirm(
+      "僅測試房主「原分頁仍開啟」時的網路中斷。\n" +
+      "斷線約 5 秒後自動嘗試恢復。\n" +
+      "這不會測試重新整理後的續局能力。\n\n是否開始？"
+    )) return;
+    simulatedHoldUntil = Date.now() + 5000;
+    game.ws.close();
+  });
+  document.body.append(button);
+  setInterval(() => {
+    button.style.display =
+      isLiveOwner() && game.ws?.readyState === WebSocket.OPEN ? "block" : "none";
+  }, 1000);
+}
+
 export function installV3OwnerConnection() {
   if (installed) return;
   installed = true;
+  installPlaytestButton();
   const defaultOnclose = lib.element.ws.onclose;
   const defaultOnerror = lib.element.ws.onerror;
 
