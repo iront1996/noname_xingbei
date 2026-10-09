@@ -15,6 +15,7 @@ import {
 } from "./v3-recovery-vault.mjs";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
+import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
 
 const BACKEND = "wss://v3.myxingbei.com:443";
 const TOKEN_PREFIX = "xingbei-v3-owner-token:";
@@ -27,6 +28,7 @@ let retryCount = 0;
 let pauseOwned = false;
 let simulatedHoldUntil = 0;
 let pausedRoomOnReload = false;
+let pendingDetachedColdRuntime = null;
 
 function getToken(roomId) {
   try {
@@ -243,6 +245,7 @@ export function installV3OwnerConnection() {
     if (status === "room_absent") {
       try { sessionStorage.removeItem(TOKEN_PREFIX + key); } catch {}
       pausedRoomOnReload = false;
+      pendingDetachedColdRuntime = null;
       return;
     }
     if (status !== "owner_disconnected") return;
@@ -292,16 +295,23 @@ export function installV3OwnerConnection() {
     const plan = assessment.ok
       ? buildHostRehydrationBlueprint(loaded.data, claim)
       : { ok: false, code: assessment.code };
-    const message = plan.ok
-      ? "已成功對應原角色座位、" + plan.summary.originalRemoteSocketsMapped +
-        " 個玩家連線及 " +
-        (plan.summary.drawPileCardsMapped + plan.summary.discardPileCardsMapped) +
-        " 張牌堆／棄牌堆卡牌。\\n" +
-        "但尚未真正重建遊戲引擎或續行事件，因此嚴禁解除房間等待。"
-      : "房主重建前置檢查尚未通過。\\n" +
-        "原因：" + String(plan.code) + "。為避免遊戲錯亂，此局保持暫停。";
+    // Native Player/Card/NodeWS/Client objects are staged only in an
+    // off-document graph. The live engine, global card maps and server room
+    // are untouched. Runtime objects must never reach a log or guest client.
+    const staged = plan.ok
+      ? stageDetachedHostRuntime(plan.blueprint)
+      : { ok: false, code: plan.code };
+    pendingDetachedColdRuntime = staged.ok ? staged.runtime : null;
+    const message = staged.ok
+      ? "已在隔離環境建立 " + staged.summary.nativePlayersStaged +
+        " 個原玩家物件、" + staged.summary.nativeCardsStaged +
+        " 張卡牌物件、" + staged.summary.dormantRemoteClientsStaged +
+        " 個停用中的原遠端連線物件。\\n" +
+        "技能與卡牌效果尚未啟用，遊戲事件尚未續行，仍不能繼續原局。"
+      : "權威引擎重建準備作業未通過。\\n" +
+        "原因：" + String(staged.code || "UNKNOWN") + "。為避免遊戲錯亂，此局保持暫停。";
     displayOverlay(
-      plan.ok ? "房主重建藍圖已建立（尚不能續局）" : "房主接管檢查未通過",
+      staged.ok ? "房主原生物件已隔離建立（尚不能續局）" : "房主接管檢查未通過",
       message + "\\n其他玩家仍保持等待，請勿將此畫面視為遊戲已恢復。",
       "結束無法恢復的舊房間",
       () => {
@@ -323,6 +333,7 @@ export function installV3OwnerConnection() {
     try { sessionStorage.removeItem(TOKEN_PREFIX + key); } catch {}
     void purgeLocalRecoveryCandidate(key);
     pausedRoomOnReload = false;
+    pendingDetachedColdRuntime = null;
     displayOverlay(
       "原房間已結束",
       "其他玩家已收到房間結束通知。\n請返回大廳建立新局。",
