@@ -13,6 +13,13 @@
 	function findRoomByKey(key) {
 		return rooms.find(function (room) { return room.key === key; });
 	}
+	function validOwnerToken(room, token) {
+		if (!room || typeof token !== "string" || !/^[a-f0-9]{64}$/i.test(token)) return false;
+		var supplied = Buffer.from(token, "hex");
+		var expected = Buffer.from(room.ownerToken || "", "hex");
+		return expected.length === 32 && supplied.length === 32 &&
+			crypto.timingSafeEqual(supplied, expected);
+	}
 	function notifyGuests(room, method, arg) {
 		for (var id in clients) {
 			var guest = clients[id];
@@ -35,14 +42,14 @@
 		room.bufferedGuestMessages.push([wsid, message]);
 		room.bufferedBytes += message.length;
 	}
-	function expireRoom(room) {
+	function expireRoom(room, reason) {
 		if (room.owner || !room.paused) return;
 		var index = rooms.indexOf(room);
 		if (index === -1) return;
 		for (var id in clients) {
 			var guest = clients[id];
 			if (guest.room === room) {
-				guest.sendl("v3roomexpired");
+				guest.sendl(reason === "abandoned" ? "v3roomabandoned" : "v3roomexpired");
 				guest.room = null;
 				guest.owner = null;
 			}
@@ -52,6 +59,27 @@
 		util.updaterooms();
 	}
 	var messages = {
+		v3roomstatus: function (key, token) {
+			if (this.onlineKey !== key || this.room) return;
+			var room = findRoomByKey(key);
+			if (room && room.paused && !room.owner && validOwnerToken(room, token)) {
+				this.sendl("v3roomstatus", key, "owner_disconnected");
+			} else if (!room) {
+				this.sendl("v3roomstatus", key, "room_absent");
+			} else {
+				this.sendl("v3roomstatus", key, "not_available");
+			}
+		},
+		v3abandon: function (key, token) {
+			if (this.onlineKey !== key || this.room) return;
+			var room = findRoomByKey(key);
+			if (!room || !room.paused || room.owner || !validOwnerToken(room, token)) {
+				this.sendl("v3resumerejected", "abandon_denied");
+				return;
+			}
+			this.sendl("v3roomabandonedHost", key);
+			expireRoom(room, "abandoned");
+		},
 		create: function (key, nickname, avatar, config, mode) {
 			if (this.onlineKey != key || typeof key !== "string") return;
 			if (findRoomByKey(key)) {
