@@ -8,6 +8,7 @@
  * Installed once by the V3 connect screen; no production V1/V2 imports.
  */
 import { game, lib, _status } from "../noname.js";
+import { inspectLocalRecoveryCandidate, purgeLocalRecoveryCandidate } from "./v3-recovery-vault.mjs";
 
 const BACKEND = "wss://v3.myxingbei.com:443";
 const TOKEN_PREFIX = "xingbei-v3-owner-token:";
@@ -231,7 +232,7 @@ export function installV3OwnerConnection() {
     }
     return result;
   };
-  lib.message.client.v3roomstatus = (key, status) => {
+  lib.message.client.v3roomstatus = async (key, status) => {
     if (key !== game.onlineKey) return;
     if (status === "room_absent") {
       try { sessionStorage.removeItem(TOKEN_PREFIX + key); } catch {}
@@ -240,11 +241,19 @@ export function installV3OwnerConnection() {
     }
     if (status !== "owner_disconnected") return;
     pausedRoomOnReload = true;
+    const vault = await inspectLocalRecoveryCandidate(key);
+    if (!pausedRoomOnReload || key !== game.onlineKey) return;
+    const vaultNotice = vault.status === "ENCRYPTED_CANDIDATE_VERIFIED"
+      ? "本機找到約 " + vault.ageSeconds + " 秒前的加密候選資料（" +
+        vault.playerCount + " 位玩家），但尚未包含可續行的事件資訊。\\n"
+      : vault.status === "NOT_FOUND"
+        ? "本機尚無加密候選資料。\\n"
+        : "本機資料狀態：" + vault.status + "（不可直接續局）。\\n";
     displayOverlay(
       "原房間仍保留，但無法從重新整理恢復",
       "伺服器尚保留原房間，其他玩家正在等待。\n" +
-      "然而本測試版的遊戲事件只存在原房主分頁的記憶體中；" +
-      "重新整理後已遺失，不能接續原局。\n" +
+      vaultNotice +
+      "事件續行機制仍在開發，重新整理後不能接續原局。\\n" +
       "你可以結束舊房間，通知其他玩家重新開局。",
       "結束無法恢復的舊房間",
       () => {
@@ -260,6 +269,7 @@ export function installV3OwnerConnection() {
   lib.message.client.v3roomabandonedHost = key => {
     if (key !== game.onlineKey) return;
     try { sessionStorage.removeItem(TOKEN_PREFIX + key); } catch {}
+    void purgeLocalRecoveryCandidate(key);
     pausedRoomOnReload = false;
     displayOverlay(
       "原房間已結束",
