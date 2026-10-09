@@ -21,6 +21,7 @@ const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_AGE_MS = 10 * 60 * 1000;
 let installed = false;
 let busy = false;
+let pendingBoundary = null;
 let lastOutcome = { status: "NOT_YET_CAPTURED" };
 
 function validRoomId(id) {
@@ -189,12 +190,27 @@ function captureCandidate(kind = "periodic") {
   };
 }
 
-async function saveCandidate(kind = "periodic") {
-  if (busy || !activeOwner()) return;
+async function saveCandidate(kind = "periodic", captured = null) {
+  if (!activeOwner()) return;
+  if (busy) {
+    // A boundary is a narrow synchronous moment, so capture it NOW and
+    // defer only encryption/IndexedDB writing. Do not lose it to a timer.
+    if (kind === "turn_boundary") {
+      try {
+        pendingBoundary = { roomId: game.roomId, snapshot: captureCandidate(kind) };
+      } catch (error) {
+        lastOutcome = {
+          status: "BOUNDARY_CAPTURE_FAILED",
+          code: error instanceof Error ? error.message : "UnknownError",
+        };
+      }
+    }
+    return;
+  }
   busy = true;
   try {
     const roomId = game.roomId;
-    const snapshot = captureCandidate(kind);
+    const snapshot = captured || captureCandidate(kind);
     const key = await cryptoKey(roomId, true);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encrypted = new Uint8Array(
@@ -223,6 +239,13 @@ async function saveCandidate(kind = "periodic") {
     };
   } finally {
     busy = false;
+    if (pendingBoundary) {
+      const next = pendingBoundary;
+      pendingBoundary = null;
+      if (activeOwner() && game.roomId === next.roomId) {
+        void saveCandidate("turn_boundary", next.snapshot);
+      }
+    }
   }
 }
 
