@@ -8,7 +8,12 @@
  * Installed once by the V3 connect screen; no production V1/V2 imports.
  */
 import { game, lib, _status } from "../noname.js";
-import { inspectLocalRecoveryCandidate, purgeLocalRecoveryCandidate } from "./v3-recovery-vault.mjs";
+import {
+  inspectLocalRecoveryCandidate,
+  loadLocalCandidateForEngine,
+  purgeLocalRecoveryCandidate
+} from "./v3-recovery-vault.mjs";
+import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 
 const BACKEND = "wss://v3.myxingbei.com:443";
 const TOKEN_PREFIX = "xingbei-v3-owner-token:";
@@ -243,6 +248,11 @@ export function installV3OwnerConnection() {
     pausedRoomOnReload = true;
     const vault = await inspectLocalRecoveryCandidate(key);
     if (!pausedRoomOnReload || key !== game.onlineKey) return;
+    if (vault.status === "ENCRYPTED_CANDIDATE_VERIFIED" &&
+        vault.turnBoundaryStatus === "ENCRYPTED_CANDIDATE_VERIFIED" &&
+        getToken(key) && game.ws?.readyState === WebSocket.OPEN) {
+      game.send("server", "v3restoreprobe", key, getToken(key));
+    }
     const vaultNotice = vault.status === "ENCRYPTED_CANDIDATE_VERIFIED"
       ? "本機找到約 " + vault.ageSeconds + " 秒前的加密候選資料（" +
         vault.playerCount + " 位玩家），但尚未包含可續行的事件資訊。\\n"
@@ -265,6 +275,43 @@ export function installV3OwnerConnection() {
         }
       }
     );
+  };
+  lib.message.client.v3restoreprobe = async claim => {
+    // Read-only preflight. Never restore the engine or lift the pause here.
+    const key = claim?.roomId;
+    if (!pausedRoomOnReload || typeof key !== "string" ||
+        key !== game.onlineKey || !getToken(key)) return;
+    const loaded = await loadLocalCandidateForEngine(key, "turn_boundary");
+    if (!pausedRoomOnReload || key !== game.onlineKey) return;
+    const assessment = loaded.ok
+      ? evaluateColdOwnerPreflight(loaded.data, claim)
+      : {
+          ok: false,
+          code: loaded.code || "CANDIDATE_NOT_AVAILABLE",
+          readyToResume: false
+        };
+    const message = assessment.ok
+      ? "原房間的玩家連線身分已與加密候選資料核對一致。\\n" +
+        "但權威遊戲執行環境與未完成事件尚未重建，因此仍禁止續局。"
+      : "已完成安全接管前置檢查，但無法取得一致的原玩家連線對應。\\n" +
+        "原因：" + String(assessment.code) + "。此局尚不能恢復。";
+    displayOverlay(
+      assessment.ok ? "房主接管準備檢查完成" : "房主接管檢查未通過",
+      message + "\\n其他玩家仍保持等待，請勿將此畫面視為遊戲已恢復。",
+      "結束無法恢復的舊房間",
+      () => {
+        if (!window.confirm("確定結束原房間？其他玩家將收到通知，原局不可恢復。")) return;
+        const token = getToken(key);
+        if (token && game.ws?.readyState === WebSocket.OPEN) {
+          game.send("server", "v3abandon", key, token);
+          displayOverlay("正在結束舊房間", "等待伺服器確認。");
+        }
+      }
+    );
+  };
+  lib.message.client.v3restoreprobeDenied = code => {
+    if (!pausedRoomOnReload) return;
+    console.warn("[V3 playtest] host takeover preflight rejected:", String(code).slice(0, 64));
   };
   lib.message.client.v3roomabandonedHost = key => {
     if (key !== game.onlineKey) return;
