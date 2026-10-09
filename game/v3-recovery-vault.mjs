@@ -16,6 +16,7 @@ const VERSION = 1;
 const SCHEMA = "xingbei-v3-candidate-1";
 const KEY_PREFIX = "xingbei-v3-recovery-aes:";
 const INTERVAL_MS = 6000;
+const BOUNDARY_SUFFIX = "::turn-boundary";
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_AGE_MS = 10 * 60 * 1000;
 let installed = false;
@@ -99,7 +100,7 @@ async function cryptoKey(roomId, allowCreation) {
   return crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
-function captureCandidate() {
+function captureCandidate(kind = "periodic") {
   // Capture the individual synchronous engine getters without await.
   // This is still not an atomic / restartable engine checkpoint.
   const arena = get.arenaState();
@@ -130,6 +131,10 @@ function captureCandidate() {
     schema: SCHEMA,
     capturedAt: Date.now(),
     roomId: game.roomId,
+    observationKind: kind,
+    nextTurnPlayerId: kind === "turn_boundary"
+      ? _status.eventManager?.getStartedEvent?.()?.player?.playerid ?? null
+      : null,
     phaseNumber: game.phaseNumber ?? null,
     roundNumber: game.roundNumber ?? null,
     currentPhaseId: _status.currentPhase?.playerid ?? null,
@@ -184,12 +189,12 @@ function captureCandidate() {
   };
 }
 
-async function saveCandidate() {
+async function saveCandidate(kind = "periodic") {
   if (busy || !activeOwner()) return;
   busy = true;
   try {
     const roomId = game.roomId;
-    const snapshot = captureCandidate();
+    const snapshot = captureCandidate(kind);
     const key = await cryptoKey(roomId, true);
     const iv = crypto.getRandomValues(new Uint8Array(12));
     const encrypted = new Uint8Array(
@@ -197,7 +202,7 @@ async function saveCandidate() {
     );
     if (roomId !== game.roomId || !game.onlineroom) return;
     await transact("readwrite", store => store.put({
-      roomId,
+      roomId: kind === "turn_boundary" ? roomId + BOUNDARY_SUFFIX : roomId,
       schema: SCHEMA,
       capturedAt: snapshot.capturedAt,
       playerCount: snapshot.playerCount,
@@ -206,7 +211,11 @@ async function saveCandidate() {
       iv: encodeBase64(iv),
       ciphertext: encodeBase64(encrypted),
     }));
-    lastOutcome = { status: "ENCRYPTED_CANDIDATE_SAVED", capturedAt: snapshot.capturedAt };
+    lastOutcome = {
+      status: "ENCRYPTED_CANDIDATE_SAVED",
+      kind,
+      capturedAt: snapshot.capturedAt,
+    };
   } catch (error) {
     lastOutcome = {
       status: "CAPTURE_FAILED",
@@ -257,6 +266,7 @@ export async function purgeLocalRecoveryCandidate(roomId) {
   if (!validRoomId(roomId)) return false;
   try {
     await transact("readwrite", store => store.delete(roomId));
+    await transact("readwrite", store => store.delete(roomId + BOUNDARY_SUFFIX));
     sessionStorage.removeItem(sessionKeyName(roomId));
     return true;
   } catch {
@@ -273,4 +283,19 @@ export function installV3RecoveryVault() {
   if (installed) return;
   installed = true;
   setInterval(() => { void saveCandidate(); }, INTERVAL_MS);
+  // 'phaseLoop' calls lib.onphase before scheduling the next phase.
+  // Persist a separate candidate for that transition. This is stronger than
+  // a random timer sample, but still NOT a certified resumable checkpoint:
+  // execution locals / promises / choice callbacks remain unrecorded.
+  if (Array.isArray(lib.onphase)) {
+    lib.onphase.push(() => {
+      if (!activeOwner() || lib.configOL?.mode !== "xingBei") return;
+      const stack = _status.eventManager?.eventStack;
+      const current = stack?.at(-1);
+      if (!Array.isArray(stack) || current?.name !== "phaseLoop" ||
+          !current.player?.playerid ||
+          stack.some(event => event !== current && event?.next?.length > 0)) return;
+      void saveCandidate("turn_boundary");
+    });
+  }
 }
