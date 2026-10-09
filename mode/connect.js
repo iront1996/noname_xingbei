@@ -7,6 +7,10 @@ export default () => {
 	return {
 		name: "connect",
 		start() {
+			// V3 Playtest-only transport resilience; never imported by V1/V2.
+			void import("/game/v3-owner-connection.mjs")
+				.then(({ installV3OwnerConnection }) => installV3OwnerConnection())
+				.catch(error => console.error("[V3 playtest] reconnect setup failed:", error));
 			var directstartmode = lib.config.directstartmode;
 			ui.create.menu(true);
 			event.textnode = ui.create.div("", "输入联机地址");
