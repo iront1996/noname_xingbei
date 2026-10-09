@@ -141,6 +141,8 @@ function reconnectOwner() {
       socket.onmessage = lib.element.ws.onmessage;
       socket.onerror = lib.element.ws.onerror;
       socket.onclose = lib.element.ws.onclose;
+      // Release peers only after this tab has installed its live message handlers.
+      socket.send(JSON.stringify(["server", "v3ready", key]));
       if (pauseOwned) {
         pauseOwned = false;
         game.resume();
