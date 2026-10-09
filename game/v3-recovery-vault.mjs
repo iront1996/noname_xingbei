@@ -246,11 +246,38 @@ export async function inspectLocalRecoveryCandidate(roomId) {
         data.restorable !== false) {
       throw new Error("INVALID_CANDIDATE_SCHEMA");
     }
-    // Do NOT return the raw state (which includes hidden information).
+    // Validate the independently preserved turn-boundary candidate too.
+    // It is useful for reconstruction work but NEVER certified restorable.
+    let turnBoundaryStatus = "NOT_FOUND";
+    const boundary = await transact("readonly", store => store.get(roomId + BOUNDARY_SUFFIX));
+    if (boundary) {
+      if (Date.now() - boundary.capturedAt > MAX_AGE_MS) {
+        turnBoundaryStatus = "EXPIRED";
+      } else {
+        try {
+          const boundaryIv = decodeBase64(boundary.iv);
+          if (boundaryIv.length !== 12) throw new Error("INVALID_BOUNDARY_IV");
+          const rawBoundary = await crypto.subtle.decrypt(
+            { name: "AES-GCM", iv: boundaryIv }, key, decodeBase64(boundary.ciphertext)
+          );
+          const boundaryData = JSON.parse(new TextDecoder().decode(rawBoundary));
+          turnBoundaryStatus = boundaryData.schema === SCHEMA &&
+            boundaryData.roomId === roomId &&
+            boundaryData.observationKind === "turn_boundary" &&
+            boundaryData.restorable === false
+            ? "ENCRYPTED_CANDIDATE_VERIFIED"
+            : "INVALID";
+        } catch {
+          turnBoundaryStatus = "UNAVAILABLE";
+        }
+      }
+    }
+    // Do NOT return raw state (including hidden hands) or keys.
     return {
       status: "ENCRYPTED_CANDIDATE_VERIFIED",
       ageSeconds: Math.floor(ageMs / 1000),
       playerCount: candidate.playerCount,
+      turnBoundaryStatus,
       restorable: false,
       eventContinuationCaptured: false,
     };
