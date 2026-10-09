@@ -14,6 +14,7 @@ import {
   purgeLocalRecoveryCandidate
 } from "./v3-recovery-vault.mjs";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
+import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 
 const BACKEND = "wss://v3.myxingbei.com:443";
 const TOKEN_PREFIX = "xingbei-v3-owner-token:";
@@ -285,18 +286,22 @@ export function installV3OwnerConnection() {
     if (!pausedRoomOnReload || key !== game.onlineKey) return;
     const assessment = loaded.ok
       ? evaluateColdOwnerPreflight(loaded.data, claim)
-      : {
-          ok: false,
-          code: loaded.code || "CANDIDATE_NOT_AVAILABLE",
-          readyToResume: false
-        };
-    const message = assessment.ok
-      ? "原房間的玩家連線身分已與加密候選資料核對一致。\\n" +
-        "但權威遊戲執行環境與未完成事件尚未重建，因此仍禁止續局。"
-      : "已完成安全接管前置檢查，但無法取得一致的原玩家連線對應。\\n" +
-        "原因：" + String(assessment.code) + "。此局尚不能恢復。";
+      : { ok: false, code: loaded.code || "CANDIDATE_NOT_AVAILABLE" };
+    // Convert the verified candidate into a private immutable plan. No
+    // player entities, DOM cards, or game events are created at this stage.
+    const plan = assessment.ok
+      ? buildHostRehydrationBlueprint(loaded.data, claim)
+      : { ok: false, code: assessment.code };
+    const message = plan.ok
+      ? "已成功對應原角色座位、" + plan.summary.originalRemoteSocketsMapped +
+        " 個玩家連線及 " +
+        (plan.summary.drawPileCardsMapped + plan.summary.discardPileCardsMapped) +
+        " 張牌堆／棄牌堆卡牌。\\n" +
+        "但尚未真正重建遊戲引擎或續行事件，因此嚴禁解除房間等待。"
+      : "房主重建前置檢查尚未通過。\\n" +
+        "原因：" + String(plan.code) + "。為避免遊戲錯亂，此局保持暫停。";
     displayOverlay(
-      assessment.ok ? "房主接管準備檢查完成" : "房主接管檢查未通過",
+      plan.ok ? "房主重建藍圖已建立（尚不能續局）" : "房主接管檢查未通過",
       message + "\\n其他玩家仍保持等待，請勿將此畫面視為遊戲已恢復。",
       "結束無法恢復的舊房間",
       () => {
