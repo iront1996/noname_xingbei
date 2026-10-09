@@ -17,6 +17,8 @@ import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
 import { materializeStagedSkillReferences } from "./v3-skill-references.mjs";
+import { attachDetachedCardZones } from "./v3-detached-zones.mjs";
+import { prepareShadowHostRegistry } from "./v3-host-registry-transaction.mjs";
 
 const BACKEND = "wss://v3.myxingbei.com:443";
 const TOKEN_PREFIX = "xingbei-v3-owner-token:";
@@ -307,17 +309,27 @@ export function installV3OwnerConnection() {
     const skills = staged.ok
       ? materializeStagedSkillReferences(staged)
       : { ok: false, code: staged.code };
-    pendingDetachedColdRuntime = skills.ok ? staged.runtime : null;
-    const message = skills.ok
-      ? "已在隔離環境建立 " + staged.summary.nativePlayersStaged +
-        " 個原玩家物件、" + staged.summary.nativeCardsStaged +
-        " 張原生卡牌及 " + staged.summary.dormantRemoteClientsStaged +
-        " 個停用中的遠端連線。\\n" +
-        "技能暫存參照已映射，但尚未啟用效果或重建遊戲事件，因此不能續局。"
+    const zones = skills.ok
+      ? attachDetachedCardZones(staged, plan.blueprint)
+      : { ok: false, code: skills.code };
+    const shadow = zones.ok
+      ? prepareShadowHostRegistry(staged, skills, plan.blueprint)
+      : { ok: false, code: zones.code };
+    // Private in-memory only. No global registry mutation, live card
+    // initialization, skill activation, WS transfer or event resume.
+    pendingDetachedColdRuntime = shadow.ok
+      ? { native: staged.runtime, zones: zones.detachedPiles, registries: shadow.shadow }
+      : null;
+    const message = shadow.ok
+      ? "原玩家 " + shadow.summary.mappedPlayers +
+        " 位、卡牌 " + shadow.summary.cards + " 張及遠端連線 " +
+        shadow.summary.dormantRemoteClients +
+        " 條，已建立隔離對應及影子註冊表。\\n" +
+        "但尚未還原事件續行與同步原有玩家畫面，所以本局仍不可解除暫停。"
       : "房主權威引擎重建準備作業未通過。\\n" +
-        "原因：" + String(skills.code || "UNKNOWN") + "。為避免狀態錯亂，此局保持暫停。";
+        "原因：" + String(shadow.code || "UNKNOWN") + "。為避免狀態錯亂，此局保持暫停。";
     displayOverlay(
-      skills.ok ? "隔離物件與技能參照已準備（尚不能續局）" : "房主接管檢查未通過",
+      shadow.ok ? "隔離權威環境準備完成（尚不能續局）" : "房主接管檢查未通過",
       message + "\\n其他玩家仍保持等待，請勿將此畫面視為遊戲已恢復。",
       "結束無法恢復的舊房間",
       () => {
