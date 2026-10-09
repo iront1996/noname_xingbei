@@ -249,6 +249,62 @@ async function saveCandidate(kind = "periodic", captured = null) {
   }
 }
 
+/**
+ * Internal handoff for the future authoritative host-restoration engine.
+ * This returns SENSITIVE decrypted candidate data to trusted in-origin code.
+ * Do not log, display, postMessage, or transmit the result to guests.
+ *
+ * It does NOT make the data executable or mark it as a certified checkpoint.
+ */
+export async function loadLocalCandidateForEngine(roomId, kind = "turn_boundary") {
+  if (!validRoomId(roomId) || !["periodic", "turn_boundary"].includes(kind)) {
+    return { ok: false, code: "INVALID_REQUEST" };
+  }
+  try {
+    const recordKey = kind === "turn_boundary" ? roomId + BOUNDARY_SUFFIX : roomId;
+    const record = await transact("readonly", store => store.get(recordKey));
+    if (!record || record.schema !== SCHEMA) return { ok: false, code: "CANDIDATE_NOT_FOUND" };
+    if (Date.now() - record.capturedAt > MAX_AGE_MS) return { ok: false, code: "CANDIDATE_EXPIRED" };
+    const key = await cryptoKey(roomId, false);
+    const iv = decodeBase64(record.iv);
+    if (iv.length !== 12) return { ok: false, code: "INVALID_IV" };
+    const plaintext = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv }, key, decodeBase64(record.ciphertext)
+    );
+    const data = JSON.parse(new TextDecoder().decode(plaintext));
+    const ids = Object.keys(data.arena?.players || {});
+    if (data.schema !== SCHEMA || data.roomId !== roomId ||
+        data.observationKind !== kind ||
+        data.config?.mode !== "xingBei" ||
+        !Array.isArray(data.drawPile) || !Array.isArray(data.discardPile) ||
+        !ids.length || ids.length > 8 ||
+        ids.length !== record.playerCount ||
+        ids.some(id => !data.skills?.[id] || !data.playerExecution?.[id]) ||
+        data.safeCheckpointCertified !== false ||
+        data.eventContinuationCaptured !== false ||
+        data.restorable !== false ||
+        (kind === "turn_boundary" &&
+         (!data.nextTurnPlayerId || !data.arena.players[data.nextTurnPlayerId]))) {
+      return { ok: false, code: "CANDIDATE_SHAPE_INVALID" };
+    }
+    // No event/phase resume is performed here.
+    return {
+      ok: true,
+      kind,
+      data,
+      safeCheckpointCertified: false,
+      eventContinuationCaptured: false,
+      restorable: false,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      code: error instanceof Error ? error.message : "LOAD_FAILED",
+      restorable: false,
+    };
+  }
+}
+
 export async function inspectLocalRecoveryCandidate(roomId) {
   if (!validRoomId(roomId)) return { status: "INVALID_ROOM" };
   try {
