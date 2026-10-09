@@ -32,6 +32,20 @@ let pauseOwned = false;
 let simulatedHoldUntil = 0;
 let pausedRoomOnReload = false;
 let pendingDetachedColdRuntime = null;
+// Short-lived transport continuity proof. NEVER write it to sessionStorage,
+// IndexedDB or any persistent store; refreshing destroys the event runtime.
+let liveRuntimeRoomId = null;
+let liveRuntimeTicket = null;
+function rememberLiveRuntimeTicket(roomId, ticket) {
+  if (typeof roomId !== "string" || !TOKEN_PATTERN.test(ticket)) return false;
+  liveRuntimeRoomId = roomId;
+  liveRuntimeTicket = ticket;
+  return true;
+}
+function getLiveRuntimeTicket(roomId) {
+  return roomId === liveRuntimeRoomId && TOKEN_PATTERN.test(liveRuntimeTicket)
+    ? liveRuntimeTicket : null;
+}
 
 function getToken(roomId) {
   try {
@@ -110,7 +124,7 @@ function isLiveOwner() {
 
 function scheduleRetry() {
   if (retryTimer || !isLiveOwner()) return;
-  if (!getToken(game.roomId)) {
+  if (!getToken(game.roomId) || !getLiveRuntimeTicket(game.roomId)) {
     displayOverlay("房主暫時離線", "無法找到本分頁的重新連線憑證。請勿重新整理；此局目前無法自動恢復。");
     return;
   }
@@ -128,8 +142,9 @@ function reconnectOwner() {
   if (connecting || !isLiveOwner() || game.ws?.readyState === WebSocket.OPEN) return;
   const key = game.roomId;
   const token = getToken(key);
-  if (!token) {
-    displayOverlay("房主暫時離線", "重連憑證不存在。請勿重新整理遊戲。");
+  const runtimeTicket = getLiveRuntimeTicket(key);
+  if (!token || !runtimeTicket) {
+    displayOverlay("房主暫時離線", "原分頁執行憑證已遺失，不能直接續行遊戲。");
     return;
   }
   connecting = true;
@@ -155,22 +170,24 @@ function reconnectOwner() {
     }
     if (msg[0] === "roomlist") {
       socket.send(JSON.stringify(["server", "key", [game.onlineKey, lib.version]]));
-      socket.send(JSON.stringify(["server", "v3resume", key, token]));
+      socket.send(JSON.stringify(["server", "v3resume", key, token, runtimeTicket]));
       return;
     }
-    if (msg[0] === "v3ownerresumedHost" && msg[1] === key && TOKEN_PATTERN.test(msg[2])) {
+    if (msg[0] === "v3ownerresumedHost" && msg[1] === key &&
+        TOKEN_PATTERN.test(msg[2]) && TOKEN_PATTERN.test(msg[3])) {
       accepted = true;
       clearTimeout(timeout);
       connecting = false;
       retryCount = 0;
       saveToken(key, msg[2]);
+      rememberLiveRuntimeTicket(key, msg[3]);
       game.ws = socket;
       socket.onopen = lib.element.ws.onopen;
       socket.onmessage = lib.element.ws.onmessage;
       socket.onerror = lib.element.ws.onerror;
       socket.onclose = lib.element.ws.onclose;
       // Release peers only after this tab has installed its live message handlers.
-      socket.send(JSON.stringify(["server", "v3ready", key]));
+      socket.send(JSON.stringify(["server", "v3ready", key, msg[3]]));
       if (pauseOwned) {
         pauseOwned = false;
         game.resume();
@@ -249,6 +266,8 @@ export function installV3OwnerConnection() {
       try { sessionStorage.removeItem(TOKEN_PREFIX + key); } catch {}
       pausedRoomOnReload = false;
       pendingDetachedColdRuntime = null;
+      liveRuntimeTicket = null;
+      liveRuntimeRoomId = null;
       return;
     }
     if (status !== "owner_disconnected") return;
@@ -352,6 +371,8 @@ export function installV3OwnerConnection() {
     void purgeLocalRecoveryCandidate(key);
     pausedRoomOnReload = false;
     pendingDetachedColdRuntime = null;
+    liveRuntimeTicket = null;
+    liveRuntimeRoomId = null;
     displayOverlay(
       "原房間已結束",
       "其他玩家已收到房間結束通知。\n請返回大廳建立新局。",
@@ -368,10 +389,12 @@ export function installV3OwnerConnection() {
   const defaultOnclose = lib.element.ws.onclose;
   const defaultOnerror = lib.element.ws.onerror;
 
-  lib.message.client.v3ownerToken = (key, token) => {
+  lib.message.client.v3ownerToken = (key, token, runtimeTicket) => {
     if (game.onlineroom && !game.online && game.roomId === key) {
-      if (!saveToken(key, token)) {
-        console.warn("[V3 playtest] 無法保存房主臨時重連憑證");
+      if (!saveToken(key, token) || !rememberLiveRuntimeTicket(key, runtimeTicket)) {
+        liveRuntimeTicket = null;
+        liveRuntimeRoomId = null;
+        console.warn("[V3 playtest] 房主執行憑證未建立，原分頁斷線續行不可用");
       }
     }
   };
