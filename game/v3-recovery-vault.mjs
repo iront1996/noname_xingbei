@@ -113,6 +113,36 @@ function captureCandidate(kind = "periodic") {
   if (ids.some(id => !Object.prototype.hasOwnProperty.call(skills, id))) {
     throw new Error("SKILL_SET_MISMATCH");
   }
+  // Authoritative host-side binding: preserve existing peer WebSocket IDs.
+  // The paused server returns only the list of still-connected peer sockets.
+  // Cold-host preflight will require exact one-to-one matching before touching
+  // game state. Disconnected players are not silently replaced.
+  if (!Array.isArray(lib.node?.clients)) throw new Error("PEER_ROSTER_UNAVAILABLE");
+  const guestBindings = [];
+  const guestIds = new Set();
+  const guestSockets = new Set();
+  for (const client of lib.node.clients) {
+    const playerId = client?.id;
+    const socketId = client?.ws?.wsid;
+    if (client?.closed || !client?.inited ||
+        typeof playerId !== "string" || !playerId ||
+        typeof socketId !== "string" || !socketId ||
+        playerId !== socketId || !ids.includes(playerId) ||
+        guestIds.has(playerId) || guestSockets.has(socketId)) {
+      throw new Error("PEER_BINDING_INCOMPLETE");
+    }
+    guestIds.add(playerId);
+    guestSockets.add(socketId);
+    guestBindings.push({ playerId, socketId });
+  }
+  if (game.players.length > 1 && guestBindings.length !== game.players.length - 1) {
+    // Avoid optimistic restoration when a peer has already disconnected.
+    throw new Error("PEER_COUNT_MISMATCH");
+  }
+  if (!game.me?.playerid || !ids.includes(game.me.playerid) ||
+      guestIds.has(game.me.playerid)) {
+    throw new Error("HOST_PLAYER_MAPPING_INVALID");
+  }
   const playerExecution = {};
   for (const id of ids) {
     const player = lib.playerOL?.[id];
@@ -132,6 +162,8 @@ function captureCandidate(kind = "periodic") {
     schema: SCHEMA,
     capturedAt: Date.now(),
     roomId: game.roomId,
+    hostPlayerId: game.me.playerid,
+    peerBindings: guestBindings,
     observationKind: kind,
     nextTurnPlayerId: kind === "turn_boundary"
       ? _status.eventManager?.getStartedEvent?.()?.player?.playerid ?? null
@@ -178,7 +210,10 @@ function captureCandidate(kind = "periodic") {
   if (decoded.schema !== SCHEMA ||
       Object.keys(decoded.arena?.players || {}).length !== ids.length ||
       decoded.drawPile.length !== ui.cardPile.children.length ||
-      decoded.discardPile.length !== ui.discardPile.children.length) {
+      decoded.discardPile.length !== ui.discardPile.children.length ||
+      decoded.hostPlayerId !== game.me.playerid ||
+      !Array.isArray(decoded.peerBindings) ||
+      decoded.peerBindings.length !== guestBindings.length) {
     throw new Error("STRUCTURE_ROUNDTRIP_MISMATCH");
   }
   return {
@@ -279,6 +314,15 @@ export async function loadLocalCandidateForEngine(roomId, kind = "turn_boundary"
         !Array.isArray(data.drawPile) || !Array.isArray(data.discardPile) ||
         !ids.length || ids.length > 8 ||
         ids.length !== record.playerCount ||
+        typeof data.hostPlayerId !== "string" || !ids.includes(data.hostPlayerId) ||
+        !Array.isArray(data.peerBindings) ||
+        data.peerBindings.length !== ids.length - 1 ||
+        new Set(data.peerBindings.map(b => b?.socketId)).size !== data.peerBindings.length ||
+        data.peerBindings.some(b =>
+          typeof b?.playerId !== "string" || typeof b?.socketId !== "string" ||
+          b.playerId !== b.socketId ||
+          !ids.includes(b.playerId) || b.playerId === data.hostPlayerId
+        ) ||
         ids.some(id => !data.skills?.[id] || !data.playerExecution?.[id]) ||
         data.safeCheckpointCertified !== false ||
         data.eventContinuationCaptured !== false ||
