@@ -38,6 +38,7 @@ grep -F 'V3_PORT || 8081' "$TMP" >/dev/null
 grep -F 'host: "127.0.0.1"' "$TMP" >/dev/null
 grep -F 'v3ownerresumedHost' "$TMP" >/dev/null
 grep -F 'v3ready:' "$TMP" >/dev/null
+grep -F 'v3restoreprobe: function' "$TMP" >/dev/null
 OWNER="$(stat -c '%u' "$TARGET")"
 GROUP="$(stat -c '%g' "$TARGET")"
 MODE="$(stat -c '%a' "$TARGET")"
@@ -49,6 +50,30 @@ mv -f "$TARGET.new" "$TARGET"
 
 if ! systemctl restart "$SERVICE" || ! systemctl is-active --quiet "$SERVICE"; then
   echo "ERROR: V3 unit failed; rolling back" >&2
+  cp -a "$BACKUP" "$TARGET"
+  systemctl restart "$SERVICE" || true
+  exit 1
+fi
+
+# Ensure the new Node process is actually listening on the isolated V3 port.
+# A systemd "active" response alone is not sufficient for a healthy rollout.
+PORT_READY=0
+for attempt in 1 2 3 4 5 6 7 8; do
+  if node -e '
+    const net = require("node:net");
+    const socket = net.createConnection({host:"127.0.0.1",port:8081});
+    socket.setTimeout(1200);
+    socket.once("connect",()=>{socket.destroy();process.exit(0)});
+    socket.once("error",()=>process.exit(1));
+    socket.once("timeout",()=>{socket.destroy();process.exit(1)});
+  '; then
+    PORT_READY=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$PORT_READY" != "1" ]]; then
+  echo "ERROR: V3 port 8081 did not become ready; rolling back." >&2
   cp -a "$BACKUP" "$TARGET"
   systemctl restart "$SERVICE" || true
   exit 1
