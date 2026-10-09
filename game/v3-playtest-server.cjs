@@ -20,6 +20,16 @@
 		return expected.length === 32 && supplied.length === 32 &&
 			crypto.timingSafeEqual(supplied, expected);
 	}
+	function validOwnerRuntimeTicket(room, ticket) {
+		// Unlike ownerToken, this 256-bit secret MUST remain only in the live
+		// JavaScript heap. A refreshed tab may inspect/abandon, never resume
+		// the lost asynchronous event engine using a persisted bearer token.
+		if (!room || typeof ticket !== "string" || !/^[a-f0-9]{64}$/i.test(ticket)) return false;
+		var actual = Buffer.from(ticket, "hex");
+		var expected = Buffer.from(room.runtimeTicket || "", "hex");
+		return actual.length === 32 && expected.length === 32 &&
+			crypto.timingSafeEqual(actual, expected);
+	}
 	function notifyGuests(room, method, arg) {
 		for (var id in clients) {
 			var guest = clients[id];
@@ -140,14 +150,15 @@
 			room.ownerNickname = this.nickname;
 			room.ownerAvatar = this.avatar;
 			room.ownerToken = crypto.randomBytes(32).toString("hex");
+			room.runtimeTicket = crypto.randomBytes(32).toString("hex");
 			room.bufferedGuestMessages = [];
 			room.bufferedBytes = 0;
 			room.bufferOverflow = false;
 			room.paused = false;
 			this.sendl("createroom", key);
-			this.sendl("v3ownerToken", key, room.ownerToken);
+			this.sendl("v3ownerToken", key, room.ownerToken, room.runtimeTicket);
 		},
-		v3resume: function (key, token) {
+		v3resume: function (key, token, runtimeTicket) {
 			var room = findRoomByKey(key);
 			if (!room || !room.paused || room.owner || this.room ||
 				this.onlineKey !== key || typeof token !== "string" || !/^[a-f0-9]{64}$/i.test(token)) {
@@ -158,11 +169,12 @@
 				this.sendl("v3resumerejected", "buffer_overflow");
 				return;
 			}
-			var supplied = Buffer.from(token, "hex");
-			var expected = Buffer.from(room.ownerToken || "", "hex");
-			if (expected.length !== 32 || supplied.length !== 32 ||
-				!crypto.timingSafeEqual(supplied, expected)) {
+			if (!validOwnerToken(room, token)) {
 				this.sendl("v3resumerejected", "invalid_token");
+				return;
+			}
+			if (!validOwnerRuntimeTicket(room, runtimeTicket)) {
+				this.sendl("v3resumerejected", "missing_live_runtime");
 				return;
 			}
 			if (room.resumeTimer) clearTimeout(room.resumeTimer);
@@ -176,20 +188,22 @@
 			this.avatar = room.ownerAvatar;
 			delete this.status;
 			room.ownerToken = crypto.randomBytes(32).toString("hex");
+			room.runtimeTicket = crypto.randomBytes(32).toString("hex");
 			for (var id in clients) {
 				var guest = clients[id];
 				if (guest.room === room && guest !== this) {
 					guest.owner = this;
 				}
 			}
-			this.sendl("v3ownerresumedHost", key, room.ownerToken);
+			this.sendl("v3ownerresumedHost", key, room.ownerToken, room.runtimeTicket);
 			room.resumeTimer = setTimeout(function () {
 				if (room.resuming && room.owner) room.owner.close();
 			}, 10000);
 		},
-		v3ready: function (key) {
+		v3ready: function (key, runtimeTicket) {
 			var room = this.room;
-			if (!room || room.key !== key || room.owner !== this || !room.resuming) return;
+			if (!room || room.key !== key || room.owner !== this || !room.resuming ||
+				!validOwnerRuntimeTicket(room, runtimeTicket)) return;
 			if (room.resumeTimer) clearTimeout(room.resumeTimer);
 			room.resumeTimer = null;
 			room.resuming = false;
