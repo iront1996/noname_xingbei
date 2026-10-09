@@ -10,7 +10,7 @@
  */
 import { game, get, ui, _status } from "../noname.js";
 
-const SNAPSHOT_SCHEMA = "xingbei-v3-probe-3";
+const SNAPSHOT_SCHEMA = "xingbei-v3-probe-4";
 
 function reject(code) {
   return { ok: false, code, restorable: false, checkpointCommitted: false };
@@ -97,6 +97,9 @@ export async function inspectHostSnapshot() {
         }
       }
     }
+    // JSON.stringify omits object properties with undefined values.
+    // Record those omissions; do not silently treat them as lossless storage.
+    let omittedUndefinedSkillFieldCount = 0;
     const decodedSkillState = decoded.skillState;
     if (!decodedSkillState || typeof decodedSkillState !== "object") return reject("SKILL_STATE_ROUNDTRIP_MISMATCH");
     for (const id of ids) {
@@ -118,10 +121,16 @@ export async function inspectHostSnapshot() {
           return reject("SKILL_SECTION_ROUNDTRIP_MISMATCH");
         }
         const keys = Object.keys(source);
-        if (keys.length !== Object.keys(output).length ||
-            keys.some(key => !Object.prototype.hasOwnProperty.call(output, key))) {
+        const expectedKeys = keys.filter(key => source[key] !== undefined);
+        const outputKeys = Object.keys(output);
+        // Every non-undefined top-level entry must survive, with no extras.
+        // Array holes / undefined elements become null, not omissions, and
+        // therefore still fail validation rather than being accepted.
+        if (expectedKeys.length !== outputKeys.length ||
+            expectedKeys.some(key => !Object.prototype.hasOwnProperty.call(output, key))) {
           return reject("SKILL_SECTION_ROUNDTRIP_MISMATCH");
         }
+        omittedUndefinedSkillFieldCount += keys.length - expectedKeys.length;
       }
     }
     if (decoded.drawPile?.length !== drawCards.length || decoded.discardPile?.length !== discardCards.length) {
@@ -148,6 +157,8 @@ export async function inspectHostSnapshot() {
       skillStorageKeyCount,
       temporarySkillKeyCount,
       skillSectionsVerified: true,
+      omittedUndefinedSkillFieldCount,
+      undefinedSkillFieldPolicy: "omitted_and_counted_not_restorable",
       nestedSkillStateCompletenessVerified: false,
       drawPileCount: drawCards.length,
       discardPileCount: discardCards.length,
