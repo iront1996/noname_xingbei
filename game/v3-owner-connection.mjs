@@ -19,6 +19,7 @@ let connecting = false;
 let retryCount = 0;
 let pauseOwned = false;
 let simulatedHoldUntil = 0;
+let pausedRoomOnReload = false;
 
 function getToken(roomId) {
   try {
@@ -44,7 +45,7 @@ function removeOverlay() {
   overlay = null;
 }
 
-function displayOverlay(title, body) {
+function displayOverlay(title, body, actionLabel, actionHandler) {
   if (!document.body) return;
   if (!overlay) {
     overlay = document.createElement("div");
@@ -67,14 +68,25 @@ function displayOverlay(title, body) {
     const text = document.createElement("p");
     text.dataset.role = "v3-body";
     text.style.cssText = "margin:0;color:#cbd5e1;white-space:pre-line;";
-    panel.append(heading, text);
+    const action = document.createElement("button");
+    action.type = "button";
+    action.style.cssText =
+      "display:none;margin:18px auto 0;border:1px solid #aebed0;" +
+      "border-radius:8px;padding:10px 16px;background:#38516b;" +
+      "color:#fff;font:inherit;cursor:pointer;";
+    panel.append(heading, text, action);
     shadow.append(panel);
     overlay.__v3Heading = heading;
     overlay.__v3Body = text;
+    overlay.__v3Action = action;
     document.body.append(overlay);
   }
   overlay.__v3Heading.textContent = title;
   overlay.__v3Body.textContent = body;
+  overlay.__v3Action.style.display =
+    actionLabel && typeof actionHandler === "function" ? "block" : "none";
+  overlay.__v3Action.textContent = actionLabel || "";
+  overlay.__v3Action.onclick = actionHandler || null;
 }
 
 function isLiveOwner() {
@@ -207,6 +219,61 @@ export function installV3OwnerConnection() {
   if (installed) return;
   installed = true;
   installPlaytestButton();
+  const defaultRoomlist = lib.message.client.roomlist;
+  lib.message.client.roomlist = function (...args) {
+    const result = defaultRoomlist.apply(this, args);
+    // The engine's reconnect_info may try to recreate a room after a refresh.
+    // Query its authenticated status instead of pretending game state survived.
+    const key = game.onlineKey;
+    const token = typeof key === "string" ? getToken(key) : null;
+    if (token && game.ws?.readyState === WebSocket.OPEN) {
+      game.send("server", "v3roomstatus", key, token);
+    }
+    return result;
+  };
+  lib.message.client.v3roomstatus = (key, status) => {
+    if (key !== game.onlineKey) return;
+    if (status === "room_absent") {
+      try { sessionStorage.removeItem(TOKEN_PREFIX + key); } catch {}
+      pausedRoomOnReload = false;
+      return;
+    }
+    if (status !== "owner_disconnected") return;
+    pausedRoomOnReload = true;
+    displayOverlay(
+      "原房間仍保留，但無法從重新整理恢復",
+      "伺服器尚保留原房間，其他玩家正在等待。\n" +
+      "然而本測試版的遊戲事件只存在原房主分頁的記憶體中；" +
+      "重新整理後已遺失，不能接續原局。\n" +
+      "你可以結束舊房間，通知其他玩家重新開局。",
+      "結束無法恢復的舊房間",
+      () => {
+        if (!window.confirm("確定結束原房間？其他玩家將收到通知，原局不可恢復。")) return;
+        const token = getToken(key);
+        if (token && game.ws?.readyState === WebSocket.OPEN) {
+          game.send("server", "v3abandon", key, token);
+          displayOverlay("正在結束舊房間", "已提出結束請求，正在等待伺服器確認。");
+        }
+      }
+    );
+  };
+  lib.message.client.v3roomabandonedHost = key => {
+    if (key !== game.onlineKey) return;
+    try { sessionStorage.removeItem(TOKEN_PREFIX + key); } catch {}
+    pausedRoomOnReload = false;
+    displayOverlay(
+      "原房間已結束",
+      "其他玩家已收到房間結束通知。\n請返回大廳建立新局。",
+      "返回大廳",
+      () => removeOverlay()
+    );
+  };
+  lib.message.client.v3roomabandoned = () => {
+    displayOverlay(
+      "房主已結束舊房間",
+      "房主先前重新整理而遺失遊戲狀態，已結束等待。\n請返回大廳重新建立房間。"
+    );
+  };
   const defaultOnclose = lib.element.ws.onclose;
   const defaultOnerror = lib.element.ws.onerror;
 
@@ -229,6 +296,7 @@ export function installV3OwnerConnection() {
     displayOverlay("房間已逾時", "房主未在保留期限內返回。本局無法繼續，請重新建立新房間。");
   };
   lib.message.client.v3createblocked = () => {
+    if (pausedRoomOnReload) return;
     displayOverlay(
       "原房間仍被保留",
       "此房間已有未完成的對局。\n本測試版僅支援房主網路斷線後原分頁自動重連；重新整理後的完整遊戲恢復尚未支援。"
