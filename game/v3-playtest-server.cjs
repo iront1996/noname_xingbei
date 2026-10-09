@@ -73,7 +73,9 @@
 			}
 			if (room.resumeTimer) clearTimeout(room.resumeTimer);
 			room.resumeTimer = null;
-			room.paused = false;
+			// Stay paused until the restored browser confirms its receiver is ready.
+			room.paused = true;
+			room.resuming = true;
 			room.owner = this;
 			this.room = room;
 			this.nickname = room.ownerNickname;
@@ -84,10 +86,21 @@
 				var guest = clients[id];
 				if (guest.room === room && guest !== this) {
 					guest.owner = this;
-					guest.sendl("v3ownerresumed");
 				}
 			}
 			this.sendl("v3ownerresumedHost", key, room.ownerToken);
+			room.resumeTimer = setTimeout(function () {
+				if (room.resuming && room.owner) room.owner.close();
+			}, 10000);
+		},
+		v3ready: function (key) {
+			var room = this.room;
+			if (!room || room.key !== key || room.owner !== this || !room.resuming) return;
+			if (room.resumeTimer) clearTimeout(room.resumeTimer);
+			room.resumeTimer = null;
+			room.resuming = false;
+			room.paused = false;
+			notifyGuests(room, "v3ownerresumed");
 			util.updaterooms();
 		},
 		enter: function (key, nickname, avatar) {
@@ -456,6 +469,7 @@
 				var room = rooms[i];
 				if (room.owner === this) {
 					room.owner = null;
+					room.resuming = false;
 					room.paused = true;
 					for (var id in clients) {
 						var guest = clients[id];
