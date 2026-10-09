@@ -10,7 +10,7 @@
  */
 import { game, get, ui, _status } from "../noname.js";
 
-const SNAPSHOT_SCHEMA = "xingbei-v3-probe-1";
+const SNAPSHOT_SCHEMA = "xingbei-v3-probe-2";
 
 function reject(code) {
   return { ok: false, code, restorable: false, checkpointCommitted: false };
@@ -46,7 +46,6 @@ export async function inspectHostSnapshot() {
     // than serializing DOM nodes or attempting to reconstruct live objects.
     const candidate = {
       schema: SNAPSHOT_SCHEMA,
-      capturedAt: new Date().toISOString(),
       roomId: game.roomId,
       phaseNumber: game.phaseNumber,
       arena: get.stringifiedResult(arena),
@@ -79,6 +78,8 @@ export async function inspectHostSnapshot() {
       return reject("PILE_ROUNDTRIP_MISMATCH");
     }
 
+    // Hash only the candidate content. Capture timestamps would otherwise
+    // make identical, unchanged game states always produce different hashes.
     const bytes = new TextEncoder().encode(json);
     const digest = await crypto.subtle.digest("SHA-256", bytes);
     const sha256 = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("");
@@ -90,6 +91,7 @@ export async function inspectHostSnapshot() {
       schema: SNAPSHOT_SCHEMA,
       byteLength: bytes.byteLength,
       sha256,
+      hashScope: "candidate_state_without_capture_time",
       playerCount: ids.length,
       cardCountInPlayerZones: ownedCards,
       drawPileCount: drawCards.length,
