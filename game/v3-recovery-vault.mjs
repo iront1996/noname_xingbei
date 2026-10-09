@@ -111,6 +111,21 @@ function captureCandidate() {
   if (ids.some(id => !Object.prototype.hasOwnProperty.call(skills, id))) {
     throw new Error("SKILL_SET_MISMATCH");
   }
+  const playerExecution = {};
+  for (const id of ids) {
+    const player = lib.playerOL?.[id];
+    if (!player) throw new Error("PLAYER_RUNTIME_MISSING");
+    playerExecution[id] = {
+      // Some entries can be depth-limited or engine-specific. Their complete
+      // rehydration has NOT been verified; preserving is not resuming.
+      stat: get.stringifiedResult(player.stat || []),
+      actionHistory: get.stringifiedResult(player.actionHistory || []),
+      skipList: get.stringifiedResult(player.skipList || []),
+      phaseNumber: player.phaseNumber ?? null,
+    };
+  }
+  const manager = _status.eventManager;
+  const stack = Array.isArray(manager?.eventStack) ? manager.eventStack : [];
   const state = {
     schema: SCHEMA,
     capturedAt: Date.now(),
@@ -126,16 +141,27 @@ function captureCandidate() {
       ? get.stringifiedResult(game.getState()) : null,
     config: get.stringifiedResult(lib.configOL),
     cardtag: get.stringifiedResult(_status.cardtag),
+    playerExecution,
+    roundStartPlayerId: _status.roundStart?.playerid ?? null,
+    lastPhasedPlayerId: _status.lastPhasedPlayer?.playerid ?? null,
     eventObservation: {
       // Event continuations, Promises, closure locals and outstanding
       // responses are not encoded by these fields.
-      stackDepth: _status.eventManager?.eventStack?.length ?? null,
+      stackDepth: stack.length,
+      stackOutline: stack.map(event => ({
+        name: typeof event?.name === "string" ? event.name : null,
+        step: typeof event?.step === "number" ? event.step : null,
+        finished: Boolean(event?.finished),
+        nextCount: event?.next?.length ?? null,
+        afterCount: event?.after?.length ?? null,
+      })),
       activeEventName: _status.event?.name ?? null,
       activeEventStep: _status.event?.step ?? null,
       paused: Boolean(_status.paused),
     },
     safeCheckpointCertified: false,
     eventContinuationCaptured: false,
+    playerHistoryCompletenessVerified: false,
     restorable: false,
   };
   const json = JSON.stringify(state);
