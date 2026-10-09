@@ -9,6 +9,7 @@
  *  - No changes to the engine, timers, events, or player actions.
  */
 import { game, get, lib, ui, _status } from "../noname.js";
+import { auditV3Serialization } from "./v3-serialization-integrity.mjs";
 
 const DB_NAME = "xingbei-v3-playtest-recovery";
 const STORE = "encryptedCandidates";
@@ -143,16 +144,35 @@ function captureCandidate(kind = "periodic") {
       guestIds.has(game.me.playerid)) {
     throw new Error("HOST_PLAYER_MAPPING_INVALID");
   }
+  const arenaEncoded = get.stringifiedResult(arena);
+  const skillsEncoded = get.stringifiedResult(skills);
+  const auditArena = auditV3Serialization(arena, arenaEncoded, get.itemtype);
+  const auditSkills = auditV3Serialization(skills, skillsEncoded, get.itemtype);
+  if (!auditArena.ok || !auditSkills.ok) {
+    throw new Error("CANDIDATE_STRUCTURE_LOSS");
+  }
   const playerExecution = {};
   for (const id of ids) {
     const player = lib.playerOL?.[id];
     if (!player) throw new Error("PLAYER_RUNTIME_MISSING");
+    const stat = player.stat || [];
+    const history = player.actionHistory || [];
+    const skipped = player.skipList || [];
+    const statEncoded = get.stringifiedResult(stat);
+    const historyEncoded = get.stringifiedResult(history);
+    const skipEncoded = get.stringifiedResult(skipped);
+    const checks = [
+      auditV3Serialization(stat, statEncoded, get.itemtype),
+      auditV3Serialization(history, historyEncoded, get.itemtype),
+      auditV3Serialization(skipped, skipEncoded, get.itemtype),
+    ];
+    if (checks.some(result => !result.ok)) {
+      throw new Error("PLAYER_HISTORY_STRUCTURE_LOSS");
+    }
     playerExecution[id] = {
-      // Some entries can be depth-limited or engine-specific. Their complete
-      // rehydration has NOT been verified; preserving is not resuming.
-      stat: get.stringifiedResult(player.stat || []),
-      actionHistory: get.stringifiedResult(player.actionHistory || []),
-      skipList: get.stringifiedResult(player.skipList || []),
+      stat: statEncoded,
+      actionHistory: historyEncoded,
+      skipList: skipEncoded,
       phaseNumber: player.phaseNumber ?? null,
     };
   }
@@ -171,8 +191,16 @@ function captureCandidate(kind = "periodic") {
     phaseNumber: game.phaseNumber ?? null,
     roundNumber: game.roundNumber ?? null,
     currentPhaseId: _status.currentPhase?.playerid ?? null,
-    arena: get.stringifiedResult(arena),
-    skills: get.stringifiedResult(skills),
+    arena: arenaEncoded,
+    skills: skillsEncoded,
+    structuralAudit: {
+      arenaVerified: true,
+      skillStateVerified: true,
+      playerHistoryVerified: true,
+      omittedUndefinedProperties:
+        auditArena.omittedUndefinedProperties +
+        auditSkills.omittedUndefinedProperties,
+    },
     drawPile: get.cardsInfoOL(Array.from(ui.cardPile.children)),
     discardPile: get.cardsInfoOL(Array.from(ui.discardPile.children)),
     gameState: typeof game.getState === "function"
@@ -324,6 +352,9 @@ export async function loadLocalCandidateForEngine(roomId, kind = "turn_boundary"
           !ids.includes(b.playerId) || b.playerId === data.hostPlayerId
         ) ||
         ids.some(id => !data.skills?.[id] || !data.playerExecution?.[id]) ||
+        data.structuralAudit?.arenaVerified !== true ||
+        data.structuralAudit?.skillStateVerified !== true ||
+        data.structuralAudit?.playerHistoryVerified !== true ||
         data.safeCheckpointCertified !== false ||
         data.eventContinuationCaptured !== false ||
         data.restorable !== false ||
