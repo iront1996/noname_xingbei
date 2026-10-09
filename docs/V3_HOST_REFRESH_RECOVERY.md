@@ -71,6 +71,22 @@
 - 藍圖：正確保留座位與牌堆順序；錯誤/重複 socket、重複卡 ID、座位衝突、過期資料均拒絕。
 - 界線：目前的模擬測試**不等同真實引擎與四人對局恢復驗收**。
 
+## 原生遊戲物件隔離預建層（新增）
+
+本輪新增 `game/v3-host-runtime-stager.mjs`，由通過前置驗證的私有重建藍圖建立**真實引擎類別的非執行態物件**：
+
+- `lib.element.Player`：使用 `DocumentFragment` 作為暫存根節點，執行 `buildProperty()` / `buildNode()`，暫存原玩家 ID、座位、名稱、血量，以及死亡／存活玩家的座位連結。尚未 `player.init()`。
+- `lib.element.Card`：建立 `Card` 原生節點，填入原始卡牌 ID、系別、命格、名稱與屬性；保留抽牌／棄牌及各玩家手牌、裝備、判定區、擴充區對應。**故意不呼叫 `card.init()`**，避免在未接管房主時寫入 `lib.cardOL` 或引發技能效果。
+- `lib.element.NodeWS` / `lib.element.Client`：使用原玩家 socket ID 建立對應的原生遠端通道物件，但一律設為 `closed = true`，沒有任何對外 `send()`。未註冊至 `lib.node.clients`。
+- `specials` 由本引擎 `getCards("s")` 取出，是 `getCards("hs")` 的重複視圖，僅檢查該別名是否出現在手牌中，不建立第二張卡牌。其他獨立卡牌區域若出現重複實體卡 ID，直接拒絕。
+- 建立前先完整檢查所有列舉區域、卡牌編碼與重複實體 ID。任何錯誤都會阻擋本次 staging，不啟動引擎。
+- `game/v3-owner-connection.mjs` 在受驗證的房主返回流程內呼叫隔離預建工具，僅顯示物件數量；原始隱藏手牌、玩家 ID、原生物件、路由及完整技能狀態不出現在畫面或日誌中。
+- `tools/test-v3-native-staging.mjs`：6 個測試涵蓋 native 物件建立、停用通道、禁止送訊、無牌堆重複 ID、合法／非法特殊手牌別名、缺少卡牌區域與 native 初始化失敗。
+
+**這不是完整遊戲重建**：目前未安裝玩家／卡牌至 `game.players`、`game.dead`、`lib.playerOL`、`lib.cardOL`、`lib.node.clients`，沒有套用含巢狀引擎參照的技能儲存資料，沒有重新啟動任何 `GameEvent`、計時器或等待玩家的回呼，亦未將卡牌的 `Card.init()` 副作用納入可交易式恢復程序。即使隔離預建成功，永遠保持 `readyToResume: false`。
+
+下一步核心工程是具回滾保證的權威狀態交易式安裝、技能儲存參照解析及事件續行／回放。這些未完成前，不得觸發 `v3ready`。
+
 ## 尚未實作（核心阻塞）
 
 1. **Authoritative runtime rehydration.** Existing `lib.message.client.reinit` makes a *client* view; cannot simply reuse it as a host. Need proper host-side reconstruction and mapping of original player IDs, remote `Client`/NodeWS objects, guest response channels, card references, UI & game helpers.
