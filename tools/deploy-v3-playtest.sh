@@ -5,7 +5,7 @@ set -Eeuo pipefail
 
 SERVICE="xingbei-hall-v3.service"
 TARGET="/opt/xingbei-hall-v3/server.js"
-SOURCE_URL="https://raw.githubusercontent.com/iront1996/noname_xingbei/9fbf144c1e8f20c275bbd9fe0eb5e2022e1c4efe/game/v3-playtest-server.cjs"
+SOURCE_URL="https://raw.githubusercontent.com/iront1996/noname_xingbei/229a49246e03c3d94db1ff8ae3fe447077b5c7c7/game/v3-playtest-server.cjs"
 TMP="$(mktemp --suffix=.cjs)"
 BACKUP=""
 trap 'rm -f "$TMP"' EXIT
@@ -37,6 +37,7 @@ grep -F 'V3_RESUME_TIMEOUT_MS = 180000' "$TMP" >/dev/null
 grep -F 'V3_PORT || 8081' "$TMP" >/dev/null
 grep -F 'host: "127.0.0.1"' "$TMP" >/dev/null
 grep -F 'v3ownerresumedHost' "$TMP" >/dev/null
+grep -F 'validOwnerRuntimeTicket' "$TMP" >/dev/null
 grep -F 'v3ready:' "$TMP" >/dev/null
 grep -F 'v3restoreprobe: function' "$TMP" >/dev/null
 OWNER="$(stat -c '%u' "$TARGET")"
