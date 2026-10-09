@@ -10,7 +10,7 @@
  */
 import { game, get, ui, _status } from "../noname.js";
 
-const SNAPSHOT_SCHEMA = "xingbei-v3-probe-2";
+const SNAPSHOT_SCHEMA = "xingbei-v3-probe-3";
 
 function reject(code) {
   return { ok: false, code, restorable: false, checkpointCommitted: false };
@@ -24,7 +24,7 @@ export async function inspectHostSnapshot() {
   if (!_status.gameStarted || !game.players?.length || !game.ws || game.ws.readyState !== WebSocket.OPEN) {
     return reject("MATCH_NOT_READY");
   }
-  if (!ui.cardPile || !ui.discardPile || typeof get.arenaState !== "function") {
+  if (!ui.cardPile || !ui.discardPile || typeof get.arenaState !== "function" || typeof get.skillState !== "function") {
     return reject("STATE_API_NOT_READY");
   }
 
@@ -33,6 +33,28 @@ export async function inspectHostSnapshot() {
     const arena = get.arenaState();
     const ids = Object.keys(arena.players || {});
     if (!ids.length) return reject("NO_PLAYER_STATES");
+
+    // Candidate skill payload from the engine's existing reconnect helpers.
+    // This includes live player skill lists, temporary skills and storage;
+    // the engine serializer is depth-limited, so this probe only verifies
+    // section presence and top-level key shapes, NOT nested completeness.
+    const skillState = get.skillState();
+    const skillSections = [
+      "skills", "hiddenSkills", "invisibleSkills", "additionalSkills",
+      "disabledSkills", "tempSkills", "storage",
+    ];
+    const skillStateKeys = Object.keys(skillState).filter(key => key !== "global" && key !== "skillinfo" && key !== "stat");
+    if (skillStateKeys.length !== ids.length || ids.some(id => !Object.prototype.hasOwnProperty.call(skillState, id))) {
+      return reject("SKILL_PLAYER_SET_MISMATCH");
+    }
+    let skillStorageKeyCount = 0;
+    let temporarySkillKeyCount = 0;
+    for (const id of ids) {
+      const info = skillState[id];
+      if (!info || typeof info !== "object") return reject("SKILL_PLAYER_STATE_MISSING");
+      skillStorageKeyCount += info.storage && typeof info.storage === "object" ? Object.keys(info.storage).length : 0;
+      temporarySkillKeyCount += info.tempSkills && typeof info.tempSkills === "object" ? Object.keys(info.tempSkills).length : 0;
+    }
 
     const drawCards = Array.from(ui.cardPile.children);
     const discardCards = Array.from(ui.discardPile.children);
@@ -49,6 +71,7 @@ export async function inspectHostSnapshot() {
       roomId: game.roomId,
       phaseNumber: game.phaseNumber,
       arena: get.stringifiedResult(arena),
+      skillState: get.stringifiedResult(skillState),
       drawPile: get.cardsInfoOL(drawCards),
       discardPile: get.cardsInfoOL(discardCards),
       eventDiagnostic: {
@@ -74,6 +97,33 @@ export async function inspectHostSnapshot() {
         }
       }
     }
+    const decodedSkillState = decoded.skillState;
+    if (!decodedSkillState || typeof decodedSkillState !== "object") return reject("SKILL_STATE_ROUNDTRIP_MISMATCH");
+    for (const id of ids) {
+      const original = skillState[id];
+      const serialized = decodedSkillState[id];
+      if (!serialized || typeof serialized !== "object") return reject("SKILL_STATE_ROUNDTRIP_MISMATCH");
+      for (const section of skillSections) {
+        const source = original[section];
+        const output = serialized[section];
+        if (source === undefined) {
+          if (output !== undefined) return reject("SKILL_SECTION_ROUNDTRIP_MISMATCH");
+          continue;
+        }
+        if (source === null || typeof source !== "object") {
+          if (source !== output) return reject("SKILL_SECTION_ROUNDTRIP_MISMATCH");
+          continue;
+        }
+        if (!output || typeof output !== "object" || Array.isArray(source) !== Array.isArray(output)) {
+          return reject("SKILL_SECTION_ROUNDTRIP_MISMATCH");
+        }
+        const keys = Object.keys(source);
+        if (keys.length !== Object.keys(output).length ||
+            keys.some(key => !Object.prototype.hasOwnProperty.call(output, key))) {
+          return reject("SKILL_SECTION_ROUNDTRIP_MISMATCH");
+        }
+      }
+    }
     if (decoded.drawPile?.length !== drawCards.length || decoded.discardPile?.length !== discardCards.length) {
       return reject("PILE_ROUNDTRIP_MISMATCH");
     }
@@ -94,6 +144,11 @@ export async function inspectHostSnapshot() {
       hashScope: "candidate_state_without_capture_time",
       playerCount: ids.length,
       cardCountInPlayerZones: ownedCards,
+      skillStatePlayerCount: ids.length,
+      skillStorageKeyCount,
+      temporarySkillKeyCount,
+      skillSectionsVerified: true,
+      nestedSkillStateCompletenessVerified: false,
       drawPileCount: drawCards.length,
       discardPileCount: discardCards.length,
       phaseNumber: typeof game.phaseNumber === "number" ? game.phaseNumber : null,
