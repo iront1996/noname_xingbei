@@ -16,6 +16,7 @@ import {
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
+import { materializeStagedSkillReferences } from "./v3-skill-references.mjs";
 
 const BACKEND = "wss://v3.myxingbei.com:443";
 const TOKEN_PREFIX = "xingbei-v3-owner-token:";
@@ -301,17 +302,22 @@ export function installV3OwnerConnection() {
     const staged = plan.ok
       ? stageDetachedHostRuntime(plan.blueprint)
       : { ok: false, code: plan.code };
-    pendingDetachedColdRuntime = staged.ok ? staged.runtime : null;
-    const message = staged.ok
+    // Resolve nested references exclusively inside the isolated object
+    // graph. Do not register new objects or execute serialized functions.
+    const skills = staged.ok
+      ? materializeStagedSkillReferences(staged)
+      : { ok: false, code: staged.code };
+    pendingDetachedColdRuntime = skills.ok ? staged.runtime : null;
+    const message = skills.ok
       ? "已在隔離環境建立 " + staged.summary.nativePlayersStaged +
         " 個原玩家物件、" + staged.summary.nativeCardsStaged +
-        " 張卡牌物件、" + staged.summary.dormantRemoteClientsStaged +
-        " 個停用中的原遠端連線物件。\\n" +
-        "技能與卡牌效果尚未啟用，遊戲事件尚未續行，仍不能繼續原局。"
-      : "權威引擎重建準備作業未通過。\\n" +
-        "原因：" + String(staged.code || "UNKNOWN") + "。為避免遊戲錯亂，此局保持暫停。";
+        " 張原生卡牌及 " + staged.summary.dormantRemoteClientsStaged +
+        " 個停用中的遠端連線。\\n" +
+        "技能暫存參照已映射，但尚未啟用效果或重建遊戲事件，因此不能續局。"
+      : "房主權威引擎重建準備作業未通過。\\n" +
+        "原因：" + String(skills.code || "UNKNOWN") + "。為避免狀態錯亂，此局保持暫停。";
     displayOverlay(
-      staged.ok ? "房主原生物件已隔離建立（尚不能續局）" : "房主接管檢查未通過",
+      skills.ok ? "隔離物件與技能參照已準備（尚不能續局）" : "房主接管檢查未通過",
       message + "\\n其他玩家仍保持等待，請勿將此畫面視為遊戲已恢復。",
       "結束無法恢復的舊房間",
       () => {
