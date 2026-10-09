@@ -19,6 +19,22 @@
 			if (guest.room === room && guest !== room.owner) guest.sendl(method, arg);
 		}
 	}
+	function bufferGuestMessage(room, wsid, raw) {
+		if (!room.bufferedGuestMessages) room.bufferedGuestMessages = [];
+		var message = typeof raw === "string" ? raw : raw.toString();
+		if (message.length > 65536 || room.bufferedBytes + message.length > 1048576 ||
+			room.bufferedGuestMessages.length >= 128) {
+			room.bufferOverflow = true;
+			return;
+		}
+		try {
+			var decoded = JSON.parse(message);
+			if (!Array.isArray(decoded) || typeof decoded[0] !== "string" ||
+				decoded[0] === "server") return;
+		} catch (e) { return; }
+		room.bufferedGuestMessages.push([wsid, message]);
+		room.bufferedBytes += message.length;
+	}
 	function expireRoom(room) {
 		if (room.owner || !room.paused) return;
 		var index = rooms.indexOf(room);
@@ -53,6 +69,9 @@
 			room.ownerNickname = this.nickname;
 			room.ownerAvatar = this.avatar;
 			room.ownerToken = crypto.randomBytes(32).toString("hex");
+			room.bufferedGuestMessages = [];
+			room.bufferedBytes = 0;
+			room.bufferOverflow = false;
 			room.paused = false;
 			this.sendl("createroom", key);
 			this.sendl("v3ownerToken", key, room.ownerToken);
@@ -62,6 +81,10 @@
 			if (!room || !room.paused || room.owner || this.room ||
 				this.onlineKey !== key || typeof token !== "string" || !/^[a-f0-9]{64}$/i.test(token)) {
 				this.sendl("v3resumerejected", "room_or_identity");
+				return;
+			}
+			if (room.bufferOverflow) {
+				this.sendl("v3resumerejected", "buffer_overflow");
 				return;
 			}
 			var supplied = Buffer.from(token, "hex");
@@ -100,6 +123,13 @@
 			room.resumeTimer = null;
 			room.resuming = false;
 			room.paused = false;
+			var buffered = room.bufferedGuestMessages || [];
+			room.bufferedGuestMessages = [];
+			room.bufferedBytes = 0;
+			// Deliver messages received while the host was unavailable, in order.
+			for (var i = 0; i < buffered.length; i++) {
+				this.sendl("onmessage", buffered[i][0], buffered[i][1]);
+			}
 			notifyGuests(room, "v3ownerresumed");
 			util.updaterooms();
 		},
@@ -441,6 +471,8 @@
 			if (!clients[this.wsid]) return;
 			if (message == "heartbeat") {
 				this.beat = false;
+			} else if (this.room && this.room.paused && this.room.owner !== this) {
+				bufferGuestMessage(this.room, this.wsid, message);
 			} else if (this.owner) {
 				this.owner.sendl("onmessage", this.wsid, message);
 			} else {
