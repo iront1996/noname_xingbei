@@ -5,7 +5,7 @@ set -Eeuo pipefail
 
 SERVICE="xingbei-hall-v3.service"
 TARGET="/opt/xingbei-hall-v3/server.js"
-SOURCE_URL="https://raw.githubusercontent.com/iront1996/noname_xingbei/1a5b0b88c20dd2c04cff877787d4c7b0511c9371/game/v3-playtest-server.cjs"
+SOURCE_URL="https://raw.githubusercontent.com/iront1996/noname_xingbei/e79d0bcb57f88c42be80e550a9d986fa008c3aec/game/v3-playtest-server.cjs"
 TMP="$(mktemp --suffix=.cjs)"
 BACKUP=""
 trap 'rm -f "$TMP"' EXIT
