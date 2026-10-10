@@ -9,12 +9,13 @@ const get=path=>readFileSync(resolve(base,path),"utf8");
 test("owner UI and capture worker reuse the same versioned recovery vault instance",()=>{
   const connect=get("mode/connect.js");
   const owner=get("game/v3-owner-connection.mjs");
-  const connected=connect.match(/import\("\/game\/v3-recovery-vault\.mjs\?v=([^"]+)"\)/);
+  const connected=connect.match(/import\("\/game\/v3-owner-connection\.mjs\?v=([^"]+)"\)/);
   const ownerImport=owner.match(/from "\.\/v3-recovery-vault\.mjs\?v=([^"]+)";/);
-  assert.ok(connected,"V3 connect must have a versioned import");
-  assert.ok(ownerImport,"V3 owner must import the same versioned vault");
-  assert.equal(connected[1],ownerImport[1],"a duplicate ESM module would break capture status sharing");
-  assert.match(connect,/v3-owner-connection\.mjs\?v=/);
+  assert.ok(connected,"V3 connect must import the owner exactly once");
+  assert.ok(ownerImport,"V3 owner must import the canonical vault");
+  assert.equal(connected[1],ownerImport[1],"V3 owner/vault builds must match");
+  assert.doesNotMatch(connect,/import\("\/game\/v3-recovery-vault\.mjs/);
+  assert.match(owner,/installV3RecoveryVault\(\);/);
 });
 
 test("reload probe remains read-only and cannot resume by checking a candidate",()=>{
