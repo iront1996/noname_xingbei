@@ -24,8 +24,8 @@ test("V3 owner installs passive effect intent observer before health dialog expo
   assert.match(vault,/getV3EffectIntentHealth\(/);
   assert.match(owner,/getV3EffectIntentHealth\(\)/);
   assert.match(owner,/這些只是 API 呼叫，未證明效果已結算或可安全重播/);
-  assert.match(owner,/v3-mechanical-delta-19/);
-  assert.match(entry,/v3-mechanical-delta-19/);
+  assert.match(owner,/v3-xingbei-rule-state-20/);
+  assert.match(entry,/v3-xingbei-rule-state-20/);
   assert.match(owner,/installV3RecoveryVault\(\);/);
 });
 test("passive instrument does not peek native args or invoke a returned GameEvent",()=>{
