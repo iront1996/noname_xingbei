@@ -404,7 +404,7 @@ async function readLocalInertTimeline(roomId,key) {
   try{
     const iv=decodeBase64(record.iv);
     if(iv.length!==12)return {ok:false,code:"TIMELINE_IV_INVALID"};
-    const aad=new TextEncoder().encode(V3_INERT_TIMELINE_SCHEMA+":"+roomId);
+    const aad=new TextEncoder().encode(V3_INERT_TIMELINE_SCHEMA+":"+roomId+":"+record.capturedAt);
     const bytes=await crypto.subtle.decrypt(
       {name:"AES-GCM",iv,additionalData:aad},key,decodeBase64(record.ciphertext)
     );
@@ -428,7 +428,7 @@ async function saveLocalInertTimeline(roomId,key,generation,ownerSocket,lifecycl
     if(!merged.ok)return;
     const capturedAt=Date.now();
     const iv=crypto.getRandomValues(new Uint8Array(12));
-    const aad=new TextEncoder().encode(V3_INERT_TIMELINE_SCHEMA+":"+roomId);
+    const aad=new TextEncoder().encode(V3_INERT_TIMELINE_SCHEMA+":"+roomId+":"+capturedAt);
     const ciphertext=await crypto.subtle.encrypt(
       {name:"AES-GCM",iv,additionalData:aad},key,
       new TextEncoder().encode(JSON.stringify(merged.timeline))
@@ -458,6 +458,11 @@ export async function inspectLocalInertTransitionTimeline(roomId) {
       restorable:false,readyToResume:false};
     if(!result.timeline)return {status:"TIMELINE_NOT_FOUND",
       restorable:false,readyToResume:false};
+    if(!ensureTimelineObserverEpoch() ||
+       result.timeline.observerEpoch!==timelineObserverEpoch){
+      return {status:"TIMELINE_PREVIOUS_RUNTIME_ONLY",
+        restorable:false,readyToResume:false};
+    }
     if(result.capturedAt>Date.now()+60000 ||
        Date.now()-result.capturedAt>MAX_AGE_MS){
       return {status:"TIMELINE_EXPIRED",
