@@ -13,7 +13,7 @@ const BUCKETS = Object.freeze([
   "sourceDamage", "damage", "custom", "useSkill"
 ]);
 const BUCKET_SET = new Set(BUCKETS);
-const META_KEYS = new Set(["isMe","isRound"]);
+const META_KEYS = new Set(["isMe","isRound","isSkipped"]);
 const MAX_PLAYERS = 8;
 const MAX_TURNS = 256;
 const MAX_REFERENCES = 4096;
@@ -32,6 +32,42 @@ function dataProperty(object,key) {
     throw Error("HISTORY_ACCESSOR_UNSUPPORTED");
   }
   return descriptor.value;
+}
+
+// Engine's useSkill history holds both legacy event references and
+// plain logInfo records ({skill,targets,event,sourceSkill,type}).
+// Skill/target values are validated in memory ONLY, never emitted.
+function extractSkillHistoryEvent(entry,itemtype) {
+  if(!ordinary(entry))throw Error("HISTORY_SKILL_LOG_SHAPE_INVALID");
+  const permitted=new Set(["skill","targets","event","sourceSkill","type"]);
+  for(const key of Object.keys(entry)){
+    if(!permitted.has(key))throw Error("HISTORY_SKILL_LOG_FIELD_UNSUPPORTED");
+  }
+  const skill=dataProperty(entry,"skill");
+  const event=dataProperty(entry,"event");
+  if(typeof skill!=="string"||!skill||skill.length>128||
+     !event || itemtype(event)!=="event") {
+    throw Error("HISTORY_SKILL_LOG_EVENT_INVALID");
+  }
+  for(const name of ["sourceSkill","type"]){
+    if(Object.prototype.hasOwnProperty.call(entry,name)){
+      const value=dataProperty(entry,name);
+      if(value!==undefined &&
+         (typeof value!=="string" || value.length>128)) {
+        throw Error("HISTORY_SKILL_LOG_FIELD_UNSUPPORTED");
+      }
+    }
+  }
+  if(Object.prototype.hasOwnProperty.call(entry,"targets")){
+    const targets=dataProperty(entry,"targets");
+    if(targets!==undefined && targets!==null){
+      const members=Array.isArray(targets)?targets:[targets];
+      if(members.length>8 || members.some(value=>itemtype(value)!=="player")){
+        throw Error("HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID");
+      }
+    }
+  }
+  return event;
 }
 /**
  * Input is in player seat order. Never include Player or socket IDs.
@@ -64,6 +100,9 @@ export function indexV3InertHistoryReferences(
           if(!BUCKET_SET.has(key) && !META_KEYS.has(key)) {
             throw Error("HISTORY_UNKNOWN_FIELD");
           }
+          if(META_KEYS.has(key) && dataProperty(turn,key)!==true){
+            throw Error("HISTORY_METADATA_INVALID");
+          }
         }
         for(const bucket of BUCKETS){
           if(!Object.prototype.hasOwnProperty.call(turn,bucket)) continue;
@@ -75,14 +114,18 @@ export function indexV3InertHistoryReferences(
             }
             const entry=dataProperty(items,String(entryIndex));
             if(bucket==="skipped" && typeof entry==="string") continue;
-            // Native arrays may contain non-events; those require a separate
-            // typed-data codec. No partial or lossy ledger is accepted.
-            if(!entry || (typeof entry!=="object" && typeof entry!=="function") ||
-               itemtype(entry)!=="event") {
+            // Real engine useSkill entries may be logInfo records rather
+            // than GameEvents; validate and follow ONLY their event field.
+            const kind=entry && (typeof entry==="object" || typeof entry==="function")
+              ? itemtype(entry) : null;
+            const logInfo=bucket==="useSkill" && kind!=="event";
+            const referencedEvent=logInfo
+              ? extractSkillHistoryEvent(entry,itemtype) : entry;
+            if(!referencedEvent || itemtype(referencedEvent)!=="event") {
               throw Error("HISTORY_ENTRY_NOT_EVENT");
             }
-            if(live.has(entry))throw Error("HISTORY_EVENT_IN_ACTIVE_STACK");
-            const finished=Object.getOwnPropertyDescriptor(entry,"finished");
+            if(live.has(referencedEvent))throw Error("HISTORY_EVENT_IN_ACTIVE_STACK");
+            const finished=Object.getOwnPropertyDescriptor(referencedEvent,"finished");
             if(!finished || !Object.prototype.hasOwnProperty.call(finished,"value") ||
                finished.value!==true)throw Error("HISTORY_EVENT_NOT_SETTLED_PROVEN");
             let journalOrdinal=null;
@@ -90,7 +133,7 @@ export function indexV3InertHistoryReferences(
               // Identity must be linked to a Promise actually observed to
               // fulfill, not just the engine's finished property. This does
               // NOT establish completeness of all event continuations.
-              const evidence=settlementLookup(entry);
+              const evidence=settlementLookup(referencedEvent);
               if(evidence?.observed!==true){
                 throw Error("HISTORY_EVENT_NOT_JOURNALED");
               }
@@ -105,15 +148,16 @@ export function indexV3InertHistoryReferences(
             }
             occurrences++;
             if(occurrences>MAX_REFERENCES)throw Error("HISTORY_INDEX_LIMIT_EXCEEDED");
-            let ordinal=ids.get(entry);
+            let ordinal=ids.get(referencedEvent);
             if(ordinal===undefined){
               ordinal=distinct++;
-              ids.set(entry,ordinal);
+              ids.set(referencedEvent,ordinal);
             }else{
               duplicateReferences++;
             }
             slots.push(Object.freeze({
               playerIndex,turnIndex,bucket,entryIndex,eventOrdinal:ordinal,
+              ...(logInfo?{referenceKind:"skill_log"}:{}),
               ...(journalOrdinal!==null?{lifecycleOrdinal:journalOrdinal}:{})
             }));
           }
@@ -140,7 +184,11 @@ export function indexV3InertHistoryReferences(
   }catch(error){
     const validCodes=new Set([
       "HISTORY_INDEX_TURNS_UNSUPPORTED","HISTORY_INDEX_SHAPE_UNSUPPORTED",
-      "HISTORY_UNKNOWN_FIELD","HISTORY_ACCESSOR_UNSUPPORTED",
+      "HISTORY_UNKNOWN_FIELD","HISTORY_METADATA_INVALID",
+      "HISTORY_ACCESSOR_UNSUPPORTED",
+      "HISTORY_SKILL_LOG_SHAPE_INVALID","HISTORY_SKILL_LOG_FIELD_UNSUPPORTED",
+      "HISTORY_SKILL_LOG_EVENT_INVALID",
+      "HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID",
       "HISTORY_BUCKET_NOT_ARRAY","HISTORY_ARRAY_HOLE",
       "HISTORY_ENTRY_NOT_EVENT","HISTORY_EVENT_IN_ACTIVE_STACK",
       "HISTORY_EVENT_NOT_SETTLED_PROVEN","HISTORY_INDEX_LIMIT_EXCEEDED",
