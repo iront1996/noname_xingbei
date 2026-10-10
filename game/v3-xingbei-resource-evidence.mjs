@@ -54,13 +54,17 @@ function validTreatments(list){
 }
 export function buildV3XingbeiResourceEvidence(sample,capturedAt) {
  try{
-   if(!validNumber(capturedAt,1,9000000000000000) ||
-      !sample || !Array.isArray(sample.seats) ||
-      sample.seats.length<2 || sample.seats.length>8)return refuse("RESOURCE_SAMPLE_INVALID");
+   if(!validNumber(capturedAt,1,9000000000000000) || !sample)
+     return refuse("RESOURCE_SAMPLE_INVALID");
+   const seats=own(sample,"seats");
+   if(!Array.isArray(seats)||seats.length<2||seats.length>8)
+     return refuse("RESOURCE_SAMPLE_INVALID");
    const scalars={};
    for(const k of SCALAR_KEYS)scalars[k]=own(sample,k);
    if(!validScalars(scalars))return refuse("RESOURCE_SCALARS_INVALID");
-   const treatments=sample.seats.map(s=>own(s,"treatment"));
+   const treatments=[];
+   for(let i=0;i<seats.length;i++)
+     treatments.push(own(own(seats,String(i)),"treatment"));
    if(!validTreatments(treatments))return refuse("RESOURCE_TREATMENTS_INVALID");
    // Only the explicitly whitelisted numeric snapshot is serialized.
    const capsule=Object.freeze({
