@@ -70,3 +70,30 @@ test("frozen output and bounded input block oversized event indexes",()=>{
   assert.equal(Object.isFrozen(good.ledger.slots),true);
   assert.equal(Object.isFrozen(good.ledger.slots[0]),true);
 });
+
+test("lifecycle correlation requires actual observed fulfilled Promise per event identity",()=>{
+  const x=event(true), y=event(true);
+  const history=[[row({useCard:[x,y],respond:[x]})]];
+  const evidence=new Map([[x,{observed:true,ordinal:9,outcome:"fulfilled"}],
+    [y,{observed:true,ordinal:12,outcome:"fulfilled"}]]);
+  const result=index(history,kind,[],ref=>evidence.get(ref));
+  assert.equal(result.ok,true);
+  assert.equal(result.readyToResume,false);
+  assert.equal(result.ledger.lifecycleEvidence,"OBSERVED_FULFILLMENT_ONLY");
+  assert.deepEqual(result.ledger.slots.map(slot=>slot.lifecycleOrdinal),[9,12,9]);
+  assert.equal(JSON.stringify(result).includes("PRIVATE"),false);
+});
+test("unobserved, pending or rejected Promise denies correlation even if finished=true",()=>{
+  const e=event(true);
+  const history=[[row({useCard:[e]})]];
+  assert.equal(index(history,kind,[],()=>({observed:false})).code,
+    "HISTORY_EVENT_NOT_JOURNALED");
+  for(const outcome of ["pending","rejected","threw"]){
+    assert.equal(index(history,kind,[],()=>({observed:true,ordinal:1,outcome})).code,
+      "HISTORY_EVENT_PROMISE_NOT_FULFILLED");
+  }
+  assert.equal(index(history,kind,[],()=>({observed:true,ordinal:-1,outcome:"fulfilled"})).code,
+    "HISTORY_JOURNAL_ORDINAL_INVALID");
+  assert.equal(index(history,kind,[],()=>{throw Error("private data");}).code,
+    "HISTORY_INDEX_UNAVAILABLE");
+});
