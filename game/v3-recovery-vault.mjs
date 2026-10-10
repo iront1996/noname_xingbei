@@ -483,8 +483,16 @@ export function installV3RecoveryVault() {
       const stack = _status.eventManager?.eventStack;
       const current = stack?.at(-1);
       if (!Array.isArray(stack) || current?.name !== "phaseLoop" ||
-          !current.player?.playerid ||
-          stack.some(event => event !== current && event?.next?.length > 0)) return;
+          !current.player?.playerid) {
+        recordCaptureOutcome("CAPTURE_BLOCKED", "BOUNDARY_EVENT_OUTLINE_UNAVAILABLE",
+          "turn_boundary");
+        return;
+      }
+      if (stack.some(event => event !== current && event?.next?.length > 0)) {
+        recordCaptureOutcome("CAPTURE_BLOCKED", "BOUNDARY_PENDING_CHILD_EVENTS",
+          "turn_boundary");
+        return;
+      }
       void saveCandidate("turn_boundary");
     });
   }
