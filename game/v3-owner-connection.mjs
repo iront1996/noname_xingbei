@@ -11,6 +11,7 @@ import { game, lib, _status } from "../noname.js";
 import {
   inspectLocalRecoveryCandidate,
   getLocalVaultStatus,
+  getV3EventLifecycleHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
 } from "./v3-recovery-vault.mjs?v=v3-event-observation-7";
@@ -281,10 +282,17 @@ function installCaptureHealthButton() {
     const boundaryDiagnostic = getLocalVaultStatus(roomId, "turn_boundary");
     const vault = await inspectLocalRecoveryCandidate(roomId);
     if (!isLiveOwner() || game.roomId !== roomId) return;
+    const lifecycle = getV3EventLifecycleHealth();
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-event-observation-7",
+      "前端版本：v3-event-lifecycle-journal-9",
+      "事件 Promise 觀測：" + lifecycle.status +
+        " / 開始 " + lifecycle.started +
+        " / 已完成 " + lifecycle.fulfilled +
+        " / 失敗 " + lifecycle.rejected +
+        " / 待觀測結束 " + lifecycle.pending,
+      "觀測涵蓋完整性：無法認證（不等於續行憑證）",
       "最近擷取：" + String(diagnostic.status || "NOT_YET_CAPTURED"),
       "原因碼：" + String(diagnostic.code || "NONE"),
       "定期最近：" + String(periodicDiagnostic.status || "NOT_YET_CAPTURED") +
