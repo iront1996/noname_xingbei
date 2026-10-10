@@ -101,6 +101,8 @@ export function getV3EventLifecycleHealth() {
     rejected:snapshot.rejected ?? 0,
     pending:snapshot.pending ?? 0,
     overflowed:snapshot.overflowed ?? false,
+    truncatedTransitions:snapshot.truncatedTransitions ?? 0,
+    droppedStarts:snapshot.droppedStarts ?? 0,
     completeCoverage:false,
     restorable:false,
     readyToResume:false
