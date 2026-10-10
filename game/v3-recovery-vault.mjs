@@ -23,6 +23,9 @@ import {
 import {
   createV3EffectIntentObserver,installV3EffectIntentObserver
 } from "./v3-effect-intent-observer.mjs";
+import {
+  readV3MechanicalStateSample,createV3MechanicalDeltaObserver
+} from "./v3-mechanical-state-delta.mjs";
 import { indexV3InertHistoryReferences } from "./v3-inert-history-reference-index.mjs";
 import { inspectV3EventCutQueues } from "./v3-event-cut-audit.mjs";
 import {
@@ -79,6 +82,22 @@ const effectIntentJournal=createV3EffectIntentObserver({
     ? game.roomId : null
 });
 let effectIntentInstallCode="EFFECT_INTENT_NOT_INSTALLED";
+const mechanicalDeltaObserver=createV3MechanicalDeltaObserver({
+  getScope:()=>activeOwner()?game.roomId:null
+});
+function sampleV3MechanicalDelta() {
+  if(!activeOwner() || effectIntentInstallCode!=="EFFECT_INTENT_INSTALLED") return;
+  const input=readV3MechanicalStateSample(
+    [...(game.players||[]),...(game.dead||[])],
+    ui.cardPile,ui.discardPile
+  );
+  // Read primitive state and observer counters only. No event replays,
+  // getter invocations, card identities or player IDs are persisted.
+  mechanicalDeltaObserver.observe(input,effectIntentJournal.snapshot());
+}
+export function getV3MechanicalStateHealth() {
+  return mechanicalDeltaObserver.snapshot();
+}
 let lastBoundaryCut = null;
 
 function validRoomId(id) {
@@ -842,6 +861,7 @@ export function installV3RecoveryVault() {
   // connect-mode runtime. It returns each original Promise unchanged,
   // and never starts, finishes, or replays an Event itself.
   setInterval(() => {
+    sampleV3MechanicalDelta();
     void saveCandidate();
     void saveInertEventEvidence();
   }, INTERVAL_MS);
