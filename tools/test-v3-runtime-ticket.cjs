@@ -183,3 +183,22 @@ test("active room, wrong owner identity and wrong token cannot be abandoned", ()
   claimant.message("v3roomstatus","ROOM",token);
   assert.equal(claimant.last("v3roomstatus")[2],"owner_disconnected");
 });
+
+test("old pre-game room can be explicitly ended without recruiting extra players",()=>{
+  const {broker}=mockRoomBroker();
+  const first=broker.connect();
+  first.message("key",["ROOM","test-version"]);
+  first.message("create","ROOM","host","avatar");
+  const token=first.last("v3ownerToken")[2];
+  first.close();
+  const refreshed=broker.connect();
+  refreshed.message("key",["ROOM","test-version"]);
+  refreshed.message("create","ROOM","host","avatar");
+  assert.ok(refreshed.last("v3createblocked"));
+  refreshed.message("v3roomstatus","ROOM",token);
+  assert.equal(refreshed.last("v3roomstatus")[2],"owner_disconnected");
+  refreshed.message("v3abandon","ROOM",token);
+  assert.deepEqual(refreshed.last("v3roomabandonedHost"),["v3roomabandonedHost","ROOM"]);
+  refreshed.message("create","ROOM","new room","avatar");
+  assert.deepEqual(refreshed.last("createroom"),["createroom","ROOM"]);
+});
