@@ -37,8 +37,8 @@ test("display version and ESM recovery module instance are aligned",()=>{
   const entry=read("mode/connect.js");
   const owner=read("game/v3-owner-connection.mjs");
   const importPath=owner.match(/from "\.\/v3-recovery-vault\.mjs\?v=([^"]+)";/);
-  assert.equal(importPath?.[1],"v3-owner-bootstrap-15");
-  assert.ok(owner.includes('前端版本：v3-owner-bootstrap-15'));
+  assert.equal(importPath?.[1],"v3-inert-timeline-16");
+  assert.ok(owner.includes('前端版本：v3-inert-timeline-16'));
   assert.ok(owner.includes("installV3RecoveryVault();"));
   assert.ok(entry.includes('/game/v3-owner-connection.mjs?v='+importPath[1]+'"'));
   assert.doesNotMatch(owner,/game\.send\("server",\s*"v3ready"/);
