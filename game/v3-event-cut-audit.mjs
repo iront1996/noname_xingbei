@@ -12,6 +12,7 @@ const MAX_STACK = 128;
 const MAX_QUEUE = 20000;
 const EMPTY = Object.freeze({
   ancestorNext:0, ancestorAfter:0,
+  activeLineageNext:0, additionalAncestorNext:0,
   currentNext:0, currentAfter:0, finishedFrames:0
 });
 const base = (code, counts = EMPTY) => Object.freeze({
@@ -33,7 +34,7 @@ export function inspectV3EventCutQueues(stack) {
     return base("CUT_STACK_UNAVAILABLE");
   }
   let ancestorNext=0, ancestorAfter=0, currentNext=0, currentAfter=0;
-  let finishedFrames=0, currentPhaseLoop=false;
+  let activeLineageNext=0, finishedFrames=0, currentPhaseLoop=false;
   try {
     for(let i=0;i<stack.length;i++){
       const event=stack[i];
@@ -58,17 +59,32 @@ export function inspectV3EventCutQueues(stack) {
         if(ancestorNext>MAX_QUEUE || ancestorAfter>MAX_QUEUE) {
           throw Error("CUT_QUEUE_LIMIT_EXCEEDED");
         }
+        // GameEvent.waitNext() awaits next[0].start() and shifts next[0]
+        // ONLY after the child completes. The currently executing next
+        // stack frame can therefore remain queued in its own parent.
+        // This reference is *in-flight*, not an additional scheduled child.
+        // Read by own descriptor to avoid triggering a custom array getter.
+        if(next.length>0 && dataField(next,"0")===stack[i+1]){
+          activeLineageNext++;
+        }
       }
     }
+    const additionalAncestorNext=ancestorNext-activeLineageNext;
     const counts={
-      ancestorNext,ancestorAfter,currentNext,currentAfter,finishedFrames
+      ancestorNext,ancestorAfter,activeLineageNext,additionalAncestorNext,
+      currentNext,currentAfter,finishedFrames
     };
     if(!currentPhaseLoop) return base("CUT_NOT_PHASE_LOOP",counts);
-    if(ancestorNext || ancestorAfter)
+    if(additionalAncestorNext || ancestorAfter)
       return base("CUT_ANCESTOR_QUEUES_PENDING",counts);
     if(currentNext || currentAfter)
       return base("CUT_CURRENT_QUEUES_PENDING",counts);
-    // A visible-empty queue is not a sufficient safe cut for host refresh.
+    // A queued ancestor.next[0] equal to the *currently executing* child
+    // is not additional queued work. It is also NOT a safe checkpoint:
+    // the parent Promise is waiting for this exact child to finish.
+    if(activeLineageNext)
+      return base("CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED",counts);
+    // A visible-empty queue is not sufficient for safe host refresh either.
     return base("CUT_VISIBLE_QUEUES_EMPTY_NOT_CERTIFIED",counts);
   }catch(err) {
     const allow=new Set([
