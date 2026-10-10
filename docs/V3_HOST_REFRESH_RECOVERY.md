@@ -252,3 +252,31 @@ The current code is foundational infrastructure, not the completed feature.
 - VPS 8081、V1、V2、production 8080 沒有變更。
 
 下一輪可由使用者單獨驗證前端舊房間清理，不必找其他玩家：用 V3 Playtest 新開空房、同分頁重新整理、確認看到 `stale-room-unlock-6` 及可結束舊房間，確認結束後回大廳可開新房。若沒有 Token，應只出現重查及等待期限；**不要透過 Console 編造 Token 或刪除伺服器資料**。
+
+
+## 2026-10-10：V3 History diagnostics 現場回報後的事件觀測邊界
+
+使用者回報已完成「重開房間」實測（未提供操作細節），並在 V3 前端 `v3-history-diagnostics-5` 的遊戲中取得：
+
+```text
+最近擷取：CAPTURE_BLOCKED
+原因碼：BOUNDARY_PENDING_CHILD_EVENTS
+定期最近：CAPTURE_FAILED / HIST_ACTION_LIVE_EVENT_NOT_RESTORABLE
+邊界最近：CAPTURE_BLOCKED / BOUNDARY_PENDING_CHILD_EVENTS
+定期候選：NOT_FOUND
+回合邊界候選：NOT_FOUND
+```
+
+已在原生引擎核對：
+- `noname/library/element/content.js` 中 `phaseLoop` step 1 先執行 `lib.onphase` 再呼叫 `player.phase()`。此時有回合切換時機，**不等於 event stack、祖先排隊的 next/after、Promise 後續或局部回呼均已完成**。
+- `noname/library/element/gameEvent.js` `GameEvent.start()` 是非同步執行，進入 `eventStack` 並在 `loop()` 完成後退出；`event.finished` 是事件旗標，**不等同於 Promise 已結算或可重新執行**。
+- `Player.actionHistory` 會容納 `GameEventPromise` 參考；嚴格的 `auditV3Serialization` 會拒絕任何 `_noname_event:` 參考作為可續行事件。不能刪除、放寬或直接將這些引用轉回會執行的 GameEvent。
+
+本輪提交新 `game/v3-event-observation-preflight.mjs` 及 `tools/test-v3-event-observation-preflight.mjs`：
+- 只看結構、只回傳固定代碼，不向伺服器／UI 輸出事件本體、手牌、玩家 ID、函式或 Promise；歷史掃描有節點／深度限制，且在事件引用處停止。
+- 區分 `HIST_ACTION_EVENT_ACTIVE_STACK`（歷史 Event 仍在活躍執行堆疊）、`HIST_ACTION_EVENT_NOT_FINISHED`（未標記完成）、`HIST_ACTION_EVENT_FINISHED_ONLY`（有 finished 旗標但絕非續行憑證）。其他無法驗證資料仍拒絕擷取。
+- 回合觀測時同時檢查祖先 `next` **與 `after`** 是否排隊，若有則回報 `BOUNDARY_ANCESTOR_WORK_PENDING`；Event 堆疊缺失、形狀不符等維持 fail closed。
+- 以上每個欄位仍經原嚴格完整性稽核，**沒有啟用真正冷續局**；`safeCheckpointCertified:false`、`eventContinuationCaptured:false`、`restorable:false`、`v3ready` 不會因為這些觀測改變。
+- V3 Playtest 共用 vault 模組的兩處 import 與 owner UI 載入版本更新成 `v3-event-observation-7`。僅 GitHub V3 預覽分支；**VPS、V1、V2 均未更新**。
+
+下一個現場證據：新的 V3 對局開始後待至少 15 秒並跨過一次回合轉移，房主按本機快照健康檢查，確認畫面「前端版本：v3-event-observation-7」，回傳固定代碼。無須重新整理房主或額外招募玩家。此測試用於選擇後續歷史引用／事件執行序列化工程，不是恢復原局驗收。
