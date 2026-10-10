@@ -19,7 +19,7 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
     throw new TypeError("INVALID_JOURNAL_OPTIONS");
   }
   let scope=null, tracked=new WeakMap(), outcomes=new WeakMap(), nextOrdinal=0, seq=0;
-  let pending=new Set(), events=[], overflow=false;
+  let pending=new Set(), events=[], overflow=false, truncatedTransitions=0, droppedStarts=0;
   let totals={started:0,fulfilled:0,rejected:0,threw:0};
 
   function refresh() {
@@ -35,6 +35,8 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
       nextOrdinal=0;
       seq=0;
       overflow=false;
+      truncatedTransitions=0;
+      droppedStarts=0;
       totals={started:0,fulfilled:0,rejected:0,threw:0};
     }
     return scope;
@@ -45,9 +47,10 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
     seq++;
     totals[transition]++;
     if(events.length>=capacity){
-      // Dropping records marks the journal unusable for any completeness
-      // claim, including a future implementation.
-      overflow=true;
+      // A bounded diagnostic ring rotates independently of tracking real
+      // Promise settlement (which is held in WeakMaps). This is truncation,
+      // NOT evidence that the underlying GameEvent observer stopped working.
+      truncatedTransitions++;
       events.shift();
     }
     events.push(Object.freeze({seq,eventOrdinal:ordinal,transition}));
@@ -59,6 +62,7 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
       // A pathological unresolved event flood must not grow a permanent
       // strong Set without bounds or pretend the observation is complete.
       overflow=true;
+      droppedStarts++;
       return false;
     }
     const ordinal=nextOrdinal++;
@@ -98,10 +102,12 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
       eventContinuationCaptured:false,completeCoverage:false,readyToResume:false
     });
     return Object.freeze({
-      schema:SCHEMA,status:overflow?"OBSERVATION_OVERFLOW":"OBSERVATION_PARTIAL",
+      schema:SCHEMA,status:overflow?"OBSERVATION_CAPACITY_EXCEEDED":
+        truncatedTransitions>0?"OBSERVATION_RING_TRUNCATED":"OBSERVATION_PARTIAL",
       seq,started:totals.started,fulfilled:totals.fulfilled,
       rejected:totals.rejected,threw:totals.threw,
       pending:pending.size,overflowed:overflow,
+      truncatedTransitions,droppedStarts,
       // Logs begin when the V3 observer is installed; earlier Events and
       // external Promise/choice activity may be missing even with zero pending.
       completeCoverage:false,eventContinuationCaptured:false,
