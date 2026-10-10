@@ -1,0 +1,30 @@
+name: V3 Playtest Offline Safety Tests
+
+on:
+  push:
+    branches:
+      - feature/host-reconnect-v3-playtest
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  v3-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Syntax-check V3 transport and recovery code
+        run: |
+          set -euo pipefail
+          for file in game/v3-*.mjs game/v3-playtest-server.cjs tools/test-v3-*.mjs tools/test-v3-*.cjs; do
+            node --check "$file"
+          done
+      - name: Run offline V3 regression tests
+        run: |
+          set -euo pipefail
+          node --test tools/test-v3-*.mjs tools/test-v3-*.cjs
