@@ -312,18 +312,26 @@ export function installV3OwnerConnection() {
     const vault = await inspectLocalRecoveryCandidate(key);
     const captureDiagnostic = getLocalVaultStatus(key);
     if (!pausedRoomOnReload || key !== game.onlineKey) return;
-    if (vault.status === "ENCRYPTED_CANDIDATE_VERIFIED" &&
-        vault.turnBoundaryStatus === "ENCRYPTED_CANDIDATE_VERIFIED" &&
+    // Only an independently verified boundary candidate is needed for this
+    // read-only, owner-token-authenticated roster probe. Never call v3resume
+    // or v3ready from a refreshed runtime.
+    if (vault.turnBoundaryStatus === "ENCRYPTED_CANDIDATE_VERIFIED" &&
         getToken(key) && game.ws?.readyState === WebSocket.OPEN) {
       game.send("server", "v3restoreprobe", key, getToken(key));
     }
-    const vaultNotice = vault.status === "ENCRYPTED_CANDIDATE_VERIFIED"
-      ? "本機找到約 " + vault.ageSeconds + " 秒前的加密候選資料（" +
-        vault.playerCount + " 位玩家），但尚未包含可續行的事件資訊。\\n"
-      : vault.status === "NOT_FOUND"
-        ? "本機尚無加密候選資料。\\n"
-        : "本機資料狀態：" + vault.status + "（不可直接續局）。\\n";
-    const diagnosticNotice = vault.status === "NOT_FOUND" ?
+    const vaultNotice = vault.turnBoundaryStatus === "ENCRYPTED_CANDIDATE_VERIFIED"
+      ? "本機找到約 " + vault.ageSeconds + " 秒前的加密回合邊界候選資料（" +
+        vault.playerCount + " 位玩家），但不包含可續行的事件資訊。\\n"
+      : vault.status === "ENCRYPTED_CANDIDATE_VERIFIED"
+        ? "本機找到定期加密候選資料，但尚無可驗證的回合邊界資料。\\n"
+        : vault.status === "NOT_FOUND"
+          ? "本機未找到定期加密候選資料。回合邊界狀態：" +
+            String(vault.turnBoundaryStatus || "NOT_FOUND") + "。\\n"
+          : "本機資料狀態：" + vault.status +
+            "，回合邊界：" + String(vault.turnBoundaryStatus || "NOT_FOUND") +
+            "（不可直接續局）。\\n";
+    const diagnosticNotice = vault.status === "NOT_FOUND" &&
+      vault.turnBoundaryStatus !== "ENCRYPTED_CANDIDATE_VERIFIED" ?
       "最近擷取狀態：" + String(captureDiagnostic.status || "NOT_YET_CAPTURED") +
       "（" + String(captureDiagnostic.code || "未記錄原因") + "）\n" : "";
     displayOverlay(
