@@ -309,3 +309,31 @@ The current code is foundational infrastructure, not the completed feature.
 - 所有快照仍維持 `safeCheckpointCertified:false`、`eventContinuationCaptured:false`、`restorable:false`，不會直接調用 `v3ready`。
 
 **正確後續工程：**修正 `actionHistory` 的事件引用與續行模型，並設計可證明祖先佇列無待處理工作的一致檢查點，不因 `finished` 旗標存在就認定 Promise 已結算。僅修改 V3 Playtest GitHub 分支，VPS、V1、V2 均不動。
+
+
+## 2026-10-10：事件 Promise 生命周期記錄與 History 引用對照（V3 only）
+
+本輪根據使用者更正後的圖片進行研發，不再把版本不同步當成錯誤：
+```text
+房主 UI 版本：v3-event-lifecycle-8
+快照程式版本：v3-event-lifecycle-8
+定期最近：CAPTURE_FAILED / HIST_ACTION_EVENT_FINISHED_ONLY
+邊界最近：CAPTURE_BLOCKED / BOUNDARY_ANCESTOR_WORK_PENDING
+加密定期候選：NOT_FOUND
+加密邊界候選：NOT_FOUND
+```
+
+原生引擎 `GameEvent.finish()` 只修改 `finished` 旗標；`start()` 會啟動非同步 `loop()`、等待 `waitNext()` 內的子事件完成，再讓原本的 Promise settle。`finished` 為 `true` **並不等於** 已觀測到完整 Promise settlement。即使觀測到 Promise fulfilled，舊的 closures、尚未註冊的 callbacks、UI 選擇結果與遊戲非同步副作用仍未被捕捉。
+
+本輪已加入：
+
+- `game/v3-event-lifecycle-journal.mjs`：V3 專用、可安裝／移除的被動觀測器，包住原生 `GameEvent.prototype.start`、立即回傳**完全相同的 Promise 物件**；只記錄事件匿名序號與 `started / fulfilled / rejected / threw`，不干預執行順序或判定。事件身分用 `WeakMap`；每個房間獨立觀測 epoch，避免前一房間 Promise 在新局亂入。有限緩衝、溢位 fail closed。
+- `game/v3-inert-history-reference-index.mjs` 的歷史位置／同一引用索引新增可選的 `settlementLookup`：對照同一 Event 的真實觀測紀錄。如果沒有追蹤到 `start`、Promise 尚未 fulfilled、rejected 或 ordinal 不一致，一律拒絕「歷史索引關聯成立」。即使完全對上，該索引仍 `restorable:false`、`readyToResume:false`，不能反向啟動或還原 Event。
+- `game/v3-recovery-vault.mjs` 於 V3 Connect 初始化時安裝上述被動 observer，僅在原房主正式遊戲期間收集 metadata。快照 `eventObservation.lifecycle` 包含匿名狀態統計，不含任何玩家 ID、手牌、技能、事件名稱及 Token。增加 `getV3HistoryReferenceLinkHealth` 與 `getV3EventLifecycleHealth` 兩個唯讀 API。
+- `game/v3-owner-connection.mjs` 的房主健康檢查多顯示 `事件 Promise 觀測`／`歷史事件引用` 結果與整數計數，並再次說明沒有完整續行認證。**這不是恢復原局功能驗收**。
+- 兩個入站動態 import 和 owner -> vault import 共用 `v3-event-lifecycle-journal-9` 版本 URL，避免 ESM 重複實例；使用單行版號而非先前因誤傳圖片建立的雙版號比較 UI。
+- `tools/test-v3-event-lifecycle-journal.mjs` 覆蓋 Promise 身分不變、resolve/reject/throw、換房 epoch、重複 start、不完整涵蓋、匿名性、溢位、移除觀測器後還原原函式；`tools/test-v3-inert-history-reference-index.mjs` 覆蓋已完成 Promise 與缺漏／未完成／拒絕／異常 ordinal 的對應；並加入 V3 模組整合防退化測試。
+
+**未實作事項：**本版本的紀錄僅保存在活躍分頁記憶體中，**尚未是可重播或可持久保存的事件日誌**。擷取雖可附上匿名統計，但歷史序列化仍因 Event 引用被拒；回合邊界依然有祖先工作待處理。原房主刷新不能接續原局；保持 `safeCheckpointCertified:false`、`eventContinuationCaptured:false`、`restorable:false`、`readyToResume:false`，嚴禁因觀測到 promise fulfilled 就調用 `v3ready`。
+
+**下一步實際瀏覽器驗收（不需更新 VPS）**：等 Cloudflare Pages V3 預覽版載入新版後，由原房主與至少一位玩家使用新房間開始遊戲，至少進行兩個回合，點開「V3 測試：檢查本機快照」，截圖含 `前端版本：v3-event-lifecycle-journal-9`、`事件 Promise 觀測`、`歷史事件引用` 的視窗，並說明是否仍可正常出牌、換回合。不要刷新房主，也不要結束仍有玩家進行中的對局。
