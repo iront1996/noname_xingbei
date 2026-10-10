@@ -17,10 +17,11 @@ import {
   getV3EventLifecycleHealth,
   getV3HistoryReferenceLinkHealth,
   getV3EventCutHealth,
+  getV3EffectIntentHealth,
   getV3LastBoundaryCutHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
-} from "./v3-recovery-vault.mjs?v=v3-inert-timeline-16";
+} from "./v3-recovery-vault.mjs?v=v3-effect-intent-17";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
@@ -295,11 +296,23 @@ function installCaptureHealthButton() {
     const lifecycle = getV3EventLifecycleHealth();
     const historyLink = getV3HistoryReferenceLinkHealth();
     const cut = getV3EventCutHealth();
+    const effects = getV3EffectIntentHealth();
     const boundaryCut = getV3LastBoundaryCutHealth();
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-inert-timeline-16",
+      "前端版本：v3-effect-intent-17",
+      "原生副作用排程觀測：" + effects.status +
+        " / API 呼叫 " + effects.totalCalls +
+        " / 例外 " + effects.failedCalls,
+      "排程分類：傷害 " + (effects.counts.damage || 0) +
+        " / 回復 " + (effects.counts.recover || 0) +
+        " / 扣血 " + (effects.counts.loseHp || 0) +
+        " / 體力調整 " + (effects.counts.changeHp || 0) +
+        " / 獲牌 " + (effects.counts.gain || 0) +
+        " / 失牌 " + (effects.counts.lose || 0) +
+        " / 摸牌 " + (effects.counts.draw || 0),
+      "這些只是 API 呼叫，未證明效果已結算或可安全重播。",
       "事件 Promise 觀測：" + lifecycle.status +
         " / 開始 " + lifecycle.started +
         " / 已完成 " + lifecycle.fulfilled +
