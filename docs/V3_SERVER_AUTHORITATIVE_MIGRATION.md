@@ -111,3 +111,16 @@ A 的第一輪完全自動測試需證實：
 - 立即停止「每版一張健康檢查截圖」的驗收流程。新里程碑先由 CI mock sessions、無頭瀏覽器及伺服器 crash tests 驗證。
 - 僅當遊戲操作與 session 恢復都在**真正伺服器主持的端對端遊戲**中自動化通過，才提出**一次集中多人驗收**。
 - 若集中驗收真的揭露無法模擬的問題，修復後可能仍需針對性複測；不應無條件承諾任何軟體只需一次真人測試。
+
+
+## 2026-10-11：原生 off-board 主持人座位可行性初驗（V3-only）
+
+本輪只在 `feature/host-reconnect-v3-playtest` 新增隔離驗證程式與未連線的拓樸守門函式，沒有啟動 VPS/8081 服務，也沒有動 V1/V2 或正式房間。
+
+- `noname/game/index.js` 原生 `randomMapOL()` 內，`window.isNonameServer` 分支會另建 `game.me`，不占用 `game.players` 的真人座位。這為「VPS 主持而開房者只當玩家」提供**既有引擎的可重用入口**，但尚未證明整場對局完整可運行。
+- `tools/test-v3-browser-worker-seat-contract.mjs` 從專案**實際源檔**取出原生 `randomMapOL` 方法，在隔離 VM 與模擬 transport/DOM 環境執行。驗證四條真人連線可對應四個座位、傳統真人房主仍占一席，並揭露在少一條連線時原生方法會自動補上 playerid（不能當成真人就緒）。
+- `game/v3-authority-seat-preflight.mjs` 與 `tools/test-v3-authority-seat-preflight.mjs` 加入 2v2/3v3/4v4 嚴格數量、座位、連線 ID 一致性檢查，拒絕缺席、重複及偽造拓樸。但**驗證用 session 必須由未來的 server-side broker 認證產生**；函式不接受前端自報身分做授權。
+- 本地隔離執行 7/7 案例通過（3 個原生方法 VM 案例及 4 個拓樸函式案例）。CI 的實際執行結果尚未核實。以上不是 Playwright、真實多人遊戲或 Worker 規則運算驗收。
+- 新增檔案尚未接入現有 V3 room broker；現有 `v3resume`、`v3ready`、舊房主權威運作完全不變。
+
+**下一個阻塞點：**現有 `mode/xingBei.js` 的 `checkResult()` 透過 `game.me.side` 決定勝負，非真人主持端沒有陣營。需要移除規則引擎對主持席位的依賴，並讓每位玩家從投影狀態接收對自己正確的勝負結果。還要用真正的 Chromium + WebSocket 完成四名真人座位、角色選擇、攻防與技能事件的端對端驗證，才能稱 A 路線成立。Worker 在伺服器進程崩潰後仍需額外持久化／重播機制，不能因為跑在 VPS 就假定可原局恢復。
