@@ -155,3 +155,19 @@ Do not ship a new "refresh restorable" version until:
 - end-to-end functional tests prove the no-duplicate-effects invariant.
 
 The current code is foundational infrastructure, not the completed feature.
+
+
+## 2026-10-10：快照保存健康診斷與獨立候選盤點（V3 Playtest 前端）
+
+本輪僅變更 `feature/host-reconnect-v3-playtest` 的 V3 相關模組及回歸測試；**未改 VPS、V1/V2 或生產用 8080**。
+
+- 新增 `game/v3-capture-observability.mjs`：捕捉前執行可明確分辨房主資格、連線、對局啟動、牌堆、玩家映射與引擎 getter 的唯讀檢查。無法擷取時不再無聲跳過；房主在進行中的對局會留下受白名單限制的原因碼。
+- `game/v3-recovery-vault.mjs`：候選資料成功、拒絕、擷取／加密／儲存失敗時，只把狀態碼、原因碼、種類與時間存入**同分頁 sessionStorage**，供重新整理後顯示。絕不儲存原始牌、手牌、Socket/Player ID、Token 或 WebCrypto 密鑰在診斷記錄中。資料限期 10 分鐘，跨房間不混用。候選加密資料仍放 IndexedDB，金鑰仍維持既有 sessionStorage 設計。
+- 新增 `game/v3-candidate-inventory.mjs`：定期快照與回合邊界快照獨立驗證。任一份沒有保存／過期／無法解密，不應直接隱藏另一份。驗證僅回傳狀態、時間差及人數，不回傳明文。若只有回合邊界候選有效，可進行既有**只讀**的 VPS 原玩家 socket 核對，絕不解開暫停。
+- `game/v3-owner-connection.mjs`：房主原頁新增「V3 測試：檢查本機快照」按鈕，顯示不含個資的保存狀態及原因。重新整理後即使沒有任何候選，也能顯示最近的保存結果。修正回合邊界候選單獨存在時的誤判。
+- `game/v3-host-runtime-stager.mjs`：移除頂層瀏覽器引擎引用，改由前端明確注入 native classes/DocumentFragment；既有模擬 native 測試可直接在 Node.js 執行。
+- 新增 `tools/test-v3-capture-observability.mjs`、`tools/test-v3-candidate-inventory.mjs` 與 V3 專用 GitHub Actions workflow，驗證 fail-closed 條件、候選獨立性、過期、資料損壞與保密性，並對全部 V3 相關程式進行語法檢查。
+
+**仍未實作／禁止宣稱完成：**任何全域權威物件安裝、事件或 Promise 續行、掉線技能結算、切換房主、玩家狀態同步與 `v3ready`。目前所有候選繼續是 `restorable:false`，安全協定保持雙憑證；切勿因為看見 `ENCRYPTED_CANDIDATE_VERIFIED` 就解除暫停。
+
+**下一項真實瀏覽器證據**：在 V3 預覽四人對局中等待大於 10 秒，房主檢查快照健康，記錄狀態碼、原因碼和兩種候選驗證結果（不截取手牌／金鑰），確認 UI 有導入最新版。此測試不是刷新續局驗收，不應額外重啟 VPS。
