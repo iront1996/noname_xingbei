@@ -427,3 +427,28 @@ Promise 觀測：OBSERVATION_RING_TRUNCATED / 開始 738 / 完成 734 / 失敗 0
 **下一個工程安全邊界**：要讓 guest 原玩家在 Socket ID 重新分配後也能成為「受驗證的同一玩家」，必須有 broker 發行／校驗且綁定原玩家身分的重連證明，並同步調整 V3 broker 與 V3 前端。單靠前端的 `config.id` 不足以證明。這會是未來可能需要更新 VPS 的工作；目前不能假裝已有這個保證。
 
 下一次 V3 真實對局只需要房主及至少一名其他真人，按「檢查本機快照」回傳 `v3-peer-cut-classification-12` 的「上次換回合切點」、「換回合祖先佇列」及定期擷取拒絕碼。現階段不要刷新房主試續局，V1/V2/VPS 均未修改。
+
+
+## 2026-10-11：實測確認正常 phaseLoop 活躍子事件，V3 boundary-13 嚴格分類
+
+實測前端 `v3-peer-cut-classification-12`：
+
+```text
+Promise：OBSERVATION_RING_TRUNCATED / started 514 / fulfilled 510 / rejected 0 / pending 4
+歷史事件索引：INERT_HISTORY_REFERENCE_INDEX_READY / 引用 38 / 重複引用 6
+即時事件切點：CUT_NOT_PHASE_LOOP / 祖先 next 4、活躍子事件 4、額外排隊 0、after 0
+上次換回合：CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED / 祖先 next 1、活躍子事件 1、額外排隊 0、after 0
+定期：CAPTURE_FAILED / HIST_ACTION_EVENT_FINISHED_ONLY
+邊界：CAPTURE_BLOCKED / BOUNDARY_ANCESTOR_WORK_PENDING
+定期與邊界候選：NOT_FOUND
+```
+
+這確認舊邊界檢查把目前正在執行的 `phaseLoop` 子事件（仍保留於父事件 `next[0]`，直至 `GameEvent.waitNext()` 的 `await next.start()` 結束）當作「額外等待工作」，而較新、準確的 queue-cut audit 已顯示它其實是正常正在執行的父子關係。**但這絕非可立即 cold-resume 的檢查點**：父 Promise 仍停在 await，快照無法捕捉 closure、局部狀態及完整事件續行。
+
+本輪 `v3-boundary-lineage-13`：
+- `game/v3-event-observation-preflight.mjs` 的 `inspectV3TurnBoundaryStack` 直接共用已驗證的 `inspectV3EventCutQueues`，對「僅有正常活躍父子等待」保守回報 `BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION` 並拒絕保存；真正有額外 `next`／`after` 任務仍回報 `BOUNDARY_ANCESTOR_WORK_PENDING`，而當前 `phaseLoop` 有待執行任務則回報 `BOUNDARY_CURRENT_WORK_PENDING`。
+- 僅當可見事件堆疊及工作佇列均為空時才**准許走到後續嚴格快照稽核**，絕不因切點看似整潔而視為 `safeCheckpointCertified`。未完整序列化 `actionHistory` Event／Promise 仍 fail closed。任何狀態都不能憑這個檢查直接 `v3ready`。
+- 新增純函式與 onphase 整合回歸測試，包括活躍子事件識別、額外兄弟／after 任務阻斷、getter 不執行、完整的 V3-only ESM 版本一致性。
+- 入口、房主 UI 與 vault 共用 `v3-boundary-lineage-13` 的模組版本；未修改 VPS、V1 或 V2。
+
+驗收：重新建立 V3 Playtest 對局（不要在活躍局刷新房主），至少切換一次回合並開啟房主快照健康檢查，確認「邊界最近：CAPTURE_BLOCKED / BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION」。如因額外子事件或其他狀態回報不同代碼，請保留完整畫面供後續原生引擎分析。此測試只是驗證負面安全分類，不是 cold-resume 驗收。
