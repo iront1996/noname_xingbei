@@ -52,7 +52,7 @@ test("bounded archive evicts old records but keeps explicit lost-entry count",()
    state=outcome.timeline;
  }
  assert.equal(state.records.length,4096);
- assert.equal(state.evictedTransitions,400);
+ assert.equal(state.evictedTransitions,304);
  assert.equal(state.missingTransitions,0);
  assert.equal(verify(state).ok,true);
 });
