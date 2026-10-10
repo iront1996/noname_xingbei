@@ -14,6 +14,7 @@ import {
   inspectV3CaptureReadiness, makeV3CaptureDiagnostic,
   parseV3CaptureDiagnostic, publicV3CaptureCode
 } from "./v3-capture-observability.mjs";
+import { inspectV3EncryptedRecord } from "./v3-candidate-inventory.mjs";
 
 const DB_NAME = "xingbei-v3-playtest-recovery";
 const STORE = "encryptedCandidates";
@@ -403,63 +404,46 @@ export async function loadLocalCandidateForEngine(roomId, kind = "turn_boundary"
 export async function inspectLocalRecoveryCandidate(roomId) {
   if (!validRoomId(roomId)) return { status: "INVALID_ROOM" };
   try {
-    const candidate = await transact("readonly", store => store.get(roomId));
-    if (!candidate) return { status: "NOT_FOUND" };
-    const ageMs = Math.max(0, Date.now() - candidate.capturedAt);
-    if (ageMs > MAX_AGE_MS) return { status: "EXPIRED", ageSeconds: Math.floor(ageMs / 1000) };
-    const key = await cryptoKey(roomId, false);
-    const iv = decodeBase64(candidate.iv);
-    if (iv.length !== 12) throw new Error("INVALID_IV");
-    const plaintext = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv }, key, decodeBase64(candidate.ciphertext)
-    );
-    const data = JSON.parse(new TextDecoder().decode(plaintext));
-    if (data.schema !== SCHEMA || data.roomId !== roomId ||
-        data.safeCheckpointCertified !== false ||
-        data.eventContinuationCaptured !== false ||
-        data.restorable !== false) {
-      throw new Error("INVALID_CANDIDATE_SCHEMA");
+    // These two records are saved independently. A failed periodic capture
+    // must not hide a valid turn-boundary candidate from read-only preflight.
+    const [periodic, boundary] = await Promise.all([
+      transact("readonly", store => store.get(roomId)),
+      transact("readonly", store => store.get(roomId + BOUNDARY_SUFFIX))
+    ]);
+    if (!periodic && !boundary) {
+      return { status:"NOT_FOUND", turnBoundaryStatus:"NOT_FOUND", restorable:false };
     }
-    // Validate the independently preserved turn-boundary candidate too.
-    // It is useful for reconstruction work but NEVER certified restorable.
-    let turnBoundaryStatus = "NOT_FOUND";
-    const boundary = await transact("readonly", store => store.get(roomId + BOUNDARY_SUFFIX));
-    if (boundary) {
-      if (Date.now() - boundary.capturedAt > MAX_AGE_MS) {
-        turnBoundaryStatus = "EXPIRED";
-      } else {
-        try {
-          const boundaryIv = decodeBase64(boundary.iv);
-          if (boundaryIv.length !== 12) throw new Error("INVALID_BOUNDARY_IV");
-          const rawBoundary = await crypto.subtle.decrypt(
-            { name: "AES-GCM", iv: boundaryIv }, key, decodeBase64(boundary.ciphertext)
-          );
-          const boundaryData = JSON.parse(new TextDecoder().decode(rawBoundary));
-          turnBoundaryStatus = boundaryData.schema === SCHEMA &&
-            boundaryData.roomId === roomId &&
-            boundaryData.observationKind === "turn_boundary" &&
-            boundaryData.restorable === false
-            ? "ENCRYPTED_CANDIDATE_VERIFIED"
-            : "INVALID";
-        } catch {
-          turnBoundaryStatus = "UNAVAILABLE";
-        }
-      }
-    }
-    // Do NOT return raw state (including hidden hands) or keys.
-    return {
-      status: "ENCRYPTED_CANDIDATE_VERIFIED",
-      ageSeconds: Math.floor(ageMs / 1000),
-      playerCount: candidate.playerCount,
-      turnBoundaryStatus,
-      restorable: false,
-      eventContinuationCaptured: false,
+    const now = Date.now();
+    let keyPromise;
+    const decrypt = async record => {
+      if (!keyPromise) keyPromise = cryptoKey(roomId, false);
+      const key = await keyPromise;
+      const iv = decodeBase64(record.iv);
+      if (iv.length !== 12) throw new Error("INVALID_IV");
+      const plaintext = await crypto.subtle.decrypt(
+        { name: "AES-GCM", iv }, key, decodeBase64(record.ciphertext)
+      );
+      return JSON.parse(new TextDecoder().decode(plaintext));
     };
-  } catch (error) {
+    const [periodicResult, boundaryResult] = await Promise.all([
+      inspectV3EncryptedRecord({ record:periodic, roomId, kind:"periodic",
+        now, maxAgeMs:MAX_AGE_MS, decrypt }),
+      inspectV3EncryptedRecord({ record:boundary, roomId, kind:"turn_boundary",
+        now, maxAgeMs:MAX_AGE_MS, decrypt })
+    ]);
     return {
-      status: "UNAVAILABLE",
-      code: error instanceof Error ? error.message : "UnknownError",
+      status:periodicResult.status,
+      code:periodicResult.code || null,
+      ageSeconds:periodicResult.ageSeconds ?? boundaryResult.ageSeconds ?? null,
+      playerCount:periodicResult.playerCount ?? boundaryResult.playerCount ?? null,
+      turnBoundaryStatus:boundaryResult.status,
+      turnBoundaryCode:boundaryResult.code || null,
+      restorable:false,
+      eventContinuationCaptured:false,
     };
+  } catch {
+    return { status:"UNAVAILABLE", code:"INVENTORY_READ_FAILED",
+      turnBoundaryStatus:"UNAVAILABLE", restorable:false };
   }
 }
 
