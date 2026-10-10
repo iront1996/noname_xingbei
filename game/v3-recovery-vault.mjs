@@ -18,6 +18,9 @@ import {
 import { inspectV3EncryptedRecord } from "./v3-candidate-inventory.mjs";
 import { classifyV3HostPeerTopology } from "./v3-peer-topology.mjs";
 import {
+  createV3EventLifecycleJournal, installV3EventLifecycleObserver
+} from "./v3-event-lifecycle-journal.mjs";
+import {
   inspectV3TurnBoundaryStack, inspectV3HistoryEventReferences
 } from "./v3-event-observation-preflight.mjs";
 
@@ -37,6 +40,13 @@ let busy = false;
 let pendingBoundary = null;
 let lastOutcome = { status: "NOT_YET_CAPTURED" };
 let lastOutcomeRoomId = null;
+// The observer never retains a GameEvent; only WeakMap identity and a
+// bounded anonymous transition ring remain in memory of the live host tab.
+const eventLifecycleJournal = createV3EventLifecycleJournal({
+  getScope: () => game.onlineroom && !game.online && _status.gameStarted
+    ? game.roomId : null
+});
+let eventObserverInstallCode = "OBSERVER_NOT_INSTALLED";
 
 function validRoomId(id) {
   return typeof id === "string" && id.length > 0 && id.length < 128;
@@ -51,6 +61,21 @@ function captureReadiness() {
 
 function activeOwner() {
   return captureReadiness().ready;
+}
+export function getV3EventLifecycleHealth() {
+  const snapshot = eventLifecycleJournal.snapshot();
+  return Object.freeze({
+    status: eventObserverInstallCode === "OBSERVER_INSTALLED"
+      ? snapshot.status : eventObserverInstallCode,
+    started:snapshot.started ?? 0,
+    fulfilled:snapshot.fulfilled ?? 0,
+    rejected:snapshot.rejected ?? 0,
+    pending:snapshot.pending ?? 0,
+    overflowed:snapshot.overflowed ?? false,
+    completeCoverage:false,
+    restorable:false,
+    readyToResume:false
+  });
 }
 
 // A per-room, same-tab reload diagnostic. Never store raw snapshots, error
@@ -249,6 +274,8 @@ function captureCandidate(kind = "periodic") {
       activeEventName: _status.event?.name ?? null,
       activeEventStep: _status.event?.step ?? null,
       paused: Boolean(_status.paused),
+      // Anonymous observation only; this is not an Event replay log.
+      lifecycle: getV3EventLifecycleHealth(),
     },
     safeCheckpointCertified: false,
     eventContinuationCaptured: false,
@@ -492,6 +519,13 @@ export function getLocalVaultStatus(roomId, kind = null) {
 export function installV3RecoveryVault() {
   if (installed) return;
   installed = true;
+  const installation = installV3EventLifecycleObserver(
+    lib.element?.GameEvent, eventLifecycleJournal
+  );
+  eventObserverInstallCode = installation.code;
+  // The passive observer wraps GameEvent.start() ONLY in the V3 Playtest
+  // connect-mode runtime. It returns each original Promise unchanged,
+  // and never starts, finishes, or replays an Event itself.
   setInterval(() => { void saveCandidate(); }, INTERVAL_MS);
   // 'phaseLoop' calls lib.onphase before scheduling the next phase.
   // Persist a separate candidate for that transition. This is stronger than
