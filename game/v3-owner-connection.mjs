@@ -11,10 +11,9 @@ import { game, lib, _status } from "../noname.js";
 import {
   inspectLocalRecoveryCandidate,
   getLocalVaultStatus,
-  V3_CAPTURE_IMPLEMENTATION_VERSION,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
-} from "./v3-recovery-vault.mjs?v=v3-event-lifecycle-8";
+} from "./v3-recovery-vault.mjs?v=v3-event-observation-7";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
@@ -24,7 +23,6 @@ import { prepareShadowHostRegistry } from "./v3-host-registry-transaction.mjs";
 import { evaluateV3BlockedRoomStatus } from "./v3-stale-room-policy.mjs";
 
 const BACKEND = "wss://v3.myxingbei.com:443";
-const V3_OWNER_INTERFACE_VERSION = "v3-event-lifecycle-8";
 const TOKEN_PREFIX = "xingbei-v3-owner-token:";
 const TOKEN_PATTERN = /^[a-f0-9]{64}$/i;
 let installed = false;
@@ -286,10 +284,7 @@ function installCaptureHealthButton() {
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "房主 UI 版本：" + V3_OWNER_INTERFACE_VERSION,
-      "快照程式版本：" + V3_CAPTURE_IMPLEMENTATION_VERSION,
-      ...(V3_OWNER_INTERFACE_VERSION !== V3_CAPTURE_IMPLEMENTATION_VERSION
-        ? ["警告：UI 與快照程式版本不一致；請在結束本次對局後重新載入預覽版。"] : []),
+      "前端版本：v3-event-observation-7",
       "最近擷取：" + String(diagnostic.status || "NOT_YET_CAPTURED"),
       "原因碼：" + String(diagnostic.code || "NONE"),
       "定期最近：" + String(periodicDiagnostic.status || "NOT_YET_CAPTURED") +
