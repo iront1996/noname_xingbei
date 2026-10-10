@@ -41,9 +41,9 @@ test("v18 still contains passive intent observer and owner-first canonical vault
   const vault=read("game/v3-recovery-vault.mjs");
   assert.match(vault,/installV3EffectIntentObserver\(/);
   assert.match(owner,/getV3EffectIntentHealth\(\)/);
-  assert.match(owner,/前端版本：v3-mechanical-delta-19/);
-  assert.match(owner,/from "\.\/v3-recovery-vault\.mjs\?v=v3-mechanical-delta-19"/);
-  assert.match(entry,/import\("\/game\/v3-owner-connection\.mjs\?v=v3-mechanical-delta-19"\)/);
+  assert.match(owner,/前端版本：v3-xingbei-rule-state-20/);
+  assert.match(owner,/from "\.\/v3-recovery-vault\.mjs\?v=v3-xingbei-rule-state-20"/);
+  assert.match(entry,/import\("\/game\/v3-owner-connection\.mjs\?v=v3-xingbei-rule-state-20"\)/);
   assert.doesNotMatch(owner,/game\.send\("server",\s*"v3ready"/);
   assert.match(vault,/safeCheckpointCertified: false/);
   assert.match(vault,/eventContinuationCaptured: false/);
