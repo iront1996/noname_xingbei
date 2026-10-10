@@ -292,7 +292,7 @@ function installCaptureHealthButton() {
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-event-cut-audit-11",
+      "前端版本：v3-peer-cut-classification-12",
       "事件 Promise 觀測：" + lifecycle.status +
         " / 開始 " + lifecycle.started +
         " / 已完成 " + lifecycle.fulfilled +
@@ -305,11 +305,15 @@ function installCaptureHealthButton() {
       "事件切點：" + cut.code,
       "祖先事件佇列：next " + cut.ancestorNext +
         " / after " + cut.ancestorAfter +
+        "；其中在執行子事件 " + cut.activeLineageNext +
+        " / 額外排隊 " + cut.additionalAncestorNext +
         "；當前事件：next " + cut.currentNext +
         " / after " + cut.currentAfter,
       "上次換回合切點：" + boundaryCut.code,
       "換回合祖先佇列：next " + boundaryCut.ancestorNext +
         " / after " + boundaryCut.ancestorAfter +
+        "；其中在執行子事件 " + boundaryCut.activeLineageNext +
+        " / 額外排隊 " + boundaryCut.additionalAncestorNext +
         "；當前：next " + boundaryCut.currentNext +
         " / after " + boundaryCut.currentAfter,
       "事件切點只提供阻斷證據，尚不可恢復原局。",
