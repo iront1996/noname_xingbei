@@ -224,3 +224,31 @@ The current code is foundational infrastructure, not the completed feature.
 動態 import 版本只在 `feature/host-reconnect-v3-playtest` 更新，主頁與房主程式共用相同模組 URL。新增 `tools/test-v3-player-history-audit.mjs` 的純函式回歸，涵蓋可保存結構、Event 拒絕、深度截斷、函式拒絕、缺少欄位與例外保密。全程 **V1/V2、VPS 8081、production 8080 均未修改**。
 
 **下一次實測門檻：**必須在 V3 預覽版開始一場新遊戲並確定健康畫面顯示 `v3-history-diagnostics-5`，讓對局進行一段時間並至少走到新回合的 `phaseLoop`，截圖完整健康檢查狀態。這是資料診斷驗收，不是重新整理後續局驗收；禁止對未經認證的事件傳送 `v3ready`。
+
+
+## 2026-10-10：房主刷新後被舊房間阻擋，無法重新開房
+
+使用者實測刷新原房主網頁後，看到 `原房間仍被保留` 與 V3 `v3createblocked` 的純文字遮罩，沒有安全結束房間入口。
+
+已確認是前端 UI 死角，**不是可任意覆蓋伺服器舊局的錯誤**：
+
+- V3 broker `server/create` 會拒絕在舊房號還存在時創建新房間。
+- V3 broker `server/v3roomstatus` 可在有效 `onlineKey`＋`ownerToken` 且舊房暫停時回報 `owner_disconnected`；無憑證、舊房有人控制或憑證無效都回報 `not_available`，房間不存在才回報 `room_absent`。
+- V3 broker `server/v3abandon` 已存在，要求原房主 `onlineKey`＋256-bit `ownerToken`、目前無房間及舊局暫停，且會在成功時回傳 `v3roomabandonedHost` 並通知等待中的客端。本輪未調整任何 VPS 服務。
+
+新增 `game/v3-stale-room-policy.mjs`；更新 `game/v3-owner-connection.mjs`：
+
+1. `v3createblocked` 不再顯示無按鈕死局：自動要求伺服器確認舊房間狀態，並可手動重新檢查。
+2. 有有效 Token 且收到 `owner_disconnected` 才顯示現有「結束無法恢復的舊房間」按鈕；使用者仍須確認後才送出 `server/v3abandon`。
+3. **等待 `v3roomabandonedHost` 確認**才清除本機房主 Token／加密候選，並引導返回大廳；清理 `tmp_owner_roomId`、`tmp_user_roomId` 及回連記錄的房號，避免重載後重試錯誤的舊房間。
+4. 如果 Token 遺失、房間還未暫停或身分驗證未通過，只提供讀取狀態和重查，不會強行刪房。舊房在房主斷線後的保留期限（180 秒）結束會由伺服器清除，再查詢可確認 `room_absent` 並返回大廳。
+5. `v3resumerejected("abandon_denied")` 會顯示「舊房間沒有被刪除」並允許重查，不會假裝成功。
+6. V3 Playtest owner 模組版本參數更新 `v3-stale-room-unlock-6`，但共用的 vault 模組維持一致路徑及已驗證的安全快照協定。
+
+測試：
+- `tools/test-v3-runtime-ticket.cjs` 新增有／無 Token、持錯誤 Token、房主仍在線、已暫停房間可驗證結束及重新開房，並涵蓋**尚未開局、沒有其他玩家時刷新房主**。
+- `tools/test-v3-stale-room-policy.mjs`、`tools/test-v3-blocked-create-ui.mjs` 驗證 UI 不會在未經確認的狀態允許刪房，必須收到 V3 伺服器 ack 才清除憑證及返回大廳。
+- V3 原房主刷新後的**完整遊戲續局仍未實作**，不曾強制送出 `v3resume`、`v3ready`，不宣稱可恢復原局。
+- VPS 8081、V1、V2、production 8080 沒有變更。
+
+下一輪可由使用者單獨驗證前端舊房間清理，不必找其他玩家：用 V3 Playtest 新開空房、同分頁重新整理、確認看到 `stale-room-unlock-6` 及可結束舊房間，確認結束後回大廳可開新房。若沒有 Token，應只出現重查及等待期限；**不要透過 Console 編造 Token 或刪除伺服器資料**。
