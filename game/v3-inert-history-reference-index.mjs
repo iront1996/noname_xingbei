@@ -39,10 +39,13 @@ function dataProperty(object,key) {
  * @returns an inert, bounded manifest of event occurrences for future
  * strict reconstruction design; not a replayable GameEvent graph.
  */
-export function indexV3InertHistoryReferences(histories,itemtype,activeStack) {
+export function indexV3InertHistoryReferences(
+  histories,itemtype,activeStack,settlementLookup=null
+) {
   if (!Array.isArray(histories) || histories.length<1 ||
       histories.length>MAX_PLAYERS ||
-      !Array.isArray(activeStack) || typeof itemtype!=="function") {
+      !Array.isArray(activeStack) || typeof itemtype!=="function" ||
+      (settlementLookup!==null && typeof settlementLookup!=="function")) {
     return denied("HISTORY_INDEX_INPUT_INVALID");
   }
   const live=new Set(activeStack), ids=new WeakMap();
@@ -82,6 +85,24 @@ export function indexV3InertHistoryReferences(histories,itemtype,activeStack) {
             const finished=Object.getOwnPropertyDescriptor(entry,"finished");
             if(!finished || !Object.prototype.hasOwnProperty.call(finished,"value") ||
                finished.value!==true)throw Error("HISTORY_EVENT_NOT_SETTLED_PROVEN");
+            let journalOrdinal=null;
+            if(settlementLookup!==null){
+              // Identity must be linked to a Promise actually observed to
+              // fulfill, not just the engine's finished property. This does
+              // NOT establish completeness of all event continuations.
+              const evidence=settlementLookup(entry);
+              if(evidence?.observed!==true){
+                throw Error("HISTORY_EVENT_NOT_JOURNALED");
+              }
+              if(evidence.outcome!=="fulfilled"){
+                throw Error("HISTORY_EVENT_PROMISE_NOT_FULFILLED");
+              }
+              if(!Number.isSafeInteger(evidence.ordinal)||
+                 evidence.ordinal<0 || evidence.ordinal>=1000000){
+                throw Error("HISTORY_JOURNAL_ORDINAL_INVALID");
+              }
+              journalOrdinal=evidence.ordinal;
+            }
             occurrences++;
             if(occurrences>MAX_REFERENCES)throw Error("HISTORY_INDEX_LIMIT_EXCEEDED");
             let ordinal=ids.get(entry);
@@ -92,7 +113,8 @@ export function indexV3InertHistoryReferences(histories,itemtype,activeStack) {
               duplicateReferences++;
             }
             slots.push(Object.freeze({
-              playerIndex,turnIndex,bucket,entryIndex,eventOrdinal:ordinal
+              playerIndex,turnIndex,bucket,entryIndex,eventOrdinal:ordinal,
+              ...(journalOrdinal!==null?{lifecycleOrdinal:journalOrdinal}:{})
             }));
           }
         }
@@ -106,6 +128,8 @@ export function indexV3InertHistoryReferences(histories,itemtype,activeStack) {
         distinctEventCount:distinct,
         eventReferenceCount:occurrences,
         duplicateReferenceCount:duplicateReferences,
+        lifecycleEvidence: settlementLookup===null ? "NOT_REQUESTED" :
+          "OBSERVED_FULFILLMENT_ONLY",
         slots:Object.freeze(slots)
       }),
       // Finished flags, identity paths and an inactive stack are NOT enough
@@ -119,7 +143,9 @@ export function indexV3InertHistoryReferences(histories,itemtype,activeStack) {
       "HISTORY_UNKNOWN_FIELD","HISTORY_ACCESSOR_UNSUPPORTED",
       "HISTORY_BUCKET_NOT_ARRAY","HISTORY_ARRAY_HOLE",
       "HISTORY_ENTRY_NOT_EVENT","HISTORY_EVENT_IN_ACTIVE_STACK",
-      "HISTORY_EVENT_NOT_SETTLED_PROVEN","HISTORY_INDEX_LIMIT_EXCEEDED"
+      "HISTORY_EVENT_NOT_SETTLED_PROVEN","HISTORY_INDEX_LIMIT_EXCEEDED",
+      "HISTORY_EVENT_NOT_JOURNALED","HISTORY_EVENT_PROMISE_NOT_FULFILLED",
+      "HISTORY_JOURNAL_ORDINAL_INVALID"
     ]);
     return denied(error instanceof Error && validCodes.has(error.message)
       ? error.message:"HISTORY_INDEX_UNAVAILABLE");
