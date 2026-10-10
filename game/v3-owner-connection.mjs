@@ -21,7 +21,7 @@ import {
   getV3LastBoundaryCutHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
-} from "./v3-recovery-vault.mjs?v=v3-effect-intent-17";
+} from "./v3-recovery-vault.mjs?v=v3-skill-target-18";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
@@ -301,7 +301,7 @@ function installCaptureHealthButton() {
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-effect-intent-17",
+      "前端版本：v3-skill-target-18",
       "原生副作用排程觀測：" + effects.status +
         " / API 呼叫 " + effects.totalCalls +
         " / 例外 " + effects.failedCalls,
