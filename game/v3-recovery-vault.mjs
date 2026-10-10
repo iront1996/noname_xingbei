@@ -20,6 +20,9 @@ import { classifyV3HostPeerTopology } from "./v3-peer-topology.mjs";
 import {
   createV3EventLifecycleJournal, installV3EventLifecycleObserver
 } from "./v3-event-lifecycle-journal.mjs";
+import {
+  createV3EffectIntentObserver,installV3EffectIntentObserver
+} from "./v3-effect-intent-observer.mjs";
 import { indexV3InertHistoryReferences } from "./v3-inert-history-reference-index.mjs";
 import { inspectV3EventCutQueues } from "./v3-event-cut-audit.mjs";
 import {
@@ -71,6 +74,11 @@ const eventLifecycleJournal = createV3EventLifecycleJournal({
     ? game.roomId : null
 });
 let eventObserverInstallCode = "OBSERVER_NOT_INSTALLED";
+const effectIntentJournal=createV3EffectIntentObserver({
+  getScope:()=>game.onlineroom && !game.online && _status.gameStarted
+    ? game.roomId : null
+});
+let effectIntentInstallCode="EFFECT_INTENT_NOT_INSTALLED";
 let lastBoundaryCut = null;
 
 function validRoomId(id) {
@@ -87,6 +95,22 @@ function captureReadiness() {
 function activeOwner() {
   return captureReadiness().ready;
 }
+export function getV3EffectIntentHealth() {
+  const stats=effectIntentJournal.snapshot();
+  return Object.freeze({
+    status:effectIntentInstallCode==="EFFECT_INTENT_INSTALLED"
+      ? stats.status:effectIntentInstallCode,
+    totalCalls:stats.totalCalls,failedCalls:stats.failedCalls,
+    // Counts indicate only native scheduling API invocations, not actual
+    // mutation, idempotency, or complete skill effects.
+    counts:stats.counts,
+    engineAdapterInstalled:false,
+    stateCheckpointAtomic:false,
+    sideEffectsCaptured:false,
+    completeCoverage:false,restorable:false,readyToResume:false
+  });
+}
+
 export function getV3EventCutHealth() {
   // A read-only, synchronous sample of visible GameEvent queues. It neither
   // captures gameplay nor can it authorize restoring an interrupted match.
@@ -810,6 +834,10 @@ export function installV3RecoveryVault() {
     lib.element?.GameEvent, eventLifecycleJournal
   );
   eventObserverInstallCode = installation.code;
+  const effectInstall=installV3EffectIntentObserver(
+    lib.element?.Player,effectIntentJournal
+  );
+  effectIntentInstallCode=effectInstall.code;
   // The passive observer wraps GameEvent.start() ONLY in the V3 Playtest
   // connect-mode runtime. It returns each original Promise unchanged,
   // and never starts, finishes, or replays an Event itself.
