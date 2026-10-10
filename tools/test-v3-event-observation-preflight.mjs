@@ -53,8 +53,21 @@ test("cyclic arrays are bounded by object identity; enormous graphs fail closed"
 });
 test("exceptions and exotic containers return fixed codes without leaking keys",()=>{
   const raw=[{get privateHand(){throw Error("secret cards");}}];
-  assert.equal(history(raw,itemtype,[]).code,"HISTORY_OBSERVATION_UNAVAILABLE");
+  assert.equal(history(raw,itemtype,[]).code,"HISTORY_OBSERVATION_ACCESSOR_UNSAFE");
   assert.equal(history([new Date()],itemtype,[]).code,
     "HISTORY_OBSERVATION_UNSUPPORTED_OBJECT");
   assert.equal(history(null,itemtype,[]).code,"HISTORY_PROBE_UNAVAILABLE");
+});
+
+test("observation never invokes history getters or traverses engine Card/Player internals",()=>{
+ let getterCalls=0;
+ const sensitive={get cards(){getterCalls++;throw Error("secret hand");}};
+ assert.equal(history([sensitive],itemtype,[]).code,
+   "HISTORY_OBSERVATION_ACCESSOR_UNSAFE");
+ assert.equal(getterCalls,0);
+ const engineType=v=>v?.__engine || itemtype(v);
+ const hiddenPlayer={__engine:"player",private:{get hidden(){throw Error("private player");}}};
+ const hiddenCard={__engine:"card",get secret(){throw Error("private card");}};
+ assert.deepEqual(history([{useCard:[hiddenPlayer,hiddenCard]}],engineType,[]),
+   {ok:true,code:"HISTORY_EVENT_REFERENCES_ABSENT",restorable:false});
 });
