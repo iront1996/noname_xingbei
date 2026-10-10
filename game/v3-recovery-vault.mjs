@@ -378,12 +378,17 @@ function captureCandidate(kind = "periodic") {
  * strict game-state snapshots fail. Never use it as executable game state.
  */
 async function saveInertEventEvidence() {
-  if (evidenceBusy || !activeOwner()) return;
+  if (evidenceBusy || !activeOwner() ||
+      eventObserverInstallCode !== "OBSERVER_INSTALLED") return;
   const roomId=game.roomId, ownerSocket=game.ws;
   const generation=evidenceGeneration;
   let captured;
   try {
     const lifecycle=eventLifecycleJournal.snapshot();
+    // A zero-event record can pass AES-GCM verification but provides no
+    // evidence that the Event observer ever ran. Do not archive one.
+    if (lifecycle.started < 1 || lifecycle.seq < 1 ||
+        lifecycle.status === "NOT_ACTIVE_OWNER") return;
     const history=indexV3InertHistoryReferences(
       [...game.players,...(game.dead || [])].map(player=>player.actionHistory),
       get.itemtype,_status.eventManager?.eventStack,
