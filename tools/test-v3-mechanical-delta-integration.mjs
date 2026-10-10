@@ -46,9 +46,9 @@ test("V3 UI explicitly distinguishes game rules from generic game engine API",()
   assert.match(owner,/治療是抵禦傷害的資源/);
   assert.match(owner,/非星杯規則資源/);
   assert.doesNotMatch(owner,/體力變更區間|牌堆變更區間/);
-  assert.match(owner,/前端版本：v3-xingbei-rule-state-20/);
-  assert.match(owner,/from "\.\/v3-recovery-vault\.mjs\?v=v3-xingbei-rule-state-20"/);
-  assert.match(entry,/import\("\/game\/v3-owner-connection\.mjs\?v=v3-xingbei-rule-state-20"\)/);
+  assert.match(owner,/前端版本：v3-xingbei-resource-evidence-21/);
+  assert.match(owner,/from "\.\/v3-recovery-vault\.mjs\?v=v3-xingbei-resource-evidence-21"/);
+  assert.match(entry,/import\("\/game\/v3-owner-connection\.mjs\?v=v3-xingbei-resource-evidence-21"\)/);
   assert.doesNotMatch(entry,/import\("\/game\/v3-recovery-vault\.mjs/);
   assert.match(owner,/installV3RecoveryVault\(\);/);
   assert.doesNotMatch(owner,/game\.send\("server",\s*"v3ready"/);
