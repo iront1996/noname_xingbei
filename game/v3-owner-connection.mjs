@@ -13,6 +13,7 @@ import {
   getLocalVaultStatus,
   getV3EventLifecycleHealth,
   getV3HistoryReferenceLinkHealth,
+  getV3EventCutHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
 } from "./v3-recovery-vault.mjs?v=v3-history-skilllog-10";
@@ -285,10 +286,11 @@ function installCaptureHealthButton() {
     if (!isLiveOwner() || game.roomId !== roomId) return;
     const lifecycle = getV3EventLifecycleHealth();
     const historyLink = getV3HistoryReferenceLinkHealth();
+    const cut = getV3EventCutHealth();
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-history-skilllog-10",
+      "前端版本：v3-event-cut-audit-11",
       "事件 Promise 觀測：" + lifecycle.status +
         " / 開始 " + lifecycle.started +
         " / 已完成 " + lifecycle.fulfilled +
@@ -298,6 +300,12 @@ function installCaptureHealthButton() {
         (historyLink.status === "INERT_HISTORY_REFERENCE_INDEX_READY"
           ? " / 引用 " + historyLink.references +
             " / 重複引用 " + historyLink.aliasReferences : ""),
+      "事件切點：" + cut.code,
+      "祖先事件佇列：next " + cut.ancestorNext +
+        " / after " + cut.ancestorAfter +
+        "；當前事件：next " + cut.currentNext +
+        " / after " + cut.currentAfter,
+      "事件切點只提供阻斷證據，尚不可恢復原局。",
       "事件紀錄環形截短：" + lifecycle.truncatedTransitions +
         " / 無法追蹤的新事件：" + lifecycle.droppedStarts,
       "觀測涵蓋完整性：無法認證（不等於續行憑證）",
