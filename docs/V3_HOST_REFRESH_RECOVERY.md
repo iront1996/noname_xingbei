@@ -280,3 +280,18 @@ The current code is foundational infrastructure, not the completed feature.
 - V3 Playtest 共用 vault 模組的兩處 import 與 owner UI 載入版本更新成 `v3-event-observation-7`。僅 GitHub V3 預覽分支；**VPS、V1、V2 均未更新**。
 
 下一個現場證據：新的 V3 對局開始後待至少 15 秒並跨過一次回合轉移，房主按本機快照健康檢查，確認畫面「前端版本：v3-event-observation-7」，回傳固定代碼。無須重新整理房主或額外招募玩家。此測試用於選擇後續歷史引用／事件執行序列化工程，不是恢復原局驗收。
+
+
+## 2026-10-10：V3 UI / 快照模組跨版本與事件讀取安全性
+
+房主提供的健康畫面仍顯示 `前端版本：v3-history-diagnostics-5`，但已報告新版事件觀測碼 `BOUNDARY_ANCESTOR_WORK_PENDING`。GitHub 的 `mode/connect.js` 與 `game/v3-owner-connection.mjs` 當時均使用 `v3-event-observation-7`。因此可確認畫面上的 UI 版號與目前 GitHub 分支不同，但未能遠端核實 Cloudflare Pages 佈署或瀏覽器 Cache Storage；不應猜測確切是哪一層快取造成。
+
+本輪 V3-only 前端改善：
+- `game/v3-recovery-vault.mjs` 額外匯出 `V3_CAPTURE_IMPLEMENTATION_VERSION`；`game/v3-owner-connection.mjs` 另宣告 `V3_OWNER_INTERFACE_VERSION`。新健康檢查同時顯示**真正從兩個模組讀取**的 UI 與快照邏輯版號，有差異時明確警告（但不將相同版號視為可續局證明）。
+- `mode/connect.js` 的房主模組與 vault 模組 import，及房主模組對 vault 的 import 全部切到 `v3-event-lifecycle-8`；新增 `tools/test-v3-runtime-build-contract.mjs`，避免更新一邊卻遺漏另一邊。此版本只顯示快照模組的實作版號，不宣稱 Cloudflare 預覽網域必然即時部署。
+- `game/v3-event-observation-preflight.mjs` 的唯讀掃描器不再遞迴遍歷引擎的 Player、Card、VCard 及其集合；對 History 普通物件採 `Object.getOwnPropertyDescriptor` 取值，如果是 getter/setter 則拒絕觀察，絕不執行 accessor 的程式碼。深度／節點限制、敏感資料不回傳及拒絕續行的政策均不變。
+- `tools/test-v3-event-observation-preflight.mjs` 加入 getter 不被呼叫、Player/Card 引用不展開的回歸；最新測試 91 項全通過（見本輪 Actions）。
+- 未修改、重啟或部署 VPS；未修改 V1、V2，未進行房主冷恢復。
+- 安全狀態仍為 `restorable:false`、`eventContinuationCaptured:false`、`safeCheckpointCertified:false`。目前的 `BOUNDARY_ANCESTOR_WORK_PENDING` 與 `HIST_ACTION_LIVE_EVENT_NOT_RESTORABLE` 是引擎續行的真實阻斷，不能靠強制存取 GameEvent 或取消檢查來修復。
+
+下一步瀏覽器驗收：於 V3 預覽站重新開啟新分頁／新局（不要在目前活躍房主局強行刷新），優先確認「房主 UI 版本」「快照程式版本」均顯示 `v3-event-lifecycle-8`。若顯示舊版，先排查預覽站部署和瀏覽器資產快取，不繼續要求多人刷新斷線測試；若兩者正確且記錄了 `HIST_ACTION_EVENT_*` 或 `BOUNDARY_*`，再推進下一輪安全 checkpoint/event journal 設計。
