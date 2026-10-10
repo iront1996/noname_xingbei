@@ -12,6 +12,7 @@ import {
   inspectLocalRecoveryCandidate,
   inspectLocalInertEventEvidence,
   inspectLocalInertTransitionTimeline,
+  inspectLocalXingbeiResourceEvidence,
   installV3RecoveryVault,
   getLocalVaultStatus,
   getV3EventLifecycleHealth,
@@ -22,7 +23,7 @@ import {
   getV3LastBoundaryCutHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
-} from "./v3-recovery-vault.mjs?v=v3-xingbei-rule-state-20";
+} from "./v3-recovery-vault.mjs?v=v3-xingbei-resource-evidence-21";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
@@ -289,9 +290,10 @@ function installCaptureHealthButton() {
     const diagnostic = getLocalVaultStatus(roomId);
     const periodicDiagnostic = getLocalVaultStatus(roomId, "periodic");
     const boundaryDiagnostic = getLocalVaultStatus(roomId, "turn_boundary");
-    const [vault, evidence, timeline] = await Promise.all([
+    const [vault, evidence, timeline, resource] = await Promise.all([
       inspectLocalRecoveryCandidate(roomId), inspectLocalInertEventEvidence(roomId),
-      inspectLocalInertTransitionTimeline(roomId)
+      inspectLocalInertTransitionTimeline(roomId),
+      inspectLocalXingbeiResourceEvidence(roomId)
     ]);
     if (!isLiveOwner() || game.roomId !== roomId) return;
     const lifecycle = getV3EventLifecycleHealth();
@@ -303,7 +305,7 @@ function installCaptureHealthButton() {
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-xingbei-rule-state-20",
+      "前端版本：v3-xingbei-resource-evidence-21",
       "原生副作用排程觀測：" + effects.status +
         " / API 呼叫 " + effects.totalCalls +
         " / 例外 " + effects.failedCalls,
@@ -328,6 +330,11 @@ function installCaptureHealthButton() {
         mechanics.unattributedWindows +
         " / 座位或計數重設：" + mechanics.seatingResets,
       "未記錄能量、技能指示物或手牌內容；取樣不是續局憑證。",
+      "本機加密星杯資源證據：" + resource.status +
+        (resource.status==="ENCRYPTED_XINGBEI_RESOURCE_VERIFIED"
+          ? " / 匿名席位 " + resource.anonymousSeatCount +
+            " / 約 " + resource.ageSeconds + " 秒前" : ""),
+      "資源證據沒有牌的身分順序、技能狀態、座位身分或事件續行。",
       "事件 Promise 觀測：" + lifecycle.status +
         " / 開始 " + lifecycle.started +
         " / 已完成 " + lifecycle.fulfilled +
