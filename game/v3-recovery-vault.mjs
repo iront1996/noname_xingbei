@@ -17,6 +17,9 @@ import {
 } from "./v3-capture-observability.mjs";
 import { inspectV3EncryptedRecord } from "./v3-candidate-inventory.mjs";
 import { classifyV3HostPeerTopology } from "./v3-peer-topology.mjs";
+import {
+  inspectV3TurnBoundaryStack, inspectV3HistoryEventReferences
+} from "./v3-event-observation-preflight.mjs";
 
 const DB_NAME = "xingbei-v3-playtest-recovery";
 const STORE = "encryptedCandidates";
@@ -174,7 +177,24 @@ function captureCandidate(kind = "periodic") {
       skipList: player.skipList
     }, get.stringifiedResult, get.itemtype);
     // Do not use a partial history as a certified candidate.
-    if (!checked.ok) throw new Error(checked.code);
+    if (!checked.ok) {
+      // 'finished' GameEvents in actionHistory are not executable event
+      // continuations. Report the precise blocker but NEVER relax the
+      // strict history integrity audit or store a partial player history.
+      if (checked.code === "HIST_ACTION_LIVE_EVENT_NOT_RESTORABLE") {
+        const analysis = inspectV3HistoryEventReferences(
+          player.actionHistory, get.itemtype,
+          _status.eventManager?.eventStack || []
+        );
+        const reasons = {
+          HISTORY_EVENT_IN_ACTIVE_STACK: "HIST_ACTION_EVENT_ACTIVE_STACK",
+          HISTORY_EVENT_NOT_MARKED_FINISHED: "HIST_ACTION_EVENT_NOT_FINISHED",
+          HISTORY_EVENT_FINISHED_FLAG_ONLY: "HIST_ACTION_EVENT_FINISHED_ONLY"
+        };
+        if (reasons[analysis.code]) throw new Error(reasons[analysis.code]);
+      }
+      throw new Error(checked.code);
+    }
     playerExecution[id] = {
       ...checked.execution,
       phaseNumber: player.phaseNumber ?? null,
@@ -480,19 +500,13 @@ export function installV3RecoveryVault() {
   if (Array.isArray(lib.onphase)) {
     lib.onphase.push(() => {
       if (!activeOwner() || lib.configOL?.mode !== "xingBei") return;
-      const stack = _status.eventManager?.eventStack;
-      const current = stack?.at(-1);
-      if (!Array.isArray(stack) || current?.name !== "phaseLoop" ||
-          !current.player?.playerid) {
-        recordCaptureOutcome("CAPTURE_BLOCKED", "BOUNDARY_EVENT_OUTLINE_UNAVAILABLE",
-          "turn_boundary");
+      const barrier = inspectV3TurnBoundaryStack(_status.eventManager?.eventStack);
+      if (!barrier.ok) {
+        recordCaptureOutcome("CAPTURE_BLOCKED", barrier.code, "turn_boundary");
         return;
       }
-      if (stack.some(event => event !== current && event?.next?.length > 0)) {
-        recordCaptureOutcome("CAPTURE_BLOCKED", "BOUNDARY_PENDING_CHILD_EVENTS",
-          "turn_boundary");
-        return;
-      }
+      // This is still only a structural observation, not an engine
+      // continuation certificate. The downstream integrity audit applies.
       void saveCandidate("turn_boundary");
     });
   }
