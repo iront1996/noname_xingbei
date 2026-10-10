@@ -131,3 +131,18 @@ test("native builder errors are isolated and do not resume the game",()=>{
   assert.equal(staged.code,"FAIL_NATIVE_CARD_CONSTRUCTION");
   assert.equal(staged.readyToResume,false);
 });
+
+test("a bot seat receives a native Player but NEVER a fake remote Client",()=>{
+  const {candidate,claim}=fixture(),{env,stats}=mockNative();
+  candidate.peerBindings=[{playerId:"A",socketId:"A"}];
+  candidate.botPlayerIds=["B"];
+  claim.guestSocketIds=["A"];
+  const stage=stageFixture(candidate,claim,env);
+  assert.equal(stage.ok,true);
+  assert.equal(stage.runtime.players.size,3);
+  assert.equal(stage.runtime.dormantRemoteClients.size,1);
+  assert.deepEqual(stage.runtime.botPlayerIds,["B"]);
+  assert.equal(stage.summary.botSeatsStaged,1);
+  assert.equal(stats.networkSends,0);
+  assert.equal(stage.readyToResume,false);
+});
