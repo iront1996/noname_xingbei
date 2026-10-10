@@ -604,3 +604,35 @@ Promise：OBSERVATION_RING_TRUNCATED / started 514 / fulfilled 510 / rejected 0 
 - `HIST_ACTION_EVENT_FINISHED_ONLY`、`BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION` 和 `v3ready` 的不可續局限制保持不變。即使歷史索引就緒與 timeline 零缺口，亦不能直接重播技能或恢复 JS Promise continuation。
 
 驗收需求：等 V3 Playtest 預覽版載入最新版本後，以至少兩個獨立瀏覽器／裝置及**兩位真人**開全新對局，切換至少一次回合，房主健康檢查應顯示 `前端版本：v3-skill-target-18`。回傳「原生副作用排程觀測」、「歷史事件引用」、「定期最近」及完整畫面。若只用房主和 AI，`PEER_NO_CONNECTED_GUEST` 為正確的安全阻擋。此次仍勿刷新房主做正式冷恢復。
+
+
+## 2026-10-11：V3 第 18 版真實副作用排程觀測，機械狀態唯讀取樣（Playtest-19）
+
+使用者已在 `v3-skill-target-18` 的實際對局中回報：
+
+```text
+原生副作用排程觀測：EFFECT_INTENT_CALLS_ONLY / API 呼叫 38 / 例外 0
+傷害 4 / 回復 0 / 扣血 0 / 體力調整 0 / 獲牌 8 / 失牌 18 / 摸牌 8
+事件 Promise：OBSERVATION_RING_TRUNCATED / 開始 1155 / 完成 1151 / 失敗 0 / 待結束 4
+歷史引用：INERT_HISTORY_REFERENCE_INDEX_READY / 引用 59 / 重複引用 4
+事件序列：ENCRYPTED_INERT_TIMELINE_VERIFIED / 轉移 1690 / 缺口 0 / 淘汰 0
+本機加密事件證據：ENCRYPTED_INERT_EVIDENCE_VERIFIED（約 5 秒前）
+證據中的歷史引用：HISTORY_EVENT_IN_ACTIVE_STACK
+定期擷取：CAPTURE_FAILED / HIST_ACTION_EVENT_ACTIVE_STACK
+回合邊界：CAPTURE_BLOCKED / BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION
+正式定期及邊界候選：NOT_FOUND
+```
+
+第 18 版證實了兩件事：原生 `logSkill` 的 `targets=false` 受新歷史索引支援，且原生 Player API 排程觀測器在真實遊戲中收集到 38 筆**呼叫**。不能從呼叫次數推斷 HP、牌堆或技能副作用已真正套用；同一畫面歷史索引就緒與幾秒前獨立證據顯示活躍 Event，可能是取樣時機不同，並不矛盾。
+
+為了推進「呼叫 vs. 可見狀態實際改變」的研究，本輪新增 `game/v3-mechanical-state-delta.mjs`：
+
+- `readV3MechanicalStateSample` 唯讀存取各 Player 物件自己的 `hp`、`maxHp`、`hujia` 原始數值及 `ui.cardPile / ui.discardPile` 子節點張數；有自訂 getter、異常值、非法或重複玩家實例即拒絕當次樣本。既不遍歷卡牌，也不讀取 `name`、`playerid`、技能、手牌內容或任何 WebSocket 身份。**純數值取樣不是遊戲完整序列化**。
+- `createV3MechanicalDeltaObserver` 使用 WeakMap 比對相鄰取樣中的 Player 物件身分，只在座位順序與觀測器計數一致時統計：有效取樣區間、體力變化區間、變更座位數、抽棄牌堆數目變更區間、有 API 排程呼叫區間，以及機械數值變更卻沒有觀測到七類 API 呼叫的區間。座位變更、呼叫計數重設或容量溢位會跳過該區間，避免誤對照。
+- **絕不由「同區間曾呼叫 API」推導因果**：技能可能取消、延遲觸發、經由其他引擎通道直接修改 HP/牌堆；每六秒的取樣也不能觀察區間內多次正負抵消。UI 明示「定期取樣不能確認副作用來源或原子結算，也不能作為續局憑證」。
+- V3 獨立快照 vault 在原有六秒計時器內加上被動 `sampleV3MechanicalDelta()`，不干預前後 `saveCandidate()` 或 `saveInertEventEvidence()`；新增唯讀 `getV3MechanicalStateHealth`，房主 UI 顯示匿名統計。這份觀測目前只保存於運行中的分頁內存，尚未是加密持久化的副作用交易日誌，也未實作引擎寫入攔截器。
+- 所有輸出 `appliedEffectsProven:false`、`sideEffectsCaptured:false`、`stateCheckpointAtomic:false`、`completeCoverage:false`、`restorable:false`、`readyToResume:false`。V3 GameEvent Promise、encrypted timeline、history strict snapshot blocker 和現有 VPS broker 的續局安全限制不變。
+- 新增 `tools/test-v3-mechanical-state-delta.mjs` 與 `tools/test-v3-mechanical-delta-integration.mjs`，覆蓋值確實變動、只有 API 呼叫卻未變動、沒有觀測到 API 呼叫卻變動、Player 座位／房號改變、counter overflow、getter 不執行、隱私與不可恢復。
+- 版本 `v3-mechanical-delta-19`；只改 GitHub V3 Playtest 前端程式與回歸測試，不更動 VPS、V1/V2 或 production。
+
+**下一次實測**：用兩名以上真人在 V3 預覽版開新房，確認 UI 為 `v3-mechanical-delta-19`。出牌、摸牌、至少造成一次體力數字實際變化，待 20～30 秒至少經過兩個六秒取樣，房主健康檢查截圖「原生副作用排程觀測」、「機械狀態取樣」、「事件序列保存」。正常進行中的真實遊戲仍不該用刷新房主作為 cold-resume 測試。
