@@ -10,6 +10,7 @@
 import { game, lib, _status } from "../noname.js";
 import {
   inspectLocalRecoveryCandidate,
+  inspectLocalInertEventEvidence,
   getLocalVaultStatus,
   getV3EventLifecycleHealth,
   getV3HistoryReferenceLinkHealth,
@@ -283,7 +284,9 @@ function installCaptureHealthButton() {
     const diagnostic = getLocalVaultStatus(roomId);
     const periodicDiagnostic = getLocalVaultStatus(roomId, "periodic");
     const boundaryDiagnostic = getLocalVaultStatus(roomId, "turn_boundary");
-    const vault = await inspectLocalRecoveryCandidate(roomId);
+    const [vault, evidence] = await Promise.all([
+      inspectLocalRecoveryCandidate(roomId), inspectLocalInertEventEvidence(roomId)
+    ]);
     if (!isLiveOwner() || game.roomId !== roomId) return;
     const lifecycle = getV3EventLifecycleHealth();
     const historyLink = getV3HistoryReferenceLinkHealth();
@@ -292,7 +295,7 @@ function installCaptureHealthButton() {
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-boundary-lineage-13",
+      "前端版本：v3-inert-evidence-14",
       "事件 Promise 觀測：" + lifecycle.status +
         " / 開始 " + lifecycle.started +
         " / 已完成 " + lifecycle.fulfilled +
@@ -319,6 +322,10 @@ function installCaptureHealthButton() {
       "事件切點只提供阻斷證據，尚不可恢復原局。",
       "事件紀錄環形截短：" + lifecycle.truncatedTransitions +
         " / 無法追蹤的新事件：" + lifecycle.droppedStarts,
+      "本機加密事件證據：" + evidence.status +
+        (evidence.status === "ENCRYPTED_INERT_EVIDENCE_VERIFIED"
+          ? "（約 " + evidence.ageSeconds + " 秒前）" : ""),
+      "證據中的歷史引用：" + (evidence.historyStatus || "NOT_FOUND"),
       "觀測涵蓋完整性：無法認證（不等於續行憑證）",
       "最近擷取：" + String(diagnostic.status || "NOT_YET_CAPTURED"),
       "原因碼：" + String(diagnostic.code || "NONE"),
