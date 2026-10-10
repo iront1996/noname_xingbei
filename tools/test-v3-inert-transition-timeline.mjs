@@ -101,3 +101,23 @@ test("invalid or missing observer epoch cannot produce an encrypted continuity c
  corrupt.observerEpoch="unknown";
  assert.equal(verify(corrupt).ok,false);
 });
+
+test("nonconsecutive entries inside one observer ring may not claim contiguous logging",()=>{
+  const hole=window(1,5);
+  hole.records[2].seq=9;
+  assert.equal(merge(null,hole).code,"TIMELINE_WINDOW_INVALID");
+  const orderedHole=window(1,5);
+  orderedHole.records[2].seq=4;
+  orderedHole.records[3].seq=5;
+  orderedHole.records[4].seq=6;
+  orderedHole.seq=6;
+  assert.equal(merge(null,orderedHole).code,"TIMELINE_WINDOW_NONCONTIGUOUS");
+});
+test("a forged archive cannot erase its acknowledged missing or trimmed prefix",()=>{
+  const initial=merge(null,window(100,108)).timeline;
+  assert.equal(initial.missingTransitions,99);
+  const forged=JSON.parse(JSON.stringify(initial));
+  forged.missingTransitions=0;
+  assert.equal(verify(forged).ok,false);
+  assert.equal(merge(forged,window(105,112)).code,"TIMELINE_PREVIOUS_INVALID");
+});
