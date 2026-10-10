@@ -20,6 +20,7 @@ import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
 import { materializeStagedSkillReferences } from "./v3-skill-references.mjs";
 import { attachDetachedCardZones } from "./v3-detached-zones.mjs";
 import { prepareShadowHostRegistry } from "./v3-host-registry-transaction.mjs";
+import { evaluateV3BlockedRoomStatus } from "./v3-stale-room-policy.mjs";
 
 const BACKEND = "wss://v3.myxingbei.com:443";
 const TOKEN_PREFIX = "xingbei-v3-owner-token:";
@@ -32,6 +33,8 @@ let retryCount = 0;
 let pauseOwned = false;
 let simulatedHoldUntil = 0;
 let pausedRoomOnReload = false;
+let blockedCreateRoomId = null;
+let abandoningRoomId = null;
 let pendingDetachedColdRuntime = null;
 // Short-lived transport continuity proof. NEVER write it to sessionStorage,
 // IndexedDB or any persistent store; refreshing destroys the event runtime.
@@ -65,6 +68,48 @@ function saveToken(roomId, token) {
   } catch {
     return false;
   }
+}
+
+function returnToLobbyAfterAbandon() {
+  // The old room has been acknowledged as gone. Drop engine auto-room hints
+  // before the next page load so the user gets a fresh lobby, not another
+  // attempt to create/join the interrupted match.
+  game.saveConfig("tmp_owner_roomId");
+  game.saveConfig("tmp_user_roomId");
+  if (Array.isArray(lib.config.reconnect_info)) {
+    lib.config.reconnect_info.length = 1;
+    game.saveConfig("reconnect_info", lib.config.reconnect_info);
+  }
+  game.reload();
+}
+
+function queryOldRoomStatus(roomId) {
+  if (roomId !== game.onlineKey || game.ws?.readyState !== WebSocket.OPEN) {
+    displayOverlay("無法檢查舊房間",
+      "目前與 V3 大廳斷線。請重新連線後再查詢，避免覆蓋其他玩家仍在進行的房間。",
+      "重新整理大廳", returnToLobbyAfterAbandon);
+    return false;
+  }
+  // Unauthenticated query can only reveal 'room_absent' or 'not_available'.
+  // Never invent or bypass an absent persisted owner token.
+  game.send("server", "v3roomstatus", roomId, getToken(roomId));
+  return true;
+}
+
+function requestConfirmedAbandon(roomId) {
+  const token = getToken(roomId);
+  if (!pausedRoomOnReload || roomId !== game.onlineKey || !token ||
+      game.ws?.readyState !== WebSocket.OPEN) {
+    displayOverlay("不能結束舊房間",
+      "房主憑證或連線已失效。舊房間仍受保護，請重新檢查或等候逾時。",
+      "重新檢查", () => queryOldRoomStatus(roomId));
+    return;
+  }
+  if (!window.confirm("確定結束原房間？其他玩家將收到通知，原局不可恢復。")) return;
+  abandoningRoomId = roomId;
+  game.send("server", "v3abandon", roomId, token);
+  displayOverlay("正在結束舊房間",
+    "已提出結束請求；必須收到 V3 伺服器確認後，才可重新開房。");
 }
 
 function removeOverlay() {
@@ -309,14 +354,34 @@ export function installV3OwnerConnection() {
   lib.message.client.v3roomstatus = async (key, status) => {
     if (key !== game.onlineKey) return;
     if (status === "room_absent") {
+      const wasBlocked = blockedCreateRoomId === key || pausedRoomOnReload;
       try { sessionStorage.removeItem(TOKEN_PREFIX + key); } catch {}
+      void purgeLocalRecoveryCandidate(key);
       pausedRoomOnReload = false;
+      blockedCreateRoomId = null;
+      abandoningRoomId = null;
       pendingDetachedColdRuntime = null;
       liveRuntimeTicket = null;
       liveRuntimeRoomId = null;
+      if (wasBlocked) {
+        displayOverlay("舊房間已清除",
+          "V3 伺服器確認舊房間已不存在，可以返回大廳重新建立房間。",
+          "返回大廳重新開房", returnToLobbyAfterAbandon);
+      }
       return;
     }
-    if (status !== "owner_disconnected") return;
+    const decision = evaluateV3BlockedRoomStatus(status, Boolean(getToken(key)));
+    if (decision.action === "RECHECK_ONLY") {
+      if (blockedCreateRoomId !== key) return;
+      pausedRoomOnReload = false;
+      const warning = getToken(key)
+        ? "伺服器尚未確認舊房間可以安全結束，可能仍有房主連線或原憑證無效。"
+        : "本分頁沒有原房主憑證，無法手動結束仍在保留的房間。";
+      displayOverlay("舊房間仍被保留",
+        warning + "\n請等待房主斷線保留期限結束（通常最多 3 分鐘），然後重新檢查。",
+        "重新檢查舊房間", () => queryOldRoomStatus(key));
+      return;
+    }
     pausedRoomOnReload = true;
     const vault = await inspectLocalRecoveryCandidate(key);
     const captureDiagnostic = getLocalVaultStatus(key);
@@ -350,14 +415,7 @@ export function installV3OwnerConnection() {
       "事件續行機制仍在開發，重新整理後不能接續原局。\\n" +
       "你可以結束舊房間，通知其他玩家重新開局。",
       "結束無法恢復的舊房間",
-      () => {
-        if (!window.confirm("確定結束原房間？其他玩家將收到通知，原局不可恢復。")) return;
-        const token = getToken(key);
-        if (token && game.ws?.readyState === WebSocket.OPEN) {
-          game.send("server", "v3abandon", key, token);
-          displayOverlay("正在結束舊房間", "已提出結束請求，正在等待伺服器確認。");
-        }
-      }
+      () => requestConfirmedAbandon(key)
     );
   };
   lib.message.client.v3restoreprobe = async claim => {
@@ -412,14 +470,7 @@ export function installV3OwnerConnection() {
       shadow.ok ? "隔離權威環境準備完成（尚不能續局）" : "房主接管檢查未通過",
       message + "\\n其他玩家仍保持等待，請勿將此畫面視為遊戲已恢復。",
       "結束無法恢復的舊房間",
-      () => {
-        if (!window.confirm("確定結束原房間？其他玩家將收到通知，原局不可恢復。")) return;
-        const token = getToken(key);
-        if (token && game.ws?.readyState === WebSocket.OPEN) {
-          game.send("server", "v3abandon", key, token);
-          displayOverlay("正在結束舊房間", "等待伺服器確認。");
-        }
-      }
+      () => requestConfirmedAbandon(key)
     );
   };
   lib.message.client.v3restoreprobeDenied = code => {
@@ -431,14 +482,15 @@ export function installV3OwnerConnection() {
     try { sessionStorage.removeItem(TOKEN_PREFIX + key); } catch {}
     void purgeLocalRecoveryCandidate(key);
     pausedRoomOnReload = false;
+    blockedCreateRoomId = null;
+    abandoningRoomId = null;
     pendingDetachedColdRuntime = null;
     liveRuntimeTicket = null;
     liveRuntimeRoomId = null;
     displayOverlay(
       "原房間已結束",
-      "其他玩家已收到房間結束通知。\n請返回大廳建立新局。",
-      "返回大廳",
-      () => removeOverlay()
+      "伺服器已確認舊房間結束，其他玩家已收到通知。\n可以返回大廳建立新局。",
+      "返回大廳重新開房", returnToLobbyAfterAbandon
     );
   };
   lib.message.client.v3roomabandoned = () => {
@@ -471,11 +523,24 @@ export function installV3OwnerConnection() {
     displayOverlay("房間已逾時", "房主未在保留期限內返回。本局無法繼續，請重新建立新房間。");
   };
   lib.message.client.v3createblocked = () => {
-    if (pausedRoomOnReload) return;
-    displayOverlay(
-      "原房間仍被保留",
-      "此房間已有未完成的對局。\n本測試版僅支援房主網路斷線後原分頁自動重連；重新整理後的完整遊戲恢復尚未支援。"
-    );
+    if (pausedRoomOnReload || abandoningRoomId) return;
+    const key = game.onlineKey;
+    if (typeof key !== "string" || !key) return;
+    blockedCreateRoomId = key;
+    displayOverlay("正在查詢保留的舊房間",
+      "伺服器拒絕覆蓋尚存的房間。正在查詢是否能由原房主驗證後安全結束舊局。",
+      "重新檢查", () => queryOldRoomStatus(key));
+    void queryOldRoomStatus(key);
+  };
+  lib.message.client.v3resumerejected = code => {
+    if (code !== "abandon_denied" || !abandoningRoomId) return;
+    const key = abandoningRoomId;
+    abandoningRoomId = null;
+    pausedRoomOnReload = false;
+    blockedCreateRoomId = key;
+    displayOverlay("無法結束舊房間",
+      "V3 伺服器拒絕結束請求（房間狀態已變更或原房主驗證失敗）。舊房間沒有被刪除。",
+      "重新檢查舊房間", () => queryOldRoomStatus(key));
   };
   lib.element.ws.onerror = function (error) {
     if (isLiveOwner()) return;
