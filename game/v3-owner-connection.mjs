@@ -370,7 +370,10 @@ export function installV3OwnerConnection() {
     // off-document graph. The live engine, global card maps and server room
     // are untouched. Runtime objects must never reach a log or guest client.
     const staged = plan.ok
-      ? stageDetachedHostRuntime(plan.blueprint)
+      ? stageDetachedHostRuntime(plan.blueprint, {
+        element: lib.element,
+        createFragment: () => document.createDocumentFragment()
+      })
       : { ok: false, code: plan.code };
     // Resolve nested references exclusively inside the isolated object
     // graph. Do not register new objects or execute serialized functions.
