@@ -51,6 +51,16 @@ let installed = false;
 let busy = false;
 let evidenceBusy = false;
 let evidenceGeneration = 0;
+let timelineObserverEpoch = null;
+function ensureTimelineObserverEpoch() {
+  if(timelineObserverEpoch)return timelineObserverEpoch;
+  // Distinct per browser JS runtime. A refreshed page cannot accidentally
+  // join matching sequence numbers from a previous, unrelated observer.
+  if(!globalThis.crypto?.getRandomValues)return null;
+  const raw=crypto.getRandomValues(new Uint8Array(16));
+  timelineObserverEpoch=Array.from(raw,x=>x.toString(16).padStart(2,"0")).join("");
+  return timelineObserverEpoch;
+}
 let pendingBoundary = null;
 let lastOutcome = { status: "NOT_YET_CAPTURED" };
 let lastOutcomeRoomId = null;
@@ -410,8 +420,10 @@ async function saveLocalInertTimeline(roomId,key,generation,ownerSocket,lifecycl
   try{
     const previous=await readLocalInertTimeline(roomId,key);
     if(!previous.ok)return;
+    const observerEpoch=ensureTimelineObserverEpoch();
+    if(!observerEpoch)return;
     const merged=reconcileV3InertTimeline(previous.timeline,{
-      ...lifecycle,status:lifecycle.code
+      ...lifecycle,status:lifecycle.code,observerEpoch
     });
     if(!merged.ok)return;
     const capturedAt=Date.now();
