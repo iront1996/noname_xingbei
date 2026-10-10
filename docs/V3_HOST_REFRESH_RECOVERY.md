@@ -452,3 +452,33 @@ Promise：OBSERVATION_RING_TRUNCATED / started 514 / fulfilled 510 / rejected 0 
 - 入口、房主 UI 與 vault 共用 `v3-boundary-lineage-13` 的模組版本；未修改 VPS、V1 或 V2。
 
 驗收：重新建立 V3 Playtest 對局（不要在活躍局刷新房主），至少切換一次回合並開啟房主快照健康檢查，確認「邊界最近：CAPTURE_BLOCKED / BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION」。如因額外子事件或其他狀態回報不同代碼，請保留完整畫面供後續原生引擎分析。此測試只是驗證負面安全分類，不是 cold-resume 驗收。
+
+
+## 2026-10-11：V3 邊界分類驗收成功、獨立加密非執行事件證據（Playtest-14）
+
+房主 `v3-boundary-lineage-13` 真實測得：
+
+```text
+事件開始 457 / Promise 完成 453 / 失敗 0 / 待觀測結束 4
+歷史事件索引 INERT_HISTORY_REFERENCE_INDEX_READY：38 次引用、6 次重複
+上次換回合 CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED（祖先 next 1、活躍子事件 1、額外 next 0、after 0）
+邊界 CAPTURE_BLOCKED / BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION
+定期 CAPTURE_FAILED / HIST_ACTION_EVENT_FINISHED_ONLY
+定期候選、回合邊界候選均 NOT_FOUND
+```
+
+這確認第 13 版回合邊界分類已準確反映 `phaseLoop` 被其父事件的 `waitNext()` await 的現實。只要父 Promise 在 await，絕不能從冷啟動接管該堆疊；而 `actionHistory` 的 `finished` 旗標也不能當作 Promise、closures、回合選擇結果可重建的保證。
+
+進一步工作的瓶頸：既有 `captureCandidate()` 會在嚴格玩家歷史審計失敗時完全放棄候選，故連已通過唯讀稽核的匿名 Promise 轉移統計、Event 引用與切點工作資訊都不會保存供刷新後使用。不能放寬這個失敗路徑，也不能將事件觀測當作可執行 GameEvent。
+
+本輪 V3-only 新增 `game/v3-inert-event-evidence.mjs` 的非執行、限制大小、零敏感內容證據 capsule：
+
+- 只允許匿名 `started/fulfilled/rejected/threw` 的有限環形轉移紀錄、歷史引用位置及重複別名、Promise 關聯序號、事件切點匿名佇列計數和固定的失敗原因碼。**絕不儲存**真實手牌、事件名、技能、玩家 ID、WebSocket ID、Token、函式或執行堆疊。
+- 結構建構器與驗證器都強制 `safeCheckpointCertified:false`、`eventContinuationCaptured:false`、`restorable:false`、`readyToResume:false`，帶有過大資料、非法欄位或矛盾旗標時拒絕；驗證器只承認白名單重建後完全相同的序列化形狀。
+- `game/v3-recovery-vault.mjs` 另設完全獨立的 IndexedDB key `roomId::inert-event-evidence-v1`，在 V3 活躍房主對局每 6 秒同步取樣、AES-GCM 加密後保存。其 AEAD additionalData 綁定 `xingbei-v3-inert-event-evidence-1:roomId`，使不同房間的密文不能互換；加密 key 仍保留在此瀏覽器分頁的 sessionStorage，密文仍只在原裝置。
+- 不依賴正式快照保存成功。即使定期候選因 `HIST_ACTION_EVENT_FINISHED_ONLY` 失敗，非執行事件證據仍可單獨加密保存。證據 TTL 10 分鐘，提供只給可信同源程式的讀取介面；房主 UI 只顯示已驗證的狀態、年齡與固定型別碼，不顯示任何事件內容。
+- 房間結束／清除時會同時刪除此獨立紀錄並失效待處理的舊加密工作，沿用既有安全清理與驗證流程。
+- 僅 V3 新版前端 `v3-inert-evidence-14` 載入；沒有修改 V3 VPS broker、V1、V2、production。原有任何 `v3resume/v3ready` 禁止恢復邏輯保持不變。
+- `tools/test-v3-inert-event-evidence.mjs`、`tools/test-v3-inert-evidence-integration.mjs` 針對資料形狀、同源匿名性、異常 getter、矛盾認證旗標、跨房間 AES-GCM associated data 與修改密文無法解密、正式遊戲候選不受影響加上測試。
+
+**下一輪實測（不需要 VPS 更新）**：在 V3 Playtest 新建多人對局，確認 `v3-inert-evidence-14`，遊戲開始後正常玩 20 秒以上，房主按「V3 測試：檢查本機快照」。確認新增「本機加密事件證據：ENCRYPTED_INERT_EVIDENCE_VERIFIED」及「證據中的歷史引用」行。正式遊戲候選仍可顯示 `NOT_FOUND`，這是預期的安全結果。這仍不是刷新後可續局的驗收；不要為了測試此證據強行刷新活躍房主。
