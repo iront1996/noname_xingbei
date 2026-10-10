@@ -49,15 +49,28 @@ export function evaluateColdOwnerPreflight(data, claim, now = Date.now()) {
     return reject("CANDIDATE_FLAGS_UNTRUSTED");
   }
   const playerIds = Object.keys(data.arena?.players || {});
+  // Historical all-human candidates may omit botPlayerIds. When fewer
+  // sockets are present, the missing seats MUST be explicitly classified.
+  const botPlayerIds = data.botPlayerIds === undefined ? [] : data.botPlayerIds;
   if (playerIds.length < 2 || playerIds.length > MAX_PLAYERS ||
       !playerIds.includes(data.hostPlayerId) ||
       data.nextTurnPlayerId == null ||
       !playerIds.includes(data.nextTurnPlayerId) ||
       !Array.isArray(data.peerBindings) ||
+      !Array.isArray(botPlayerIds) ||
       !Array.isArray(claim.guestSocketIds) ||
-      claim.guestSocketIds.length !== playerIds.length - 1 ||
-      data.peerBindings.length !== playerIds.length - 1) {
+      claim.guestSocketIds.length < 1 ||
+      claim.guestSocketIds.length > playerIds.length - 1 ||
+      data.peerBindings.length !== claim.guestSocketIds.length ||
+      data.peerBindings.length + botPlayerIds.length !== playerIds.length - 1) {
     return reject("PLAYER_SET_INCONSISTENT");
+  }
+  const botSet = new Set(botPlayerIds);
+  if (botSet.size !== botPlayerIds.length ||
+      botPlayerIds.some(id =>
+        typeof id !== "string" || !id ||
+        id === data.hostPlayerId || !playerIds.includes(id))) {
+    return reject("BOT_SEAT_INVALID");
   }
   const claimIds = new Set();
   for (const id of claim.guestSocketIds) {
@@ -80,6 +93,9 @@ export function evaluateColdOwnerPreflight(data, claim, now = Date.now()) {
     boundIds.add(binding.socketId);
   }
   if (boundIds.size !== claimIds.size ||
+      [...botSet].some(id => boundIds.has(id)) ||
+      !playerIds.every(id =>
+        id === data.hostPlayerId || botSet.has(id) || boundIds.has(id)) ||
       !Array.isArray(data.drawPile) || !Array.isArray(data.discardPile) ||
       !playerIds.every(id => Boolean(data.skills?.[id] && data.playerExecution?.[id])) ||
       !Number.isInteger(data.phaseNumber) ||
@@ -99,6 +115,8 @@ export function evaluateColdOwnerPreflight(data, claim, now = Date.now()) {
     schema: GATE_SCHEMA,
     originalGuestSocketsMatched: true,
     playerCount: playerIds.length,
+    humanGuestCount: boundIds.size,
+    botSeatCount: botSet.size,
     pendingBufferedGuestMessageCount: Number.isInteger(claim.bufferedGuestMessageCount)
       ? claim.bufferedGuestMessageCount : null,
     retainedTurnBoundaryCandidate: true,
