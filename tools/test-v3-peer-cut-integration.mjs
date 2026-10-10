@@ -33,11 +33,11 @@ test("onphase captures active-child vs extra-sibling cut counts as non-restorabl
   assert.match(cut,/readyToResume:false/);
   assert.doesNotMatch(owner,/game\.send\("server",\s*"v3ready"/);
 });
-test("front door and host share the exact v12 vault instance",()=>{
+test("front door and host share the exact current vault instance",()=>{
   const entry=read("mode/connect.js");
   const owner=read("game/v3-owner-connection.mjs");
   const match=owner.match(/from "\.\/v3-recovery-vault\.mjs\?v=([^"]+)";/);
-  assert.equal(match?.[1],"v3-peer-cut-classification-12");
+  assert.equal(match?.[1],"v3-boundary-lineage-13");
   assert.ok(entry.includes('/game/v3-recovery-vault.mjs?v='+match[1]+'"'));
   assert.ok(entry.includes('/game/v3-owner-connection.mjs?v='+match[1]+'"'));
 });
