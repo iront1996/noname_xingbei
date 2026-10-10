@@ -14,14 +14,14 @@ function fixture() {
   const stage={ok:true,readyToResume:false,runtime:{
     players:new Map([["H",{player:owner}],["G",{player:guest}]]),
     cards:new Map([["c1",card]]),
-    dormantRemoteClients:new Map([["G",client]])
+    dormantRemoteClients:new Map([["G",client]]), botPlayerIds:[]
   }};
   const skills={ok:true,applied:true,readyToResume:false};
   const blueprint={schema:"xingbei-v3-host-runtime-blueprint-1",readyToResume:false,
     hostPlayerId:"H",phaseNumber:3,roundNumber:2,
     playerSeats:[{playerId:"H",originalSeat:0,state:{dead:false}},
       {playerId:"G",originalSeat:1,state:{dead:true}}],
-    remoteRoutes:[{playerId:"G",socketId:"G"}]};
+    remoteRoutes:[{playerId:"G",socketId:"G"}], botPlayerIds:[]};
   return {stage,skills,blueprint,owner,guest,client,card};
 }
 test("shadow registry preserves original owner and dormant guest bindings",()=>{
@@ -66,4 +66,24 @@ test("missing peer or card identity fails before building a shadow",()=>{
 test("no skill materialization means no registries",()=>{
   const f=fixture();
   assert.equal(prepare(f.stage,{ok:false},f.blueprint).code,"PRECONDITIONS_NOT_MET");
+});
+
+test("mixed remote human and AI seats map without manufacturing a client",()=>{
+  const f=fixture(),bot={playerid:"BOT",dataset:{position:"2"}};
+  f.stage.runtime.players.set("BOT",{player:bot});
+  f.stage.runtime.botPlayerIds=["BOT"];
+  f.blueprint.playerSeats.push({playerId:"BOT",originalSeat:2,state:{dead:false}});
+  f.blueprint.botPlayerIds=["BOT"];
+  const result=prepare(f.stage,f.skills,f.blueprint);
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.mappedPlayers,3);
+  assert.equal(result.summary.botSeats,1);
+  assert.equal(result.shadow.lib.clients.length,1);
+  assert.equal(result.shadow.lib.playerOL.BOT,bot);
+  assert.equal(result.readyToResume,false);
+});
+test("shadow rejects forged AI labels or client masquerading as bot",()=>{
+  const f=fixture();
+  f.blueprint.botPlayerIds=["G"];
+  assert.equal(prepare(f.stage,f.skills,f.blueprint).code,"HOST_OR_ROUTES_INVALID");
 });
