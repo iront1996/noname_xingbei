@@ -18,11 +18,11 @@ import {
   getV3HistoryReferenceLinkHealth,
   getV3EventCutHealth,
   getV3EffectIntentHealth,
-  getV3MechanicalStateHealth,
+  getV3XingbeiStateHealth,
   getV3LastBoundaryCutHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
-} from "./v3-recovery-vault.mjs?v=v3-mechanical-delta-19";
+} from "./v3-recovery-vault.mjs?v=v3-xingbei-rule-state-20";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
@@ -298,32 +298,36 @@ function installCaptureHealthButton() {
     const historyLink = getV3HistoryReferenceLinkHealth();
     const cut = getV3EventCutHealth();
     const effects = getV3EffectIntentHealth();
-    const mechanics = getV3MechanicalStateHealth();
+    const mechanics = getV3XingbeiStateHealth();
     const boundaryCut = getV3LastBoundaryCutHealth();
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-mechanical-delta-19",
+      "前端版本：v3-xingbei-rule-state-20",
       "原生副作用排程觀測：" + effects.status +
         " / API 呼叫 " + effects.totalCalls +
         " / 例外 " + effects.failedCalls,
-      "排程分類：傷害 " + (effects.counts.damage || 0) +
-        " / 回復 " + (effects.counts.recover || 0) +
-        " / 扣血 " + (effects.counts.loseHp || 0) +
-        " / 體力調整 " + (effects.counts.changeHp || 0) +
+      "通用引擎 API 呼叫（不是星杯實際結算）：傷害排程 " +
+        (effects.counts.damage || 0) +
         " / 獲牌 " + (effects.counts.gain || 0) +
         " / 失牌 " + (effects.counts.lose || 0) +
         " / 摸牌 " + (effects.counts.draw || 0),
-      "這些只是 API 呼叫，未證明效果已結算或可安全重播。",
-      "機械狀態取樣：" + mechanics.status +
+      "通用引擎 HP API（非星杯規則資源）：recover " +
+        (effects.counts.recover || 0) +
+        " / loseHp " + (effects.counts.loseHp || 0) +
+        " / changeHp " + (effects.counts.changeHp || 0),
+      "傷害通常導致摸牌；治療是抵禦傷害的資源，不是恢復 HP。",
+      "星杯規則狀態取樣：" + mechanics.status +
         " / 有效區間 " + mechanics.comparedWindows +
-        " / 體力變更區間 " + mechanics.hpChangedWindows +
-        " / 牌堆變更區間 " + mechanics.pileChangedWindows,
-      "無同窗排程呼叫的變更：體力 " +
-        mechanics.hpChangeWithoutIntentWindows +
-        " / 牌堆 " + mechanics.pileChangeWithoutIntentWindows +
-        "；座位／計數重設 " + mechanics.topologyResets,
-      "定期取樣不能確認副作用來源或原子結算，也不能作為續局憑證。",
+        " / 士氣變化 " + mechanics.moraleWindows +
+        " / 星杯變化 " + mechanics.grailWindows,
+      "星石變化區間 " + mechanics.starstoneWindows +
+        " / 治療變化區間 " + mechanics.treatmentWindows +
+        " / 牌庫棄牌堆變化 " + mechanics.zoneWindows,
+      "僅觀察到狀態改變、同窗無通用 API 呼叫的區間：" +
+        mechanics.unattributedWindows +
+        " / 座位或計數重設：" + mechanics.seatingResets,
+      "未記錄能量、技能指示物或手牌內容；取樣不是續局憑證。",
       "事件 Promise 觀測：" + lifecycle.status +
         " / 開始 " + lifecycle.started +
         " / 已完成 " + lifecycle.fulfilled +
