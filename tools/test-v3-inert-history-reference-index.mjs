@@ -97,3 +97,46 @@ test("unobserved, pending or rejected Promise denies correlation even if finishe
   assert.equal(index(history,kind,[],()=>{throw Error("private data");}).code,
     "HISTORY_INDEX_UNAVAILABLE");
 });
+
+test("engine useSkill stores logInfo, not a GameEvent; index only its referenced Event",()=>{
+  const skillEvent=event(true);
+  const target={__player:true,secretHand:"DO_NOT_EXPOSE"};
+  const skillLog={
+    skill:"hidden_internal_skill",targets:[target],
+    event:skillEvent,sourceSkill:"actual_parent",type:"player"
+  };
+  const itemtype=v=>v?.__event===true?"event":v?.__player===true?"player":"object";
+  const result=index([[row({useSkill:[skillLog],useCard:[skillEvent]})]],
+    itemtype,[],ref=>({observed:ref===skillEvent,ordinal:3,outcome:"fulfilled"}));
+  assert.equal(result.ok,true);
+  assert.equal(result.ledger.distinctEventCount,1);
+  assert.equal(result.ledger.duplicateReferenceCount,1);
+  assert.equal(result.ledger.slots.length,2);
+  assert.equal(result.ledger.slots[1].referenceKind,"skill_log");
+  assert.equal(result.ledger.slots[1].lifecycleOrdinal,3);
+  const output=JSON.stringify(result);
+  assert.doesNotMatch(output,/hidden_internal_skill|DO_NOT_EXPOSE|actual_parent|secretHand/);
+  assert.equal(result.readyToResume,false);
+});
+test("malformed useSkill logs reject unrecognized fields or invalid player targets",()=>{
+  const itemtype=v=>v?.__event?"event":v?.__player?"player":"object";
+  const e=event(true);
+  const probe=log=>index([[row({useSkill:[log]})]],itemtype,[]);
+  assert.equal(probe({skill:"a",targets:[],event:e,secretHand:"x"}).code,
+    "HISTORY_SKILL_LOG_FIELD_UNSUPPORTED");
+  assert.equal(probe({skill:"a",targets:[{unknown:1}],event:e}).code,
+    "HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID");
+  assert.equal(probe({skill:"a",targets:[],event:{bad:true}}).code,
+    "HISTORY_SKILL_LOG_EVENT_INVALID");
+  assert.equal(probe({skill:"",targets:[],event:e}).code,
+    "HISTORY_SKILL_LOG_EVENT_INVALID");
+});
+test("engine history isSkipped metadata is boolean and cannot invoke getter",()=>{
+  const v=row();v.isSkipped=true;
+  assert.equal(build([[v]]).ok,true);
+  const bad=row();bad.isSkipped="true";
+  assert.equal(build([[bad]]).code,"HISTORY_METADATA_INVALID");
+  const accessor=row();Object.defineProperty(accessor,"isMe",{enumerable:true,
+    get(){throw Error("PRIVATE")}})
+  assert.equal(build([[accessor]]).code,"HISTORY_ACCESSOR_UNSUPPORTED");
+});
