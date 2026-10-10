@@ -378,7 +378,7 @@ export function installV3OwnerConnection() {
         ? "伺服器尚未確認舊房間可以安全結束，可能仍有房主連線或原憑證無效。"
         : "本分頁沒有原房主憑證，無法手動結束仍在保留的房間。";
       displayOverlay("舊房間仍被保留",
-        warning + "\n請等待房主斷線保留期限結束（通常最多 3 分鐘），然後重新檢查。",
+        "V3 舊房間處理版本：stale-room-unlock-6。\n" + warning + "\n請等待房主斷線保留期限結束（通常最多 3 分鐘），然後重新檢查。",
         "重新檢查舊房間", () => queryOldRoomStatus(key));
       return;
     }
@@ -410,6 +410,7 @@ export function installV3OwnerConnection() {
       "（" + String(captureDiagnostic.code || "未記錄原因") + "）\n" : "";
     displayOverlay(
       "原房間仍保留，但無法從重新整理恢復",
+      "V3 舊房間處理版本：stale-room-unlock-6。\n" +
       "伺服器尚保留原房間，其他玩家正在等待。\n" +
       vaultNotice + diagnosticNotice +
       "事件續行機制仍在開發，重新整理後不能接續原局。\\n" +
@@ -528,7 +529,7 @@ export function installV3OwnerConnection() {
     if (typeof key !== "string" || !key) return;
     blockedCreateRoomId = key;
     displayOverlay("正在查詢保留的舊房間",
-      "V3 舊房間處理版本：stale-room-unlock-6。\\n" +
+      "V3 舊房間處理版本：stale-room-unlock-6。\n" +
       "伺服器拒絕覆蓋尚存的房間。正在查詢是否能由原房主驗證後安全結束舊局。",
       "重新檢查", () => queryOldRoomStatus(key));
     void queryOldRoomStatus(key);
