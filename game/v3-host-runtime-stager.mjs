@@ -12,7 +12,7 @@
  * This is an isolated preparation layer for later transactional rehydration.
  * Never broadcast, resume or declare a playable checkpoint from this module.
  */
-import { lib } from "../noname.js";
+// Engine dependencies are injected by the V3 owner runtime; no browser globals are imported.
 
 const ZONES = ["handcards", "equips", "judges", "expansions"];
 const PREFIX = "_noname_card:";
@@ -120,13 +120,7 @@ function planNativeZones(blueprint) {
  * @param {object} environment - dependency-injected constructors and
  *        DOM factory for unit testing; defaults to actual browser engine.
  */
-export function stageDetachedHostRuntime(
-  blueprint,
-  environment = {
-    element: lib.element,
-    createFragment: () => document.createDocumentFragment(),
-  }
-) {
+export function stageDetachedHostRuntime(blueprint, environment) {
   // Validate everything structural BEFORE creating even detached objects.
   const planned = planNativeZones(blueprint);
   if (!planned.ok) return planned;
