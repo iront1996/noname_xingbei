@@ -15,6 +15,7 @@ import {
   parseV3CaptureDiagnostic, publicV3CaptureCode
 } from "./v3-capture-observability.mjs";
 import { inspectV3EncryptedRecord } from "./v3-candidate-inventory.mjs";
+import { classifyV3HostPeerTopology } from "./v3-peer-topology.mjs";
 
 const DB_NAME = "xingbei-v3-playtest-recovery";
 const STORE = "encryptedCandidates";
@@ -137,36 +138,19 @@ function captureCandidate(kind = "periodic") {
   if (ids.some(id => !Object.prototype.hasOwnProperty.call(skills, id))) {
     throw new Error("SKILL_SET_MISMATCH");
   }
-  // Authoritative host-side binding: preserve existing peer WebSocket IDs.
-  // The paused server returns only the list of still-connected peer sockets.
-  // Cold-host preflight will require exact one-to-one matching before touching
-  // game state. Disconnected players are not silently replaced.
-  if (!Array.isArray(lib.node?.clients)) throw new Error("PEER_ROSTER_UNAVAILABLE");
-  const guestBindings = [];
-  const guestIds = new Set();
-  const guestSockets = new Set();
-  for (const client of lib.node.clients) {
-    const playerId = client?.id;
-    const socketId = client?.ws?.wsid;
-    if (client?.closed || !client?.inited ||
-        typeof playerId !== "string" || !playerId ||
-        typeof socketId !== "string" || !socketId ||
-        playerId !== socketId || !ids.includes(playerId) ||
-        guestIds.has(playerId) || guestSockets.has(socketId)) {
-      throw new Error("PEER_BINDING_INCOMPLETE");
-    }
-    guestIds.add(playerId);
-    guestSockets.add(socketId);
-    guestBindings.push({ playerId, socketId });
-  }
-  if (ids.length > 1 && guestBindings.length !== ids.length - 1) {
-    // Avoid optimistic restoration when a peer has already disconnected.
-    throw new Error("PEER_COUNT_MISMATCH");
-  }
-  if (!game.me?.playerid || !ids.includes(game.me.playerid) ||
-      guestIds.has(game.me.playerid)) {
-    throw new Error("HOST_PLAYER_MAPPING_INVALID");
-  }
+  // game.randomMapOL() fills vacant seats with AI players (no Player.ws).
+  // Exactly map EVERY still-connected human to their original socket; do not
+  // mistake bot seats for disconnected humans or silently adopt observers.
+  const topology = classifyV3HostPeerTopology({
+    playerIds: ids,
+    playerOL: lib.playerOL,
+    clients: lib.node?.clients,
+    observing: lib.node?.observing,
+    hostPlayerId: game.me?.playerid,
+  });
+  if (!topology.ok) throw new Error(topology.code);
+  const guestBindings = topology.peerBindings;
+  const botPlayerIds = topology.botPlayerIds;
   const arenaEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(arena)));
   const skillsEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(skills)));
   const auditArena = auditV3Serialization(arena, arenaEncoded, get.itemtype);
@@ -207,6 +191,7 @@ function captureCandidate(kind = "periodic") {
     roomId: game.roomId,
     hostPlayerId: game.me.playerid,
     peerBindings: guestBindings,
+    botPlayerIds,
     observationKind: kind,
     nextTurnPlayerId: kind === "turn_boundary"
       ? _status.eventManager?.getStartedEvent?.()?.player?.playerid ?? null
