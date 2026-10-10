@@ -11,10 +11,8 @@ export default () => {
 			void import("/game/v3-owner-connection.mjs?v=v3-inert-evidence-14")
 				.then(({ installV3OwnerConnection }) => installV3OwnerConnection())
 				.catch(error => console.error("[V3 playtest] reconnect setup failed:", error));
-			// Local encrypted candidate snapshots; NOT restorable checkpoints.
-			void import("/game/v3-recovery-vault.mjs?v=v3-inert-evidence-14")
-				.then(({ installV3RecoveryVault }) => installV3RecoveryVault())
-				.catch(error => console.error("[V3 playtest] vault setup failed:", error));
+			// The owner module installs the exact shared V3 vault instance before
+			// exposing its UI. Do not launch a second independent import here.
 			var directstartmode = lib.config.directstartmode;
 			ui.create.menu(true);
 			event.textnode = ui.create.div("", "输入联机地址");
