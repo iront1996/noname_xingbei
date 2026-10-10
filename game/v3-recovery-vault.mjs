@@ -10,12 +10,17 @@
  */
 import { game, get, lib, ui, _status } from "../noname.js";
 import { auditV3Serialization } from "./v3-serialization-integrity.mjs";
+import {
+  inspectV3CaptureReadiness, makeV3CaptureDiagnostic,
+  parseV3CaptureDiagnostic, publicV3CaptureCode
+} from "./v3-capture-observability.mjs";
 
 const DB_NAME = "xingbei-v3-playtest-recovery";
 const STORE = "encryptedCandidates";
 const VERSION = 1;
 const SCHEMA = "xingbei-v3-candidate-1";
 const KEY_PREFIX = "xingbei-v3-recovery-aes:";
+const DIAGNOSTIC_PREFIX = "xingbei-v3-capture-diagnostic:";
 const INTERVAL_MS = 6000;
 const BOUNDARY_SUFFIX = "::turn-boundary";
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -29,16 +34,31 @@ function validRoomId(id) {
   return typeof id === "string" && id.length > 0 && id.length < 128;
 }
 
-function activeOwner() {
-  return Boolean(
-    game.onlineroom && !game.online && _status.connectMode &&
-    _status.gameStarted && game.ws?.readyState === WebSocket.OPEN &&
-    validRoomId(game.roomId) && game.players?.length &&
-    ui.cardPile && ui.discardPile &&
-    typeof get.arenaState === "function" &&
-    typeof get.skillState === "function"
-  );
+function captureReadiness() {
+  return inspectV3CaptureReadiness({
+    game, lib, ui, get, status: _status,
+    socketOpenState: typeof WebSocket !== "undefined" ? WebSocket.OPEN : 1
+  });
 }
+
+function activeOwner() {
+  return captureReadiness().ready;
+}
+
+// A per-room, same-tab reload diagnostic. Never store raw snapshots, error
+// messages, socket IDs, credential material or hidden cards in this record.
+function recordCaptureOutcome(status, code, kind, roomId = game.roomId, at = Date.now()) {
+  const diagnostic = makeV3CaptureDiagnostic(status, code, kind, at);
+  lastOutcome = diagnostic;
+  if (validRoomId(roomId)) {
+    try {
+      sessionStorage.setItem(DIAGNOSTIC_PREFIX + roomId, JSON.stringify(diagnostic));
+    } catch {
+      // Storage failures must not break the existing encrypted capture path.
+    }
+  }
+}
+
 
 function encodeBase64(bytes) {
   let binary = "";
@@ -254,7 +274,13 @@ function captureCandidate(kind = "periodic") {
 }
 
 async function saveCandidate(kind = "periodic", captured = null) {
-  if (!activeOwner()) return;
+  const readiness = captureReadiness();
+  if (!readiness.ready) {
+    if (game.onlineroom && !game.online && _status.gameStarted) {
+      recordCaptureOutcome("CAPTURE_BLOCKED", readiness.code, kind);
+    }
+    return;
+  }
   if (busy) {
     // A boundary is a narrow synchronous moment, so capture it NOW and
     // defer only encryption/IndexedDB writing. Do not lose it to a timer.
@@ -262,10 +288,9 @@ async function saveCandidate(kind = "periodic", captured = null) {
       try {
         pendingBoundary = { roomId: game.roomId, snapshot: captureCandidate(kind) };
       } catch (error) {
-        lastOutcome = {
-          status: "BOUNDARY_CAPTURE_FAILED",
-          code: error instanceof Error ? error.message : "UnknownError",
-        };
+        recordCaptureOutcome("BOUNDARY_CAPTURE_FAILED",
+          publicV3CaptureCode(error instanceof Error ? error.message : ""),
+          "turn_boundary");
       }
     }
     return;
@@ -290,16 +315,11 @@ async function saveCandidate(kind = "periodic", captured = null) {
       iv: encodeBase64(iv),
       ciphertext: encodeBase64(encrypted),
     }));
-    lastOutcome = {
-      status: "ENCRYPTED_CANDIDATE_SAVED",
-      kind,
-      capturedAt: snapshot.capturedAt,
-    };
+    recordCaptureOutcome("ENCRYPTED_CANDIDATE_SAVED", null, kind, roomId);
   } catch (error) {
-    lastOutcome = {
-      status: "CAPTURE_FAILED",
-      code: error instanceof Error ? error.message : "UnknownError",
-    };
+    recordCaptureOutcome("CAPTURE_FAILED",
+      publicV3CaptureCode(error instanceof Error ? error.message : ""),
+      kind);
   } finally {
     busy = false;
     if (pendingBoundary) {
@@ -449,15 +469,26 @@ export async function purgeLocalRecoveryCandidate(roomId) {
     await transact("readwrite", store => store.delete(roomId));
     await transact("readwrite", store => store.delete(roomId + BOUNDARY_SUFFIX));
     sessionStorage.removeItem(sessionKeyName(roomId));
+    sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId);
     return true;
   } catch {
     return false;
   }
 }
 
-export function getLocalVaultStatus() {
-  // Status only; never expose the encrypted payload or key.
-  return { ...lastOutcome, restorable: false, serverStored: false };
+export function getLocalVaultStatus(roomId) {
+  // Read only metadata from the same tab; no credentials or raw state.
+  let persisted = null;
+  if (validRoomId(roomId)) {
+    try {
+      persisted = parseV3CaptureDiagnostic(
+        sessionStorage.getItem(DIAGNOSTIC_PREFIX + roomId), Date.now(), MAX_AGE_MS
+      );
+    } catch {
+      // sessionStorage may be unavailable in private browsing.
+    }
+  }
+  return { ...(persisted || lastOutcome), restorable: false, serverStored: false };
 }
 
 export function installV3RecoveryVault() {
