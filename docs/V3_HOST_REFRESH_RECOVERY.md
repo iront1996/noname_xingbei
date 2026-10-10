@@ -171,3 +171,28 @@ The current code is foundational infrastructure, not the completed feature.
 **仍未實作／禁止宣稱完成：**任何全域權威物件安裝、事件或 Promise 續行、掉線技能結算、切換房主、玩家狀態同步與 `v3ready`。目前所有候選繼續是 `restorable:false`，安全協定保持雙憑證；切勿因為看見 `ENCRYPTED_CANDIDATE_VERIFIED` 就解除暫停。
 
 **下一項真實瀏覽器證據**：在 V3 預覽四人對局中等待大於 10 秒，房主檢查快照健康，記錄狀態碼、原因碼和兩種候選驗證結果（不截取手牌／金鑰），確認 UI 有導入最新版。此測試不是刷新續局驗收，不應額外重啟 VPS。
+
+
+## 2026-10-10：PEER_COUNT_MISMATCH 真實對局診斷與修復候選
+
+使用者在 V3 Playtest 遊戲中按下「V3 測試：檢查本機快照」後，畫面實測：
+
+```text
+最近擷取：CAPTURE_FAILED
+原因碼：PEER_COUNT_MISMATCH
+定期候選：NOT_FOUND
+回合邊界候選：NOT_FOUND
+```
+
+引擎機制：`game.randomMapOL()` 會把實際連線的 `lib.node.clients` 指派給部分 `game.players`，其餘未配置真人的座位會由引擎配置玩家 ID。舊版 `v3-recovery-vault.mjs` 強制 `guestBindings.length === ids.length - 1`，錯誤地假定每個非房主座位都有真人 Socket。**截圖沒有揭露當時真人玩家數，不能單憑圖片判斷具體有幾個 AI 座位。**
+
+本次 V3-only 修正：
+- `game/v3-peer-topology.mjs`：每個仍連線客端都必須已初始化、未關閉、不在觀戰名單，且 `Client.id === NodeWS.wsid === playerId` 及 `lib.playerOL[playerId].ws === client`。重複或異常 socket fail closed。
+- 沒有 `Player.ws` 的其餘非房主座位明列 `botPlayerIds`，不虛構 Client。若原真人仍有殘留 `Player.ws` 而不在 guest roster，直接拒絕；至少要有一個真人 guest 才符合 VPS probe 規則。
+- 本機加密候選同時保存 `peerBindings` 與 `botPlayerIds`；不向伺服器／UI 洩漏 ID、手牌或密鑰。
+- `v3-host-authority-gate.mjs` 必須嚴格比對 VPS 仍連線 guest IDs、真人綁定與 AI 座位，所有非房主座位須被恰好覆蓋一次。
+- `v3-rehydration-blueprint.mjs`、`v3-host-runtime-stager.mjs` 與 `v3-host-registry-transaction.mjs` 支援混合座位：真人分配停用的遠端 Client，AI 只分配原生 Player。全部維持 `readyToResume:false`，禁止呼叫 `v3ready`。
+- 新增 `tools/test-v3-peer-topology.mjs` 以及 AI preflight/native/registry 測試，並加入整合防退化測試。
+- 前端動態匯入版本更新為 `v3-peer-topology-3`，避免載入過期快取。
+
+仍待真實瀏覽器驗證：該局配置下 `PEER_COUNT_MISMATCH` 是否消失、後續是否還存在 `CANDIDATE_STRUCTURE_LOSS` 等其他擷取拒絕條件、Cloudflare Pages 是否確實部署新版本。**本輪沒有修改或部署 VPS，亦未修改 V1/V2。** 快照依然不是可執行續行點，重新整理後仍須保持暫停。
