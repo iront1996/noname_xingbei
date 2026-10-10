@@ -24,6 +24,7 @@ const VERSION = 1;
 const SCHEMA = "xingbei-v3-candidate-1";
 const KEY_PREFIX = "xingbei-v3-recovery-aes:";
 const DIAGNOSTIC_PREFIX = "xingbei-v3-capture-diagnostic:";
+const DIAGNOSTIC_BOUNDARY_SUFFIX = "::turn_boundary";
 const INTERVAL_MS = 6000;
 const BOUNDARY_SUFFIX = "::turn-boundary";
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -58,6 +59,11 @@ function recordCaptureOutcome(status, code, kind, roomId = game.roomId, at = Dat
   if (validRoomId(roomId)) {
     try {
       sessionStorage.setItem(DIAGNOSTIC_PREFIX + roomId, JSON.stringify(diagnostic));
+      sessionStorage.setItem(
+        DIAGNOSTIC_PREFIX + roomId +
+          (kind === "turn_boundary" ? DIAGNOSTIC_BOUNDARY_SUFFIX : "::periodic"),
+        JSON.stringify(diagnostic)
+      );
     } catch {
       // Storage failures must not break the existing encrypted capture path.
     }
@@ -432,27 +438,35 @@ export async function purgeLocalRecoveryCandidate(roomId) {
     await transact("readwrite", store => store.delete(roomId + BOUNDARY_SUFFIX));
     sessionStorage.removeItem(sessionKeyName(roomId));
     sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId);
+    sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId + DIAGNOSTIC_BOUNDARY_SUFFIX);
+    sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId + "::periodic");
     return true;
   } catch {
     return false;
   }
 }
 
-export function getLocalVaultStatus(roomId) {
+export function getLocalVaultStatus(roomId, kind = null) {
   // Read only metadata from the same tab; no credentials or raw state.
+  // Per-kind status prevents a recent periodic failure from hiding the
+  // fact that no turn-boundary capture has ever been attempted.
+  const suffix = kind === "turn_boundary" ? DIAGNOSTIC_BOUNDARY_SUFFIX
+    : kind === "periodic" ? "::periodic" : "";
   let persisted = null;
   if (validRoomId(roomId)) {
     try {
       persisted = parseV3CaptureDiagnostic(
-        sessionStorage.getItem(DIAGNOSTIC_PREFIX + roomId), Date.now(), MAX_AGE_MS
+        sessionStorage.getItem(DIAGNOSTIC_PREFIX + roomId + suffix),
+        Date.now(), MAX_AGE_MS
       );
     } catch {
       // sessionStorage may be unavailable in private browsing.
     }
   }
-  const fallback = roomId === lastOutcomeRoomId
-    ? lastOutcome : { status:"NOT_YET_CAPTURED" };
-  return { ...(persisted || fallback), restorable: false, serverStored: false };
+  const fallback = roomId === lastOutcomeRoomId &&
+    (!kind || lastOutcome.kind === kind)
+    ? lastOutcome : {status:"NOT_YET_CAPTURED"};
+  return { ...(persisted || fallback), restorable:false, serverStored:false };
 }
 
 export function installV3RecoveryVault() {
