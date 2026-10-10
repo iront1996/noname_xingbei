@@ -37,7 +37,7 @@ test("front door and host share the exact current vault instance",()=>{
   const entry=read("mode/connect.js");
   const owner=read("game/v3-owner-connection.mjs");
   const match=owner.match(/from "\.\/v3-recovery-vault\.mjs\?v=([^"]+)";/);
-  assert.equal(match?.[1],"v3-xingbei-rule-state-20");
+  assert.equal(match?.[1],"v3-xingbei-resource-evidence-21");
   assert.ok(owner.includes("installV3RecoveryVault();"));
   assert.ok(entry.includes('/game/v3-owner-connection.mjs?v='+match[1]+'"'));
 });
