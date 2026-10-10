@@ -134,3 +134,52 @@ test("refreshed owner can inspect paused room but cannot unpause it", () => {
   refreshed.message("v3ready", "ROOM", f.liveRuntimeTicket);
   assert.equal(f.guest.last("v3ownerresumed"), undefined);
 });
+
+test("blocked create remains protected until original owner explicitly abandons", () => {
+  const f=openMatch(), newTab=f.broker.connect();
+  newTab.message("key", ["ROOM", "test-version"]);
+  newTab.message("create", "ROOM", "new room", "avatar");
+  assert.ok(newTab.last("v3createblocked"));
+  assert.equal(newTab.last("createroom"),undefined);
+  // A token-less client cannot learn that the owner is disconnected,
+  // or force deletion of the room.
+  newTab.message("v3roomstatus","ROOM",null);
+  assert.deepEqual(newTab.last("v3roomstatus"),["v3roomstatus","ROOM","not_available"]);
+  newTab.message("v3abandon","ROOM",null);
+  assert.deepEqual(newTab.last("v3resumerejected"),["v3resumerejected","abandon_denied"]);
+  newTab.message("create","ROOM","still blocked","avatar");
+  assert.equal(newTab.last("createroom"),undefined);
+  // Authenticated same-owner page may inspect and explicitly end a paused room.
+  newTab.message("v3roomstatus","ROOM",f.persistedOwnerToken);
+  assert.deepEqual(newTab.last("v3roomstatus"),["v3roomstatus","ROOM","owner_disconnected"]);
+  newTab.message("v3abandon","ROOM",f.persistedOwnerToken);
+  assert.deepEqual(newTab.last("v3roomabandonedHost"),["v3roomabandonedHost","ROOM"]);
+  assert.ok(f.guest.last("v3roomabandoned"));
+  newTab.message("v3roomstatus","ROOM",f.persistedOwnerToken);
+  assert.deepEqual(newTab.last("v3roomstatus"),["v3roomstatus","ROOM","room_absent"]);
+  // No VPS reboot and no room overwrite; a separate new room may now start.
+  newTab.message("create","ROOM","new match","avatar");
+  assert.deepEqual(newTab.last("createroom"),["createroom","ROOM"]);
+  assert.notEqual(newTab.last("v3ownerToken")[2],f.persistedOwnerToken);
+});
+test("active room, wrong owner identity and wrong token cannot be abandoned", () => {
+  const {broker}=mockRoomBroker();
+  const owner=broker.connect();owner.message("key",["ROOM","test-version"]);
+  owner.message("create","ROOM","host","avatar");
+  const token=owner.last("v3ownerToken")[2];
+  const claimant=broker.connect();claimant.message("key",["ROOM","test-version"]);
+  claimant.message("v3abandon","ROOM",token);
+  assert.equal(claimant.last("v3resumerejected")[1],"abandon_denied");
+  claimant.message("create","ROOM","bad room","avatar");
+  assert.ok(claimant.last("v3createblocked"));
+  assert.equal(claimant.last("createroom"),undefined);
+  owner.close();
+  claimant.message("v3abandon","ROOM","0".repeat(64));
+  assert.equal(claimant.last("v3resumerejected")[1],"abandon_denied");
+  const impostor=broker.connect();
+  impostor.message("key",["IMPOSTOR","test-version"]);
+  impostor.message("v3abandon","ROOM",token);
+  assert.equal(impostor.last("v3roomabandonedHost"),undefined);
+  claimant.message("v3roomstatus","ROOM",token);
+  assert.equal(claimant.last("v3roomstatus")[2],"owner_disconnected");
+});
