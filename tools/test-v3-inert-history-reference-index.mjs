@@ -140,3 +140,25 @@ test("engine history isSkipped metadata is boolean and cannot invoke getter",()=
     get(){throw Error("PRIVATE")}})
   assert.equal(build([[accessor]]).code,"HISTORY_ACCESSOR_UNSUPPORTED");
 });
+
+test("active event referred by useSkill logInfo is still rejected as active",()=>{
+  const e=event(true);
+  const entry={skill:"opaque",event:e,targets:[]};
+  const out=index([[row({useSkill:[entry]})]],kind,[e],
+    ()=>({observed:true,ordinal:2,outcome:"fulfilled"}));
+  assert.equal(out.ok,false);
+  assert.equal(out.code,"HISTORY_EVENT_IN_ACTIVE_STACK");
+  assert.equal(out.ledger,null);
+});
+test("useSkill logInfo accessors cannot run and cannot leak dynamic content",()=>{
+  let reads=0;
+  const e=event(true);
+  const entry={skill:"opaque",event:e};
+  Object.defineProperty(entry,"targets",{enumerable:true,get(){
+    reads++;throw Error("private targets");
+  }});
+  const out=build([[row({useSkill:[entry]})]]);
+  assert.equal(out.code,"HISTORY_ACCESSOR_UNSUPPORTED");
+  assert.equal(reads,0);
+  assert.equal(JSON.stringify(out).includes("private targets"),false);
+});
