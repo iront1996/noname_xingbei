@@ -53,8 +53,16 @@ export function prepareShadowHostRegistry(staged,skillResult,blueprint) {
     if(seat.state?.dead)dead.push(player);else alive.push(player);
   }
   if(playerRefs.size!==runtime.players.size)return fail("PLAYER_SET_EXTRA");
+  const botIds=blueprint.botPlayerIds;
   if(!playerRefs.has(blueprint.hostPlayerId) ||
-     blueprint.remoteRoutes.length!==playerRefs.size-1) {
+     !Array.isArray(botIds) ||
+     !(runtime.botPlayerIds instanceof Array) ||
+     botIds.length!==runtime.botPlayerIds.length ||
+     botIds.some(id=>!runtime.botPlayerIds.includes(id) || !playerRefs.has(id) ||
+       id===blueprint.hostPlayerId) ||
+     new Set(botIds).size!==botIds.length ||
+     blueprint.remoteRoutes.length<1 ||
+     blueprint.remoteRoutes.length+botIds.length!==playerRefs.size-1) {
     return fail("HOST_OR_ROUTES_INVALID");
   }
   for(const entry of blueprint.remoteRoutes) {
@@ -98,6 +106,7 @@ export function prepareShadowHostRegistry(staged,skillResult,blueprint) {
       }),
       // Critical: does not contain a PhaseLoop, action journal, reinit or
       // choice continuation; it is not sufficient to run a match.
+      botSeatCount:botIds.length,
       eventContinuationInstalled:false,
       readyToResume:false,
     }),
@@ -107,6 +116,7 @@ export function prepareShadowHostRegistry(staged,skillResult,blueprint) {
       deadPlayers:dead.length,
       cards:physicalCards.size,
       dormantRemoteClients:originalClients.size,
+      botSeats:botIds.length,
       readyToResume:false,
       authoritativeRuntimeRebuilt:false,
     }),
