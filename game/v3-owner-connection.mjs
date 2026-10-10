@@ -528,6 +528,7 @@ export function installV3OwnerConnection() {
     if (typeof key !== "string" || !key) return;
     blockedCreateRoomId = key;
     displayOverlay("正在查詢保留的舊房間",
+      "V3 舊房間處理版本：stale-room-unlock-6。\\n" +
       "伺服器拒絕覆蓋尚存的房間。正在查詢是否能由原房主驗證後安全結束舊局。",
       "重新檢查", () => queryOldRoomStatus(key));
     void queryOldRoomStatus(key);
