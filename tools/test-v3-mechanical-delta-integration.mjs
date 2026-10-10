@@ -44,7 +44,7 @@ test("V3 UI explicitly distinguishes game rules from generic game engine API",()
   assert.match(owner,/星杯規則狀態取樣/);
   assert.match(owner,/傷害通常導致摸牌/);
   assert.match(owner,/治療是抵禦傷害的資源/);
-  assert.match(owner,/不是星杯規則資源/);
+  assert.match(owner,/非星杯規則資源/);
   assert.doesNotMatch(owner,/體力變更區間|牌堆變更區間/);
   assert.match(owner,/前端版本：v3-xingbei-rule-state-20/);
   assert.match(owner,/from "\.\/v3-recovery-vault\.mjs\?v=v3-xingbei-rule-state-20"/);
