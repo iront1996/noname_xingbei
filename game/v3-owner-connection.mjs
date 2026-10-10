@@ -10,6 +10,7 @@
 import { game, lib, _status } from "../noname.js";
 import {
   inspectLocalRecoveryCandidate,
+  getLocalVaultStatus,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
 } from "./v3-recovery-vault.mjs";
@@ -216,6 +217,41 @@ function reconnectOwner() {
   };
 }
 
+function installCaptureHealthButton() {
+  if (!document.body || document.getElementById("v3-playtest-capture-health")) return;
+  const button = document.createElement("button");
+  button.id = "v3-playtest-capture-health";
+  button.type = "button";
+  button.textContent = "V3 測試：檢查本機快照";
+  button.style.cssText =
+    "position:fixed;bottom:54px;right:14px;z-index:999999;" +
+    "border:1px solid #64748b;border-radius:8px;background:#182638;" +
+    "color:#f8fafc;padding:8px 12px;font:13px system-ui,sans-serif;" +
+    "box-shadow:0 2px 10px #0007;cursor:pointer;display:none;";
+  button.addEventListener("click", async () => {
+    if (!isLiveOwner()) return;
+    const roomId = game.roomId;
+    const diagnostic = getLocalVaultStatus(roomId);
+    const vault = await inspectLocalRecoveryCandidate(roomId);
+    if (!isLiveOwner() || game.roomId !== roomId) return;
+    // Status codes and aggregate counts only; never expose hidden cards,
+    // encrypted payload, keys or socket/player identifiers.
+    const detail = [
+      "最近擷取：" + String(diagnostic.status || "NOT_YET_CAPTURED"),
+      "原因碼：" + String(diagnostic.code || "NONE"),
+      "定期候選：" + String(vault.status),
+      "回合邊界候選：" + String(vault.turnBoundaryStatus || "NOT_FOUND"),
+      "此資料不包含可續行的事件，不能當成可恢復遊戲的證明。"
+    ].join("\n");
+    displayOverlay("V3 房主本機快照健康檢查", detail, "關閉", removeOverlay);
+  });
+  document.body.append(button);
+  setInterval(() => {
+    button.style.display = isLiveOwner() && game.ws?.readyState === WebSocket.OPEN
+      ? "block" : "none";
+  }, 1000);
+}
+
 function installPlaytestButton() {
   if (!document.body || document.getElementById("v3-playtest-owner-drop")) return;
   const button = document.createElement("button");
@@ -248,6 +284,7 @@ export function installV3OwnerConnection() {
   if (installed) return;
   installed = true;
   installPlaytestButton();
+  installCaptureHealthButton();
   const defaultRoomlist = lib.message.client.roomlist;
   lib.message.client.roomlist = function (...args) {
     const result = defaultRoomlist.apply(this, args);
@@ -273,6 +310,7 @@ export function installV3OwnerConnection() {
     if (status !== "owner_disconnected") return;
     pausedRoomOnReload = true;
     const vault = await inspectLocalRecoveryCandidate(key);
+    const captureDiagnostic = getLocalVaultStatus(key);
     if (!pausedRoomOnReload || key !== game.onlineKey) return;
     if (vault.status === "ENCRYPTED_CANDIDATE_VERIFIED" &&
         vault.turnBoundaryStatus === "ENCRYPTED_CANDIDATE_VERIFIED" &&
@@ -285,10 +323,13 @@ export function installV3OwnerConnection() {
       : vault.status === "NOT_FOUND"
         ? "本機尚無加密候選資料。\\n"
         : "本機資料狀態：" + vault.status + "（不可直接續局）。\\n";
+    const diagnosticNotice = vault.status === "NOT_FOUND" ?
+      "最近擷取狀態：" + String(captureDiagnostic.status || "NOT_YET_CAPTURED") +
+      "（" + String(captureDiagnostic.code || "未記錄原因") + "）\n" : "";
     displayOverlay(
       "原房間仍保留，但無法從重新整理恢復",
       "伺服器尚保留原房間，其他玩家正在等待。\n" +
-      vaultNotice +
+      vaultNotice + diagnosticNotice +
       "事件續行機制仍在開發，重新整理後不能接續原局。\\n" +
       "你可以結束舊房間，通知其他玩家重新開局。",
       "結束無法恢復的舊房間",
