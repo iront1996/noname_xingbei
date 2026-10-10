@@ -511,3 +511,35 @@ Promise：OBSERVATION_RING_TRUNCATED / started 514 / fulfilled 510 / rejected 0 
 - 沒有改變 `HIST_ACTION_EVENT_ACTIVE_STACK`、`BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION` 的 fail-closed 行為，也沒有開放 `v3resume`／`v3ready`；**VPS、V1、V2 完全不變**。
 
 **驗收：**使用者須開新 V3 Playtest 對局，至少一位其他真人，正常出牌與換回合 20 秒以上，健康檢查確認 `前端版本：v3-owner-bootstrap-15`，重點觀察 `事件 Promise 觀測` 是否變為 `OBSERVATION_PARTIAL` 或 `OBSERVATION_RING_TRUNCATED` 且 `開始` > 0；並檢查 `本機加密事件證據` 是否為 `ENCRYPTED_INERT_EVIDENCE_VERIFIED`。如果顯示其他 `OBSERVER_*\u0060 原因碼，應保留完整截圖，不能忽略以免誤驗收。這是事件觀測與保存路徑驗收，**不是刷新房主後可恢復原局**。
+
+
+## 2026-10-11：V3 第 15 版驗收成功、具缺口驗證的連續匿名事件紀錄（第 16 版）
+
+房主在 `v3-owner-bootstrap-15` 的真實遊戲中回報：
+
+```text
+事件 Promise：OBSERVATION_RING_TRUNCATED / 開始 578 / 完成 574 / 失敗 0 / 待結束 4
+無法追蹤的新事件 0 / 匿名環形紀錄淘汰 640
+歷史引用：INERT_HISTORY_REFERENCE_INDEX_READY / 引用 32 / 重複引用 3
+本機加密事件證據：ENCRYPTED_INERT_EVIDENCE_VERIFIED（約 4 秒前）
+證據中的歷史引用：INERT_HISTORY_REFERENCE_INDEX_READY
+上次回合 CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED
+邊界 CAPTURE_BLOCKED / BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION
+定期 CAPTURE_FAILED / HIST_ACTION_EVENT_FINISHED_ONLY
+兩種正式遊戲候選 NOT_FOUND
+```
+
+第 15 版的單一路徑觀測器安裝及 AES-GCM 事件證據保存已經有真實瀏覽器驗收；**不代表能恢復被刷新中斷的非同步事件或技能結果**。目前 event lifecycle ring 僅保留最後 512 筆轉移，超過上限的舊轉移會被覆寫。即使每 6 秒存一次最後的 evidence capsule，也只存最近 512 筆，較早的轉移不會持續累積，且如果兩次保存之間超過 512 筆轉移，可能漏掉中間的區間。
+
+**第 16 版新增 `game/v3-inert-transition-timeline.mjs`**：
+- 純函式 `reconcileV3InertTimeline` 以連續序號合併上一批經驗證的匿名事件轉移與目前的 ring window，重疊序號比對必須一致，不一致拒絕；落差數會計入 `missingTransitions`，不是當作可補上的事件。
+- 最多保留 4096 筆非執行的 `started / fulfilled / rejected / threw` 轉移，超過以 `evictedTransitions` 累計容量淘汰。保留序號與同一觀測器的匿名事件序號，但**沒有**保存玩家、手牌、技能、事件名、選擇結果、Promise 或函式。
+- 針對每個 JavaScript 執行環境產生 128-bit 隨機 `observerEpoch`，不向 UI 輸出，僅包含在加密資料內；刷新瀏覽器後如果新事件從同一序號重新開始，`TIMELINE_OBSERVER_EPOCH_CHANGED` 阻擋把兩個不相關的執行序列串成同一份紀錄。原環境以外的舊 archive 僅標示 `TIMELINE_PREVIOUS_RUNTIME_ONLY`，不能偽稱是當前房主引擎的資料。
+- `game/v3-recovery-vault.mjs` 使用獨立的 IndexedDB key `roomId::inert-transition-timeline-v1` 與 AES-GCM。additional authenticated data 綁定 schema、房號及保存時間。既有的事件 evidence 與正式遊戲快照保存路徑保持分開；重新整理或清除舊房間時，原房間的獨立 archive 也會跟著清除。
+- `inspectLocalInertTransitionTimeline` 僅回傳 `ENCRYPTED_INERT_TIMELINE_VERIFIED`、匿名轉移數、已知缺口數與容量淘汰數；這只代表 archive 的加密內容及結構驗證，**不代表事件可重播**。未經證實的歷史內容、原始遊戲狀態或身份資料仍不能輸出。
+- 新增 `tools/test-v3-inert-transition-timeline.mjs` 和 `tools/test-v3-inert-timeline-integration.mjs`，測試連續視窗合併、重複/衝突偵測、超過 4096 筆容量、重新整理跨 epoch、密文竄改、房號與保存時間 AEAD 驗證、敏感內容拒收、原有 `v3ready` 安全閘不變。
+- 版本 `v3-inert-timeline-16`，且健康檢查 modal 改為可垂直捲動，避免診斷變長時超出小尺寸瀏覽器畫面。僅 V3 GitHub Playtest branch；V1、V2、VPS 8081 和 production 8080 未修改。
+
+**限制必須明示**：即使 `missingTransitions=0`、`evictedTransitions=0`，也只是從觀測器啟用後在已取樣區間內沒有找到缺漏；絕非完整且可信的遊戲事件重播日誌。事件的 JS closure、子事件 Promise await、卡牌及技能副作用仍沒有持久化；`completeCoverage:false`、`safeCheckpointCertified:false`、`eventContinuationCaptured:false`、`restorable:false`、`readyToResume:false` 均未放寬。
+
+**接下來的實測**：新建 V3 Playtest 房間，正常開始真人多人對局，至少遊玩 20 秒，房主按「V3 測試：檢查本機快照」，確認 `v3-inert-timeline-16`，重點截圖「事件序列保存」、「本機加密事件證據」、「歷史事件引用」。預期至少一次可驗證的加密序列，並在長時間或大量事件後能顯示容量淘汰/缺口狀態；不要嘗試刷新房主續局。
