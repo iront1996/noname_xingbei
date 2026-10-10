@@ -232,15 +232,23 @@ function installCaptureHealthButton() {
     if (!isLiveOwner()) return;
     const roomId = game.roomId;
     const diagnostic = getLocalVaultStatus(roomId);
+    const periodicDiagnostic = getLocalVaultStatus(roomId, "periodic");
+    const boundaryDiagnostic = getLocalVaultStatus(roomId, "turn_boundary");
     const vault = await inspectLocalRecoveryCandidate(roomId);
     if (!isLiveOwner() || game.roomId !== roomId) return;
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-peer-topology-4",
+      "前端版本：v3-history-diagnostics-5",
       "最近擷取：" + String(diagnostic.status || "NOT_YET_CAPTURED"),
       "原因碼：" + String(diagnostic.code || "NONE"),
-      "定期候選：" + String(vault.status),
+      "定期最近：" + String(periodicDiagnostic.status || "NOT_YET_CAPTURED") +
+        " / " + String(periodicDiagnostic.code || "NONE"),
+      "邊界最近：" + String(boundaryDiagnostic.status || "NOT_YET_CAPTURED") +
+        " / " + String(boundaryDiagnostic.code || "NONE"),
+      "定期候選：" + String(vault.status) +
+        (vault.status === "ENCRYPTED_CANDIDATE_VERIFIED" &&
+         Number.isFinite(vault.ageSeconds) ? "（約 " + vault.ageSeconds + " 秒前）" : ""),
       "回合邊界候選：" + String(vault.turnBoundaryStatus || "NOT_FOUND"),
       "此資料不包含可續行的事件，不能當成可恢復遊戲的證明。"
     ].join("\n");
