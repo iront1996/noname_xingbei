@@ -337,3 +337,31 @@ The current code is foundational infrastructure, not the completed feature.
 **未實作事項：**本版本的紀錄僅保存在活躍分頁記憶體中，**尚未是可重播或可持久保存的事件日誌**。擷取雖可附上匿名統計，但歷史序列化仍因 Event 引用被拒；回合邊界依然有祖先工作待處理。原房主刷新不能接續原局；保持 `safeCheckpointCertified:false`、`eventContinuationCaptured:false`、`restorable:false`、`readyToResume:false`，嚴禁因觀測到 promise fulfilled 就調用 `v3ready`。
 
 **下一步實際瀏覽器驗收（不需更新 VPS）**：等 Cloudflare Pages V3 預覽版載入新版後，由原房主與至少一位玩家使用新房間開始遊戲，至少進行兩個回合，點開「V3 測試：檢查本機快照」，截圖含 `前端版本：v3-event-lifecycle-journal-9`、`事件 Promise 觀測`、`歷史事件引用` 的視窗，並說明是否仍可正常出牌、換回合。不要刷新房主，也不要結束仍有玩家進行中的對局。
+
+
+## 2026-10-11：V3 事件觀測實測（journal-9）及 History SkillLog 格式修復
+
+房主實際遊戲中看到：
+
+```text
+前端版本：v3-event-lifecycle-journal-9
+事件 Promise 觀測：OBSERVATION_OVERFLOW
+開始 759 / 已完成 750 / 失敗 0 / 待觀測結束 9
+歷史事件引用：HISTORY_ENTRY_NOT_EVENT
+定期最近：CAPTURE_FAILED / HIST_ACTION_EVENT_ACTIVE_STACK
+邊界最近：CAPTURE_BLOCKED / BOUNDARY_ANCESTOR_WORK_PENDING
+定期候選：NOT_FOUND / 邊界候選：NOT_FOUND
+```
+
+因 `GameEvent.start` 被動觀測器的內存環形佇列僅有 512 筆轉移容量，759 次 start 加上 750 次 settle 必然使舊的匿名轉移紀錄移出環形佇列；**這不等於 9 筆仍未完成的 Promise 就是丟失資訊或可直接續局**。另外只要未完成的 Event 同時超過容量，無法再追蹤新的事件，必須另外回報。已在 `game/v3-event-lifecycle-journal.mjs` 區分：
+- `OBSERVATION_RING_TRUNCATED` + `truncatedTransitions`：僅代表有限的匿名診斷環形紀錄輪替，WeakMap 裡已觀測的事件 Promise 結果仍可檢索，**不具備完整事件回放資訊**。
+- `OBSERVATION_CAPACITY_EXCEEDED` + `droppedStarts`：大量**同時未結算事件**用完追蹤槽位，確實無法觀測所有新事件，仍 fail closed。
+- 上述情形的 `completeCoverage`、`eventContinuationCaptured`、`restorable`、`readyToResume` 一律維持 false；不調用任何房主續局或事件重啟。
+
+已從真實原生引擎 `noname/library/element/player.js` 的 `logSkill` 與 `noname/library/element/content.js` 的 `useSkill` 實作確認：`actionHistory.useSkill` 可以保存 **`logInfo = {skill, targets, event, sourceSkill?, type?}` 普通物件**，而不是直接保存 GameEvent。舊的 `v3-inert-history-reference-index.mjs` 把所有 useSkill 元素都當 Event，便會回報 `HISTORY_ENTRY_NOT_EVENT`。新版為 `useSkill` 增加嚴格的 logInfo 驗證，不輸出技能名稱、目標或玩家識別；僅索引經原生 `itemtype` 證實的內層 `event`，並以 WeakMap 維護跨 history bucket 的相同 Event 引用關係。未知欄位、錯誤 targets、getter、自訂型別、已在活躍事件堆疊的事件依舊拒絕。元資料另允許原生引擎使用的 `isSkipped === true`。
+
+健康檢查新增 `事件紀錄環形截短`／`無法追蹤的新事件` 整數，並版本釘選 `v3-history-skilllog-10`（Owner 模組與 Vault 共享相同 ESM 實例）。新增原生形狀 logInfo、重複引用、錯誤欄位、active Event、getter 不執行、環形紀錄回轉與超出同時進行中事件上限的回歸。
+
+**不宣稱解決的項目：**目前定期快照仍因 `HIST_ACTION_EVENT_ACTIVE_STACK` 失敗，回合邊界仍因 `BOUNDARY_ANCESTOR_WORK_PENDING` 被拒。這是安全性要求，不能靠降低檢查要求來清除。現有候選仍不可用，完整冷重連仍未開放。
+
+**下一步瀏覽器測試**：原房主新開 V3 Playtest 對局，至少兩人正常進行出牌和技能，等待 15 秒以上並至少換一次回合，健康檢查需顯示 `v3-history-skilllog-10`。檢查是否把原本的 `HISTORY_ENTRY_NOT_EVENT` 變成其他更具體的歷史型別或 Event 狀態碼、是否顯示 `OBSERVATION_RING_TRUNCATED` 而非誤導的 `OBSERVATION_OVERFLOW`。不要重新整理房主或試圖強制執行舊局。
