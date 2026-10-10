@@ -25,9 +25,12 @@ function configValue(input){
   if(!input||typeof input!=="object"||Array.isArray(input))return null;
   // Intentionally a strict whitelisted shape for the first protocol stage.
   if(Object.keys(input).some(k=>!["mode","seatMode"].includes(k)))return null;
-  if(input.mode!=="xingBei" || !Object.hasOwn(MODES,input.seatMode))return null;
-  return Object.freeze({mode:"xingBei",seatMode:input.seatMode,
-    seatCount:MODES[input.seatMode]});
+  const mode=Object.getOwnPropertyDescriptor(input,"mode");
+  const seatMode=Object.getOwnPropertyDescriptor(input,"seatMode");
+  if(!mode||!seatMode||!("value" in mode)||!("value" in seatMode))return null;
+  if(mode.value!=="xingBei" || !Object.hasOwn(MODES,seatMode.value))return null;
+  return Object.freeze({mode:"xingBei",seatMode:seatMode.value,
+    seatCount:MODES[seatMode.value]});
 }
 
 export function createV3AuthoritativeRoomModel(){
@@ -78,7 +81,8 @@ export function createV3AuthoritativeRoomModel(){
       rooms.set(roomId,room);
       const created=addSession(room,connectionId);
       if(!created.ok){rooms.delete(roomId);return created}
-      return reply(true,"ROOM_CREATED",{...created,view:publicView(room)});
+      return reply(true,"ROOM_CREATED",{seat:created.seat,
+        reconnectToken:created.reconnectToken,view:publicView(room)});
     },
     join({roomId,connectionId}={}){
       const room=find(roomId);
