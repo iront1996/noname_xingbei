@@ -395,3 +395,35 @@ The current code is foundational infrastructure, not the completed feature.
 - 前端載入版本 `v3-event-cut-audit-11`，owner 和 vault 共用相同版本化 ESM 實例。自動化測試涵蓋不安全 queue、不存在/超長堆疊、getters、隱私、切點被保守拒絕，以及 hook 的同步取樣先於既有 `inspectV3TurnBoundaryStack` 和重新整理未開放的事實。
 
 **此版本只是切點工程的安全診斷基礎，沒有可恢復事件的錄製、重放或 checkpoint 安裝。** V1/V2 和 VPS 未變更。下一步須由原房主新開 V3 Playtest 對局、至少換一次回合，檢查健康視窗是否載入 `v3-event-cut-audit-11`，並傳回「上次換回合切點／換回合祖先佇列」的結果。測試期間請勿重新整理房主，亦不可強制 `v3ready`。
+
+
+## 2026-10-11：V3 切點與真人 Socket 回連證據（Playtest-11 → Playtest-12）
+
+房主實際回報 `v3-event-cut-audit-11`：
+
+```text
+Promise 觀測：OBSERVATION_RING_TRUNCATED / 開始 738 / 完成 734 / 失敗 0 / 待觀測結束 4
+歷史引用：INERT_HISTORY_REFERENCE_INDEX_READY / 引用 34 / 重複引用 2
+點擊時切點：CUT_NOT_PHASE_LOOP / 祖先 next 4 / after 0；當前 next 0 / after 0
+上次換回合切點：CUT_ANCESTOR_QUEUES_PENDING / 祖先 next 1 / after 0；當前 next 0 / after 0
+定期最近：CAPTURE_FAILED / PEER_BINDING_INCOMPLETE
+邊界最近：CAPTURE_BLOCKED / BOUNDARY_ANCESTOR_WORK_PENDING
+定期候選：ENCRYPTED_CANDIDATE_VERIFIED（約 33 秒前）；邊界候選：NOT_FOUND
+```
+
+**待修正的兩個邏輯假設：**
+
+1. 在原生引擎 `lib.message.server.init(version,config)` 的 `config.id` 回連分支，`Client.id` 會恢復舊的 `playerid`，但 `NodeWS.wsid` 是 broker 新分配的 Socket 識別。因此原 V3 `client.id === client.ws.wsid` 的約束遇到重連會拒絕。然而原生 `config.id` 並非由 V3 broker 用不可偽造的重連憑證綁定；若放寬為只要求 `player.ws === client`，可能讓不受信任的連線宣稱既有玩家 ID，因此絕不可直接解除驗證。
+2. `GameEvent.waitNext()` 在 `await next.start()` 期間仍保留 `this.next[0]`，等子事件完成才 shift。因而上次回合邊界 `祖先 next 1` 可能是**正在執行的 phaseLoop 子事件**，不代表獨立於正在執行事件之外的第二個排程工作，也更不代表該階段可以從冷啟動恢復。
+
+本輪 V3-only 前端修正：
+
+- `game/v3-peer-topology.mjs` 精確拆分 `PEER_OBSERVER_PRESENT`、`PEER_CLIENT_CLOSED`、`PEER_CLIENT_NOT_INITIALIZED`、`PEER_SOCKET_REBOUND_UNVERIFIED` 與既有不合法映射；**遇到 guest playerId 不同於其新 Socket ID 時仍 fail closed**。現有 `v3-host-authority-gate.mjs`、native stage／shadow registry 的嚴格相等條件都保持不動。這是診斷改進，並非正式支援重連後的冷續局。
+- `game/v3-event-cut-audit.mjs` 針對每個祖先 `next[0]`，只使用屬性描述符比對是否為當下堆疊的直接子事件，新增 `activeLineageNext`（正在執行的子事件引用）與 `additionalAncestorNext`（真正額外的 next 工作）兩個匿名計數。額外 queued next / after 存在仍為 `CUT_ANCESTOR_QUEUES_PENDING`；若只有被 await 的活躍子事件，回報 `CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED`，**絕不標記安全**。
+- 保留舊的 `inspectV3TurnBoundaryStack` 對未完成排程與所有 event continuation 的 fail-closed 行為，不因此開始儲存「安全可續行」回合快照。
+- 健康檢查同時顯示即時與上次 `lib.onphase` 的祖先 next/after、活躍子事件與額外排隊數。Owner/Vault 動態匯入版本同步為 `v3-peer-cut-classification-12`。
+- `tools/test-v3-peer-topology.mjs`、`tools/test-v3-event-cut-audit.mjs`、`tools/test-v3-peer-cut-integration.mjs` 對原生回連、觀戰、冒名 Socket、內建子事件、額外兄弟事件、accessor 不執行及安全閘持續關閉加上回歸。
+
+**下一個工程安全邊界**：要讓 guest 原玩家在 Socket ID 重新分配後也能成為「受驗證的同一玩家」，必須有 broker 發行／校驗且綁定原玩家身分的重連證明，並同步調整 V3 broker 與 V3 前端。單靠前端的 `config.id` 不足以證明。這會是未來可能需要更新 VPS 的工作；目前不能假裝已有這個保證。
+
+下一次 V3 真實對局只需要房主及至少一名其他真人，按「檢查本機快照」回傳 `v3-peer-cut-classification-12` 的「上次換回合切點」、「換回合祖先佇列」及定期擷取拒絕碼。現階段不要刷新房主試續局，V1/V2/VPS 均未修改。
