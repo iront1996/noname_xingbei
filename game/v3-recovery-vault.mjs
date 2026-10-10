@@ -21,6 +21,7 @@ import {
   createV3EventLifecycleJournal, installV3EventLifecycleObserver
 } from "./v3-event-lifecycle-journal.mjs";
 import { indexV3InertHistoryReferences } from "./v3-inert-history-reference-index.mjs";
+import { inspectV3EventCutQueues } from "./v3-event-cut-audit.mjs";
 import {
   inspectV3TurnBoundaryStack, inspectV3HistoryEventReferences
 } from "./v3-event-observation-preflight.mjs";
@@ -63,6 +64,17 @@ function captureReadiness() {
 function activeOwner() {
   return captureReadiness().ready;
 }
+export function getV3EventCutHealth() {
+  // A read-only, synchronous sample of visible GameEvent queues. It neither
+  // captures gameplay nor can it authorize restoring an interrupted match.
+  if(!activeOwner())return Object.freeze({
+    code:"CUT_HOST_NOT_ACTIVE",ancestorNext:0,ancestorAfter:0,
+    currentNext:0,currentAfter:0,
+    safeCheckpointCertified:false,restorable:false,readyToResume:false
+  });
+  return inspectV3EventCutQueues(_status.eventManager?.eventStack);
+}
+
 export function getV3HistoryReferenceLinkHealth() {
   if(!activeOwner())return Object.freeze({
     status:"HISTORY_HOST_NOT_ACTIVE",references:0,aliasReferences:0,
