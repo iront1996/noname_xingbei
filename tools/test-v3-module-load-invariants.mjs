@@ -47,3 +47,23 @@ test("mixed human/AI topology travels from capture through safe shadow registry"
   assert.doesNotMatch(vault,/guestBindings\.length !== ids\.length - 1/);
   assert.doesNotMatch(gate,/claim\.guestSocketIds\.length !== playerIds\.length - 1/);
 });
+
+test("V3 passive GameEvent journal and history linkage do not bypass existing recovery gate",()=>{
+  const vault=get("game/v3-recovery-vault.mjs");
+  const owner=get("game/v3-owner-connection.mjs");
+  const journal=get("game/v3-event-lifecycle-journal.mjs");
+  const history=get("game/v3-inert-history-reference-index.mjs");
+  assert.match(vault,/installV3EventLifecycleObserver\(/);
+  assert.match(vault,/getV3EventLifecycleHealth/);
+  assert.match(vault,/getV3HistoryReferenceLinkHealth/);
+  assert.match(vault,/eventLifecycleJournal\.lookup\(event\)/);
+  assert.match(owner,/getV3HistoryReferenceLinkHealth\(/);
+  assert.match(journal,/Reflect\.apply\(original,this,args\)/);
+  assert.match(journal,/return result;/);
+  assert.match(journal,/completeCoverage:false/);
+  assert.match(history,/HISTORY_EVENT_PROMISE_NOT_FULFILLED/);
+  assert.match(vault,/safeCheckpointCertified: false/);
+  assert.match(vault,/eventContinuationCaptured: false/);
+  assert.match(vault,/restorable: false/);
+  assert.doesNotMatch(owner,/game\.send\("server",\s*"v3ready"/);
+});
