@@ -64,3 +64,43 @@ test("preflight does not mutate inputs",()=>{
   assert.equal(build(candidate,claim,1000).readyToResume,false);
   assert.equal(before,JSON.stringify({candidate,claim}));
 });
+
+test("four-seat match with one real guest and two AI seats passes only private preflight",()=>{
+  const {candidate,claim}=fixture();
+  candidate.arena.players.C={position:3,name1:"heroC",hp:4,maxHp:4};
+  candidate.skills.C={};
+  candidate.playerExecution.C={};
+  candidate.peerBindings=[{playerId:"A",socketId:"A"}];
+  candidate.botPlayerIds=["B","C"];
+  claim.guestSocketIds=["A"];
+  candidate.nextTurnPlayerId="B";
+  const result=build(candidate,claim,1000);
+  assert.equal(result.ok,true);
+  assert.equal(result.summary.botSeatsMapped,2);
+  assert.equal(result.summary.originalRemoteSocketsMapped,1);
+  assert.deepEqual(result.blueprint.botPlayerIds,["B","C"]);
+  assert.equal(result.readyToResume,false);
+});
+test("incomplete bot enumeration never impersonates missing human socket",()=>{
+  const {candidate,claim}=fixture();
+  candidate.peerBindings=[{playerId:"A",socketId:"A"}];
+  claim.guestSocketIds=["A"];
+  assert.equal(gate(candidate,claim,1000).code,"PLAYER_SET_INCONSISTENT");
+  candidate.botPlayerIds=["B"];
+  assert.equal(gate(candidate,claim,1000).ok,true);
+  candidate.botPlayerIds=["B","B"];
+  assert.equal(gate(candidate,claim,1000).code,"PLAYER_SET_INCONSISTENT");
+  candidate.botPlayerIds=["H"];
+  assert.equal(gate(candidate,claim,1000).code,"BOT_SEAT_INVALID");
+});
+test("forged bot/human overlap or changed broker roster is rejected",()=>{
+  const {candidate,claim}=fixture();
+  candidate.peerBindings=[{playerId:"A",socketId:"A"}];
+  candidate.botPlayerIds=["B"];
+  claim.guestSocketIds=["A"];
+  candidate.botPlayerIds=["A"];
+  assert.equal(gate(candidate,claim,1000).code,"GAME_STATE_SHAPE_INCOMPLETE");
+  candidate.botPlayerIds=["B"];
+  claim.guestSocketIds=["A","UNKNOWN"];
+  assert.equal(gate(candidate,claim,1000).code,"PLAYER_SET_INCONSISTENT");
+});
