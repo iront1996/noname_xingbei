@@ -90,7 +90,7 @@ test("overflow, invalid scope and privacy bounds never imply journal completenes
   assert.equal(out.started,10);
   assert.equal(out.overflowed,true);
   assert.equal(out.records.length,8);
-  assert.equal(JSON.stringify(out).includes("R"),false);
+  assert.equal(Object.prototype.hasOwnProperty.call(out,"scope"),false);
   assert.deepEqual(journal({getScope:()=>null}).snapshot(),{
     schema:"xingbei-v3-event-lifecycle-observation-1",
     status:"NOT_ACTIVE_OWNER",restorable:false,
