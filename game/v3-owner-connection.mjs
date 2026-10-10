@@ -11,6 +11,7 @@ import { game, lib, _status } from "../noname.js";
 import {
   inspectLocalRecoveryCandidate,
   inspectLocalInertEventEvidence,
+  inspectLocalInertTransitionTimeline,
   installV3RecoveryVault,
   getLocalVaultStatus,
   getV3EventLifecycleHealth,
@@ -19,7 +20,7 @@ import {
   getV3LastBoundaryCutHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
-} from "./v3-recovery-vault.mjs?v=v3-owner-bootstrap-15";
+} from "./v3-recovery-vault.mjs?v=v3-inert-timeline-16";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
@@ -285,8 +286,9 @@ function installCaptureHealthButton() {
     const diagnostic = getLocalVaultStatus(roomId);
     const periodicDiagnostic = getLocalVaultStatus(roomId, "periodic");
     const boundaryDiagnostic = getLocalVaultStatus(roomId, "turn_boundary");
-    const [vault, evidence] = await Promise.all([
-      inspectLocalRecoveryCandidate(roomId), inspectLocalInertEventEvidence(roomId)
+    const [vault, evidence, timeline] = await Promise.all([
+      inspectLocalRecoveryCandidate(roomId), inspectLocalInertEventEvidence(roomId),
+      inspectLocalInertTransitionTimeline(roomId)
     ]);
     if (!isLiveOwner() || game.roomId !== roomId) return;
     const lifecycle = getV3EventLifecycleHealth();
@@ -296,7 +298,7 @@ function installCaptureHealthButton() {
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-owner-bootstrap-15",
+      "前端版本：v3-inert-timeline-16",
       "事件 Promise 觀測：" + lifecycle.status +
         " / 開始 " + lifecycle.started +
         " / 已完成 " + lifecycle.fulfilled +
@@ -323,6 +325,11 @@ function installCaptureHealthButton() {
       "事件切點只提供阻斷證據，尚不可恢復原局。",
       "事件紀錄環形截短：" + lifecycle.truncatedTransitions +
         " / 無法追蹤的新事件：" + lifecycle.droppedStarts,
+      "事件序列保存：" + timeline.status +
+        (timeline.status === "ENCRYPTED_INERT_TIMELINE_VERIFIED"
+          ? " / 轉移 " + timeline.eventTransitionCount +
+            " / 缺口 " + timeline.missingTransitions +
+            " / 容量淘汰 " + timeline.evictedTransitions : ""),
       "本機加密事件證據：" + evidence.status +
         (evidence.status === "ENCRYPTED_INERT_EVIDENCE_VERIFIED"
           ? "（約 " + evidence.ageSeconds + " 秒前）" : ""),
