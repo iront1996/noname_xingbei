@@ -25,18 +25,30 @@ export function classifyV3HostPeerTopology({
   const bySocket = new Set();
   for (const client of clients) {
     const playerId = client?.id, socketId = client?.ws?.wsid;
-    // Every broker guest must be an initialized and unique participant;
-    // observers, unknown/uninitialized sockets and reconnect races fail closed.
-    if (client?.closed || client?.inited !== true ||
-        typeof playerId !== "string" || !playerId ||
+    // Spectators remain in lib.node.clients in the native connect engine.
+    // V3 paused-room broker currently cannot distinguish their socket IDs
+    // from active guest seats, so do not issue a falsely verified snapshot.
+    if (observing.includes(client)) {
+      return reject("PEER_OBSERVER_PRESENT");
+    }
+    if (client?.closed) return reject("PEER_CLIENT_CLOSED");
+    if (client?.inited !== true) return reject("PEER_CLIENT_NOT_INITIALIZED");
+    if (typeof playerId !== "string" || !playerId ||
         typeof socketId !== "string" || !socketId ||
-        playerId !== socketId || playerId === hostPlayerId ||
-        !players.has(playerId) || observing.includes(client) ||
+        playerId === hostPlayerId || !players.has(playerId) ||
         byHuman.has(playerId) || bySocket.has(socketId)) {
       return reject("PEER_BINDING_INCOMPLETE");
     }
     if (playerOL[playerId]?.ws !== client) {
       return reject("PEER_PLAYER_SOCKET_MISMATCH");
+    }
+    // Native reconnection path lib.message.server.init(config.id)
+    // replaces Client.id with the original player ID, while NodeWS.wsid
+    // continues to hold the freshly issued broker socket ID.
+    // Without a broker-signed rebind proof, accepting this pair would
+    // permit claiming another player's identity using config.id alone.
+    if (playerId !== socketId) {
+      return reject("PEER_SOCKET_REBOUND_UNVERIFIED");
     }
     byHuman.set(playerId, client);
     bySocket.add(socketId);
