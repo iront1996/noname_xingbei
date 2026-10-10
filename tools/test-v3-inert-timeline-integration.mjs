@@ -14,6 +14,7 @@ const vault=get("game/v3-recovery-vault.mjs");
 const owner=get("game/v3-owner-connection.mjs");
 const entry=get("mode/connect.js");
 const observed={
+ observerEpoch:"0123456789abcdef0123456789abcdef",
  seq:4,started:2,droppedStarts:0,status:"OBSERVATION_PARTIAL",
  completeCoverage:false,eventContinuationCaptured:false,
  restorable:false,readyToResume:false,
