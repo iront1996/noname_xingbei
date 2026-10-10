@@ -11,6 +11,7 @@ import { game, lib, _status } from "../noname.js";
 import {
   inspectLocalRecoveryCandidate,
   inspectLocalInertEventEvidence,
+  installV3RecoveryVault,
   getLocalVaultStatus,
   getV3EventLifecycleHealth,
   getV3HistoryReferenceLinkHealth,
@@ -378,6 +379,11 @@ function installPlaytestButton() {
 
 export function installV3OwnerConnection() {
   if (installed) return;
+  // Bootstrap the exact vault ESM instance imported above BEFORE exposing
+  // any health/reconnection UI. The former second, independent dynamic
+  // import in mode/connect.js could initialize later (or not run), leaving
+  // this UI reading uninitialized module-local observer state.
+  installV3RecoveryVault();
   installed = true;
   installPlaytestButton();
   installCaptureHealthButton();
