@@ -18,7 +18,7 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
      !Number.isSafeInteger(capacity)||capacity<8||capacity>4096) {
     throw new TypeError("INVALID_JOURNAL_OPTIONS");
   }
-  let scope=null, tracked=new WeakMap(), nextOrdinal=0, seq=0;
+  let scope=null, tracked=new WeakMap(), outcomes=new WeakMap(), nextOrdinal=0, seq=0;
   let pending=new Set(), events=[], overflow=false;
   let totals={started:0,fulfilled:0,rejected:0,threw:0};
 
@@ -29,6 +29,7 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
     if(candidate!==scope) {
       scope=candidate;
       tracked=new WeakMap();
+      outcomes=new WeakMap();
       pending=new Set();
       events=[];
       nextOrdinal=0;
@@ -57,6 +58,7 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
     const ordinal=nextOrdinal++;
     tracked.set(event,Object.freeze({scope,ordinal}));
     pending.add(ordinal);
+    outcomes.set(event,"pending");
     record(ordinal,"started");
     return true;
   }
@@ -66,8 +68,23 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
     const entry=tracked.get(event);
     if(!entry||entry.scope!==scope||!pending.has(entry.ordinal))return false;
     pending.delete(entry.ordinal);
+    outcomes.set(event,transition);
     record(entry.ordinal,transition);
     return true;
+  }
+  function lookup(event) {
+    if(!refresh() || !event ||
+       (typeof event!=="object"&&typeof event!=="function")) {
+      return Object.freeze({observed:false,code:"LIFECYCLE_NOT_OBSERVED"});
+    }
+    const entry=tracked.get(event);
+    if(!entry||entry.scope!==scope){
+      return Object.freeze({observed:false,code:"LIFECYCLE_NOT_OBSERVED"});
+    }
+    return Object.freeze({
+      observed:true,ordinal:entry.ordinal,
+      outcome:outcomes.get(event) ?? "pending"
+    });
   }
   function snapshot() {
     if(!refresh())return Object.freeze({
@@ -86,7 +103,7 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
       records:Object.freeze(events.slice())
     });
   }
-  return Object.freeze({started,settle,snapshot});
+  return Object.freeze({started,settle,lookup,snapshot});
 }
 
 /**
