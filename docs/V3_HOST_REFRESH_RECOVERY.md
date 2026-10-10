@@ -636,3 +636,29 @@ Promise：OBSERVATION_RING_TRUNCATED / started 514 / fulfilled 510 / rejected 0 
 - 版本 `v3-mechanical-delta-19`；只改 GitHub V3 Playtest 前端程式與回歸測試，不更動 VPS、V1/V2 或 production。
 
 **下一次實測**：用兩名以上真人在 V3 預覽版開新房，確認 UI 為 `v3-mechanical-delta-19`。出牌、摸牌、至少造成一次體力數字實際變化，待 20～30 秒至少經過兩個六秒取樣，房主健康檢查截圖「原生副作用排程觀測」、「機械狀態取樣」、「事件序列保存」。正常進行中的真實遊戲仍不該用刷新房主作為 cold-resume 測試。
+
+
+## 2026-10-11：第 20 版實測成功，星杯資源數值獨立加密留存（Playtest-21）
+
+使用者於 `v3-xingbei-rule-state-20` 真實對局回報 `XINGBEI_STATE_WINDOWS_OBSERVED`：
+
+- 星杯規則有效觀測區間 **66**；士氣變化 1、星杯變化 0、戰績區星石變化 16、治療變化 1、牌庫／棄牌堆變化 54。
+- `ENCRYPTED_INERT_TIMELINE_VERIFIED`、`ENCRYPTED_INERT_EVIDENCE_VERIFIED` 已通過檢查，歷史事件索引就緒；但事件切點仍 `CUT_NOT_PHASE_LOOP`、回合邊界 `CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED`。
+- 定期候選 `NOT_FOUND`，定期捕捉受 `PEER_SOCKET_REBOUND_UNVERIFIED` 等安全前提限制；邊界最近 `BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION`。這些結果不能視為可冷恢復。
+- **這是 V20 取樣驗收，而不是完整可執行狀態的驗收。** 六秒定期觀測不可能識別同區間內重複改變後又抵消的狀態。
+
+### V21：獨立不可執行資源證據
+
+新增 `game/v3-xingbei-resource-evidence.mjs`：
+- 將**一筆**星杯唯讀樣本嚴格白名單化：雙方士氣、雙方星杯數、雙方戰績區寶石／水晶數、牌庫／棄牌堆張數、以及依同次取樣匿名座位順序的 `zhiLiao` 數量。
+- 雖然來自 `readV3XingbeiState` 的樣本暫時含 Player 物件參考，建構器絕不序列化該參考，也不存 `playerid`、手牌、卡牌身分、技能、技能指示物、能量、WebSocket ID、事件或函式。
+- 所有輸入必須是安全的數值與無 getter 的 data property；資料外洩欄位、非白名單屬性、異常數值、陣列空洞、`safeCheckpointCertified:true` 或 `restorable:true` 全部拒絕。
+- `game/v3-recovery-vault.mjs` 在 V3 活躍星杯房主的六秒取樣後另用 AES-GCM 加密存到 IndexedDB 的 `roomId::xingbei-resource-evidence-v1`，AEAD additionalData 鎖定 `schema:roomId:capturedAt`；同房間 sessionStorage key 已是 V3 recovery vault 使用的既有原裝置 key。沒有更動 VPS。
+- 保存失敗不影響真正遊戲；不依賴任何正式遊戲快照是否通過。檔案 TTL 10 分鐘。房間清除時先令既有保存工作無效並等待仍在執行的資源寫入，然後刪除證據，避免舊非同步工作重建已清除資料。
+- `inspectLocalXingbeiResourceEvidence` 僅向房主健康檢查提供 `ENCRYPTED_XINGBEI_RESOURCE_VERIFIED`、紀錄年齡與匿名席位數。它不輸出取樣的治療位置、玩家私密資料或密文。
+- `mode/connect.js` 與 `game/v3-owner-connection.mjs` 單一模組版本更新為 `v3-xingbei-resource-evidence-21`。原事件時間線、歷史索引、真人 peer 驗證及續局禁令保持原樣。
+- 安全旗標一律：`playerSeatsBound:false`、`cardOrderCaptured:false`、`playerSkillStateCaptured:false`、`eventContinuationCaptured:false`、`stateCheckpointAtomic:false`、`safeCheckpointCertified:false`、`restorable:false`、`readyToResume:false`。可解密的數值證據**不代表當下是一致的遊戲交易切點**。
+
+測試：`tools/test-v3-xingbei-resource-evidence.mjs`、`tools/test-v3-xingbei-resource-integration.mjs` 覆蓋 AES-GCM 跨房間／時間／密文修改、惡意 getter、數值邊界、非法欄位與誤授權，以及房主 UI 不洩漏敏感欄位或繞過 `v3ready`。
+
+下一步真人驗收：以 V3 Playtest **全新**房間，正常進行 20 秒以上，房主診斷版本 `v3-xingbei-resource-evidence-21`；確認「本機加密星杯資源證據」顯示 `ENCRYPTED_XINGBEI_RESOURCE_VERIFIED`。舊版真實遊戲快照仍可能 `NOT_FOUND` 且不影響本項安全 sidecar 驗收。**不能嘗試將此證據拿來冷恢復。**
