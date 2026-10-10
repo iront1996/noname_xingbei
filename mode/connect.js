@@ -8,11 +8,11 @@ export default () => {
 		name: "connect",
 		start() {
 			// V3 Playtest-only transport resilience; never imported by V1/V2.
-			void import("/game/v3-owner-connection.mjs?v=live-runtime-ticket-1")
+			void import("/game/v3-owner-connection.mjs?v=v3-capture-health-2")
 				.then(({ installV3OwnerConnection }) => installV3OwnerConnection())
 				.catch(error => console.error("[V3 playtest] reconnect setup failed:", error));
 			// Local encrypted candidate snapshots; NOT restorable checkpoints.
-			void import("/game/v3-recovery-vault.mjs")
+			void import("/game/v3-recovery-vault.mjs?v=v3-capture-health-2")
 				.then(({ installV3RecoveryVault }) => installV3RecoveryVault())
 				.catch(error => console.error("[V3 playtest] vault setup failed:", error));
 			var directstartmode = lib.config.directstartmode;
