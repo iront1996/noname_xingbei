@@ -114,6 +114,7 @@ export function buildHostRehydrationBlueprint(candidate, serverClaim, now = Date
     hostPlayerId: candidate.hostPlayerId,
     playerSeats: Object.freeze(seats),
     remoteRoutes: Object.freeze(routes),
+    botPlayerIds: Object.freeze([...(candidate.botPlayerIds || [])]),
     drawPile: Object.freeze(drawPile),
     discardPile: Object.freeze(discardPile),
     modeState: candidate.gameState,
@@ -137,6 +138,7 @@ export function buildHostRehydrationBlueprint(candidate, serverClaim, now = Date
     summary: Object.freeze({
       seatsMapped: seats.length,
       originalRemoteSocketsMapped: routes.length,
+      botSeatsMapped: candidate.botPlayerIds?.length || 0,
       drawPileCardsMapped: drawPile.length,
       discardPileCardsMapped: discardPile.length,
       eventOutlineCount: blueprint.eventOutline.length,
