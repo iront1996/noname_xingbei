@@ -53,10 +53,11 @@ export function classifyV3HostPeerTopology({
     byHuman.set(playerId, client);
     bySocket.add(socketId);
   }
-  // The paused server's v3restoreprobe requires at least one guest socket.
-  if (byHuman.size < 1 || byHuman.size > 7) {
-    return reject("PEER_COUNT_UNSUPPORTED");
-  }
+  // This is precisely zero VERIFIED remote seats, not necessarily a
+  // transport failure. A host-plus-bots match still cannot satisfy the
+  // paused V3 broker's guest-socket restore preflight.
+  if (byHuman.size === 0) return reject("PEER_NO_CONNECTED_GUEST");
+  if (byHuman.size > 7) return reject("PEER_COUNT_UNSUPPORTED");
   const botPlayerIds = [];
   for (const playerId of playerIds) {
     const player = playerOL[playerId];
