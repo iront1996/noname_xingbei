@@ -86,7 +86,8 @@ test("overflow, invalid scope and privacy bounds never imply journal completenes
   assert.equal(before.completeCoverage,false);
   for(let i=0;i<10;i++)j.started({});
   const out=j.snapshot();
-  assert.equal(out.status,"OBSERVATION_OVERFLOW");
+  assert.equal(out.status,"OBSERVATION_CAPACITY_EXCEEDED");
+  assert.equal(out.droppedStarts,2);
   assert.equal(out.started,8);
   assert.equal(out.pending,8);
   assert.equal(out.overflowed,true);
@@ -127,4 +128,34 @@ test("unavailable or hostile telemetry never changes original game result",async
   const obs=install(Event,badJournal);
   assert.equal(await new Event().start(),5);
   obs.uninstall();
+});
+
+test("diagnostic ring eviction is distinct from lost event tracking",async()=>{
+  const j=journal({getScope:()=>"R",capacity:8});
+  for(let i=0;i<14;i++){
+    const e={};
+    assert.equal(j.started(e),true);
+    assert.equal(j.settle(e,"fulfilled"),true);
+  }
+  const snapshot=j.snapshot();
+  assert.equal(snapshot.status,"OBSERVATION_RING_TRUNCATED");
+  assert.equal(snapshot.started,14);
+  assert.equal(snapshot.fulfilled,14);
+  assert.equal(snapshot.pending,0);
+  assert.equal(snapshot.truncatedTransitions,20);
+  assert.equal(snapshot.droppedStarts,0);
+  assert.equal(snapshot.overflowed,false);
+  assert.equal(snapshot.completeCoverage,false);
+  assert.equal(snapshot.eventContinuationCaptured,false);
+});
+test("weak-identity fulfillment lookup survives ring rotation but never certifies cold resume",()=>{
+  const j=journal({getScope:()=>"R",capacity:8});
+  const old={};
+  j.started(old);j.settle(old,"fulfilled");
+  for(let i=0;i<8;i++){
+    const e={};j.started(e);j.settle(e,"fulfilled");
+  }
+  assert.deepEqual(j.lookup(old),{observed:true,ordinal:0,outcome:"fulfilled"});
+  assert.equal(j.snapshot().status,"OBSERVATION_RING_TRUNCATED");
+  assert.equal(j.snapshot().readyToResume,false);
 });
