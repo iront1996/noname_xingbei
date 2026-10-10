@@ -14,7 +14,7 @@ import {
   V3_CAPTURE_IMPLEMENTATION_VERSION,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
-} from "./v3-recovery-vault.mjs?v=v3-event-observation-7";
+} from "./v3-recovery-vault.mjs?v=v3-event-lifecycle-8";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
