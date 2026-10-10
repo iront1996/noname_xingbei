@@ -20,6 +20,7 @@ import { classifyV3HostPeerTopology } from "./v3-peer-topology.mjs";
 import {
   createV3EventLifecycleJournal, installV3EventLifecycleObserver
 } from "./v3-event-lifecycle-journal.mjs";
+import { indexV3InertHistoryReferences } from "./v3-inert-history-reference-index.mjs";
 import {
   inspectV3TurnBoundaryStack, inspectV3HistoryEventReferences
 } from "./v3-event-observation-preflight.mjs";
@@ -61,6 +62,34 @@ function captureReadiness() {
 
 function activeOwner() {
   return captureReadiness().ready;
+}
+export function getV3HistoryReferenceLinkHealth() {
+  if(!activeOwner())return Object.freeze({
+    status:"HISTORY_HOST_NOT_ACTIVE",references:0,aliasReferences:0,
+    restorable:false,readyToResume:false
+  });
+  try{
+    const players=[...game.players,...(game.dead || [])];
+    const stack=_status.eventManager?.eventStack;
+    const result=indexV3InertHistoryReferences(
+      players.map(player=>player.actionHistory),get.itemtype,stack,
+      event => eventLifecycleJournal.lookup(event)
+    );
+    return Object.freeze({
+      status:result.code,
+      references:result.ok ? result.ledger.eventReferenceCount : 0,
+      aliasReferences:result.ok ? result.ledger.duplicateReferenceCount : 0,
+      // A link between an original Event and its original Promise only
+      // confirms that ONE observed Event ended. It neither replays choices
+      // nor reconstructs the phase scheduler after browser refresh.
+      restorable:false,readyToResume:false
+    });
+  }catch{
+    return Object.freeze({
+      status:"HISTORY_INDEX_UNAVAILABLE",references:0,aliasReferences:0,
+      restorable:false,readyToResume:false
+    });
+  }
 }
 export function getV3EventLifecycleHealth() {
   const snapshot = eventLifecycleJournal.snapshot();
