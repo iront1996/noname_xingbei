@@ -23,7 +23,7 @@ test("V3 owner installs passive effect intent observer before health dialog expo
   assert.match(vault,/lib\.element\?\.Player,effectIntentJournal/);
   assert.match(vault,/getV3EffectIntentHealth\(/);
   assert.match(owner,/getV3EffectIntentHealth\(\)/);
-  assert.match(owner,/這些只是 API 呼叫，未證明效果已結算或可安全重播/);
+  assert.match(owner,/通用引擎 API 呼叫（不是星杯實際結算）/);
   assert.match(owner,/v3-xingbei-rule-state-20/);
   assert.match(entry,/v3-xingbei-rule-state-20/);
   assert.match(owner,/installV3RecoveryVault\(\);/);
