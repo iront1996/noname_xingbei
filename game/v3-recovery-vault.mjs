@@ -21,7 +21,6 @@ import {
   inspectV3TurnBoundaryStack, inspectV3HistoryEventReferences
 } from "./v3-event-observation-preflight.mjs";
 
-export const V3_CAPTURE_IMPLEMENTATION_VERSION = "v3-event-lifecycle-8";
 const DB_NAME = "xingbei-v3-playtest-recovery";
 const STORE = "encryptedCandidates";
 const VERSION = 1;
