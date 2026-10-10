@@ -23,6 +23,10 @@ import {
 import { indexV3InertHistoryReferences } from "./v3-inert-history-reference-index.mjs";
 import { inspectV3EventCutQueues } from "./v3-event-cut-audit.mjs";
 import {
+  V3_INERT_EVIDENCE_SCHEMA,
+  buildV3InertEvidenceCapsule,verifyV3InertEvidenceCapsule
+} from "./v3-inert-event-evidence.mjs";
+import {
   inspectV3TurnBoundaryStack, inspectV3HistoryEventReferences
 } from "./v3-event-observation-preflight.mjs";
 
@@ -35,10 +39,13 @@ const DIAGNOSTIC_PREFIX = "xingbei-v3-capture-diagnostic:";
 const DIAGNOSTIC_BOUNDARY_SUFFIX = "::turn_boundary";
 const INTERVAL_MS = 6000;
 const BOUNDARY_SUFFIX = "::turn-boundary";
+const INERT_EVIDENCE_SUFFIX = "::inert-event-evidence-v1";
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_AGE_MS = 10 * 60 * 1000;
 let installed = false;
 let busy = false;
+let evidenceBusy = false;
+let evidenceGeneration = 0;
 let pendingBoundary = null;
 let lastOutcome = { status: "NOT_YET_CAPTURED" };
 let lastOutcomeRoomId = null;
@@ -365,6 +372,103 @@ function captureCandidate(kind = "periodic") {
   };
 }
 
+/**
+ * Independently encrypt already-observed anonymous transitions and event
+ * reference locations. This sidecar can survive a same-tab refresh even when
+ * strict game-state snapshots fail. Never use it as executable game state.
+ */
+async function saveInertEventEvidence() {
+  if (evidenceBusy || !activeOwner()) return;
+  const roomId=game.roomId, ownerSocket=game.ws;
+  const generation=evidenceGeneration;
+  let captured;
+  try {
+    const lifecycle=eventLifecycleJournal.snapshot();
+    const history=indexV3InertHistoryReferences(
+      [...game.players,...(game.dead || [])].map(player=>player.actionHistory),
+      get.itemtype,_status.eventManager?.eventStack,
+      event=>eventLifecycleJournal.lookup(event)
+    );
+    const cut=inspectV3EventCutQueues(_status.eventManager?.eventStack);
+    captured=buildV3InertEvidenceCapsule({
+      capturedAt:Date.now(),lifecycle,history,cut
+    });
+  } catch { return; }
+  if(!captured.ok) return;
+  evidenceBusy=true;
+  try {
+    const key=await cryptoKey(roomId,true);
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const aad=new TextEncoder().encode(V3_INERT_EVIDENCE_SCHEMA+":"+roomId);
+    const ciphertext=await crypto.subtle.encrypt(
+      {name:"AES-GCM",iv,additionalData:aad},key,
+      new TextEncoder().encode(JSON.stringify(captured.capsule))
+    );
+    if(generation!==evidenceGeneration || game.roomId!==roomId ||
+       game.ws!==ownerSocket || !activeOwner())return;
+    await transact("readwrite",store=>store.put({
+      roomId:roomId+INERT_EVIDENCE_SUFFIX,
+      schema:V3_INERT_EVIDENCE_SCHEMA,
+      capturedAt:captured.capsule.capturedAt,
+      iv:encodeBase64(iv),
+      ciphertext:encodeBase64(new Uint8Array(ciphertext))
+    }));
+  }catch{
+    // A diagnostic archive may fail; never interfere with gameplay or
+    // weaken the independently validated snapshot save path.
+  }finally{
+    evidenceBusy=false;
+  }
+}
+
+export async function loadLocalInertEventEvidence(roomId) {
+  if(!validRoomId(roomId))return {ok:false,code:"INVALID_ROOM",restorable:false};
+  try{
+    const record=await transact("readonly",store=>store.get(roomId+INERT_EVIDENCE_SUFFIX));
+    if(!record)return {ok:false,code:"EVIDENCE_NOT_FOUND",restorable:false};
+    if(record.roomId!==roomId+INERT_EVIDENCE_SUFFIX ||
+       record.schema!==V3_INERT_EVIDENCE_SCHEMA ||
+       !Number.isSafeInteger(record.capturedAt) ||
+       record.capturedAt>Date.now()+60000 ||
+       Date.now()-record.capturedAt>MAX_AGE_MS ||
+       typeof record.ciphertext!=="string" ||
+       typeof record.iv!=="string") {
+      return {ok:false,code:"EVIDENCE_RECORD_INVALID",restorable:false};
+    }
+    const iv=decodeBase64(record.iv);
+    if(iv.length!==12)return {ok:false,code:"EVIDENCE_IV_INVALID",restorable:false};
+    const key=await cryptoKey(roomId,false);
+    const aad=new TextEncoder().encode(V3_INERT_EVIDENCE_SCHEMA+":"+roomId);
+    const bytes=await crypto.subtle.decrypt(
+      {name:"AES-GCM",iv,additionalData:aad},key,decodeBase64(record.ciphertext)
+    );
+    const data=JSON.parse(new TextDecoder().decode(bytes));
+    const verdict=verifyV3InertEvidenceCapsule(data);
+    if(!verdict.ok || data.capturedAt!==record.capturedAt) {
+      return {ok:false,code:"EVIDENCE_CONTENT_INVALID",restorable:false};
+    }
+    // TRUSTED same-origin analysis only. Contains no cards/IDs/event payloads.
+    // Validity is NOT permission to rehydrate or start engine events.
+    return {ok:true,code:"ENCRYPTED_INERT_EVIDENCE_VERIFIED",
+      data,restorable:false,readyToResume:false};
+  }catch{
+    return {ok:false,code:"EVIDENCE_UNAVAILABLE",restorable:false};
+  }
+}
+
+export async function inspectLocalInertEventEvidence(roomId) {
+  const result=await loadLocalInertEventEvidence(roomId);
+  if(!result.ok)return {status:result.code,restorable:false,readyToResume:false};
+  return {
+    status:result.code,
+    ageSeconds:Math.max(0,Math.floor((Date.now()-result.data.capturedAt)/1000)),
+    lifecycleStatus:result.data.lifecycle.code,
+    historyStatus:result.data.history.code,
+    eventReferenceCount:result.data.history.eventReferenceCount,
+    restorable:false,readyToResume:false
+  };
+}
+
 async function saveCandidate(kind = "periodic", captured = null) {
   const readiness = captureReadiness();
   if (!readiness.ready) {
@@ -542,7 +646,9 @@ export async function purgeLocalRecoveryCandidate(roomId) {
   if (!validRoomId(roomId)) return false;
   try {
     await transact("readwrite", store => store.delete(roomId));
+    ++evidenceGeneration;
     await transact("readwrite", store => store.delete(roomId + BOUNDARY_SUFFIX));
+    await transact("readwrite", store => store.delete(roomId + INERT_EVIDENCE_SUFFIX));
     sessionStorage.removeItem(sessionKeyName(roomId));
     sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId);
     sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId + DIAGNOSTIC_BOUNDARY_SUFFIX);
@@ -586,7 +692,10 @@ export function installV3RecoveryVault() {
   // The passive observer wraps GameEvent.start() ONLY in the V3 Playtest
   // connect-mode runtime. It returns each original Promise unchanged,
   // and never starts, finishes, or replays an Event itself.
-  setInterval(() => { void saveCandidate(); }, INTERVAL_MS);
+  setInterval(() => {
+    void saveCandidate();
+    void saveInertEventEvidence();
+  }, INTERVAL_MS);
   // 'phaseLoop' calls lib.onphase before scheduling the next phase.
   // Persist a separate candidate for that transition. This is stronger than
   // a random timer sample, but still NOT a certified resumable checkpoint:
