@@ -137,7 +137,8 @@ function displayOverlay(title, body, actionLabel, actionHandler) {
     const shadow = overlay.attachShadow({ mode: "closed" });
     const panel = document.createElement("section");
     panel.style.cssText =
-      "display:block;max-width:480px;width:100%;padding:28px;" +
+      "display:block;max-width:480px;width:100%;max-height:calc(100vh - 36px);" +
+      "overflow-y:auto;overflow-wrap:anywhere;padding:28px;" +
       "box-sizing:border-box;border:1px solid #64748b;border-radius:14px;" +
       "background:#182638;color:#f8fafc;font:16px/1.6 system-ui,sans-serif;" +
       "text-align:center;box-shadow:0 24px 60px #0008;";
