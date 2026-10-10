@@ -196,3 +196,31 @@ The current code is foundational infrastructure, not the completed feature.
 - 前端動態匯入版本更新為 `v3-peer-topology-3`，避免載入過期快取。
 
 仍待真實瀏覽器驗證：該局配置下 `PEER_COUNT_MISMATCH` 是否消失、後續是否還存在 `CANDIDATE_STRUCTURE_LOSS` 等其他擷取拒絕條件、Cloudflare Pages 是否確實部署新版本。**本輪沒有修改或部署 VPS，亦未修改 V1/V2。** 快照依然不是可執行續行點，重新整理後仍須保持暫停。
+
+
+## 2026-10-10：玩家歷史序列化實測阻斷及 V3 診斷細化
+
+繼上一輪修正真人／AI 映射後，使用者在 V3 遊戲中測得：
+
+```text
+最近擷取：CAPTURE_FAILED
+原因碼：PLAYER_HISTORY_STRUCTURE_LOSS
+定期候選：ENCRYPTED_CANDIDATE_VERIFIED
+回合邊界候選：NOT_FOUND
+```
+
+可確認至少一份較早的定期快照加密及解密驗證成功；但最近一次擷取在玩家歷史完整性稽核被拒，已存在的候選不可誤認為當下完整快照。既有 `get.stringifiedResult` 在遞迴深度 8 時可能截斷欄位，且 `Player.actionHistory` 可能包含尚有作用中的 `GameEventPromise`；**當前沒有足夠現場資訊判定最先觸發的是 `stat`、`actionHistory` 或 `skipList`，也不能斷言一定是 Event**。
+
+新增 V3-only `game/v3-player-history-audit.mjs`：對 `stat`、`actionHistory`、`skipList` 分別進行既有嚴格完整性驗證，第一次失敗只回傳有限白名單原因碼（如 `HIST_ACTION_LIVE_EVENT_NOT_RESTORABLE`、`HIST_ACTION_DEFINED_FIELD_TRUNCATED` 或 `HIST_STAT_EXECUTABLE_FUNCTION_NOT_RESTORABLE`），絕不回傳玩家 ID、手牌、事件內容或例外原始字串；無法驗證的玩家歷史不會保存為完整候選。**沒有放寬任何可恢復檢查，也沒有把 Event 當作續行紀錄。**
+
+`game/v3-recovery-vault.mjs` 進一步把最近定期擷取與回合邊界擷取各自的狀態碼記錄在房主同分頁 `sessionStorage`，並只顯示目前快照保存的年齡。若 `lib.onphase` 觸發、但事件堆疊並非符合條件的 `phaseLoop` 或有待處理子事件，保守回報 `BOUNDARY_EVENT_OUTLINE_UNAVAILABLE`／`BOUNDARY_PENDING_CHILD_EVENTS`，不進行回合邊界擷取。
+
+`game/v3-owner-connection.mjs` 的 V3 房主快照健康畫面現在另外顯示：
+- 前端版本 `v3-history-diagnostics-5`；
+- 最近擷取與原因碼；
+- 定期／回合邊界各自最近嘗試狀態與有限原因碼；
+- 加密定期候選驗證結果與年齡、回合邊界候選驗證結果。
+
+動態 import 版本只在 `feature/host-reconnect-v3-playtest` 更新，主頁與房主程式共用相同模組 URL。新增 `tools/test-v3-player-history-audit.mjs` 的純函式回歸，涵蓋可保存結構、Event 拒絕、深度截斷、函式拒絕、缺少欄位與例外保密。全程 **V1/V2、VPS 8081、production 8080 均未修改**。
+
+**下一次實測門檻：**必須在 V3 預覽版開始一場新遊戲並確定健康畫面顯示 `v3-history-diagnostics-5`，讓對局進行一段時間並至少走到新回合的 `phaseLoop`，截圖完整健康檢查狀態。這是資料診斷驗收，不是重新整理後續局驗收；禁止對未經認證的事件傳送 `v3ready`。
