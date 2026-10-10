@@ -34,5 +34,6 @@ test("owner UI displays live and at-boundary queues but never labels them resuma
 test("single recovery vault instance shared by owner UI and connect entry",()=>{
   const version=owner.match(/from "\.\/v3-recovery-vault\.mjs\?v=([^"]+)";/);
   assert.ok(version);
-  assert.ok(connect.includes('/game/v3-recovery-vault.mjs?v='+version[1]+'"'));
+  assert.ok(connect.includes('/game/v3-owner-connection.mjs?v='+version[1]+'"'));
+  assert.ok(owner.includes("installV3RecoveryVault();"));
 });
