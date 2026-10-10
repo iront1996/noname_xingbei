@@ -84,6 +84,7 @@ export function getV3LastBoundaryCutHealth() {
      lastBoundaryCut.ownerSocket !== game.ws) {
     return Object.freeze({
       code:"CUT_BOUNDARY_NOT_OBSERVED",ancestorNext:0,ancestorAfter:0,
+      activeLineageNext:0,additionalAncestorNext:0,
       currentNext:0,currentAfter:0,
       safeCheckpointCertified:false,restorable:false,readyToResume:false
     });
