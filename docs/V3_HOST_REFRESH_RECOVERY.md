@@ -579,3 +579,28 @@ Promise：OBSERVATION_RING_TRUNCATED / started 514 / fulfilled 510 / rejected 0 
 - 目前沒有觸碰 V1、V2、production 或 V3 VPS broker。此版本只新增診斷與未接引擎狀態的純函式交易規格，並不會讓 `v3ready` 可以繞過原本的安全阻斷。
 
 **下一次實測**：新建 V3 Playtest 多人對局，至少兩名真人正常使用技能、摸牌、造成或受到傷害（若可行），切換回合後房主檢查健康視窗 `前端版本：v3-effect-intent-17`。確認新的「原生副作用排程觀測：EFFECT_INTENT_CALLS_ONLY」及不為零的部分方法計數，並說明技能、摸牌、扣血和回合切換是否與第 16 版一樣正常。若現場顯示 `EFFECT_INTENT_METHOD_UNAVAILABLE` 等碼，保留完整截圖以修復 native API 安裝相容性。**請勿刷新房主測試冷續局**，目前沒有能執行事件副作用重播的系統。
+
+
+## 2026-10-11：第 16 版舊分頁實測，SkillLog 目標 false 與真人計數診斷（Playtest-18）
+
+使用者傳回的畫面版本為 `v3-inert-timeline-16`，**不是**先前發布的 `v3-effect-intent-17`。因此這張圖無法確認第 17 版原生副作用排程觀測器是否已載入。實測內容：
+
+```text
+事件 Promise：OBSERVATION_RING_TRUNCATED / 開始 388 / 已完成 384 / 失敗 0 / 待結束 4
+歷史事件引用：HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID
+事件時間線：ENCRYPTED_INERT_TIMELINE_VERIFIED / 轉移 665 / 缺口 0 / 淘汰 0
+本機加密證據：ENCRYPTED_INERT_EVIDENCE_VERIFIED，歷史引用錯誤同上
+定期快照：CAPTURE_FAILED / PEER_COUNT_UNSUPPORTED
+回合邊界：CAPTURE_BLOCKED / BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION
+正式遊戲候選：NOT_FOUND
+```
+
+分析原生引擎：
+- `noname/library/element/player.js` 的 `logSkill(name, targets, ...)` 將 `targets` 原值直接放入歷史 `logInfo`。
+- `noname/library/element/content.js` 在 `info.logLine === false` 時明確呼叫 `player.logSkill(..., false, ...)`。因此普通遊戲情況下 `logInfo.targets === false` 是**合法的原生資料型別**，意思是不要顯示目標連線。
+- 舊 `game/v3-inert-history-reference-index.mjs` 的驗證器將 `targets=false` 當成非法 Player，誤報 `HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID`。本版僅允許確有原生依據的 `false`、`null`、`undefined`、player 或最多八名 Player 的陣列；其他型別、非法 Player、陣列 getter／空洞仍 fail closed。驗證結果依舊**不含技能、目標或任何身份資訊**。
+- `game/v3-peer-topology.mjs` 原 `PEER_COUNT_UNSUPPORTED` 檢查在所有現有型別及最多八座位的前提下，具體代表 `byHuman.size===0`，亦即 V3 客端尚未驗證任何遠端真人連線。新診斷改為 `PEER_NO_CONNECTED_GUEST`，清楚區分房主＋AI 與有效遠端真人已連線的情況；**不假設截圖能證明是哪個玩家斷線，也不接受未經驗證的 socket、觀戰者或 AI 充當真人**。
+- 新版本 `v3-skill-target-18` 延續第 17 版的七類 Player 原生副作用「排程呼叫」被動觀測，更新單一的 owner + vault ESM 載入版本，並擴充原生 SkillLog、型別與房間 guest 拒絕路徑的回歸測試。V1、V2、VPS 不變。
+- `HIST_ACTION_EVENT_FINISHED_ONLY`、`BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION` 和 `v3ready` 的不可續局限制保持不變。即使歷史索引就緒與 timeline 零缺口，亦不能直接重播技能或恢复 JS Promise continuation。
+
+驗收需求：等 V3 Playtest 預覽版載入最新版本後，以至少兩個獨立瀏覽器／裝置及**兩位真人**開全新對局，切換至少一次回合，房主健康檢查應顯示 `前端版本：v3-skill-target-18`。回傳「原生副作用排程觀測」、「歷史事件引用」、「定期最近」及完整畫面。若只用房主和 AI，`PEER_NO_CONNECTED_GUEST` 為正確的安全阻擋。此次仍勿刷新房主做正式冷恢復。
