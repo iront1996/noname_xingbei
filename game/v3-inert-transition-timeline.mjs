@@ -11,11 +11,12 @@ const MAX_WINDOW=512;
 const MAX_ENTRIES=4096;
 const MAX_SEQ=1000000000;
 const TRANSITIONS=new Set(["started","fulfilled","rejected","threw"]);
-const OWN_KEYS=["schema","firstSeq","lastSeq","records","missingTransitions",
+const OWN_KEYS=["schema","observerEpoch","firstSeq","lastSeq","records","missingTransitions",
   "evictedTransitions","droppedStarts","completeCoverage",
   "eventContinuationCaptured","safeCheckpointCertified","restorable","readyToResume"];
 const RECORD_KEYS=["seq","eventOrdinal","transition"];
 const num=(v,max=MAX_SEQ)=>Number.isSafeInteger(v)&&v>=0&&v<=max;
+const validEpoch=value=>typeof value==="string"&&/^[a-f0-9]{32}$/.test(value);
 const refuse=code=>Object.freeze({ok:false,code,timeline:null});
 function exactKeys(obj,keys) {
   return obj && typeof obj==="object" && !Array.isArray(obj) &&
@@ -34,6 +35,7 @@ function recordsValid(records,limit) {
 function validPrevious(previous) {
   if(!exactKeys(previous,OWN_KEYS) ||
      previous.schema!==V3_INERT_TIMELINE_SCHEMA ||
+     !validEpoch(previous.observerEpoch) ||
      !recordsValid(previous.records,MAX_ENTRIES) ||
      !num(previous.firstSeq) || !num(previous.lastSeq) ||
      !num(previous.missingTransitions) ||
@@ -48,12 +50,12 @@ function validPrevious(previous) {
      previous.records.at(-1).seq!==previous.lastSeq) return false;
   return true;
 }
-function freeze(records,missingTransitions,evictedTransitions,droppedStarts) {
+function freeze(observerEpoch,records,missingTransitions,evictedTransitions,droppedStarts) {
   const list=Object.freeze(records.map(x=>Object.freeze({
     seq:x.seq,eventOrdinal:x.eventOrdinal,transition:x.transition
   })));
   const result=Object.freeze({
-    schema:V3_INERT_TIMELINE_SCHEMA,
+    schema:V3_INERT_TIMELINE_SCHEMA,observerEpoch,
     firstSeq:list[0].seq,lastSeq:list.at(-1).seq,
     records:list,missingTransitions,evictedTransitions,droppedStarts,
     // Even an observed gap-free chronology cannot describe callbacks,
@@ -72,7 +74,8 @@ export function reconcileV3InertTimeline(previous,observation) {
   try {
     if(previous!==null && !validPrevious(previous))
       return refuse("TIMELINE_PREVIOUS_INVALID");
-    if(!observation||!num(observation.seq) ||
+    if(!observation||!validEpoch(observation.observerEpoch)||
+       !num(observation.seq) ||
        !num(observation.started)||observation.started===0 ||
        !num(observation.droppedStarts)||
        !recordsValid(observation.records,MAX_WINDOW)||
@@ -89,8 +92,11 @@ export function reconcileV3InertTimeline(previous,observation) {
     const current=observation.records;
     if(previous===null) {
       const missing=current[0].seq-1;
-      return freeze(current,missing,0,observation.droppedStarts);
+      return freeze(observation.observerEpoch,current,missing,0,
+        observation.droppedStarts);
     }
+    if(observation.observerEpoch!==previous.observerEpoch)
+      return refuse("TIMELINE_OBSERVER_EPOCH_CHANGED");
     if(observation.droppedStarts<previous.droppedStarts ||
        observation.seq<previous.lastSeq)
       return refuse("TIMELINE_EPOCH_OR_COUNTER_RESET");
@@ -118,7 +124,8 @@ export function reconcileV3InertTimeline(previous,observation) {
       records=records.slice(excess);
       evicted+=excess;
     }
-    return freeze(records,missing,evicted,observation.droppedStarts);
+    return freeze(observation.observerEpoch,records,missing,evicted,
+      observation.droppedStarts);
   }catch{
     return refuse("TIMELINE_RECONCILIATION_FAILED");
   }
