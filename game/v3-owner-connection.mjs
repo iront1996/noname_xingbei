@@ -17,7 +17,7 @@ import {
   getV3LastBoundaryCutHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
-} from "./v3-recovery-vault.mjs?v=v3-peer-cut-classification-12";
+} from "./v3-recovery-vault.mjs?v=v3-boundary-lineage-13";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
@@ -292,7 +292,7 @@ function installCaptureHealthButton() {
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
-      "前端版本：v3-peer-cut-classification-12",
+      "前端版本：v3-boundary-lineage-13",
       "事件 Promise 觀測：" + lifecycle.status +
         " / 開始 " + lifecycle.started +
         " / 已完成 " + lifecycle.fulfilled +
