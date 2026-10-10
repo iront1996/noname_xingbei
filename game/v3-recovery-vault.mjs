@@ -49,6 +49,7 @@ const eventLifecycleJournal = createV3EventLifecycleJournal({
     ? game.roomId : null
 });
 let eventObserverInstallCode = "OBSERVER_NOT_INSTALLED";
+let lastBoundaryCut = null;
 
 function validRoomId(id) {
   return typeof id === "string" && id.length > 0 && id.length < 128;
@@ -73,6 +74,21 @@ export function getV3EventCutHealth() {
     safeCheckpointCertified:false,restorable:false,readyToResume:false
   });
   return inspectV3EventCutQueues(_status.eventManager?.eventStack);
+}
+
+export function getV3LastBoundaryCutHealth() {
+  // Only the same still-active owner socket and room may read this summary.
+  // Never surface the socket or room ID to the diagnostic UI.
+  if(!activeOwner() || !lastBoundaryCut ||
+     lastBoundaryCut.roomId !== game.roomId ||
+     lastBoundaryCut.ownerSocket !== game.ws) {
+    return Object.freeze({
+      code:"CUT_BOUNDARY_NOT_OBSERVED",ancestorNext:0,ancestorAfter:0,
+      currentNext:0,currentAfter:0,
+      safeCheckpointCertified:false,restorable:false,readyToResume:false
+    });
+  }
+  return lastBoundaryCut.summary;
 }
 
 export function getV3HistoryReferenceLinkHealth() {
@@ -577,6 +593,13 @@ export function installV3RecoveryVault() {
   if (Array.isArray(lib.onphase)) {
     lib.onphase.push(() => {
       if (!activeOwner() || lib.configOL?.mode !== "xingBei") return;
+      // Sample the exact onphase hook synchronously, before the game engine
+      // schedules the next child phase. Never retain actual Event objects.
+      lastBoundaryCut = {
+        roomId:game.roomId,
+        ownerSocket:game.ws,
+        summary:inspectV3EventCutQueues(_status.eventManager?.eventStack)
+      };
       const barrier = inspectV3TurnBoundaryStack(_status.eventManager?.eventStack);
       if (!barrier.ok) {
         recordCaptureOutcome("CAPTURE_BLOCKED", barrier.code, "turn_boundary");
