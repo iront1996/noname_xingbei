@@ -25,9 +25,9 @@ test("connect mode has one V3 bootstrap entry and no competing vault dynamic imp
 test("owner and vault module build references use a single canonical V3 URL",()=>{
  const fromOwner=owner.match(/from "\.\/v3-recovery-vault\.mjs\?v=([^"]+)";/);
  const fromEntry=entry.match(/import\("\/game\/v3-owner-connection\.mjs\?v=([^"]+)"\)/);
- assert.equal(fromOwner?.[1],"v3-owner-bootstrap-15");
+ assert.equal(fromOwner?.[1],"v3-inert-timeline-16");
  assert.equal(fromOwner?.[1],fromEntry?.[1]);
- assert.match(owner,/前端版本：v3-owner-bootstrap-15/);
+ assert.match(owner,/前端版本：v3-inert-timeline-16/);
 });
 test("only installed real GameEvent observer may write nonempty encrypted evidence",()=>{
  assert.match(vault,/eventObserverInstallCode !== "OBSERVER_INSTALLED"/);
