@@ -60,10 +60,17 @@ function extractSkillHistoryEvent(entry,itemtype) {
   }
   if(Object.prototype.hasOwnProperty.call(entry,"targets")){
     const targets=dataProperty(entry,"targets");
-    if(targets!==undefined && targets!==null){
+    // Native logSkill(name, false) suppresses targeting visuals. In
+    // content.js, info.logLine === false explicitly passes this value.
+    // It does not mean the target is an unknown player or missing state.
+    if(targets!==undefined && targets!==null && targets!==false){
       const members=Array.isArray(targets)?targets:[targets];
-      if(members.length>8 || members.some(value=>itemtype(value)!=="player")){
-        throw Error("HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID");
+      if(members.length>8)throw Error("HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID");
+      for(let i=0;i<members.length;i++){
+        if(!Object.prototype.hasOwnProperty.call(members,i) ||
+           itemtype(dataProperty(members,String(i)))!=="player"){
+          throw Error("HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID");
+        }
       }
     }
   }
