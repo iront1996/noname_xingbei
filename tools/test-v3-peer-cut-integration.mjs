@@ -37,7 +37,7 @@ test("front door and host share the exact current vault instance",()=>{
   const entry=read("mode/connect.js");
   const owner=read("game/v3-owner-connection.mjs");
   const match=owner.match(/from "\.\/v3-recovery-vault\.mjs\?v=([^"]+)";/);
-  assert.equal(match?.[1],"v3-inert-evidence-14");
-  assert.ok(entry.includes('/game/v3-recovery-vault.mjs?v='+match[1]+'"'));
+  assert.equal(match?.[1],"v3-owner-bootstrap-15");
+  assert.ok(owner.includes("installV3RecoveryVault();"));
   assert.ok(entry.includes('/game/v3-owner-connection.mjs?v='+match[1]+'"'));
 });
