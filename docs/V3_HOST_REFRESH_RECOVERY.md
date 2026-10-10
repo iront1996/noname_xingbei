@@ -543,3 +543,39 @@ Promise：OBSERVATION_RING_TRUNCATED / started 514 / fulfilled 510 / rejected 0 
 **限制必須明示**：即使 `missingTransitions=0`、`evictedTransitions=0`，也只是從觀測器啟用後在已取樣區間內沒有找到缺漏；絕非完整且可信的遊戲事件重播日誌。事件的 JS closure、子事件 Promise await、卡牌及技能副作用仍沒有持久化；`completeCoverage:false`、`safeCheckpointCertified:false`、`eventContinuationCaptured:false`、`restorable:false`、`readyToResume:false` 均未放寬。
 
 **接下來的實測**：新建 V3 Playtest 房間，正常開始真人多人對局，至少遊玩 20 秒，房主按「V3 測試：檢查本機快照」，確認 `v3-inert-timeline-16`，重點截圖「事件序列保存」、「本機加密事件證據」、「歷史事件引用」。預期至少一次可驗證的加密序列，並在長時間或大量事件後能顯示容量淘汰/缺口狀態；不要嘗試刷新房主續局。
+
+
+## 2026-10-11：V3 第 16 版實測與副作用交易防重播研究（Playtest-17）
+
+最新房主畫面驗收 `v3-inert-timeline-16`：
+
+```text
+事件 Promise：OBSERVATION_RING_TRUNCATED / 開始 786 / 已完成 782 / 失敗 0 / 待結束 4
+歷史引用：INERT_HISTORY_REFERENCE_INDEX_READY / 引用 49 / 重複引用 5
+上次回合：CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED，祖先 next 1 = 活躍子事件 1，額外待執行 0
+事件序列保存：ENCRYPTED_INERT_TIMELINE_VERIFIED / 轉移 1567 / 缺口 0 / 容量淘汰 0
+無法追蹤的新事件：0
+獨立加密事件證據：ENCRYPTED_INERT_EVIDENCE_VERIFIED（約 2 秒前）
+證據歷史引用：INERT_HISTORY_REFERENCE_INDEX_READY
+定期 CAPTURE_FAILED / HIST_ACTION_EVENT_FINISHED_ONLY
+邊界 CAPTURE_BLOCKED / BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION
+定期與邊界正式快照候選均 NOT_FOUND
+```
+
+結論：第 16 版在這場對局中可合併多個 512 筆環形觀測視窗，形成 1567 筆經 AES-GCM 驗證的匿名順序，**已觀測區間中沒有偵測到缺口**。這不是事件可重播證明：不含卡牌、技能執行結果、選擇結果、JS closure、父 Promise 待續行位置，且所有恢復閘門依然關閉。
+
+### 真正無法直接冷恢復的副作用不確定性
+
+原生 `noname/library/element/player.js` 之 `damage/recover/loseHp/changeHp/gain/lose/draw` 等方法會排程 `GameEvent`，但一個方法被呼叫，不足以證明該事件已經實際套用 HP、卡牌或技能狀態；即使它的 Promise 已完成，也沒有可用來驗證當時遊戲狀態是否**與持久化儲存原子一致**的快照。若房主刷新剛好發生在套用遊戲副作用之後、確認持久化紀錄之前，盲目重播就可能造成同一筆傷害或摸牌執行兩次。
+
+因此必須先設計 write-ahead intent、真實套用、狀態 seal 與防重複交易 ID 的 protocol，且**必須在引擎狀態與持久化確認具備可靠一致性之後才能啟用冷恢復**。光有客端本地三階段紀錄仍不能達成跨 JS 記憶體與 IndexedDB 的原子交易。
+
+### V3-only 第 17 版：副作用「排程呼叫」被動觀測與離線防重播模型
+
+- `game/v3-effect-transaction-fence.mjs`：新增獨立、**完全不執行**的效果交易安全閘門。以合成的匿名 `intent -> applied -> state_sealed` 測試重播判斷。重整發生於任何模糊階段，一律 `executionAuthorized:false`；即使標記 sealed，亦不得再套用同一效果。每份模擬帳本的 `engineAdapterInstalled:false`、`stateCheckpointAtomic:false`、`eventContinuationCaptured:false`、`restorable:false`、`readyToResume:false` 不可偽造為 true。這是未來真正引擎轉接器的合約測試，尚未寫入實戰中的技能副作用結果。
+- `game/v3-effect-intent-observer.mjs`：V3 房主端專用的被動 Player API 計數器，涵蓋原生 `damage`、`recover`、`loseHp`、`changeHp`、`gain`、`lose`、`draw` 七個方法。只觀測呼叫成功或原生拋錯，以房間為觀測範圍，限定計數容量；**不讀取、不儲存參數、玩家識別、卡牌內容、Event 或 Promise，也不主動執行回傳的 Event**。完整透傳 `this`、參數、原始回傳物件與同步例外，且可完整卸載、還原 Player 的原始方法。
+- `game/v3-recovery-vault.mjs` 在原有 V3 初始化內安裝被動計數器，提供唯讀 `getV3EffectIntentHealth()`；房主健康畫面新增「原生副作用排程觀測」、「排程分類」和「這些只是 API 呼叫，未證明效果已結算或可安全重播」。
+- 更新 Playtest 載入到 `v3-effect-intent-17`，既有 event Promise lifecycle observer、AES-GCM 狀態證據與時間線保持不變；新增獨立與整合測試，確保零敏感內容、原生函式呼叫行為不變、雙重安裝拒絕、room 切換重置、失敗的安裝不半套修改 Player 類別、且沒有恢復原局的執行權限。
+- 目前沒有觸碰 V1、V2、production 或 V3 VPS broker。此版本只新增診斷與未接引擎狀態的純函式交易規格，並不會讓 `v3ready` 可以繞過原本的安全阻斷。
+
+**下一次實測**：新建 V3 Playtest 多人對局，至少兩名真人正常使用技能、摸牌、造成或受到傷害（若可行），切換回合後房主檢查健康視窗 `前端版本：v3-effect-intent-17`。確認新的「原生副作用排程觀測：EFFECT_INTENT_CALLS_ONLY」及不為零的部分方法計數，並說明技能、摸牌、扣血和回合切換是否與第 16 版一樣正常。若現場顯示 `EFFECT_INTENT_METHOD_UNAVAILABLE` 等碼，保留完整截圖以修復 native API 安裝相容性。**請勿刷新房主測試冷續局**，目前沒有能執行事件副作用重播的系統。
