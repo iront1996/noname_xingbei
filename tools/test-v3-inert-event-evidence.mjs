@@ -100,3 +100,24 @@ test("getter exceptions are never returned as private data",()=>{
  assert.equal(v.code,"EVIDENCE_BUILD_FAILED");
  assert.doesNotMatch(JSON.stringify(v),/private data/);
 });
+
+test("AES-GCM-valid but unobserved zero-event capsule is never accepted as real evidence",()=>{
+  const input=sample();
+  input.lifecycle={...input.lifecycle,seq:0,started:0,fulfilled:0,
+    rejected:0,threw:0,pending:0,records:[],
+    status:"OBSERVATION_PARTIAL",truncatedTransitions:0};
+  assert.equal(build(input).code,"EVIDENCE_LIFECYCLE_EMPTY_OR_INCONSISTENT");
+  const data=JSON.parse(JSON.stringify(build(sample()).capsule));
+  data.lifecycle.seq=0;
+  data.lifecycle.started=0;
+  data.lifecycle.fulfilled=0;
+  data.lifecycle.pending=0;
+  data.lifecycle.records=[];
+  assert.equal(verify(data).ok,false);
+});
+test("observed start/completion statistics must obey the journal identity invariant",()=>{
+  const input=sample();input.lifecycle.pending=1;
+  assert.equal(build(input).code,"EVIDENCE_LIFECYCLE_EMPTY_OR_INCONSISTENT");
+  input.lifecycle.pending=2;input.lifecycle.status="NOT_ACTIVE_OWNER";
+  assert.equal(build(input).code,"EVIDENCE_LIFECYCLE_EMPTY_OR_INCONSISTENT");
+});
