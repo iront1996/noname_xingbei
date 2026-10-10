@@ -14,6 +14,7 @@ import {
   getV3EventLifecycleHealth,
   getV3HistoryReferenceLinkHealth,
   getV3EventCutHealth,
+  getV3LastBoundaryCutHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
 } from "./v3-recovery-vault.mjs?v=v3-event-cut-audit-11";
@@ -287,6 +288,7 @@ function installCaptureHealthButton() {
     const lifecycle = getV3EventLifecycleHealth();
     const historyLink = getV3HistoryReferenceLinkHealth();
     const cut = getV3EventCutHealth();
+    const boundaryCut = getV3LastBoundaryCutHealth();
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
@@ -305,6 +307,11 @@ function installCaptureHealthButton() {
         " / after " + cut.ancestorAfter +
         "；當前事件：next " + cut.currentNext +
         " / after " + cut.currentAfter,
+      "上次換回合切點：" + boundaryCut.code,
+      "換回合祖先佇列：next " + boundaryCut.ancestorNext +
+        " / after " + boundaryCut.ancestorAfter +
+        "；當前：next " + boundaryCut.currentNext +
+        " / after " + boundaryCut.currentAfter,
       "事件切點只提供阻斷證據，尚不可恢復原局。",
       "事件紀錄環形截短：" + lifecycle.truncatedTransitions +
         " / 無法追蹤的新事件：" + lifecycle.droppedStarts,
