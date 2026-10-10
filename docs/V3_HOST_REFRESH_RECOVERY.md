@@ -535,7 +535,7 @@ Promise：OBSERVATION_RING_TRUNCATED / started 514 / fulfilled 510 / rejected 0 
 - 純函式 `reconcileV3InertTimeline` 以連續序號合併上一批經驗證的匿名事件轉移與目前的 ring window，重疊序號比對必須一致，不一致拒絕；落差數會計入 `missingTransitions`，不是當作可補上的事件。
 - 最多保留 4096 筆非執行的 `started / fulfilled / rejected / threw` 轉移，超過以 `evictedTransitions` 累計容量淘汰。保留序號與同一觀測器的匿名事件序號，但**沒有**保存玩家、手牌、技能、事件名、選擇結果、Promise 或函式。
 - 針對每個 JavaScript 執行環境產生 128-bit 隨機 `observerEpoch`，不向 UI 輸出，僅包含在加密資料內；刷新瀏覽器後如果新事件從同一序號重新開始，`TIMELINE_OBSERVER_EPOCH_CHANGED` 阻擋把兩個不相關的執行序列串成同一份紀錄。原環境以外的舊 archive 僅標示 `TIMELINE_PREVIOUS_RUNTIME_ONLY`，不能偽稱是當前房主引擎的資料。
-- `game/v3-recovery-vault.mjs` 使用獨立的 IndexedDB key `roomId::inert-transition-timeline-v1` 與 AES-GCM。additional authenticated data 綁定 schema、房號及保存時間。既有的事件 evidence 與正式遊戲快照保存路徑保持分開；重新整理或清除舊房間時，原房間的獨立 archive 也會跟著清除。
+- `game/v3-recovery-vault.mjs` 使用獨立的 IndexedDB key `roomId::inert-transition-timeline-v1` 與 AES-GCM。additional authenticated data 綁定 schema、房號及保存時間。既有的事件 evidence 與正式遊戲快照保存路徑保持分開；清除或正式結束舊房間時，原房間的獨立 archive 也會跟著清除；單純重新整理分頁不會直接刪除 IndexedDB 紀錄，而是因 observerEpoch 不同而拒絕與新執行環境銜接。
 - `inspectLocalInertTransitionTimeline` 僅回傳 `ENCRYPTED_INERT_TIMELINE_VERIFIED`、匿名轉移數、已知缺口數與容量淘汰數；這只代表 archive 的加密內容及結構驗證，**不代表事件可重播**。未經證實的歷史內容、原始遊戲狀態或身份資料仍不能輸出。
 - 新增 `tools/test-v3-inert-transition-timeline.mjs` 和 `tools/test-v3-inert-timeline-integration.mjs`，測試連續視窗合併、重複/衝突偵測、超過 4096 筆容量、重新整理跨 epoch、密文竄改、房號與保存時間 AEAD 驗證、敏感內容拒收、原有 `v3ready` 安全閘不變。
 - 版本 `v3-inert-timeline-16`，且健康檢查 modal 改為可垂直捲動，避免診斷變長時超出小尺寸瀏覽器畫面。僅 V3 GitHub Playtest branch；V1、V2、VPS 8081 和 production 8080 未修改。
