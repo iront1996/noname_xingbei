@@ -365,3 +365,33 @@ The current code is foundational infrastructure, not the completed feature.
 **不宣稱解決的項目：**目前定期快照仍因 `HIST_ACTION_EVENT_ACTIVE_STACK` 失敗，回合邊界仍因 `BOUNDARY_ANCESTOR_WORK_PENDING` 被拒。這是安全性要求，不能靠降低檢查要求來清除。現有候選仍不可用，完整冷重連仍未開放。
 
 **下一步瀏覽器測試**：原房主新開 V3 Playtest 對局，至少兩人正常進行出牌和技能，等待 15 秒以上並至少換一次回合，健康檢查需顯示 `v3-history-skilllog-10`。檢查是否把原本的 `HISTORY_ENTRY_NOT_EVENT` 變成其他更具體的歷史型別或 Event 狀態碼、是否顯示 `OBSERVATION_RING_TRUNCATED` 而非誤導的 `OBSERVATION_OVERFLOW`。不要重新整理房主或試圖強制執行舊局。
+
+
+## 2026-10-11：V3 Playtest-10 真實事件觀測與安全切點佇列稽核
+
+使用者房主畫面回報：
+
+```text
+前端版本：v3-history-skilllog-10
+事件 Promise 觀測：OBSERVATION_RING_TRUNCATED
+開始 782 / 已完成 773 / 失敗 0 / 待觀測結束 9
+歷史事件引用：HISTORY_EVENT_IN_ACTIVE_STACK
+事件紀錄環形截短：1043 / 無法追蹤的新事件：0
+定期最近：CAPTURE_FAILED / HIST_ACTION_EVENT_FINISHED_ONLY
+邊界最近：CAPTURE_BLOCKED / BOUNDARY_ANCESTOR_WORK_PENDING
+定期候選：NOT_FOUND / 回合邊界候選：NOT_FOUND
+```
+
+證據：原本的 `HISTORY_ENTRY_NOT_EVENT` 不再出現，表示 `useSkill.logInfo` 實作於該次實測通過格式檢查。環形紀錄截短代表 512 筆匿名轉移紀錄已輪替；`droppedStarts=0` 表示觀測器沒有因**同時未結算的事件數達容量上限**而捨棄新的開始紀錄。這仍**不保證**涵蓋安裝觀測器之前的事件、Promise 以外的所有計時器和遠端選擇。
+
+`HISTORY_EVENT_IN_ACTIVE_STACK` 是執行中歷史引用，不得被轉成已完成日誌；`HIST_ACTION_EVENT_FINISHED_ONLY` 表示只是歷史事件有 `finished` 旗標，與 Promise 或技能副作用安全重播無法畫上等號。`BOUNDARY_ANCESTOR_WORK_PENDING` 需區分祖先排隊 `next` 與 `after`，不能只靠回合切換鉤子宣稱安全。
+
+新增純函式 `game/v3-event-cut-audit.mjs`：
+- 唯讀稽核可見的 `GameEvent.manager.eventStack`，只讀取各 Frame 自有的 `next/after/finished/name` 資料欄位，排除 getter 呼叫，限制堆疊深度與佇列數量。
+- 對祖先及當前 frame 分別回報匿名的 `next`、`after` 計數，區分 `CUT_ANCESTOR_QUEUES_PENDING`、`CUT_CURRENT_QUEUES_PENDING`、`CUT_NOT_PHASE_LOOP` 及 `CUT_VISIBLE_QUEUES_EMPTY_NOT_CERTIFIED`。
+- 即使觀測到零佇列，也保持 `completeCoverage:false`、`safeCheckpointCertified:false`、`eventContinuationCaptured:false`、`restorable:false`、`readyToResume:false`；此結果是**負面阻斷證據，不是安全恢復許可**。
+- `game/v3-recovery-vault.mjs` 的原生 `lib.onphase` callback 另外同步保存**當下**的匿名切點統計（僅內存），以原房主 `game.ws` 及 roomId 綁定，避免在點擊健康檢查時因為時序已移動而錯判上次回合邊界；UI 不顯示 roomId、Socket、玩家名稱。
+- 房主健康檢查分別顯示點擊當下「事件切點／祖先佇列」及「上次換回合切點／換回合祖先佇列」，便於識別實際排隊類型。
+- 前端載入版本 `v3-event-cut-audit-11`，owner 和 vault 共用相同版本化 ESM 實例。自動化測試涵蓋不安全 queue、不存在/超長堆疊、getters、隱私、切點被保守拒絕，以及 hook 的同步取樣先於既有 `inspectV3TurnBoundaryStack` 和重新整理未開放的事實。
+
+**此版本只是切點工程的安全診斷基礎，沒有可恢復事件的錄製、重放或 checkpoint 安裝。** V1/V2 和 VPS 未變更。下一步須由原房主新開 V3 Playtest 對局、至少換一次回合，檢查健康視窗是否載入 `v3-event-cut-audit-11`，並傳回「上次換回合切點／換回合祖先佇列」的結果。測試期間請勿重新整理房主，亦不可強制 `v3ready`。
