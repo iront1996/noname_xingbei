@@ -72,19 +72,30 @@ export function inspectV3HistoryEventReferences(history, itemtype, liveStack) {
         }
         return;
       }
+      // Player/Card/VCard and their engine-typed collections are already
+      // authoritative runtime references, not history event containers.
+      // Never inspect their internal fields, DOM nodes or hidden card data.
+      if(["player","card","vcard","players","cards","vcards"].includes(type))return;
       if(!Array.isArray(value) &&
-         Object.prototype.toString.call(value)!=="[object Object]") {
+         Object.getPrototypeOf(value)!==Object.prototype &&
+         Object.getPrototypeOf(value)!==null) {
         throw Error("HISTORY_OBSERVATION_UNSUPPORTED_OBJECT");
       }
       for(const key of Object.keys(value)) {
-        // Never log key or value; property access can still throw.
-        visit(value[key],depth+1);
+        // Avoid invoking custom getters while observing sensitive history;
+        // an accessor cannot be safely replayed or certified.
+        const field=Object.getOwnPropertyDescriptor(value,key);
+        if(!field || !Object.prototype.hasOwnProperty.call(field,"value")) {
+          throw Error("HISTORY_OBSERVATION_ACCESSOR_UNSAFE");
+        }
+        visit(field.value,depth+1);
       }
     };
     visit(history,0);
   }catch(error) {
     const code=error instanceof Error &&
-      ["HISTORY_OBSERVATION_LIMIT","HISTORY_OBSERVATION_UNSUPPORTED_OBJECT"].includes(error.message)
+      ["HISTORY_OBSERVATION_LIMIT","HISTORY_OBSERVATION_UNSUPPORTED_OBJECT",
+       "HISTORY_OBSERVATION_ACCESSOR_UNSAFE"].includes(error.message)
       ? error.message : "HISTORY_OBSERVATION_UNAVAILABLE";
     return failure(code);
   }
