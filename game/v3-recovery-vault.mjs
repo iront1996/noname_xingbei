@@ -26,6 +26,10 @@ import {
 import {
   readV3XingbeiState,createV3XingbeiStateDeltaObserver
 } from "./v3-xingbei-state-delta.mjs";
+import {
+  V3_XINGBEI_RESOURCE_SCHEMA,buildV3XingbeiResourceEvidence,
+  verifyV3XingbeiResourceEvidence
+} from "./v3-xingbei-resource-evidence.mjs";
 import { indexV3InertHistoryReferences } from "./v3-inert-history-reference-index.mjs";
 import { inspectV3EventCutQueues } from "./v3-event-cut-audit.mjs";
 import {
@@ -51,12 +55,15 @@ const INTERVAL_MS = 6000;
 const BOUNDARY_SUFFIX = "::turn-boundary";
 const INERT_EVIDENCE_SUFFIX = "::inert-event-evidence-v1";
 const INERT_TIMELINE_SUFFIX = "::inert-transition-timeline-v1";
+const XINGBEI_RESOURCE_SUFFIX = "::xingbei-resource-evidence-v1";
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_AGE_MS = 10 * 60 * 1000;
 let installed = false;
 let busy = false;
 let evidenceBusy = false;
 let evidenceGeneration = 0;
+let resourceBusy = false;
+let resourceWrite = null;
 let timelineObserverEpoch = null;
 function ensureTimelineObserverEpoch() {
   if(timelineObserverEpoch)return timelineObserverEpoch;
@@ -94,7 +101,16 @@ function sampleV3XingbeiDelta() {
   );
   // Observe star-cup-specific primitive state; do not interpret
   // legacy hp as injury or zhiLiao as a normal recover-HP call.
-  xingbeiDeltaObserver.observe(input,effectIntentJournal.snapshot());
+  const status=xingbeiDeltaObserver.observe(
+    input,effectIntentJournal.snapshot()
+  );
+  // A periodic game-state observation remains INERT: it neither captures
+  // hands nor resumes an event, and is independent of candidate failure.
+  if(input && status.status!=="XINGBEI_STATE_INVALID_SAMPLE") {
+    void saveXingbeiResourceEvidence(
+      game.roomId,game.ws,evidenceGeneration,input
+    );
+  }
 }
 export function getV3XingbeiStateHealth() {
   return xingbeiDeltaObserver.snapshot();
@@ -429,6 +445,87 @@ function captureCandidate(kind = "periodic") {
     drawPileCount: state.drawPile.length,
     discardPileCount: state.discardPile.length,
   };
+}
+
+/**
+ * A strict, encrypted, non-executable Star Cup scalar observation.
+ * Contains only public team totals and anonymous treatment counts;
+ * this MUST NEVER feed the authoritative engine stager.
+ */
+function saveXingbeiResourceEvidence(roomId,ownerSocket,generation,sample) {
+  if(resourceBusy || !validRoomId(roomId)) return;
+  const captured=buildV3XingbeiResourceEvidence(sample,Date.now());
+  if(!captured.ok) return;
+  resourceBusy=true;
+  resourceWrite=(async()=>{
+    try{
+      const key=await cryptoKey(roomId,true);
+      const iv=crypto.getRandomValues(new Uint8Array(12));
+      const capturedAt=captured.capsule.capturedAt;
+      const aad=new TextEncoder().encode(
+        V3_XINGBEI_RESOURCE_SCHEMA+":"+roomId+":"+capturedAt
+      );
+      const ciphertext=await crypto.subtle.encrypt(
+        {name:"AES-GCM",iv,additionalData:aad},key,
+        new TextEncoder().encode(JSON.stringify(captured.capsule))
+      );
+      if(generation!==evidenceGeneration || game.roomId!==roomId ||
+         game.ws!==ownerSocket || get.mode()!=="xingBei" || !activeOwner())return;
+      await transact("readwrite",store=>store.put({
+        roomId:roomId+XINGBEI_RESOURCE_SUFFIX,
+        schema:V3_XINGBEI_RESOURCE_SCHEMA,capturedAt,
+        iv:encodeBase64(iv),
+        ciphertext:encodeBase64(new Uint8Array(ciphertext))
+      }));
+    }catch{
+      // A read-only archival failure cannot interfere with game actions.
+    }finally{
+      resourceBusy=false;
+      resourceWrite=null;
+    }
+  })();
+}
+export async function inspectLocalXingbeiResourceEvidence(roomId) {
+  const unavailable=status=>Object.freeze({
+    status,restorable:false,readyToResume:false
+  });
+  if(!validRoomId(roomId))return unavailable("RESOURCE_ROOM_INVALID");
+  try{
+    const record=await transact("readonly",store=>store.get(
+      roomId+XINGBEI_RESOURCE_SUFFIX
+    ));
+    if(!record)return unavailable("RESOURCE_NOT_FOUND");
+    if(record.roomId!==roomId+XINGBEI_RESOURCE_SUFFIX ||
+       record.schema!==V3_XINGBEI_RESOURCE_SCHEMA ||
+       !Number.isSafeInteger(record.capturedAt) ||
+       record.capturedAt>Date.now()+60000 ||
+       Date.now()-record.capturedAt>MAX_AGE_MS ||
+       typeof record.iv!=="string" ||
+       typeof record.ciphertext!=="string")
+      return unavailable("RESOURCE_RECORD_INVALID");
+    const iv=decodeBase64(record.iv);
+    if(iv.length!==12)return unavailable("RESOURCE_IV_INVALID");
+    const key=await cryptoKey(roomId,false);
+    const aad=new TextEncoder().encode(
+      V3_XINGBEI_RESOURCE_SCHEMA+":"+roomId+":"+record.capturedAt
+    );
+    const bytes=await crypto.subtle.decrypt(
+      {name:"AES-GCM",iv,additionalData:aad},key,
+      decodeBase64(record.ciphertext)
+    );
+    const capsule=JSON.parse(new TextDecoder().decode(bytes));
+    const checked=verifyV3XingbeiResourceEvidence(capsule);
+    if(!checked.ok || capsule.capturedAt!==record.capturedAt)
+      return unavailable("RESOURCE_CONTENT_INVALID");
+    return Object.freeze({
+      status:"ENCRYPTED_XINGBEI_RESOURCE_VERIFIED",
+      ageSeconds:Math.max(0,Math.floor((Date.now()-record.capturedAt)/1000)),
+      anonymousSeatCount:checked.seatCount,
+      restorable:false,readyToResume:false
+    });
+  }catch{
+    return unavailable("RESOURCE_UNAVAILABLE");
+  }
 }
 
 /**
@@ -812,8 +909,12 @@ export async function purgeLocalRecoveryCandidate(roomId) {
     await transact("readwrite", store => store.delete(roomId));
     ++evidenceGeneration;
     await transact("readwrite", store => store.delete(roomId + BOUNDARY_SUFFIX));
+    // Serialize the in-flight sidecar write with purge. Once the generation
+    // is invalidated, an old pending put cannot recreate a deleted record.
+    if(resourceWrite)await resourceWrite;
     await transact("readwrite", store => store.delete(roomId + INERT_EVIDENCE_SUFFIX));
     await transact("readwrite", store => store.delete(roomId + INERT_TIMELINE_SUFFIX));
+    await transact("readwrite", store => store.delete(roomId + XINGBEI_RESOURCE_SUFFIX));
     sessionStorage.removeItem(sessionKeyName(roomId));
     sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId);
     sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId + DIAGNOSTIC_BOUNDARY_SUFFIX);
