@@ -482,3 +482,32 @@ Promise：OBSERVATION_RING_TRUNCATED / started 514 / fulfilled 510 / rejected 0 
 - `tools/test-v3-inert-event-evidence.mjs`、`tools/test-v3-inert-evidence-integration.mjs` 針對資料形狀、同源匿名性、異常 getter、矛盾認證旗標、跨房間 AES-GCM associated data 與修改密文無法解密、正式遊戲候選不受影響加上測試。
 
 **下一輪實測（不需要 VPS 更新）**：在 V3 Playtest 新建多人對局，確認 `v3-inert-evidence-14`，遊戲開始後正常玩 20 秒以上，房主按「V3 測試：檢查本機快照」。確認新增「本機加密事件證據：ENCRYPTED_INERT_EVIDENCE_VERIFIED」及「證據中的歷史引用」行。正式遊戲候選仍可顯示 `NOT_FOUND`，這是預期的安全結果。這仍不是刷新後可續局的驗收；不要為了測試此證據強行刷新活躍房主。
+
+
+## 2026-10-11：第 14 版零事件觀測器安裝問題／統一 V3 啟動（Playtest-15）
+
+使用者最新 `v3-inert-evidence-14` 畫面：
+
+```text
+事件 Promise 觀測：OBSERVER_NOT_INSTALLED／開始 0／完成 0／失敗 0／待觀測結束 0
+歷史事件引用：HISTORY_EVENT_NOT_JOURNALED
+上次換回合切點：CUT_BOUNDARY_NOT_OBSERVED
+本機加密事件證據：ENCRYPTED_INERT_EVIDENCE_VERIFIED（約 2 秒前）
+證據中的歷史引用：HISTORY_EVENT_IN_ACTIVE_STACK
+定期：CAPTURE_FAILED / HIST_ACTION_EVENT_ACTIVE_STACK
+回合邊界：CAPTURE_BLOCKED / BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION
+加密正式遊戲候選：periodic NOT_FOUND；turn_boundary NOT_FOUND
+```
+
+**正確解讀：**AES-GCM 加密證據通過完整性驗證只證明原位儲存的密文可解密及符合當時資料形狀；由於即時觀測器未安裝且零事件，不能把「證據驗證」當成已經收集事件生命週期的證據。仍無法證明上一輪所新增證據包含可重播的事件。
+
+原 `mode/connect.js` 同時對 `v3-owner-connection.mjs`、`v3-recovery-vault.mjs` 使用彼此獨立、不等待順序的 `void import(...).then(install...)`，UI 可獨立完成安裝，即使它讀取到的 vault module-local `eventObserverInstallCode` 還是 `OBSERVER_NOT_INSTALLED`。這個初始化缺少程式保證；截圖無法單獨證實是否是匯入競速、ESM 實例差異或其他 runtime timing 問題。
+
+**第 15 版修正**：
+- V3 connect 模式只動態載入一次房主模組；房主模組從自己的同一個靜態匯入 vault，先同步呼叫 `installV3RecoveryVault()`，再安裝健康按鈕、房主 reconnect handlers。移除第二條競速 dynamic import 路徑。
+- `saveInertEventEvidence()` 拒絕任何 `eventObserverInstallCode !== "OBSERVER_INSTALLED"`，並且須 `lifecycle.started >= 1` 且 `seq >= 1` 才加密持久化。單靠活動房主、不知是否真的觀測到事件，不能新增事件證據。
+- `buildV3InertEvidenceCapsule`／`verifyV3InertEvidenceCapsule` 拒絕零開始事件、零轉移順序、`started != fulfilled+rejected+threw+pending` 的矛盾統計，以及非認可事件觀測狀態。原先版本可能已儲存的零事件密文，在本版讀取時會被拒絕為有效的事件證據，即使密文未被竄改。
+- 新增 `tools/test-v3-observer-bootstrap.mjs`、補強 `tools/test-v3-inert-event-evidence.mjs`；既有單一 vault ESM 實例、回合邊界、加密隔離、事件 Promise 身分與房主安全阻擋測試同步更新。載入參數 `v3-owner-bootstrap-15` 僅在 V3 Playtest branch。
+- 沒有改變 `HIST_ACTION_EVENT_ACTIVE_STACK`、`BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION` 的 fail-closed 行為，也沒有開放 `v3resume`／`v3ready`；**VPS、V1、V2 完全不變**。
+
+**驗收：**使用者須開新 V3 Playtest 對局，至少一位其他真人，正常出牌與換回合 20 秒以上，健康檢查確認 `前端版本：v3-owner-bootstrap-15`，重點觀察 `事件 Promise 觀測` 是否變為 `OBSERVATION_PARTIAL` 或 `OBSERVATION_RING_TRUNCATED` 且 `開始` > 0；並檢查 `本機加密事件證據` 是否為 `ENCRYPTED_INERT_EVIDENCE_VERIFIED`。如果顯示其他 `OBSERVER_*\u0060 原因碼，應保留完整截圖，不能忽略以免誤驗收。這是事件觀測與保存路徑驗收，**不是刷新房主後可恢復原局**。
