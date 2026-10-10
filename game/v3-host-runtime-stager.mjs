@@ -47,6 +47,7 @@ function planNativeZones(blueprint) {
   if (!blueprint || blueprint.schema !== "xingbei-v3-host-runtime-blueprint-1" ||
       !Array.isArray(blueprint.playerSeats) ||
       !Array.isArray(blueprint.remoteRoutes) ||
+      !Array.isArray(blueprint.botPlayerIds) ||
       !Array.isArray(blueprint.drawPile) ||
       !Array.isArray(blueprint.discardPile) ||
       blueprint.readyToResume !== false ||
@@ -108,8 +109,19 @@ function planNativeZones(blueprint) {
     const error = addCard(card.serialized, "discardPile", null);
     if (error) return failure(error);
   }
-  if (blueprint.remoteRoutes.length !== blueprint.playerSeats.length - 1 ||
-      !blueprint.playerSeats.some(seat => seat.playerId === blueprint.hostPlayerId)) {
+  const seatIds = new Set(blueprint.playerSeats.map(seat => seat.playerId));
+  const botIds = new Set(blueprint.botPlayerIds);
+  const guestIds = new Set(blueprint.remoteRoutes.map(route => route.playerId));
+  if (seatIds.size !== blueprint.playerSeats.length ||
+      botIds.size !== blueprint.botPlayerIds.length ||
+      guestIds.size !== blueprint.remoteRoutes.length ||
+      blueprint.remoteRoutes.length < 1 ||
+      blueprint.remoteRoutes.length + botIds.size !== blueprint.playerSeats.length - 1 ||
+      !seatIds.has(blueprint.hostPlayerId) ||
+      botIds.has(blueprint.hostPlayerId) || guestIds.has(blueprint.hostPlayerId) ||
+      [...botIds].some(id => !seatIds.has(id) || guestIds.has(id)) ||
+      [...seatIds].some(id =>
+        id !== blueprint.hostPlayerId && !botIds.has(id) && !guestIds.has(id))) {
     return failure("REMOTE_ROUTE_COUNT_INVALID");
   }
   return { ok: true, layouts, zones };
@@ -205,7 +217,8 @@ export function stageDetachedHostRuntime(blueprint, environment) {
       bySocketId.set(route.socketId, remote);
     }
     if (!byPlayerId.has(blueprint.hostPlayerId) ||
-        bySocketId.size !== byPlayerId.size - 1 ||
+        bySocketId.size !== blueprint.remoteRoutes.length ||
+        bySocketId.size + blueprint.botPlayerIds.length !== byPlayerId.size - 1 ||
         byCardId.size !== planned.zones.length) {
       throw new Error("STAGING_INCOMPLETE");
     }
@@ -219,12 +232,14 @@ export function stageDetachedHostRuntime(blueprint, environment) {
         cards: byCardId,
         dormantRemoteClients: bySocketId,
         originalHostId: blueprint.hostPlayerId,
+        botPlayerIds: Object.freeze([...blueprint.botPlayerIds]),
         // Never transfer to the live game until event continuity exists.
       },
       summary: Object.freeze({
         nativePlayersStaged: byPlayerId.size,
         nativeCardsStaged: byCardId.size,
         dormantRemoteClientsStaged: bySocketId.size,
+        botSeatsStaged: blueprint.botPlayerIds.length,
         detached: true,
         cardInitializationDeferred: true,
         skillActivationDeferred: true,
