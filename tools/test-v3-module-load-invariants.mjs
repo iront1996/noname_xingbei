@@ -31,3 +31,19 @@ test("candidate snapshot cannot certify unfinished event continuation",()=>{
   assert.ok(vault.includes("eventContinuationCaptured: false"));
   assert.ok(vault.includes("restorable: false"));
 });
+
+test("mixed human/AI topology travels from capture through safe shadow registry",()=>{
+  const vault=get("game/v3-recovery-vault.mjs");
+  const gate=get("game/v3-host-authority-gate.mjs");
+  const blueprint=get("game/v3-rehydration-blueprint.mjs");
+  const stager=get("game/v3-host-runtime-stager.mjs");
+  const registry=get("game/v3-host-registry-transaction.mjs");
+  assert.match(vault,/classifyV3HostPeerTopology\(/);
+  assert.match(vault,/botPlayerIds: topology\.botPlayerIds|const botPlayerIds = topology\.botPlayerIds/);
+  assert.match(gate,/const botPlayerIds = data\.botPlayerIds/);
+  assert.match(blueprint,/botPlayerIds: Object\.freeze/);
+  assert.match(stager,/blueprint\.botPlayerIds/);
+  assert.match(registry,/blueprint\.botPlayerIds/);
+  assert.doesNotMatch(vault,/guestBindings\.length !== ids\.length - 1/);
+  assert.doesNotMatch(gate,/claim\.guestSocketIds\.length !== playerIds\.length - 1/);
+});
