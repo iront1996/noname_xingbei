@@ -87,3 +87,23 @@ test("AES-GCM authenticated room, schema and timestamp cannot be substituted",as
  await assert.rejects(webcrypto.subtle.decrypt({name:"AES-GCM",iv,
    additionalData:aad("ROOM1",now)},key,mutated));
 });
+
+test("seats getter and sparse seats are never traversed or archived",()=>{
+ let getterCalls=0;
+ const getter=sample();
+ Object.defineProperty(getter,"seats",{
+   enumerable:true,get(){getterCalls++;throw Error("PRIVATE_SEATS")}
+ });
+ const output=build(getter,now);
+ assert.equal(output.ok,false);
+ assert.equal(getterCalls,0);
+ const sparse=sample();sparse.seats=new Array(2);
+ sparse.seats[0]={treatment:1};
+ assert.equal(build(sparse,now).ok,false);
+ const hostile=sample();
+ Object.defineProperty(hostile.seats[0],"treatment",{
+   enumerable:true,get(){getterCalls++;throw Error("PRIVATE_TREATMENT")}
+ });
+ assert.equal(build(hostile,now).ok,false);
+ assert.equal(getterCalls,0);
+});
