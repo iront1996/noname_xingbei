@@ -39,10 +39,10 @@ test("encrypted event evidence is explicitly distinct from game candidate and UI
   assert.match(owner,/本機加密事件證據/);
   assert.match(owner,/證據中的歷史引用/);
   assert.match(owner,/觀測涵蓋完整性：無法認證/);
-  assert.match(owner,/前端版本：v3-inert-timeline-16/);
+  assert.match(owner,/前端版本：v3-effect-intent-17/);
   assert.match(vault,/ENCRYPTED_INERT_EVIDENCE_VERIFIED/);
   const version=owner.match(/from "\.\/v3-recovery-vault\.mjs\?v=([^"]+)";/);
-  assert.equal(version?.[1],"v3-inert-timeline-16");
+  assert.equal(version?.[1],"v3-effect-intent-17");
   assert.ok(owner.includes("installV3RecoveryVault();"));
   assert.ok(entry.includes('/game/v3-owner-connection.mjs?v='+version[1]+'"'));
 });
