@@ -45,8 +45,8 @@ test("timeline and source evidence remain separately encrypted and bound to the 
  assert.match(owner,/事件序列保存/);
  assert.match(owner,/missingTransitions/);
  assert.match(owner,/evictedTransitions/);
- assert.ok(entry.includes("/game/v3-owner-connection.mjs?v=v3-inert-timeline-16"));
- assert.ok(owner.includes('from "./v3-recovery-vault.mjs?v=v3-inert-timeline-16"'));
+ assert.ok(entry.includes("/game/v3-owner-connection.mjs?v=v3-effect-intent-17"));
+ assert.ok(owner.includes('from "./v3-recovery-vault.mjs?v=v3-effect-intent-17"'));
  assert.doesNotMatch(entry,/import\("\/game\/v3-recovery-vault\.mjs/);
 });
 test("WebCrypto AEAD room binding rejects different room ID and modified ciphertext",async()=>{
