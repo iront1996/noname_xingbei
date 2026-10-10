@@ -58,3 +58,44 @@ test("queue total bounded; finished flags are only observational",()=>{
   const big=frame("root",Array(20001).fill({}));
   assert.equal(cut([big,frame()]).code,"CUT_STACK_FRAME_INVALID");
 });
+
+test("phaseLoop still in ancestor next[0] is active lineage, not separate queued future work",()=>{
+  const phase=frame("phaseLoop");
+  const root=frame("root",[phase]);
+  const v=cut([root,phase]);
+  assert.equal(v.code,"CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED");
+  assert.equal(v.ancestorNext,1);
+  assert.equal(v.activeLineageNext,1);
+  assert.equal(v.additionalAncestorNext,0);
+  neverCertified(v);
+});
+test("active lineage plus another scheduled sibling is genuinely pending",()=>{
+  const phase=frame("phaseLoop");
+  const root=frame("root",[phase,{name:"future"}]);
+  const v=cut([root,phase]);
+  assert.equal(v.code,"CUT_ANCESTOR_QUEUES_PENDING");
+  assert.equal(v.activeLineageNext,1);
+  assert.equal(v.additionalAncestorNext,1);
+  neverCertified(v);
+});
+test("nested active frames can account for multiple next[0] references",()=>{
+  const phase=frame("phaseLoop");
+  const middle=frame("wrapper",[phase]);
+  const root=frame("root",[middle]);
+  const v=cut([root,middle,phase]);
+  assert.equal(v.code,"CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED");
+  assert.equal(v.ancestorNext,2);
+  assert.equal(v.activeLineageNext,2);
+  assert.equal(v.additionalAncestorNext,0);
+  neverCertified(v);
+});
+test("getter at parent next[0] cannot execute even to identify active child",()=>{
+  const phase=frame("phaseLoop"), next=[phase];
+  let calls=0;
+  Object.defineProperty(next,"0",{get(){calls++;throw Error("secret event");}});
+  const root=frame("root",next);
+  const v=cut([root,phase]);
+  assert.equal(v.code,"CUT_STACK_FIELD_UNAVAILABLE");
+  assert.equal(calls,0);
+  neverCertified(v);
+});
