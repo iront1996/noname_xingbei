@@ -12,6 +12,7 @@ import {
   inspectLocalRecoveryCandidate,
   getLocalVaultStatus,
   getV3EventLifecycleHealth,
+  getV3HistoryReferenceLinkHealth,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
 } from "./v3-recovery-vault.mjs?v=v3-event-lifecycle-journal-9";
@@ -283,6 +284,7 @@ function installCaptureHealthButton() {
     const vault = await inspectLocalRecoveryCandidate(roomId);
     if (!isLiveOwner() || game.roomId !== roomId) return;
     const lifecycle = getV3EventLifecycleHealth();
+    const historyLink = getV3HistoryReferenceLinkHealth();
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
@@ -292,6 +294,10 @@ function installCaptureHealthButton() {
         " / 已完成 " + lifecycle.fulfilled +
         " / 失敗 " + lifecycle.rejected +
         " / 待觀測結束 " + lifecycle.pending,
+      "歷史事件引用：" + historyLink.status +
+        (historyLink.status === "INERT_HISTORY_REFERENCE_INDEX_READY"
+          ? " / 引用 " + historyLink.references +
+            " / 重複引用 " + historyLink.aliasReferences : ""),
       "觀測涵蓋完整性：無法認證（不等於續行憑證）",
       "最近擷取：" + String(diagnostic.status || "NOT_YET_CAPTURED"),
       "原因碼：" + String(diagnostic.code || "NONE"),
