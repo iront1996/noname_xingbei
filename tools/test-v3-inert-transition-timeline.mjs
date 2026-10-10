@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   reconcileV3InertTimeline as merge,verifyV3InertTimeline as verify
 } from "../game/v3-inert-transition-timeline.mjs";
-const window=(first,last,{droppedStarts=0,status="OBSERVATION_PARTIAL"}={})=>({
+const window=(first,last,{droppedStarts=0,status="OBSERVATION_PARTIAL",observerEpoch="0123456789abcdef0123456789abcdef"}={})=>({
+  observerEpoch,
   seq:last,started:last,droppedStarts,status,
   completeCoverage:false,eventContinuationCaptured:false,
   restorable:false,readyToResume:false,
