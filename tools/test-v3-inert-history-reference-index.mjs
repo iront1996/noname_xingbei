@@ -162,3 +162,44 @@ test("useSkill logInfo accessors cannot run and cannot leak dynamic content",()=
   assert.equal(reads,0);
   assert.equal(JSON.stringify(out).includes("private targets"),false);
 });
+
+test("native content.logSkill target suppression false is a valid inert history reference",()=>{
+  const e=event(true);
+  const logInfo={skill:"PRIVATE_SKILL",event:e,targets:false,
+    sourceSkill:"PRIVATE_SOURCE",type:"player"};
+  const result=index([[row({useSkill:[logInfo]})]],kind,[],
+    value=>({observed:value===e,ordinal:9,outcome:"fulfilled"}));
+  assert.equal(result.ok,true);
+  assert.equal(result.ledger.eventReferenceCount,1);
+  assert.equal(result.ledger.slots[0].referenceKind,"skill_log");
+  assert.equal(result.ledger.slots[0].lifecycleOrdinal,9);
+  assert.equal(result.readyToResume,false);
+  assert.doesNotMatch(JSON.stringify(result),/PRIVATE_SKILL|PRIVATE_SOURCE/);
+});
+test("native logSkill accepts nil and single Player targets but not true or strings",()=>{
+  const e=event(true),player={__player:true};
+  const itemtype=value=>value?.__event?"event":value?.__player?"player":"object";
+  const check=targets=>index([[row({useSkill:[{
+    skill:"private",event:e,targets
+  }]})]],itemtype,[]);
+  for(const targets of [false,null,undefined,[],player,[player]]){
+    assert.equal(check(targets).ok,true,String(targets));
+  }
+  for(const targets of [true,42,"fake-player",[false],[player,"bad"]]){
+    assert.equal(check(targets).code,"HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID");
+  }
+});
+test("history skill target arrays reject holes/accessors without executing private getters",()=>{
+  const e=event(true),player={__player:true};
+  const itemtype=value=>value?.__event?"event":value?.__player?"player":"object";
+  const check=targets=>index([[row({useSkill:[{
+    skill:"private",event:e,targets
+  }]})]],itemtype,[]);
+  const hole=new Array(1);
+  assert.equal(check(hole).code,"HISTORY_SKILL_LOG_TARGET_SHAPE_INVALID");
+  const getter=[player];
+  let calls=0;
+  Object.defineProperty(getter,"0",{get(){calls++;throw Error("private")},enumerable:true});
+  assert.equal(check(getter).code,"HISTORY_ACCESSOR_UNSUPPORTED");
+  assert.equal(calls,0);
+});
