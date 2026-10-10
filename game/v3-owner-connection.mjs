@@ -13,7 +13,7 @@ import {
   getLocalVaultStatus,
   loadLocalCandidateForEngine,
   purgeLocalRecoveryCandidate
-} from "./v3-recovery-vault.mjs?v=v3-peer-topology-3";
+} from "./v3-recovery-vault.mjs?v=v3-peer-topology-4";
 import { evaluateColdOwnerPreflight } from "./v3-host-authority-gate.mjs";
 import { buildHostRehydrationBlueprint } from "./v3-rehydration-blueprint.mjs";
 import { stageDetachedHostRuntime } from "./v3-host-runtime-stager.mjs";
@@ -237,6 +237,7 @@ function installCaptureHealthButton() {
     // Status codes and aggregate counts only; never expose hidden cards,
     // encrypted payload, keys or socket/player identifiers.
     const detail = [
+      "前端版本：v3-peer-topology-4",
       "最近擷取：" + String(diagnostic.status || "NOT_YET_CAPTURED"),
       "原因碼：" + String(diagnostic.code || "NONE"),
       "定期候選：" + String(vault.status),
