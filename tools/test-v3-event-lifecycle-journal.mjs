@@ -87,7 +87,8 @@ test("overflow, invalid scope and privacy bounds never imply journal completenes
   for(let i=0;i<10;i++)j.started({});
   const out=j.snapshot();
   assert.equal(out.status,"OBSERVATION_OVERFLOW");
-  assert.equal(out.started,10);
+  assert.equal(out.started,8);
+  assert.equal(out.pending,8);
   assert.equal(out.overflowed,true);
   assert.equal(out.records.length,8);
   assert.equal(Object.prototype.hasOwnProperty.call(out,"scope"),false);
