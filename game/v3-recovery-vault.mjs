@@ -10,6 +10,7 @@
  */
 import { game, get, lib, ui, _status } from "../noname.js";
 import { auditV3Serialization } from "./v3-serialization-integrity.mjs";
+import { auditV3PlayerHistory } from "./v3-player-history-audit.mjs";
 import {
   inspectV3CaptureReadiness, makeV3CaptureDiagnostic,
   parseV3CaptureDiagnostic, publicV3CaptureCode
@@ -162,24 +163,14 @@ function captureCandidate(kind = "periodic") {
   for (const id of ids) {
     const player = lib.playerOL?.[id];
     if (!player) throw new Error("PLAYER_RUNTIME_MISSING");
-    const stat = player.stat || [];
-    const history = player.actionHistory || [];
-    const skipped = player.skipList || [];
-    const statEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(stat)));
-    const historyEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(history)));
-    const skipEncoded = JSON.parse(JSON.stringify(get.stringifiedResult(skipped)));
-    const checks = [
-      auditV3Serialization(stat, statEncoded, get.itemtype),
-      auditV3Serialization(history, historyEncoded, get.itemtype),
-      auditV3Serialization(skipped, skipEncoded, get.itemtype),
-    ];
-    if (checks.some(result => !result.ok)) {
-      throw new Error("PLAYER_HISTORY_STRUCTURE_LOSS");
-    }
+    const checked = auditV3PlayerHistory({
+      stat: player.stat, actionHistory: player.actionHistory,
+      skipList: player.skipList
+    }, get.stringifiedResult, get.itemtype);
+    // Do not use a partial history as a certified candidate.
+    if (!checked.ok) throw new Error(checked.code);
     playerExecution[id] = {
-      stat: statEncoded,
-      actionHistory: historyEncoded,
-      skipList: skipEncoded,
+      ...checked.execution,
       phaseNumber: player.phaseNumber ?? null,
     };
   }
