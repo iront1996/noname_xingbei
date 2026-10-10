@@ -3,6 +3,8 @@
  * player IDs, cards, tokens, stack frames, callbacks or Promise objects
  * leave this module. These observations NEVER make a checkpoint restorable.
  */
+import { inspectV3EventCutQueues } from "./v3-event-cut-audit.mjs";
+
 const MAX_HISTORY_NODES = 12000;
 const MAX_HISTORY_DEPTH = 24;
 
@@ -22,25 +24,36 @@ export function inspectV3TurnBoundaryStack(stack) {
   if (!Array.isArray(stack) || stack.length === 0 || stack.length > 128) {
     return failure("BOUNDARY_STACK_UNAVAILABLE");
   }
-  const current=stack[stack.length-1];
+  const current = stack[stack.length - 1];
   if (current?.name !== "phaseLoop" ||
       typeof current?.player?.playerid !== "string" ||
       !current.player.playerid) {
     return failure("BOUNDARY_PHASE_LOOP_NOT_ACTIVE");
   }
-  for (const frame of stack) {
-    if (!frame || !Array.isArray(frame.next) || !Array.isArray(frame.after)) {
-      return failure("BOUNDARY_QUEUE_SHAPE_INVALID");
-    }
-    if (frame!==current && (frame.next.length>0 || frame.after.length>0)) {
-      return failure("BOUNDARY_ANCESTOR_WORK_PENDING");
-    }
+  // Share the *same* queue identity inspection as the health dialog.
+  // The parent.next[0] may still be the currently running child:
+  // GameEvent.waitNext() shifts that slot only AFTER next.start() settles.
+  // Never interpret this waiting Promise as a cold-resumable checkpoint.
+  const cut = inspectV3EventCutQueues(stack);
+  const states = {
+    CUT_STACK_UNAVAILABLE: "BOUNDARY_STACK_UNAVAILABLE",
+    CUT_STACK_FRAME_INVALID: "BOUNDARY_QUEUE_SHAPE_INVALID",
+    CUT_STACK_FIELD_UNAVAILABLE: "BOUNDARY_QUEUE_SHAPE_INVALID",
+    CUT_STACK_OBSERVATION_FAILED: "BOUNDARY_QUEUE_OBSERVATION_FAILED",
+    CUT_QUEUE_LIMIT_EXCEEDED: "BOUNDARY_QUEUE_LIMIT_EXCEEDED",
+    CUT_ANCESTOR_QUEUES_PENDING: "BOUNDARY_ANCESTOR_WORK_PENDING",
+    CUT_CURRENT_QUEUES_PENDING: "BOUNDARY_CURRENT_WORK_PENDING",
+    CUT_ACTIVE_LINEAGE_ONLY_NOT_CERTIFIED: "BOUNDARY_ACTIVE_LINEAGE_AWAITING_COMPLETION",
+  };
+  if (cut.code in states) return failure(states[cut.code]);
+  if (cut.code !== "CUT_VISIBLE_QUEUES_EMPTY_NOT_CERTIFIED") {
+    return failure("BOUNDARY_STACK_UNCERTAIN");
   }
-  // Structural observation only. A clean visible stack does not prove
-  // continuation of microtasks, closure locals, timers or Promise waits.
+  // Only this narrow visible shape proceeds to the STRICT snapshot audits.
+  // This is not a correctness certificate: hidden async continuations and
+  // any historical GameEvent references will still fail closed.
   return pass("BOUNDARY_STACK_OBSERVABLE");
 }
-
 /**
  * Examines event references that appear inside player.actionHistory.
  * Repeated identity is deduplicated, and scanning stops at event objects.
