@@ -27,6 +27,10 @@ import {
   buildV3InertEvidenceCapsule,verifyV3InertEvidenceCapsule
 } from "./v3-inert-event-evidence.mjs";
 import {
+  V3_INERT_TIMELINE_SCHEMA,
+  reconcileV3InertTimeline,verifyV3InertTimeline
+} from "./v3-inert-transition-timeline.mjs";
+import {
   inspectV3TurnBoundaryStack, inspectV3HistoryEventReferences
 } from "./v3-event-observation-preflight.mjs";
 
@@ -40,6 +44,7 @@ const DIAGNOSTIC_BOUNDARY_SUFFIX = "::turn_boundary";
 const INTERVAL_MS = 6000;
 const BOUNDARY_SUFFIX = "::turn-boundary";
 const INERT_EVIDENCE_SUFFIX = "::inert-event-evidence-v1";
+const INERT_TIMELINE_SUFFIX = "::inert-transition-timeline-v1";
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_AGE_MS = 10 * 60 * 1000;
 let installed = false;
@@ -373,6 +378,94 @@ function captureCandidate(kind = "periodic") {
 }
 
 /**
+ * Read and verify a bounded, room-AEAD-bound archive of successive anonymous
+ * transition windows. This archive never includes Event objects and cannot
+ * be used by the runtime stager or server recovery protocol.
+ */
+async function readLocalInertTimeline(roomId,key) {
+  const record=await transact("readonly",store=>store.get(roomId+INERT_TIMELINE_SUFFIX));
+  if(!record)return {ok:true,timeline:null};
+  if(record.roomId!==roomId+INERT_TIMELINE_SUFFIX ||
+     record.schema!==V3_INERT_TIMELINE_SCHEMA ||
+     !Number.isSafeInteger(record.capturedAt)||
+     typeof record.iv!=="string"||typeof record.ciphertext!=="string"){
+    return {ok:false,code:"TIMELINE_RECORD_INVALID"};
+  }
+  try{
+    const iv=decodeBase64(record.iv);
+    if(iv.length!==12)return {ok:false,code:"TIMELINE_IV_INVALID"};
+    const aad=new TextEncoder().encode(V3_INERT_TIMELINE_SCHEMA+":"+roomId);
+    const bytes=await crypto.subtle.decrypt(
+      {name:"AES-GCM",iv,additionalData:aad},key,decodeBase64(record.ciphertext)
+    );
+    const timeline=JSON.parse(new TextDecoder().decode(bytes));
+    const verdict=verifyV3InertTimeline(timeline);
+    if(!verdict.ok)return {ok:false,code:"TIMELINE_DATA_INVALID"};
+    return {ok:true,timeline,capturedAt:record.capturedAt};
+  }catch{
+    return {ok:false,code:"TIMELINE_DECRYPT_FAILED"};
+  }
+}
+async function saveLocalInertTimeline(roomId,key,generation,ownerSocket,lifecycle) {
+  try{
+    const previous=await readLocalInertTimeline(roomId,key);
+    if(!previous.ok)return;
+    const merged=reconcileV3InertTimeline(previous.timeline,{
+      ...lifecycle,status:lifecycle.code
+    });
+    if(!merged.ok)return;
+    const capturedAt=Date.now();
+    const iv=crypto.getRandomValues(new Uint8Array(12));
+    const aad=new TextEncoder().encode(V3_INERT_TIMELINE_SCHEMA+":"+roomId);
+    const ciphertext=await crypto.subtle.encrypt(
+      {name:"AES-GCM",iv,additionalData:aad},key,
+      new TextEncoder().encode(JSON.stringify(merged.timeline))
+    );
+    if(generation!==evidenceGeneration || game.roomId!==roomId ||
+       game.ws!==ownerSocket || !activeOwner())return;
+    await transact("readwrite",store=>store.put({
+      roomId:roomId+INERT_TIMELINE_SUFFIX,
+      schema:V3_INERT_TIMELINE_SCHEMA,
+      capturedAt,
+      iv:encodeBase64(iv),
+      ciphertext:encodeBase64(new Uint8Array(ciphertext))
+    }));
+  }catch{
+    // Pure diagnostic archive; storage races and old-epoch records fail
+    // closed without touching the real candidate or the gameplay engine.
+  }
+}
+export async function inspectLocalInertTransitionTimeline(roomId) {
+  if(!validRoomId(roomId))return {
+    status:"INVALID_ROOM",restorable:false,readyToResume:false
+  };
+  try{
+    const key=await cryptoKey(roomId,false);
+    const result=await readLocalInertTimeline(roomId,key);
+    if(!result.ok)return {status:result.code,
+      restorable:false,readyToResume:false};
+    if(!result.timeline)return {status:"TIMELINE_NOT_FOUND",
+      restorable:false,readyToResume:false};
+    if(result.capturedAt>Date.now()+60000 ||
+       Date.now()-result.capturedAt>MAX_AGE_MS){
+      return {status:"TIMELINE_EXPIRED",
+        restorable:false,readyToResume:false};
+    }
+    return {
+      status:"ENCRYPTED_INERT_TIMELINE_VERIFIED",
+      eventTransitionCount:result.timeline.records.length,
+      missingTransitions:result.timeline.missingTransitions,
+      evictedTransitions:result.timeline.evictedTransitions,
+      droppedStarts:result.timeline.droppedStarts,
+      restorable:false,readyToResume:false
+    };
+  }catch{
+    return {status:"TIMELINE_UNAVAILABLE",
+      restorable:false,readyToResume:false};
+  }
+}
+
+/**
  * Independently encrypt already-observed anonymous transitions and event
  * reference locations. This sidecar can survive a same-tab refresh even when
  * strict game-state snapshots fail. Never use it as executable game state.
@@ -418,6 +511,11 @@ async function saveInertEventEvidence() {
       iv:encodeBase64(iv),
       ciphertext:encodeBase64(new Uint8Array(ciphertext))
     }));
+    // Preserve the observations evicted from the next 512-transition ring.
+    // Timeline has its own strict verification and AES-GCM room binding.
+    await saveLocalInertTimeline(
+      roomId,key,generation,ownerSocket,captured.capsule.lifecycle
+    );
   }catch{
     // A diagnostic archive may fail; never interfere with gameplay or
     // weaken the independently validated snapshot save path.
@@ -654,6 +752,7 @@ export async function purgeLocalRecoveryCandidate(roomId) {
     ++evidenceGeneration;
     await transact("readwrite", store => store.delete(roomId + BOUNDARY_SUFFIX));
     await transact("readwrite", store => store.delete(roomId + INERT_EVIDENCE_SUFFIX));
+    await transact("readwrite", store => store.delete(roomId + INERT_TIMELINE_SUFFIX));
     sessionStorage.removeItem(sessionKeyName(roomId));
     sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId);
     sessionStorage.removeItem(DIAGNOSTIC_PREFIX + roomId + DIAGNOSTIC_BOUNDARY_SUFFIX);
