@@ -25,11 +25,11 @@ test("one host and three remote humans produce no AI seats",()=>{
 });
 test("one host and only bots are not supported by paused-room broker",()=>{
   const f=roster();f.clients=[];delete f.playerOL.A.ws;
-  assert.equal(map(f).code,"PEER_COUNT_UNSUPPORTED");
+  assert.equal(map(f).code,"PEER_NO_CONNECTED_GUEST");
 });
 test("disconnected human is not silently reclassified as AI",()=>{
   const f=roster();f.clients=[];
-  assert.equal(map(f).code,"PEER_COUNT_UNSUPPORTED");
+  assert.equal(map(f).code,"PEER_NO_CONNECTED_GUEST");
   const g=roster();g.clients[0].closed=true;
   assert.equal(map(g).code,"PEER_CLIENT_CLOSED");
   const h=roster();h.clients=[];
