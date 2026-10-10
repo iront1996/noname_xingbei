@@ -8,7 +8,7 @@ export default () => {
 		name: "connect",
 		start() {
 			// V3 Playtest-only transport resilience; never imported by V1/V2.
-			void import("/game/v3-owner-connection.mjs?v=v3-inert-evidence-14")
+			void import("/game/v3-owner-connection.mjs?v=v3-owner-bootstrap-15")
 				.then(({ installV3OwnerConnection }) => installV3OwnerConnection())
 				.catch(error => console.error("[V3 playtest] reconnect setup failed:", error));
 			// The owner module installs the exact shared V3 vault instance before
