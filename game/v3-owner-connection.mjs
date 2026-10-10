@@ -298,6 +298,8 @@ function installCaptureHealthButton() {
         (historyLink.status === "INERT_HISTORY_REFERENCE_INDEX_READY"
           ? " / 引用 " + historyLink.references +
             " / 重複引用 " + historyLink.aliasReferences : ""),
+      "事件紀錄環形截短：" + lifecycle.truncatedTransitions +
+        " / 無法追蹤的新事件：" + lifecycle.droppedStarts,
       "觀測涵蓋完整性：無法認證（不等於續行憑證）",
       "最近擷取：" + String(diagnostic.status || "NOT_YET_CAPTURED"),
       "原因碼：" + String(diagnostic.code || "NONE"),
