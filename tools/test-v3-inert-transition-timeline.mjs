@@ -83,3 +83,21 @@ test("none of the archive states can authorize replay or cold owner takeover",()
      assert.equal(archive[prop],false);
  }
 });
+
+test("browser refresh must not splice a new observer epoch even with identical ordinals",()=>{
+ const old=merge(null,window(1,8));
+ const newWindow=window(6,12,{
+   observerEpoch:"abcdef0123456789abcdef0123456789"
+ });
+ assert.equal(old.ok,true);
+ assert.equal(merge(old.timeline,newWindow).code,"TIMELINE_OBSERVER_EPOCH_CHANGED");
+ assert.equal(verify(old.timeline).ok,true);
+});
+test("invalid or missing observer epoch cannot produce an encrypted continuity claim",()=>{
+ const invalid=window(1,4,{observerEpoch:"fake-room-identity"});
+ assert.equal(merge(null,invalid).code,"TIMELINE_WINDOW_INVALID");
+ const good=merge(null,window(1,4)).timeline;
+ const corrupt=JSON.parse(JSON.stringify(good));
+ corrupt.observerEpoch="unknown";
+ assert.equal(verify(corrupt).ok,false);
+});
