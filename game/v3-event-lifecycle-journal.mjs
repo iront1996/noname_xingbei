@@ -55,6 +55,12 @@ export function createV3EventLifecycleJournal({getScope,now=Date.now,capacity=DE
   function started(event) {
     if(!refresh()||!event||(typeof event!=="object"&&typeof event!=="function"))return false;
     if(tracked.has(event))return false;
+    if(pending.size>=capacity){
+      // A pathological unresolved event flood must not grow a permanent
+      // strong Set without bounds or pretend the observation is complete.
+      overflow=true;
+      return false;
+    }
     const ordinal=nextOrdinal++;
     tracked.set(event,Object.freeze({scope,ordinal}));
     pending.add(ordinal);
