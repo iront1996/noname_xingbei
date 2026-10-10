@@ -30,6 +30,7 @@ let installed = false;
 let busy = false;
 let pendingBoundary = null;
 let lastOutcome = { status: "NOT_YET_CAPTURED" };
+let lastOutcomeRoomId = null;
 
 function validRoomId(id) {
   return typeof id === "string" && id.length > 0 && id.length < 128;
@@ -51,6 +52,7 @@ function activeOwner() {
 function recordCaptureOutcome(status, code, kind, roomId = game.roomId, at = Date.now()) {
   const diagnostic = makeV3CaptureDiagnostic(status, code, kind, at);
   lastOutcome = diagnostic;
+  lastOutcomeRoomId = validRoomId(roomId) ? roomId : null;
   if (validRoomId(roomId)) {
     try {
       sessionStorage.setItem(DIAGNOSTIC_PREFIX + roomId, JSON.stringify(diagnostic));
@@ -472,7 +474,9 @@ export function getLocalVaultStatus(roomId) {
       // sessionStorage may be unavailable in private browsing.
     }
   }
-  return { ...(persisted || lastOutcome), restorable: false, serverStored: false };
+  const fallback = roomId === lastOutcomeRoomId
+    ? lastOutcome : { status:"NOT_YET_CAPTURED" };
+  return { ...(persisted || fallback), restorable: false, serverStored: false };
 }
 
 export function installV3RecoveryVault() {
