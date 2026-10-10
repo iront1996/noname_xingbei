@@ -57,7 +57,8 @@ test("WebCrypto AEAD room binding rejects different room ID and modified ciphert
  const timeline=reconcileV3InertTimeline(null,observed).timeline;
  assert.equal(verifyV3InertTimeline(timeline).ok,true);
  const data=new TextEncoder().encode(JSON.stringify(timeline));
- const aad=new TextEncoder().encode(V3_INERT_TIMELINE_SCHEMA+":ROOM-ONE");
+ const capturedAt=1760170000000;
+ const aad=new TextEncoder().encode(V3_INERT_TIMELINE_SCHEMA+":ROOM-ONE:"+capturedAt);
  const ciphertext=await webcrypto.subtle.encrypt(
    {name:"AES-GCM",iv,additionalData:aad},key,data);
  const decoded=await webcrypto.subtle.decrypt(
@@ -65,7 +66,11 @@ test("WebCrypto AEAD room binding rejects different room ID and modified ciphert
  assert.deepEqual(JSON.parse(new TextDecoder().decode(decoded)),timeline);
  await assert.rejects(webcrypto.subtle.decrypt({
    name:"AES-GCM",iv,additionalData:new TextEncoder().encode(
-      V3_INERT_TIMELINE_SCHEMA+":ROOM-TWO")
+      V3_INERT_TIMELINE_SCHEMA+":ROOM-TWO:"+capturedAt)
+ },key,ciphertext));
+ await assert.rejects(webcrypto.subtle.decrypt({
+   name:"AES-GCM",iv,additionalData:new TextEncoder().encode(
+     V3_INERT_TIMELINE_SCHEMA+":ROOM-ONE:"+(capturedAt+1000))
  },key,ciphertext));
  const corrupt=new Uint8Array(ciphertext); corrupt[0]^=1;
  await assert.rejects(webcrypto.subtle.decrypt({
