@@ -44,6 +44,15 @@ export function buildV3InertEvidenceCapsule({capturedAt,lifecycle,history,cut}={
       "pending","truncatedTransitions","droppedStarts"
     ];
     if(metrics.some(key=>!number(lifecycle[key])))return bad("EVIDENCE_LIFECYCLE_INVALID");
+    // A capsule with no observed GameEvent.start() is only an encryption
+    // round-trip, not event evidence. Reject it even if old code saved it.
+    if(lifecycle.started===0 || lifecycle.seq===0 ||
+       lifecycle.started !== lifecycle.fulfilled + lifecycle.rejected +
+         lifecycle.threw + lifecycle.pending ||
+       !["OBSERVATION_PARTIAL","OBSERVATION_RING_TRUNCATED",
+         "OBSERVATION_CAPACITY_EXCEEDED"].includes(lifecycle.status)) {
+      return bad("EVIDENCE_LIFECYCLE_EMPTY_OR_INCONSISTENT");
+    }
     if(lifecycle.completeCoverage!==false ||
        lifecycle.eventContinuationCaptured!==false ||
        lifecycle.restorable!==false || lifecycle.readyToResume!==false ||
