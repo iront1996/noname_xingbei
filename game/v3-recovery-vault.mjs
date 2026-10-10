@@ -106,7 +106,10 @@ function sampleV3XingbeiDelta() {
   );
   // A periodic game-state observation remains INERT: it neither captures
   // hands nor resumes an event, and is independent of candidate failure.
-  if(input && status.status!=="XINGBEI_STATE_INVALID_SAMPLE") {
+  if(input && (
+      status.status==="XINGBEI_STATE_BASELINE_ONLY" ||
+      status.status==="XINGBEI_STATE_WINDOWS_OBSERVED"
+    )) {
     void saveXingbeiResourceEvidence(
       game.roomId,game.ws,evidenceGeneration,input
     );
