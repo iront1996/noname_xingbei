@@ -31,7 +31,7 @@ test("disconnected human is not silently reclassified as AI",()=>{
   const f=roster();f.clients=[];
   assert.equal(map(f).code,"PEER_COUNT_UNSUPPORTED");
   const g=roster();g.clients[0].closed=true;
-  assert.equal(map(g).code,"PEER_BINDING_INCOMPLETE");
+  assert.equal(map(g).code,"PEER_CLIENT_CLOSED");
   const h=roster();h.clients=[];
   h.clients.push({id:"B",ws:{wsid:"B"},inited:true,closed:false});
   assert.equal(map(h).code,"PEER_PLAYER_SOCKET_MISMATCH");
@@ -43,11 +43,11 @@ test("socket owner must exactly match live player binding",()=>{
 });
 test("observers, unknowns, duplicate sockets and uninitialized guests fail closed",()=>{
   const f=roster();f.observing.push(f.clients[0]);
-  assert.equal(map(f).code,"PEER_BINDING_INCOMPLETE");
+  assert.equal(map(f).code,"PEER_OBSERVER_PRESENT");
   const g=roster();g.clients[0].inited=false;
-  assert.equal(map(g).code,"PEER_BINDING_INCOMPLETE");
+  assert.equal(map(g).code,"PEER_CLIENT_NOT_INITIALIZED");
   const h=roster();h.clients[0].ws.wsid="intruder";
-  assert.equal(map(h).code,"PEER_BINDING_INCOMPLETE");
+  assert.equal(map(h).code,"PEER_SOCKET_REBOUND_UNVERIFIED");
   const i=roster();i.clients.push(i.clients[0]);
   assert.equal(map(i).code,"PEER_BINDING_INCOMPLETE");
 });
@@ -67,4 +67,24 @@ test("no input is mutated",()=>{
   assert.equal(f.clients.length,before.clientCount);
   assert.equal(Object.keys(f.playerOL).length,before.seatCount);
   assert.equal(f.playerOL.A.ws,before.ws);
+});
+
+test("native reconnect changes broker wsid but retains playerid; reject without signed rebind proof",()=>{
+  const f=roster(), client=f.clients[0];
+  client.id="A";
+  client.ws.wsid="NEW-BROKER-ID";
+  f.playerOL.A.ws=client;
+  assert.deepEqual(map(f),{ok:false,code:"PEER_SOCKET_REBOUND_UNVERIFIED",
+    peerBindings:null,botPlayerIds:null});
+  const forged=roster(),fake=forged.clients[0];
+  fake.ws.wsid="attacker-wsid";
+  assert.equal(map(forged).code,"PEER_SOCKET_REBOUND_UNVERIFIED");
+});
+test("spectators never become active-seat peers for cold-preflight roster",()=>{
+  const f=roster();
+  const spectator={id:"observer",ws:{wsid:"observer"},inited:true,closed:false};
+  f.clients.push(spectator);f.observing.push(spectator);
+  assert.equal(map(f).code,"PEER_OBSERVER_PRESENT");
+  f.observing.push(f.clients[0]);
+  assert.equal(map(f).code,"PEER_OBSERVER_PRESENT");
 });
