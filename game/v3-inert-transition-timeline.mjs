@@ -47,7 +47,9 @@ function validPrevious(previous) {
      previous.restorable!==false ||previous.readyToResume!==false ||
      !previous.records.length ||
      previous.records[0].seq!==previous.firstSeq ||
-     previous.records.at(-1).seq!==previous.lastSeq) return false;
+     previous.records.at(-1).seq!==previous.lastSeq ||
+     previous.missingTransitions+previous.evictedTransitions<previous.firstSeq-1)
+     return false;
   return true;
 }
 function freeze(observerEpoch,records,missingTransitions,evictedTransitions,droppedStarts) {
@@ -90,6 +92,12 @@ export function reconcileV3InertTimeline(previous,observation) {
       return refuse("TIMELINE_WINDOW_INVALID");
     }
     const current=observation.records;
+    // The live ring is consecutive by construction; if a window has
+    // holes or was corrupted, never label the missing part as continuous.
+    for(let i=1;i<current.length;i++){
+      if(current[i].seq!==current[i-1].seq+1)
+        return refuse("TIMELINE_WINDOW_NONCONTIGUOUS");
+    }
     if(previous===null) {
       const missing=current[0].seq-1;
       return freeze(observation.observerEpoch,current,missing,0,
