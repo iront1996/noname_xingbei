@@ -299,3 +299,31 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 **下一個必須修正的原生相容性阻塞**：原版 `noname/library/element/client.js` 的 `Client.close()` 在遊戲中離線時會直接呼叫 `player.unwait("ai")`，原版 `Player.wait()` 也可能在倒數時間結束時強制 AI 續接並關閉 socket。這會破壞 V3 希望保留待決選擇的語義。必須為**僅有 V3 主持程序**建立原生 `Client`／`Player`／`GameEvent` 適配層，讓等待中的事件不會由舊客戶端自動判 AI，並加入首個真正原生選擇執行、回合續行、失聯重連及雙重回覆的端對端測試。嚴禁直接修改共用原版程式來達成此目標。
 
 **目前仍不需要用戶部署 VPS 或召集真人反覆測試；保留最後一次集中真人驗收。**
+
+
+## 2026-10-11 晚間：真原生 GameEvent.chooseControl 在伺服器主持 Chromium 中續行
+
+**核心里程碑**：原版 `noname/library/element/gameEvent.js` 的 `GameEvent` 類別、原版 `Player.unwait()`、原版 `Game.pause()/resume()` 現在已透過 **V3-only runtime adapter**，在受管理 Chromium 上形成首個可驗證的選擇事件等待／續行流程。不是只有先前的 `authority_choice_receipt`。
+
+### 實際實作
+
+- `game/v3-native-event-wait-adapter.mjs`：只在 `window.isNonameServer===true` 的獨立 Chromium 內動態安裝，會覆蓋該瀏覽器 **記憶體** 中 `Client.prototype.close`、`Player.prototype.wait/unwait`、`GameEvent.prototype.send`；不改動任何 `noname/**`、`mode/xingBei.js` 等共用原始檔。
+- 首個允許的原生事件是 `GameEvent('chooseControl')`：事件本身真實存在於 Noname 原生 `GameEvent` 類別，原生 Player 是 `Player.prototype` 的真實 DOM player 節點，原生 Client 具有伺服器簽發的固定 Player ID。基於允許清單，事件的原始 control text 留在 Chromium 內，對外只發 `o0/o1/.../o11` 等不透明代碼，由伺服器管理 ticket／房間／座位驗證。
+- 事件經原生 `GameEvent.send()` 進入 V3-only 受控路由，再透過被替換的 `Player.wait()` 設定原版 `lib.node.torespond[playerid]` 並呼叫真實 `game.pause()`；**不設舊版強制 AI 回覆 timer**。玩家斷線時，V3 的原生 `Client.close()` 只標記 socket 離線，不執行原版 `player.unwait('ai')`。非合法伺服器選擇回應即使直接呼叫 `Player.unwait('ai')` 也明確拒絕。
+- 合法作答：伺服器透過已有 choice state machine 首次鎖定 `ticket + option`，私有 Chromium 以實際事件記錄再次核對 `seat + playerId + ticket + allowed option`，然後使用原生 `Player.unwait({control, index})` 寫入原始 `GameEvent.result`、觸發原版 `game.resume()`。Chromium 之後送 `authority_choice_receipt` 與 `authority_choice_native_applied`；broker 嚴格要求先確認已送達，才可把 `choice_window.state` 標為 `applied`。只有 applied 的窗口能被下一個合法事件替換；舊 ticket 失效。
+- 不支援的事件型態例如 `chooseToUse` 都拒絕 `V3_NATIVE_EVENT_UNSUPPORTED`，不會退回舊版從真人主機廣播 JavaScript 的控制模式。由於原生 event manager 仍採用單一全域 pause/結果槽，**同一時刻只允許一個原生待決事件**，直到未來完成真正的 nested/multi-event 排程。
+- `game/v3-chromium-authority-worker.mjs` 的 `beginNativeChoiceExperiment`、`inspectNativeChoiceExperiment`、`simulateNativeClientClose` 僅於 GitHub CI 明確設置 `V3_ALLOW_SEAT_EXPERIMENT=1` 生效；這些是使用真實原生類別的隔離測試入口，而非開放給玩家的執行任意 JavaScript 通道。
+- Chromium 的私有 `authority_roster` 訊息現在除了固定 Player ID，也會把受驗證的暫時連線 ID 變化通知 V3 native adapter。原生 Client 的 `closed`／`inited` 會跟著實際人類玩家的斷線／重連更新，不改變 `playerid`，也不自動改成 AI。
+
+### 回歸驗證和限制
+
+- `tools/test-v3-native-gameevent-choice-chromium.mjs`：真 WebSocket 四人（2v2）＋真 Chromium＋真正原生 `GameEvent`：驗證原生事件 pause、斷線不判 AI、舊 Client 的連線離線／重連、座位私密性、跨座位與不合法回覆拒絕、`Player.unwait` 真正解除事件、相同答案不重複 consume、舊 ticket 在後續原生事件中失效、房主與客人都能獨立續答。
+- `tools/test-v3-native-choice-matrix-chromium.mjs`：新增 3v3 六人、4v4 八人的原生事件／房主／一般玩家斷線矩陣（CI 驗證資訊須以最新執行結果為準）。
+- `game/v3-authority-choice-windows.mjs` 的純狀態機測試新增 native applied 的拒絕式轉移：提交不等於送達、送達不等於實際套用；錯誤玩家／選項／預設實驗模式不能冒充 native applied。
+- 以上仍不是完整原生遊戲啟動。此測試採用 **原生 GameEvent、原生 Player prototype 的 DOM 物件及原生 Client 類別，但 Player 的戰鬥屬性和 GameEvent 邊界經由 CI 安全替身搭建**；尚未實際進入 `mode/xingBei.js` 的選角整套流程、發牌、第一回合、卡牌／技能效果、AI 細則、隱藏手牌投影、完整持久化及 VPS 重啟後續局。這些需後續逐項接通與驗證後，才能提出一次性真人驗收。
+
+### 隔離及部署規範
+
+- 全部提交僅在 GitHub `feature/host-reconnect-v3-playtest`；沒有修改 V1/V2 或正式 Git 分支、VPS、Cloudflare、服務或 8080／8081。
+- 新 broker 仍僅能綁 `127.0.0.1:0` 且 choice 適配流程預設關閉；正式 V3 尚未切換到此主持方案。
+- Chromium 預設使用沙箱；非 root/限制資源/CDP 防護/worker state persistence 仍需要上線前完整驗收。
