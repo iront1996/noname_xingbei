@@ -34,6 +34,7 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
  if(Object.values(original).some(f=>typeof f!=='function'))throw failure('V3_NATIVE_METHOD_MISSING');
  const registered=new Map(),pending=new Map();
  let allowConsume=null,alive=true,consumed=0,interrupted=0;
+ let armedOriginalUseWait=null,originalUseWaitReached=0;
  const binding=seat=>bridge.getSeatBindings().find(b=>b.seat===seat);
  const requireActive=()=>{if(!alive)throw failure('V3_NATIVE_ADAPTER_STOPPED')};
  const boundPlayer=p=>goodId(p?.playerid)&&registered.get(p.playerid)?.player===p;
@@ -73,6 +74,45 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
  };
  GameEvent.prototype.send=function(){
   requireActive();
+  if(armedOriginalUseWait?.event===this){
+   // This is the unique, previously paused ORIGINAL XingBei action
+   // GameEvent. Do not invoke legacy GameEvent.send/Player.send, which
+   // would transmit executable client-side JavaScript.
+   const pendingUse=armedOriginalUseWait;
+   armedOriginalUseWait=null; // A one-shot privilege, never reusable.
+   const player=this.player,reg=registered.get(player?.playerid);
+   if(this.name!=='gongJiOrFaShu'||!boundPlayer(player)||
+      this.content?.compiled!==true||
+      this.content?.original!=='chooseToUse'&&
+       this.content?.original!==lib.element.content.chooseToUse||
+      !reg||reg.seat!==pendingUse.seat||
+      player.playerid!==pendingUse.playerId||
+      binding(reg.seat)?.playerId!==pendingUse.playerId||
+      game.__v3PausedPhaseRuntime?.selectionEvent!==this||
+      pending.size!==0||!lib.node?.torespond)
+    throw failure('V3_NATIVE_ORIGINAL_USE_WAIT_DENIED');
+   // The genuine chooseToUse step 0 has already called onChooseToUse
+   // and now reached event.send() in its online branch.
+   // Hold the real engine BEFORE step 1/2 can useResult or consume cards.
+   player.wait();
+   game.pause();
+   try{
+    const native=game.__v3NativeSeatSession;
+    const started=native?.beginNativeUseCardPreview({
+     seat:reg.seat,playerId:player.playerid
+    });
+    if(started?.started!==true)
+     throw failure('V3_NATIVE_ORIGINAL_USE_PREVIEW_UNAVAILABLE');
+    game.__v3PausedPhaseRuntime.originalUseWaitReached=true;
+    originalUseWaitReached++;
+    return this;
+   }catch(e){
+    if(lib.node.torespond?.[player.playerid]==='_noname_waiting')
+     delete lib.node.torespond[player.playerid];
+    // Never resume this event on any malformed or unsupported condition.
+    throw e;
+   }
+  }
   if(this.name!=='chooseControl'||!boundPlayer(this.player))
    throw failure('V3_NATIVE_EVENT_UNSUPPORTED');
   const player=this.player,reg=registered.get(player.playerid);
@@ -159,6 +199,23 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
   throw failure('V3_NATIVE_CHOICE_HOOKS_UNAVAILABLE');
  }
  const adapter=Object.freeze({
+  armOriginalUseWait({seat,playerId:pid,event}={}){
+   requireActive();
+   const p=registered.get(pid),b=binding(seat);
+   if(!Number.isInteger(seat)||!goodId(pid)||!p||
+      p.seat!==seat||p.player?.playerid!==pid||
+      b?.playerId!==pid||b.connectionId===null||
+      event?.name!=='gongJiOrFaShu'||event.player!==p.player||
+      event.content?.compiled!==true||
+      !(event.content.original==='chooseToUse'||
+        event.content.original===lib.element.content.chooseToUse)||
+      !_status.paused||armedOriginalUseWait!==null||
+      game.__v3PausedPhaseRuntime?.selectionEvent!==event||
+      pending.size!==0)
+    throw failure('V3_NATIVE_ORIGINAL_USE_ARM_DENIED');
+   armedOriginalUseWait={seat,playerId:pid,event};
+   return Object.freeze({armed:true,nativeEvent:true,seat,playerId:pid});
+  },
   registerPlayer({seat,player,client}={}){
    requireActive();
    const b=binding(seat);
@@ -175,6 +232,8 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
   inspect(){
    return Object.freeze({active:alive,registered:registered.size,pending:pending.size,
     consumed,interrupted,paused:_status.paused===true,
+    armedOriginalUseWait:armedOriginalUseWait!==null,
+    originalUseWaitReached,
     connectedPlayers:Array.from(registered.values()).filter(v=>!v.client.closed).length,
     waitingCount:lib.node?.torespond?Object.keys(lib.node.torespond).length:0});
   }
