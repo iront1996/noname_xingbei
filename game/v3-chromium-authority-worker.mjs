@@ -486,6 +486,28 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      throw fail('V3_NATIVE_SELECTION_RELEASE_FAILED_'+String(r.result?.value?.code??'CDP'));
     return r.result.value.result;
    },
+   async preflightNativeActionCardOwnership({seat,playerId,cardId}={}){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed||!Number.isInteger(seat)||seat<0||seat>7||
+       typeof playerId!=='string'||!/^player_[a-f0-9]{32}$/.test(playerId)||
+       typeof cardId!=='string'||!/^v3card_[a-f0-9]{6}$/.test(cardId))
+     throw fail('V3_NATIVE_CARD_OWNERSHIP_DENIED');
+    const args=JSON.stringify({seat,playerId,cardId});
+    const inspect=({seat,playerId,cardId})=>{
+     try{
+      const native=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+      return native?{ok:true,result:native.preflightNativeActionCardOwnership({
+       seat,playerId,cardId
+      })}:{ok:false,code:'V3_NATIVE_SEAT_SESSION_MISSING'};
+     }catch{return {ok:false,code:'V3_NATIVE_CARD_OWNERSHIP_DENIED'}}
+    };
+    const expression='('+inspect.toString()+')('+args+')';
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_NATIVE_CARD_OWNERSHIP_DENIED');
+    return r.result.value.result;
+   },
    async inspectOriginalSelectionGate(){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
      throw fail('WORKER_EXPERIMENT_DISABLED');
