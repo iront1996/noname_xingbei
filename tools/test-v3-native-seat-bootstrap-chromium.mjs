@@ -2,6 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {mkdtemp,readFile,rm} from 'node:fs/promises';
+import {randomBytes} from 'node:crypto';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createV3NativeOpeningCheckpointStore,verifyV3NativeOpeningCheckpoint}
+ from '../game/v3-native-opening-checkpoint.mjs';
 import {createV3AuthorityWebSocketBroker} from '../game/v3-authority-websocket-broker.mjs';
 import {launchV3ChromiumAuthorityWorker} from '../game/v3-chromium-authority-worker.mjs';
 import {createV3NativeModuleTestServer} from './v3-native-module-test-server.mjs';
@@ -143,6 +149,38 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.deepEqual(dealt.nativeHandCounts,Array(count).fill(4));
    assert.equal(dealt.privateDetailsIncluded,false);
    assert.equal(dealt.nativeGameDrawTriggered,false);
+   // Real native cards and untouched remaining draw pile -> encrypted disk.
+   // This test proves save/reload of opening data, NOT restoration of an
+   // executing GameEvent, RNG state, battle, or a crashed Chromium.
+   const snapshot=await chrome.exportNativeOpeningCheckpoint({roomId,revision:1});
+   const verified=verifyV3NativeOpeningCheckpoint(snapshot);
+   assert.equal(verified.ok,true);
+   assert.equal(verified.restorable,false);
+   assert.equal(snapshot.seatMode,mode);
+   assert.deepEqual(snapshot.players.map(p=>p.playerId),sessions.map(p=>p.playerId));
+   assert.deepEqual(snapshot.players.map(p=>p.hand.length),Array(count).fill(4));
+   assert.equal(snapshot.remainingCardIds.length,snapshot.totalCards-4*count);
+   const allCardIds=[
+    ...snapshot.players.flatMap(p=>p.hand.map(c=>c.cardId)),
+    ...snapshot.remainingCardIds
+   ];
+   assert.equal(new Set(allCardIds).size,snapshot.totalCards);
+   const checkpointDir=await mkdtemp(join(tmpdir(),'v3-auth-real-opening-'));
+   const key=randomBytes(32);
+   try{
+    const store=createV3NativeOpeningCheckpointStore({directory:checkpointDir,key});
+    assert.equal((await store.save(snapshot)).code,'OPENING_CHECKPOINT_ENCRYPTED');
+    const disk=await readFile(join(checkpointDir,roomId+'.v3opening'),'utf8');
+    for(const p of snapshot.players){
+     assert.equal(disk.includes(p.playerId),false);
+     assert.equal(disk.includes(p.character),false);
+     for(const card of p.hand)assert.equal(disk.includes(card.cardId),false);
+    }
+    const coldStore=createV3NativeOpeningCheckpointStore({directory:checkpointDir,key});
+    const cold=await coldStore.load(roomId);
+    assert.equal(cold.restorable,false);
+    assert.deepEqual(cold.value,snapshot);
+   }finally{await rm(checkpointDir,{recursive:true,force:true})}
    const seatViews=[];
    for(let seat=0;seat<count;seat++){
     const own=await chrome.inspectNativePrivateHand({seat});
