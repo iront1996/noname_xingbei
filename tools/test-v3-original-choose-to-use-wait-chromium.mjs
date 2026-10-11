@@ -223,6 +223,23 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
    assert.equal((await ask(next,'choice_submit',{
     ticket:reopened.ticket,option:submittedOption
    })).code,'CHOICE_ALREADY_APPLIED');
+   // A native no-card response must reach the original xingDong step 5
+   // and decrement the authentic action allowance, not just ACK a ticket.
+   const progressed=await until(async()=>{
+    const state=await chrome.evaluateSeatExperiment(`(()=>{
+     const {game}=window.__v3NativeXingBeiTest.core;
+     const gate=game.__v3PausedPhaseRuntime;
+     return {counter:game.players[0].storage.gongJiOrFaShu,
+      originalEvent:gate.selectionEvent?.name,
+      actionEvent:gate.actionEvent?.name,
+      error:gate.failure??null}
+    })()`);
+    if(state.error)throw Error('ORIGINAL_PASS_PROGRESSION_'+state.error);
+    return state.counter===0&&state;
+   });
+   assert.equal(progressed.originalEvent,'gongJiOrFaShu');
+   assert.equal(progressed.actionEvent,'xingDong');
+   assert.equal(progressed.counter,0);
   }
   const after=await chrome.inspectNativePrivateHand({seat:0});
   assert.deepEqual(after.ownHand,before.ownHand);
