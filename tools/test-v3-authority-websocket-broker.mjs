@@ -219,3 +219,36 @@ test('choice experiment disabled by default and worker loss cancels all pending 
   assert.equal((await ask(ws[0],{type:'choice_submit',ticket:opened.view.ticket,option:'yes'})).code,'WORKER_CHANNEL_OFFLINE');
  }finally{await y.broker.close()}
 });
+
+
+test('native action ownership preflight is disabled by default and can never become arbitrary gameplay',async()=>{
+ const x=await setup();
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  for(const [seat,cardId] of [[0,'v3card_000001'],[1,'v3card_000001']]){
+   const denied=await ask(ws[seat],{type:'action_ownership_probe',cardId});
+   assert.equal(denied.ok,false);
+   assert.equal(denied.code,'ACTION_PROBE_DISABLED');
+  }
+  x.authority.clientSend({type:'authority_action_ownership_result',
+   roomId:'TEST',traceId:'f'.repeat(32),seat:0,
+   playerId:sessions[0].playerId,owned:true});
+  assert.equal((await waitFor(x.authority,m=>
+   m.type==='error'&&m.code==='ACTION_PROBE_DISABLED')).code,
+   'ACTION_PROBE_DISABLED');
+  assert.equal((await ask(ws[0],{type:'command',action:'playCard',
+   cardId:'v3card_000001'})).code,'RULES_ENGINE_NOT_IMPLEMENTED');
+ }finally{await x.broker.close()}
+});
+test('native action ownership probe cannot be enabled without isolated CI flag',async()=>{
+ if(process.env.V3_ALLOW_SEAT_EXPERIMENT==='1')return;
+ await assert.rejects(
+  createV3AuthorityWebSocketBroker({
+   WebSocketServer:FakeWebSocketServer,
+   launchWorker:async()=>{},
+   enableNativeOwnershipProbes:true
+  }),
+  /NATIVE_CARD_OWNERSHIP_PROBE_CI_ONLY/
+ );
+});
