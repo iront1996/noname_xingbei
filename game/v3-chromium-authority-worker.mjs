@@ -268,6 +268,45 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
     }
     throw fail('WORKER_BRIDGE_HANDSHAKE_TIMEOUT');
    },
+   async stageNativeXingBeiSeats(){
+    // Explicit offboard test staging only. The real game start remains disabled.
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const expression=`(async()=>{
+     try{
+      if(window.isNonameServer!==true||
+         !window.__v3AuthorityBridge?.inspect()?.seenRoster||
+         !window.__v3NativeXingBeiTest)return {ok:false,code:'NATIVE_SEAT_BRIDGE_NOT_READY'};
+      const {core}=window.__v3NativeXingBeiTest;
+      const stageModule=await import('/game/v3-native-xingbei-content-stager.mjs');
+      const seatsModule=await import('/game/v3-native-xingbei-seat-session.mjs');
+      const pack=await stageModule.stageV3NativeXingBeiContent({core});
+      const session=seatsModule.prepareV3NativeXingBeiSeats({
+       core,bridge:window.__v3AuthorityBridge
+      });
+      return {ok:true,pack,session:session.inspect(),roster:session.roster()};
+     }catch(e){
+      return {ok:false,code:String(e?.code??e?.message??e).slice(0,100),
+       trace:String(e?.stack??'').slice(0,300)};
+     }
+    })()`;
+    const r=await session.send('Runtime.evaluate',{
+     expression,awaitPromise:true,returnByValue:true
+    });
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_NATIVE_SEAT_STAGE_FAILED_'+String(r.result?.value?.code??'CDP_EXCEPTION'));
+    return Object.freeze(r.result.value);
+   },
+   async inspectNativeXingBeiSeats(){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const r=await session.send('Runtime.evaluate',{
+     expression:'(()=>{const s=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;return s?{session:s.inspect(),roster:s.roster()}:null})()',
+     returnByValue:true
+    });
+    if(r.exceptionDetails||!r.result?.value)throw fail('V3_NATIVE_SEAT_STAGE_NOT_READY');
+    return r.result.value;
+   },
    async beginNativeChoiceExperiment({seat,controls=['guard','evade'],prompt='請選擇防禦方式'}={}){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
     if(!Number.isInteger(seat)||seat<0||seat>7||
