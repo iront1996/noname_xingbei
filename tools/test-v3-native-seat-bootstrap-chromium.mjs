@@ -59,6 +59,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(original.ok,true);
    assert.equal(original.pack.realSource,true);
    assert.equal(original.session.seatCount,count);
+   assert.ok(original.characters.length>=count*2);
    assert.equal(original.session.offboard,true);
    assert.equal(original.session.actualNativePlayers,true);
    assert.equal(original.session.gameLoopStarted,false);
@@ -68,6 +69,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(original.roster.filter(p=>p.side==='hong').length,count/2);
    assert.equal(original.roster.filter(p=>p.side==='lan').length,count/2);
    const pid=chrome.pid;
+   const currentBySeat=peers.slice(0,count);
    const guestSeat=count-2;
    peers[0].ws.close();peers[guestSeat].ws.close();
    await until(()=>!broker.roomView(roomId).roster[0].connected&&
@@ -80,7 +82,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(offline.session.seatCount,count);
    for(const seat of [0,guestSeat]){
     const replacement=await connect(broker.address);
-    peers.push(replacement);
+    peers.push(replacement);currentBySeat[seat]=replacement;
     const reconnected=await ask(replacement,'reconnect',{
      roomId,seat,reconnectToken:sessions[seat].reconnectToken
     });
@@ -97,6 +99,38 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(after.session.seatCount,count);
    assert.equal(chrome.pid,pid);
    assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_PROOF_ALIVE');
+   // First genuine native character draft on the actual authenticated
+   // Player instances. No prototype-only mock Player is used here.
+   for(let seat=0;seat<count;seat++){
+    const offers=original.characters.slice(seat*2,seat*2+2);
+    const started=await chrome.beginNativeCharacterDraft({seat,offers});
+    assert.equal(started.nativeEvent,true);
+    assert.equal(started.playerId,sessions[seat].playerId);
+    const message=await until(()=>currentBySeat[seat].received.find(x=>
+     x.type==='choice_window'&&x.window.source==='native'&&
+     x.window.playerId===sessions[seat].playerId
+    ));
+    assert.deepEqual(message.window.options,['o0','o1']);
+    assert.equal((await ask(currentBySeat[seat],'choice_submit',{
+     ticket:message.window.ticket,option:'o0'
+    })).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+    const committed=await until(async()=>{
+     const result=await chrome.commitNativeCharacterDraft({seat});
+     return result.ok&&result;
+    });
+    assert.equal(committed.character,offers[0]);
+    assert.equal(committed.actualNativePlayer,true);
+    assert.ok(committed.nativeSkillCount>0);
+    await until(async()=>(await ask(currentBySeat[seat],'choice_query')).window?.state==='applied');
+   }
+   const drafted=await chrome.inspectNativeXingBeiSeats();
+   assert.equal(drafted.session.characterCount,count);
+   assert.equal(drafted.session.draftPending,0);
+   assert.equal(drafted.session.fullRulesStarted,undefined);
+   assert.equal(drafted.session.gameLoopStarted,false);
+   assert.ok(drafted.roster.every(p=>p.character!==null));
+   assert.equal(new Set(drafted.roster.map(p=>p.character)).size,count);
+   assert.equal(chrome.pid,pid);
    const spy=await connect(broker.address);peers.push(spy);
    assert.equal((await ask(spy,'reconnect',{
     roomId,seat:0,reconnectToken:sessions[0].reconnectToken
