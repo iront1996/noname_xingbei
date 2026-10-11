@@ -211,6 +211,17 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          if(msg.source==='native')
           ws.send(JSON.stringify({type:'authority_choice_native_applied',roomId:opts.roomId,
            seat:msg.seat,playerId:msg.playerId,ticket:msg.ticket,option:msg.option}));
+         if(msg.source==='preview'&&/^v3card_[a-f0-9]{6}$/.test(msg.option)){
+          // The previous receipt was sent first on this same ordered
+          // authenticated WS. Only the original paused native event may
+          // request the next read-only target candidate window.
+          try{
+           const native=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+           native?.beginNativeUsePrintedTargetPreview({
+            seat:msg.seat,playerId:msg.playerId,previousTicket:msg.ticket
+           });
+          }catch{}
+         }
         }
        }
        if(msg.type==='authority_action_ownership_probe'&&connected&&
@@ -332,17 +343,27 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          },
          requestNativeSelectionPreview:data=>{
           if(!nativeSelectionPreviewHooks||!connected||!seenRoster||
-             !data||data.kind!=='card'||!Array.isArray(data.options)||
-             data.options.length<2||data.options.length>12||
+             !data||!['card','target'].includes(data.kind)||
+             !Array.isArray(data.options)||data.options.length<2||
+             data.options.length>(data.kind==='target'?8:12)||
              !data.options.every(id=>typeof id==='string'&&
-              /^v3card_[a-f0-9]{6}$/.test(id))||
+              (data.kind==='card'?/^v3card_[a-f0-9]{6}$/.test(id):
+               /^s[0-7]$/.test(id)))||
              new Set(data.options).size!==data.options.length)
+           return false;
+          if(data.kind==='target'&&
+             (typeof data.previousTicket!=='string'||
+              !/^[a-f0-9]{32}$/.test(data.previousTicket)||
+              typeof data.previousOption!=='string'||
+              !/^v3card_[a-f0-9]{6}$/.test(data.previousOption)))
            return false;
           const b=bindings.find(x=>x.seat===data.seat&&x.connectionId!==null);
           if(!b)return false;
           ws.send(JSON.stringify({type:'authority_choice_open',source:'preview',
            roomId:opts.roomId,seat:b.seat,playerId:b.playerId,
-           kind:'card',prompt:data.prompt,options:data.options}));
+           kind:data.kind,prompt:data.prompt,options:data.options,
+           ...(data.kind==='target'?{previousTicket:data.previousTicket,
+            previousOption:data.previousOption}:{})}));
           return true;
          },
          requestNativeChoice:data=>{
