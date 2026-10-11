@@ -7,6 +7,7 @@
  * It is the isolated prerequisite for wiring those engines safely.
  */
 import {installV3NativeEventWaitAdapter} from './v3-native-event-wait-adapter.mjs';
+import {createV3NativeDrawPile} from './v3-native-xingbei-content-stager.mjs';
 
 const err=code=>Object.assign(new Error(code),{code});
 const pid=x=>typeof x==='string'&&/^player_[a-f0-9]{32}$/.test(x);
@@ -77,7 +78,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   adapter.registerPlayer({seat:i,player:players[i],client:clients[i]});
  const drafts=new Map(),chosen=new Set();
  const legalCharacters=new Set(game.__v3NativeContentStage.rosterChoices());
- let draftFailure=null;
+ let draftFailure=null,startingCardsDealt=false;
+ const physicalCardsBySeat=new Map();
  const session=Object.freeze({
   // Controlled choices are real GameEvents over the authenticated Chromium
   // channel. The legacy online chooseCharacterOL implementation is NOT used.
@@ -100,6 +102,68 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    return Object.freeze({seat,playerId:players[seat].playerid,
     nativeEvent:event instanceof lib.element.GameEvent,pending:true,
     candidateCount:offers.length});
+  },
+  dealOpeningCards(){
+   if(draftFailure||startingCardsDealt||drafts.size!==0||
+      chosen.size!==players.length)
+    throw err('V3_NATIVE_OPENING_DEAL_NOT_READY');
+   if(typeof ui.create.card!=='function')throw err('V3_NATIVE_CARD_UI_UNAVAILABLE');
+   const pile=createV3NativeDrawPile({core});
+   if(pile.remaining()<players.length*4)
+    throw err('V3_NATIVE_DRAW_PILE_TOO_SMALL');
+   const all=new Set();
+   try{
+    for(let round=0;round<4;round++){
+     for(let seat=0;seat<players.length;seat++){
+      const instance=pile.draw();
+      if(!instance||all.has(instance.instanceId))
+       throw err('V3_NATIVE_CARD_INSTANCE_DUPLICATE');
+      // Original native Card constructor + native Card.init. This *stages*
+      // opening hands directly, not yet the full game.gameDraw event/skills.
+      const card=ui.create.card(players[seat].node.handcards1)
+       .init(instance.face);
+      if(!(card instanceof lib.element.Card))
+       throw err('V3_NATIVE_CARD_BUILD_MISMATCH');
+      Object.defineProperty(card,'__v3PhysicalId',{
+       configurable:false,enumerable:false,value:instance.instanceId
+      });
+      if(!physicalCardsBySeat.has(seat))physicalCardsBySeat.set(seat,[]);
+      physicalCardsBySeat.get(seat).push(card);
+      all.add(instance.instanceId);
+     }
+    }
+   }catch(e){
+    draftFailure='V3_OPENING_DRAW_FAILED';
+    throw e; // Hard-stop this room; never pretend partial draw can resume.
+   }
+   startingCardsDealt=true;
+   const copies=Array.from(physicalCardsBySeat.values()).flat();
+   return Object.freeze({
+    nativeCards:copies.every(x=>x instanceof lib.element.Card),
+    physicalCardsUnique:new Set(copies.map(x=>x.__v3PhysicalId)).size===copies.length,
+    totalDealt:copies.length,
+    handCounts:players.map((_,seat)=>physicalCardsBySeat.get(seat)?.length??0),
+    remaining:pile.remaining(),
+    // These are counts only. Never return opponents' private card identities.
+    privateDetailsIncluded:false,
+    nativeGameDrawTriggered:false
+   });
+  },
+  // Strictly trusted Chromium-side accessor only; broker must authenticate
+  // before ever projecting this to a human WebSocket.
+  privateSeatView({seat}={}){
+   if(!Number.isInteger(seat)||seat<0||seat>=players.length)
+    throw err('V3_NATIVE_PRIVATE_SEAT_INVALID');
+   return Object.freeze({
+    playerId:players[seat].playerid,seat,
+    character:players[seat].name1??null,
+    ownHand:(physicalCardsBySeat.get(seat)??[]).map(card=>Object.freeze({
+     cardId:card.__v3PhysicalId,name:card.name
+    })),
+    publicOtherHandCounts:players.map((_,i)=>({
+     seat:i,handCount:physicalCardsBySeat.get(i)?.length??0
+    }))
+   });
   },
   commitCharacterDraft({seat}={}){
    const draft=drafts.get(seat);
@@ -130,7 +194,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     nativePlayer:p instanceof lib.element.Player,
     nativeClient:p.ws instanceof lib.element.Client,
     side:p.side?'hong':'lan',
-    character:p.name1??null
+    character:p.name1??null,
+    handCount:physicalCardsBySeat.get(seat)?.length??0
    }));
   },
   inspect(){
@@ -140,6 +205,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     actualNativePlayers:players.every(p=>p instanceof lib.element.Player),
     cardContentLoaded:!!game.__v3NativeContentStage,
     characterCount:chosen.size,draftPending:drafts.size,
+    startingCardsDealt,
     fatalDraftError:draftFailure,
     gameLoopStarted:false,
     pendingNativeChoices:adapter.inspect().pending
