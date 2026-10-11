@@ -438,6 +438,12 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(selection.selectionContentExecuted,false);
     assert.equal(selection.skillsVerified,false);
     assert.equal(selection.replaySafe,false);
+    const originalNativeInvariant=await chrome.evaluateSeatExperiment(
+     "window.__v3NativeXingBeiTest.core.game.__v3NativeSeatSession.inspectNativeActionInvariant()");
+    assert.equal(originalNativeInvariant.paused,true);
+    assert.equal(originalNativeInvariant.hands.length,count);
+    assert.equal(originalNativeInvariant.deck.length,
+     snapshot.remainingCardIds.length);
     // First native action security prerequisite: validate actual Card
     // ownership against native Player.getCards('h'), not a claimed client id.
     const card=seatViews[0].ownHand[0].cardId;
@@ -794,6 +800,10 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
      seatViews[0].ownHand);
     assert.equal((await chrome.inspectOriginalSelectionGate()).paused,true);
     assert.equal((await chrome.inspectOriginalSelectionGate()).selectionContentExecuted,false);
+    const unchangedNative=await chrome.evaluateSeatExperiment(
+     "window.__v3NativeXingBeiTest.core.game.__v3NativeSeatSession.inspectNativeActionInvariant()");
+    assert.deepEqual(unchangedNative,originalNativeInvariant,
+     'V3 read-only intents must not mutate the real native phase, card zones, HP, morale or GameEvent stack');
     assert.deepEqual((await chrome.inspectNativePrivateHand({seat:0})).ownHand,
      seatViews[0].ownHand);
     assert.deepEqual((await ask(currentBySeat[0],'private_hand_query')).view.ownHand,
@@ -849,6 +859,13 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal((await ask(currentBySeat[0],'action_target_probe',{
     cardId:seatViews[0].ownHand[0].cardId,targetSeat:1
    })).code,'WORKER_CHANNEL_OFFLINE');
+   assert.equal((await ask(currentBySeat[0],'choice_query')).window,null);
+   assert.equal((await ask(currentBySeat[0],'choice_submit',{
+    ticket:recovered.ticket,option:selected.cardId
+   })).code,'WORKER_CHANNEL_OFFLINE');
+   assert.equal((await ask(currentBySeat[0],'authority_choice_renew',{
+    roomId,seat:0,playerId:sessions[0].playerId,ticket:recovered.ticket
+   })).code,'UNKNOWN_MESSAGE_TYPE');
    assert.deepEqual(broker.roomView(roomId).roster.map(p=>p.seat),
     Array.from({length:count},(_,i)=>i));
 
