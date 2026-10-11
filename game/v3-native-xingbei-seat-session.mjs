@@ -15,11 +15,19 @@ const pid=x=>typeof x==='string'&&/^player_[a-f0-9]{32}$/.test(x);
 export function prepareV3NativeXingBeiSeats({core,bridge}={}){
  if(globalThis.isNonameServer!==true||!core?.game?.__v3NativeContentStage||
     !core?.ui?.create?.player||!core?.lib?.element?.Client||
-    typeof bridge?.getSeatBindings!=='function'||typeof bridge?.registerNativeChoiceHooks!=='function'||
-    typeof bridge?.registerNativeSelectionPreviewHooks!=='function'||
-    typeof bridge?.requestNativeSelectionPreview!=='function')
+    typeof bridge?.getSeatBindings!=='function'||typeof bridge?.registerNativeChoiceHooks!=='function')
   throw err('V3_NATIVE_SEAT_BOOT_MISSING_DEPENDENCY');
  const {game,lib,ui,_status}=core;
+ // Cold opening checkpoint rehydration supplies a deliberately minimal
+ // synthetic bridge. Optional preview hooks exist only on a LIVE broker-
+ // authenticated Chromium channel, and must never prevent cold rebuild.
+ const previewHooksAvailable=typeof bridge?.registerNativeSelectionPreviewHooks==='function'&&
+  typeof bridge?.requestNativeSelectionPreview==='function';
+ if(!previewHooksAvailable&&
+    (typeof bridge?.registerNativeSelectionPreviewHooks==='function'||
+     typeof bridge?.requestNativeSelectionPreview==='function'))
+  throw err('V3_NATIVE_USE_PREVIEW_PARTIAL_BRIDGE');
+
  if(game.__v3NativeSeatSession)throw err('V3_NATIVE_SEAT_ALREADY_BOOTED');
  const bindings=bridge.getSeatBindings().sort((a,b)=>a.seat-b.seat);
  if(![4,6,8].includes(bindings.length)||
@@ -602,7 +610,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // chooseToUse step 0 is unsafe until skill callbacks are isolated.
    // Offer physical, PRIVATE hand identifiers only to its authenticated owner.
    const gate=game.__v3PausedPhaseRuntime;
-   if(useCardPreview||!gate||gate.failure||!gate.selectionGate||
+   if(!previewHooksAvailable||useCardPreview||!gate||gate.failure||!gate.selectionGate||
       !gate.selectionEvent||gate.selectionEvent.name!=='gongJiOrFaShu'||
       !(gate.selectionEvent instanceof lib.element.GameEvent)||
       gate.selectionEvent.player!==players[seat]||
@@ -943,6 +951,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    });
   }
  });
+ if(previewHooksAvailable){
  const previewHooked=bridge.registerNativeSelectionPreviewHooks({
   opened(message){
    const view=message?.view,p=useCardPreview;
@@ -973,6 +982,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   }
  });
  if(previewHooked!==true)throw err('V3_NATIVE_USE_PREVIEW_HOOKS_UNAVAILABLE');
+ }
  Object.defineProperty(game,'__v3NativeSeatSession',{configurable:false,enumerable:false,value:session});
  return session;
 }
