@@ -54,6 +54,29 @@ export function createV3AuthorityChoiceWindows({now=()=>Date.now(),ttlMs=120000,
    windows.set(k,e);
    return ok('CHOICE_WINDOW_OPENED',{view:expose(e)});
   },
+  advancePreview({roomId,seat,playerId:pid,previousTicket,previousOption,
+   kind,prompt,options}={}){
+   // An authenticated Chromium worker may advance an ACKNOWLEDGED native
+   // card preview to a NEW target-preview ticket. The previous card ticket
+   // becomes permanently unusable. This is not GameEvent resolution.
+   expire();
+   const prior=locate({roomId,seat,playerId:pid,ticket:previousTicket});
+   if(!prior||prior.source!=='preview'||prior.kind!=='card'||
+      prior.state!=='delivered'||prior.selection!==previousOption||
+      !prior.options.includes(previousOption)||kind!=='target'||
+      typeof prompt!=='string'||prompt.length<1||prompt.length>120||
+      /[<>\u0000-\u001f]/.test(prompt)||
+      !Array.isArray(options)||options.length<2||options.length>8||
+      !options.every(x=>typeof x==='string'&&/^s[0-7]$/.test(x))||
+      new Set(options).size!==options.length)
+    return no('PREVIEW_ADVANCE_DENIED');
+   const k=key(roomId,seat);
+   windows.delete(k);
+   const next=this.open({roomId,seat,playerId:pid,kind,prompt,options,
+    source:'preview'});
+   if(!next.ok)windows.set(k,prior);
+   return next.ok?ok('PREVIEW_TARGET_WINDOW_OPENED',{view:next.view}):next;
+  },
   view(roomId,seat,pid){
    expire();
    const e=windows.get(key(roomId,seat));
