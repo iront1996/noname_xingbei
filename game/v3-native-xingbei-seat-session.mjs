@@ -179,7 +179,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     throw err('V3_OPENING_CHECKPOINT_INCONSISTENT');
    return snapshot;
   },
-  stageOpeningTurnBoundary({firstSeat=0}={}){
+  async stageOpeningTurnBoundary({firstSeat=0}={}){
    // Creates the ORIGINAL native GameEvent objects; does not start game.loop().
    // A later V3-only rules dispatcher must explicitly resolve them, validating
    // all turn skills and player actions, before a playable room is possible.
@@ -187,6 +187,19 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
       draftFailure||!Number.isInteger(firstSeat)||firstSeat<0||firstSeat>=players.length||
       game.__v3OpeningTurnBoundary||adapter.inspect().pending!==0)
     throw err('V3_NATIVE_TURN_BOUNDARY_NOT_READY');
+   // Mirror original boot's security initialization BEFORE compiling any
+   // native step-content. Never suppress sandbox failures or fall back to eval.
+   if(!game.__v3NativeSecurityBootstrapped){
+    const realms=await import('/noname/util/initRealms.js');
+    const security=(await import('/noname/util/security.js')).default;
+    await realms.initializeSandboxRealms(true);
+    await security.initSecurity({
+     lib,game,ui,get:core.get,ai:core.ai,_status,gnc:core.gnc
+    });
+    Object.defineProperty(game,'__v3NativeSecurityBootstrapped',{
+     value:true,enumerable:false,configurable:false
+    });
+   }
    const first=players[firstSeat];
    const root=new lib.element.GameEvent('v3OpeningBoundary',false);
    _status.eventManager.rootEvent=root;
