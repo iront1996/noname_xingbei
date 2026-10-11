@@ -50,7 +50,7 @@ function newCdpSession(url, timeoutMs){
   open,
   async send(method,params={}){
    if(dead||ws.readyState!==WebSocket.OPEN)throw fail('WORKER_CDP_CLOSED');
-   if(!['Runtime.enable','Runtime.evaluate','Page.enable','Page.addScriptToEvaluateOnNewDocument'].includes(method))
+   if(!['Runtime.enable','Runtime.evaluate','Page.enable','Page.navigate','Page.addScriptToEvaluateOnNewDocument'].includes(method))
     throw fail('WORKER_CDP_METHOD_DENIED');
    const id=++seq;
    return new Promise((resolve,reject)=>{
@@ -111,6 +111,34 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      expression:'window.isNonameServer === true',returnByValue:true});
     if(r.exceptionDetails||r.result?.value!==true)throw fail('WORKER_NOT_OFFBOARD');
     return Object.freeze({alive:true,offboard:true,pid:child.pid,gameRulesLoaded:false,statePersisted:false});
+   },
+   async loadV3NativeModules({origin}={}){
+    if(closed||typeof origin!=='string'||!/^http:\/\/127\.0\.0\.1:\d+$/.test(origin))
+     throw fail('NATIVE_MODULE_ORIGIN_DENIED');
+    const nav=await session.send('Page.navigate',{url:origin+'/v3-native-isolated.html'});
+    if(nav.errorText)throw fail('NATIVE_MODULE_NAVIGATION_FAILED');
+    const expression=`(async()=>{
+      if(window.isNonameServer!==true)throw Error('OFFBOARD_FLAG_MISSING');
+      const core=await import('/noname.js');
+      const imported=await import('/mode/xingBei.js');
+      const mode=imported.default();
+      if(!core.game||!core.lib||!core.ui||!core._status||
+         mode.name!=='xingBei'||typeof mode.game?.checkResult!=='function'||
+         typeof mode.game?.checkOnlineResult!=='function'||
+         typeof core.game.randomMapOL!=='function')throw Error('NATIVE_MODE_API_MISSING');
+      Object.defineProperty(window,'__v3NativeXingBeiTest',{configurable:false,
+        value:Object.freeze({core,mode})});
+      return {loaded:true,mode:mode.name,offboard:window.isNonameServer===true,
+       nativeGame:typeof core.game.randomMapOL==='function',
+       nativeResult:typeof mode.game.checkResult==='function',
+       // This is a module-import proof, NOT the game start or engine loops.
+       gameLoopStarted:false};
+    })()`;
+    let out;
+    try{out=await session.send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true})}
+    catch{throw fail('NATIVE_MODULE_LOAD_FAILED')}
+    if(out.exceptionDetails||out.result?.value?.loaded!==true)throw fail('NATIVE_MODULE_LOAD_FAILED');
+    return Object.freeze(out.result.value);
    },
    async connectRoomChannel({roomId,url,secret}={}){
     // Trusted server only. Never evaluate player-supplied JavaScript.
