@@ -68,6 +68,23 @@ test('real GameEvent.send and Player.unwait continue safely after real owner and
   const first=await wait(()=>clients[0].inbox.find(x=>x.type==='choice_window'&&x.window.source==='native'));
   assert.equal(first.window.state,'open');
   assert.deepEqual(first.window.options,['o0','o1']);
+  // Legacy AI / client-side direct unwait are not trusted in V3.
+  const guard=await browser.evaluateSeatExperiment(`(()=>{
+   const session=window.__v3NativeEventTestSessions.get(0);
+   const {core}=window.__v3NativeXingBeiTest;
+   let denied=false,unsupported=false;
+   try{session.player.unwait('ai')}catch(e){denied=e.code==='V3_NATIVE_UNWAIT_DENIED'}
+   const bad=new core.lib.element.GameEvent('chooseToUse',false);
+   bad.player=session.player;
+   try{bad.send()}catch(e){unsupported=e.code==='V3_NATIVE_EVENT_UNSUPPORTED'}
+   return {denied,unsupported,pending:core.game.__v3NativeWaitAdapter.inspect().pending,
+    paused:core._status.paused,unresolved:session.event.result===undefined};
+  })()`);
+  assert.equal(guard.denied,true);
+  assert.equal(guard.unsupported,true);
+  assert.equal(guard.pending,1);
+  assert.equal(guard.paused,true);
+  assert.equal(guard.unresolved,true);
   await browser.simulateNativeClientClose({seat:0});
   const before=await browser.inspectNativeChoiceExperiment({seat:0});
   assert.equal(before.closed,true);
@@ -106,7 +123,23 @@ test('real GameEvent.send and Player.unwait continue safely after real owner and
   assert.equal((await ask(reattached,'choice_submit',{
    ticket:first.window.ticket,option:'o1'
   })).code,'CHOICE_ALREADY_LOCKED');
-  // Second live native GameEvent: guest can disconnect while awaiting it.
+  // Consecutive events on the same seat must start with a NEW ticket.
+  const follow=await browser.beginNativeChoiceExperiment({seat:0,controls:['stay','leave']});
+  assert.equal(follow.ok,true);
+  const followWindow=await wait(()=>reattached.inbox.find(x=>
+   x.type==='choice_window'&&x.window.source==='native'&&x.window.ticket!==first.window.ticket));
+  assert.notEqual(followWindow.window.ticket,first.window.ticket);
+  assert.equal((await ask(reattached,'choice_submit',{
+   ticket:first.window.ticket,option:'o0'
+  })).code,'CHOICE_WINDOW_NOT_FOUND');
+  assert.equal((await ask(reattached,'choice_submit',{
+   ticket:followWindow.window.ticket,option:'o1'
+  })).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+  await wait(async()=>{
+   const state=await browser.inspectNativeChoiceExperiment({seat:0});
+   return state.nativeResult?.control==='leave'&&state.nativePaused===false&&state;
+  });
+  // Third live native GameEvent: guest can disconnect while awaiting it.
   const second=await browser.beginNativeChoiceExperiment({seat:2,controls:['accept','decline']});
   assert.equal(second.playerId,sessions[2].playerId);
   const guestWindow=await wait(()=>clients[2].inbox.find(x=>x.type==='choice_window'&&x.window.source==='native'));
@@ -125,7 +158,7 @@ test('real GameEvent.send and Player.unwait continue safely after real owner and
    return result.nativeResult?.control==='decline'&&result;
   });
   assert.equal(finished.nativePaused,false);
-  assert.equal(finished.adapter.consumed,2);
+  assert.equal(finished.adapter.consumed,3);
   assert.equal(browser.pid,pid);
   assert.equal((await broker.inspectWorker('NATIVE_EVT_ROOM')).code,'WORKER_PROOF_ALIVE');
   assert.equal((await ask(guest,'command',{action:'attack'})).code,'RULES_ENGINE_NOT_IMPLEMENTED');
