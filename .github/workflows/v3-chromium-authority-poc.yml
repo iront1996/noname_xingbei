@@ -24,6 +24,7 @@ on:
       - 'tools/test-v3-native-choice-matrix-chromium.mjs'
       - 'tools/test-v3-native-content-chromium.mjs'
       - 'tools/test-v3-native-seat-bootstrap-chromium.mjs'
+      - 'tools/v3-native-cold-rebuild-probe.mjs'
       - 'tools/test-v3-chromium-sandbox-policy.mjs'
       - 'tools/test-v3-authority-choice-windows.mjs'
       - 'tools/test-v3-authority-private-projections.mjs'
@@ -68,6 +69,7 @@ jobs:
           node --check tools/test-v3-native-choice-matrix-chromium.mjs
           node --check tools/test-v3-native-content-chromium.mjs
           node --check tools/test-v3-native-seat-bootstrap-chromium.mjs
+          node --check tools/v3-native-cold-rebuild-probe.mjs
           node --check tools/test-v3-chromium-sandbox-policy.mjs
           node --check tools/v3-native-module-test-server.mjs
           node --check tools/test-v3-native-module-chromium.mjs
