@@ -141,18 +141,53 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
   assert.equal((await ask(peers[1],'choice_submit',{
    ticket:window.ticket,option:window.options[0]
   })).code,'CHOICE_WINDOW_NOT_FOUND');
-  peers[0].ws.close();
-  await until(()=>!broker.roomView(roomId).roster[0].connected);
-  const next=await connect(broker.address);peers.push(next);
-  const resumed=await ask(next,'reconnect',{
-   roomId,seat:0,reconnectToken:sessions[0].reconnectToken
+  // Every human including the creator leaves at the live original
+  // GameEvent wait. The authoritative browser must NOT belong to any
+  // human socket, nor answer using AI while all sockets are gone.
+  for(const peer of peers)peer.ws.close();
+  await until(()=>broker.roomView(roomId).roster.every(x=>!x.connected));
+  const empty=await until(async()=>{
+   const s=await chrome.inspectNativeXingBeiSeats();
+   return s.roster.every(x=>!x.connected)&&s;
   });
-  assert.equal(resumed.playerId,sessions[0].playerId);
+  assert.equal(empty.roster.length,4);
+  assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_PROOF_ALIVE');
+  assert.equal(chrome.pid,pid);
+  assert.equal((await chrome.inspectRoomChannel()).boundPeerCount,0);
+  const pausedOffline=await chrome.inspectNativeUseCardPreview();
+  assert.equal(pausedOffline.state,'open');
+  assert.equal(pausedOffline.samePausedEvent,true);
+  // A Chromium-authorized renewal succeeds even with ZERO human peers.
+  // Human browsers cannot renew any ticket on their own.
+  await sleep(25);
+  assert.equal(await chrome.evaluateSeatExperiment(
+   'window.__v3AuthorityBridge.testRenewPreviewLeases()'),true);
+  const replacements=[];
+  for(let seat=0;seat<4;seat++){
+   const peer=await connect(broker.address);peers.push(peer);
+   replacements.push(peer);
+   const resumed=await ask(peer,'reconnect',{
+    roomId,seat,reconnectToken:sessions[seat].reconnectToken
+   });
+   assert.equal(resumed.playerId,sessions[seat].playerId);
+   assert.notEqual(resumed.reconnectToken,sessions[seat].reconnectToken);
+  }
+  const next=replacements[0];
   const reopened=await until(()=>next.received.find(x=>
    x.type==='choice_window'&&x.window?.source==='preview'&&
    x.window.ticket===window.ticket
   )?.window);
   assert.deepEqual(reopened.options,window.options);
+  assert.ok(reopened.expiresAt>window.expiresAt);
+  for(let seat=1;seat<4;seat++){
+   assert.equal(replacements[seat].received.some(x=>
+    x.type==='choice_window'&&x.window?.ticket===window.ticket),false);
+   assert.equal((await ask(replacements[seat],'choice_submit',{
+    ticket:window.ticket,option:window.options[0]
+   })).code,'CHOICE_WINDOW_NOT_FOUND');
+  }
+  assert.equal((await chrome.inspectRoomChannel()).boundPeerCount,4);
+  assert.equal(chrome.pid,pid);
   const submittedOption=answer==='pass'?'pass':
    reopened.options.find(c=>c!=='pass');
   assert.equal((await ask(next,'choice_submit',{
