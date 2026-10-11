@@ -158,6 +158,15 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       ws.addEventListener('message',event=>{
        let msg;try{msg=JSON.parse(event.data)}catch{return}
        if(msg.type==='authority_accepted'&&msg.roomId===opts.roomId)connected=true;
+       if(msg.type==='authority_transport_probe'&&connected&&msg.roomId===opts.roomId&&
+          typeof msg.traceId==='string'&&/^[a-f0-9]{32}$/.test(msg.traceId)&&
+          Number.isInteger(msg.seat)&&typeof msg.playerId==='string'){
+        const b=bindings.find(x=>x.seat===msg.seat&&x.playerId===msg.playerId);
+        if(b&&b.connectionId!==null)ws.send(JSON.stringify({
+          type:'authority_probe_ack',roomId:opts.roomId,
+          traceId:msg.traceId,seat:msg.seat,playerId:msg.playerId
+        }));
+       }
        if(msg.type==='authority_roster'&&msg.view?.roomId===opts.roomId&&
           Array.isArray(msg.view.roster)&&Number.isInteger(msg.view.revision)){
         const next=msg.bindings;
