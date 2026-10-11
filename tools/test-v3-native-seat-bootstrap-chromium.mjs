@@ -247,8 +247,8 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
       assert.equal(JSON.stringify(replay.view).includes(foreign.cardId),false);
     }
    }
-   // Real original gameDraw() and phaseLoop() GameEvents are queued, but
-   // deliberately NOT started before skill legality + hidden state support.
+   // gameDraw has ALREADY executed to deal the four opening cards.
+   // Queue ONLY original phaseLoop, so next start cannot deal twice.
    const turn=await chrome.stageNativeOpeningTurnBoundary({firstSeat:0});
    assert.equal(turn.realNativeEvents,true);
    assert.equal(turn.firstSeat,0);
@@ -257,8 +257,8 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(turn.phaseEvent,'phaseLoop');
    assert.equal(turn.drawCount,4);
    assert.equal(turn.standardPhaseLoop,true);
-   assert.ok(turn.eventsQueued.includes('gameDraw'));
-   assert.ok(turn.eventsQueued.includes('phaseLoop'));
+   assert.equal(turn.openingDrawAlreadyExecuted,true);
+   assert.deepEqual(turn.eventsQueued,['phaseLoop']);
    assert.equal(turn.eventLoopStarted,false);
    assert.equal(turn.turnResolved,false);
    await assert.rejects(chrome.stageNativeOpeningTurnBoundary({firstSeat:0}),
