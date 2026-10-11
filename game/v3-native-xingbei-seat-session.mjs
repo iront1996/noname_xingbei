@@ -15,7 +15,9 @@ const pid=x=>typeof x==='string'&&/^player_[a-f0-9]{32}$/.test(x);
 export function prepareV3NativeXingBeiSeats({core,bridge}={}){
  if(globalThis.isNonameServer!==true||!core?.game?.__v3NativeContentStage||
     !core?.ui?.create?.player||!core?.lib?.element?.Client||
-    typeof bridge?.getSeatBindings!=='function'||typeof bridge?.registerNativeChoiceHooks!=='function')
+    typeof bridge?.getSeatBindings!=='function'||typeof bridge?.registerNativeChoiceHooks!=='function'||
+    typeof bridge?.registerNativeSelectionPreviewHooks!=='function'||
+    typeof bridge?.requestNativeSelectionPreview!=='function')
   throw err('V3_NATIVE_SEAT_BOOT_MISSING_DEPENDENCY');
  const {game,lib,ui,_status}=core;
  if(game.__v3NativeSeatSession)throw err('V3_NATIVE_SEAT_ALREADY_BOOTED');
@@ -80,6 +82,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
  const legalCharacters=new Set(game.__v3NativeContentStage.rosterChoices());
  let draftFailure=null,startingCardsDealt=false,nativeOpeningDrawExecuted=false,restoredOpening=false;
  const physicalCardsBySeat=new Map();
+ // Read-only intent owned by the paused original GameEvent, not a replacement
+ // GameEvent result, target decision, or gameplay state transition.
+ let useCardPreview=null;
  const ensureNativeSecurity=async()=>{
   if(game.__v3NativeSecurityBootstrapped)return;
   const realms=await import('/noname/util/initRealms.js');
@@ -592,6 +597,63 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    return Object.freeze({started:true,ownerPlayerId:first.playerid,
     actualSelectionContentExecuted:false});
   },
+  beginNativeUseCardPreview({seat,playerId}={}){
+   // Original gongJiOrFaShu already contains a chooseToUse handler, but
+   // chooseToUse step 0 is unsafe until skill callbacks are isolated.
+   // Offer physical, PRIVATE hand identifiers only to its authenticated owner.
+   const gate=game.__v3PausedPhaseRuntime;
+   if(useCardPreview||!gate||gate.failure||!gate.selectionGate||
+      !gate.selectionEvent||gate.selectionEvent.name!=='gongJiOrFaShu'||
+      !(gate.selectionEvent instanceof lib.element.GameEvent)||
+      gate.selectionEvent.player!==players[seat]||
+      !_status.paused||
+      seat!==game.__v3OpeningTurnBoundary?.firstSeat||
+      typeof playerId!=='string'||players[seat]?.playerid!==playerId)
+    throw err('V3_NATIVE_USE_PREVIEW_NOT_READY');
+   const event=gate.selectionEvent;
+   if(event.filterCard!==lib.filter.filterCard||
+      event.filterTarget!==lib.filter.filterTarget||
+      event.selectTarget!==lib.filter.selectTarget||
+      !Array.isArray(event.selectCard)||event.selectCard.length!==2||
+      event.selectCard[0]!==1||event.selectCard[1]!==1||
+      event.position!=='hs')
+    throw err('V3_NATIVE_USE_EVENT_CONTRACT_UNSUPPORTED');
+   const cards=players[seat].getCards('h');
+   const options=cards.map(c=>c.__v3PhysicalId);
+   if(cards.length<2||cards.length>12||
+      cards.some(c=>!(c instanceof lib.element.Card))||
+      options.some(id=>typeof id!=='string'||!/^v3card_[a-f0-9]{6}$/.test(id))||
+      new Set(options).size!==options.length)
+    throw err('V3_NATIVE_USE_HAND_INVALID');
+   for(const cardId of options)
+    this.preflightNativeActionCardOwnership({seat,playerId,cardId});
+   useCardPreview={event,seat,playerId,options:[...options],
+    ticket:null,state:'requested',selectedCardId:null};
+   try{
+    if(bridge.requestNativeSelectionPreview({
+     seat,kind:'card',prompt:'原生行動：選擇一張手牌（僅預檢，不會出牌）',
+     options
+    })!==true)throw err('V3_NATIVE_USE_PREVIEW_NOT_ROUTED');
+   }catch(e){useCardPreview=null;throw e}
+   return Object.freeze({started:true,originalEvent:'gongJiOrFaShu',
+    nativeGameEvent:true,awaitingVerifiedSeat:true,handCount:options.length,
+    originalChooseToUseExecuted:false,fullRulesValidated:false,
+    actionExecuted:false,cardConsumed:false});
+  },
+  inspectNativeUseCardPreview(){
+   const p=useCardPreview;
+   if(!p)return Object.freeze({opened:false,recorded:false});
+   const gate=game.__v3PausedPhaseRuntime;
+   return Object.freeze({opened:p.ticket!==null,
+    state:p.state,recorded:p.state==='recorded',
+    seat:p.seat,playerId:p.playerId,
+    selectedCardId:p.selectedCardId,
+    nativeGameEvent:p.event instanceof lib.element.GameEvent,
+    originalEvent:p.event.name,
+    samePausedEvent:gate?.selectionEvent===p.event&&_status.paused===true,
+    fullRulesValidated:false,actionExecuted:false,cardConsumed:false,
+    nativeUnwaitInvoked:false});
+  },
   preflightNativeActionCardOwnership({seat,playerId,cardId}={}){
    // Read-only, NOT a legal card-action authorization. Only checks that
    // the authenticated active native Player physically holds this card.
@@ -881,6 +943,36 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    });
   }
  });
+ const previewHooked=bridge.registerNativeSelectionPreviewHooks({
+  opened(message){
+   const view=message?.view,p=useCardPreview;
+   if(!message?.ok||!p||p.state!=='requested'||p.ticket!==null||
+      view?.source!=='preview'||view.kind!=='card'||view.state!=='open'||
+      view.seat!==p.seat||view.playerId!==p.playerId||
+      JSON.stringify(view.options)!==JSON.stringify(p.options)||
+      typeof view.ticket!=='string'||!(/^[a-f0-9]{32}$/.test(view.ticket)))
+    return false;
+   p.ticket=view.ticket;p.state='open';return true;
+  },
+  delivered(message){
+   const p=useCardPreview,gate=game.__v3PausedPhaseRuntime;
+   if(!p||p.state!=='open'||!p.ticket||
+      message?.seat!==p.seat||message.playerId!==p.playerId||
+      message.ticket!==p.ticket||!p.options.includes(message.option)||
+      gate?.selectionEvent!==p.event||!_status.paused)
+    return false;
+   try{
+    session.preflightNativeActionCardOwnership({
+     seat:p.seat,playerId:p.playerId,cardId:message.option
+    });
+   }catch{return false}
+   // The only mutation is this preview record. Never write event.result,
+   // call Player.unwait(), resume() or execute original chooseToUse.
+   p.selectedCardId=message.option;p.state='recorded';
+   return true;
+  }
+ });
+ if(previewHooked!==true)throw err('V3_NATIVE_USE_PREVIEW_HOOKS_UNAVAILABLE');
  Object.defineProperty(game,'__v3NativeSeatSession',{configurable:false,enumerable:false,value:session});
  return session;
 }
