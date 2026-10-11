@@ -93,11 +93,13 @@ test('real GameEvent.send and Player.unwait continue safely after real owner and
   assert.equal(before.nativeResult,null);
   clients[0].ws.close();
   await wait(()=>broker.roomView('NATIVE_EVT_ROOM').roster[0].connected===false);
+  await wait(async()=>(await browser.inspectNativeChoiceExperiment({seat:0})).closed===true);
   const reattached=await peer(broker.address);clients.push(reattached);
   const newSession=await ask(reattached,'reconnect',{roomId:'NATIVE_EVT_ROOM',seat:0,
    reconnectToken:sessions[0].reconnectToken});
   assert.equal(newSession.playerId,sessions[0].playerId);
   assert.notEqual(newSession.reconnectToken,sessions[0].reconnectToken);
+  await wait(async()=>(await browser.inspectNativeChoiceExperiment({seat:0})).closed===false);
   assert.equal((await wait(()=>reattached.inbox.find(x=>x.type==='choice_window'))).window.ticket,first.window.ticket);
   assert.equal((await ask(clients[1],'choice_submit',{
    ticket:first.window.ticket,option:'o0'
@@ -145,10 +147,13 @@ test('real GameEvent.send and Player.unwait continue safely after real owner and
   const guestWindow=await wait(()=>clients[2].inbox.find(x=>x.type==='choice_window'&&x.window.source==='native'));
   clients[2].ws.close();
   await wait(()=>broker.roomView('NATIVE_EVT_ROOM').roster[2].connected===false);
-  await browser.simulateNativeClientClose({seat:2});
+  // A genuine private authority roster update closes the native Client
+  // without original Client.close() invoking unwait('ai').
+  await wait(async()=>(await browser.inspectNativeChoiceExperiment({seat:2})).closed===true);
   const guest=await peer(broker.address);clients.push(guest);
   assert.equal((await ask(guest,'reconnect',{roomId:'NATIVE_EVT_ROOM',seat:2,
    reconnectToken:sessions[2].reconnectToken})).playerId,sessions[2].playerId);
+  await wait(async()=>(await browser.inspectNativeChoiceExperiment({seat:2})).closed===false);
   assert.equal((await wait(()=>guest.inbox.find(x=>x.type==='choice_window'))).window.ticket,guestWindow.window.ticket);
   assert.equal((await ask(guest,'choice_submit',{
    ticket:guestWindow.window.ticket,option:'o1'
