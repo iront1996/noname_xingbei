@@ -366,3 +366,43 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 - 原生技能列表雖已載入，但沒有跨版本完整技能效果、規則關鍵詞、角色合法選取、勝負事件串接的完整自動化覆蓋；對局仍會拒絕 `command`（`RULES_ENGINE_NOT_IMPLEMENTED`）。
 - 目前只有「加密開局狀態寫入＋冷讀取」，尚不能在 Chromium crash／VPS 重啟後 **恢復原生進行中事件和同一回合**。缺完整規則狀態 checkpoint、事件日志、隨機性及私密資訊重放。
 - 仍只有 V3 分支內 loopback ephemeral PoC；線上 V3 使用舊架構。不可提早要求用戶更新 VPS 或召集真人反覆試玩。只在完整合法行動、技能、勝負、掉線、存檔回復安全通過後安排一次集中驗收。
+
+
+## 2026-10-12：原生開局冷重建、Chromium 接管、原版第一個攻擊／法術事件
+
+本輪只修改 feature/host-reconnect-v3-playtest 上的 V3-only 專用模組、測試及文件。共用 noname/**、mode/xingBei.js、V1/V2、線上 V3、VPS、8080/8081、Cloudflare 未修改。所有新 broker 仍限 127.0.0.1:0。
+
+### 真開局資料可在全新 Chromium 重新生成
+
+- game/v3-native-xingbei-seat-session.mjs 新增 restoreOpeningCheckpoint：於任何原生狀態寫入前校驗 schema、房間 ID、4/6/8 個固定 Player ID 與座位、角色合法與唯一、原版星杯卡牌每張實體 ID 對應原版牌名、全套牌堆 ID 完整且唯一、手牌每席四張。
+- 在獨立新 Chromium JS Realm 中，使用原版 Player.init 和 Card.init 重建原生角色、原四張手牌和完全一致順序的剩餘牌堆；再匯出的開局資料與原 AES-GCM 冷讀取 payload 相同。
+- tools/v3-native-cold-rebuild-probe.mjs 另起真 Chromium 並利用 CI synthetic binding 驗證上述內容與偽造卡名、房間、Player ID 的拒絕。這是原生內容冷重建，不代表真 broker 斷線或任何 GameEvent mid-turn 恢復。
+
+### 同 broker 真 Chromium 失聯接管
+
+- game/v3-authority-websocket-broker.mjs 新增預設 false 的 enableOpeningRecoveryExperiments；僅 V3_ALLOW_SEAT_EXPERIMENT=1 與 Node AES-GCM openingCheckpointStore 才可啟用。
+- 僅 Node host API captureOpeningCheckpoint 會向原主持 Chromium CDP 讀取合法開局快照，重新核對由 broker 簽發的所有 Player ID，將密文落盤。玩家 WS 絕不允許上傳或控制完整手牌存檔。
+- 僅 Node host API recoverOpeningCheckpoint 能在同一 broker 中維持已認證真人 socket、token 與固定 Player ID，停止失聯主持、等待舊私有 WS 關閉、再開 Chromium 與新的內部 secret，將加密快照重建為原生 Player/Card／牌堆，最後向每席各自補發本人的私有手牌。4、6、8 席皆在實際瀏覽器測試，驗證 PID 不同且沒有跨座位卡牌外洩。
+- 這不是 VPS/broker restart 恢復：目前要求 broker 存活、各席在線；room sessions、token hash、native EventStack、RNG、技能與進行中回合仍不具完整持久化。
+
+### 回合中斷不會被偷換成開局恢復
+
+- broker 以 openingRecoveryArmed 記錄由伺服器擷取且確認未開始回合的開局快照；Node host API beginNativePhaseAtOpening 在啟動原版 phaseLoop 之前撤銷恢復資格。
+- CI 在原生 phase 執行中停止真 Chromium，驗證 recoverOpeningCheckpoint 明確回傳 OPENING_RECOVERY_DISARMED，且未暗中恢復舊的起始四張手牌。
+- 所有相關控制均為 Node host-only 函式；由真人 WebSocket 傳入同名 type 均為 UNKNOWN_MESSAGE_TYPE。
+
+### 原版首回合已推進至攻擊／法術選擇事件
+
+- V3 專用離線門閘 releaseOriginalPhaseToActionGate 讓原版 Player.phase() 運行直到真 XingBei xingDong GameEvent 建立，綁定經認證的當前 Player ID。
+- 第二層門閘 releaseOriginalActionToSelectionGate 讓原版 xingDong 原始內容初始化 gongJiOrFaShu 行動計數並建立真正的 gongJiOrFaShu GameEvent，隨即在選牌、目標與技能內容執行之前再次暫停。原版 2v2、3v3、4v4 模式全部覆蓋。
+- 因獨立 Chromium 沒有執行原版完整 UI boot，僅在 CI 測試的 offboard runtime 補上原版 phase/Game.log 所需的隱藏 ui.dialogs、ui.sidebar、ui.arenalog、ui.historybar。
+- 原版 Player.phase 的音效 callback 只能在伺服器本地按完全相同函式內容視為 no-op；其他 Player.send，包括內含合法音效語句但夾帶額外 JavaScript 的 callback，均明確拒絕 V3_NATIVE_REMOTE_CODE_SEND_DENIED。沒有將任何 player-provided script 交給 Chromium。
+- 上述原生事件尚未讓真人出牌、指定目標、啟動主動／被動技能或處理真實攻防；command 仍是 RULES_ENGINE_NOT_IMPLEMENTED，不能用於真人對局。
+
+### CI 驗證
+
+最新程式提交 2b4df0ce1c79087d4c832929df66d3fd3ef0bef4：
+- 真 Chromium／原版事件、2v2/3v3/4v4、多 socket、獨立主持接管、加密開局冷重建與斷線保障： https://github.com/iront1996/noname_xingbei/actions/runs/38170680019 —— SUCCESS，18 tests / 18 passed / 0 failed。
+- V3 離線安全回歸： https://github.com/iront1996/noname_xingbei/actions/runs/38170680121 —— SUCCESS。
+
+下一個核心工作：建立原版 gongJiOrFaShu/chooseToUse 的可信合法卡牌 ID、目標與行動驗證協定，接通真正星杯技能與觸發事件，並在持久化 event history、原生事件恢復、broker 重新啟動狀態接管之前保持 fail-closed。現階段不更新 VPS、不請真人測試。
