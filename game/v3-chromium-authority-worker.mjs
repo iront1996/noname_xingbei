@@ -466,6 +466,26 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      throw fail('V3_NATIVE_PHASE_START_FAILED_'+String(r.result?.value?.code??'CDP'));
     return r.result.value.result;
    },
+   async releaseOriginalPhaseToActionGate(){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const expression='(()=>{try{const n=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;return n?{ok:true,result:n.releaseOriginalPhaseToActionGate()}:{ok:false,code:"V3_NATIVE_SEAT_SESSION_MISSING"}}catch(e){return {ok:false,code:String(e?.code??e?.message??e).slice(0,100)}}})()';
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_NATIVE_ACTION_GATE_RELEASE_FAILED_'+String(r.result?.value?.code??'CDP'));
+    return r.result.value.result;
+   },
+   async inspectOriginalActionGate(){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const expression='(()=>{try{const n=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;return n?{ok:true,result:n.inspectOriginalActionGate()}:{ok:false,code:"V3_NATIVE_SEAT_SESSION_MISSING"}}catch(e){return {ok:false,code:String(e?.code??e?.message??e).slice(0,100)}}})()';
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_NATIVE_ACTION_GATE_INSPECT_FAILED_'+String(r.result?.value?.code??'CDP'));
+    return r.result.value.result;
+   },
    async inspectPausedNativePhaseLoop(){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
      throw fail('WORKER_EXPERIMENT_DISABLED');
