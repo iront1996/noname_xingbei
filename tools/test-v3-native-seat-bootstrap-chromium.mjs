@@ -438,6 +438,42 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(selection.selectionContentExecuted,false);
     assert.equal(selection.skillsVerified,false);
     assert.equal(selection.replaySafe,false);
+    // The original gongJiOrFaShu Event is compiled from chooseToUse,
+    // yet its legacy GameEvent.send would transmit arbitrary JS to the
+    // human browser. The V3 offboard adapter MUST reject that dispatch.
+    const waitContract=await chrome.evaluateSeatExperiment(`(()=>{
+     const n=window.__v3NativeXingBeiTest.core.game.__v3NativeSeatSession;
+     return n.inspectNativeChooseToUseWaitContract({
+      seat:0,playerId:${JSON.stringify(sessions[0].playerId)}
+     });
+    })()`);
+    assert.equal(waitContract.originalNativeGameEvent,true);
+    assert.equal(waitContract.originalGameEventName,'gongJiOrFaShu');
+    assert.equal(waitContract.compiledChooseToUse,true);
+    assert.equal(waitContract.stablePlayerBound,true);
+    assert.equal(waitContract.playerOnlineViaServer,true);
+    assert.equal(waitContract.originalContentExecuted,false);
+    assert.equal(waitContract.callbacksExecuted,false);
+    assert.equal(waitContract.arbitraryRemoteCodeAllowed,false);
+    assert.equal(waitContract.waitingTransportHookImplemented,false);
+    assert.equal(waitContract.fullRulesValidated,false);
+    assert.equal(waitContract.actionExecuted,false);
+    const spoofedWait=await chrome.evaluateSeatExperiment(`(()=>{
+     const n=window.__v3NativeXingBeiTest.core.game.__v3NativeSeatSession;
+     try{n.inspectNativeChooseToUseWaitContract({
+      seat:1,playerId:${JSON.stringify(sessions[1].playerId)}
+     });return 'UNEXPECTED_ALLOWED'}
+     catch(e){return e.code??String(e.message)}
+    })()`);
+    assert.equal(spoofedWait,'V3_NATIVE_WAIT_OWNER_DENIED');
+    const arbitrarySend=await chrome.evaluateSeatExperiment(`(()=>{
+     const game=window.__v3NativeXingBeiTest.core.game;
+     const e=game.__v3PausedPhaseRuntime.selectionEvent;
+     try{e.send();return 'UNEXPECTED_REMOTE_SEND'}catch(err){
+      return err.code??String(err.message)
+     }
+    })()`);
+    assert.equal(arbitrarySend,'V3_NATIVE_EVENT_UNSUPPORTED');
     const originalNativeInvariant=await chrome.evaluateSeatExperiment(
      "window.__v3NativeXingBeiTest.core.game.__v3NativeSeatSession.inspectNativeActionInvariant()");
     assert.equal(originalNativeInvariant.paused,true);
