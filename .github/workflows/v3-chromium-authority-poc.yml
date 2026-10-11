@@ -1,0 +1,45 @@
+name: V3 Chromium Authority Worker PoC
+
+on:
+  push:
+    branches:
+      - feature/host-reconnect-v3-playtest
+    paths:
+      - 'game/v3-chromium-authority-worker.mjs'
+      - 'game/v3-authority-seat-preflight.mjs'
+      - 'tools/test-v3-chromium-authority-worker.mjs'
+      - 'noname/game/index.js'
+      - '.github/workflows/v3-chromium-authority-poc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-offboard-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check Chromium experiment sources
+        run: |
+          node --check game/v3-chromium-authority-worker.mjs
+          node --check tools/test-v3-chromium-authority-worker.mjs
+          node --check game/v3-authority-seat-preflight.mjs
+      - name: Run actual headless Chromium seat and lifecycle experiment
+        env:
+          V3_ALLOW_SEAT_EXPERIMENT: '1'
+        run: |
+          set -euo pipefail
+          browser=''
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          if [ -z "$browser" ]; then
+            echo 'FAIL: runner lacks installed Chromium/Chrome; not a skipped PASS.' >&2
+            exit 1
+          fi
+          V3_CHROMIUM="$browser" node --test tools/test-v3-chromium-authority-worker.mjs
