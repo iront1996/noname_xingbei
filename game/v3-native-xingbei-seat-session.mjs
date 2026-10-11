@@ -327,6 +327,63 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    });
    return result;
   },
+  startPausedFirstNativePhase(){
+   // Strictly offline: allow the ORIGINAL phaseLoop.start() to run through
+   // step 0 and queue the real first Player.phase() GameEvent, but pause
+   // BEFORE that child resolves or any player action can execute.
+   if(!nativeOpeningDrawExecuted||!startingCardsDealt||draftFailure||
+      !game.__v3OpeningTurnBoundary||game.__v3PausedPhaseRuntime||
+      adapter.inspect().pending!==0||_status.eventManager.eventStack.length!==0)
+    throw err('V3_NATIVE_PHASE_PROBE_NOT_READY');
+   const manager=_status.eventManager;
+   const phase=manager.rootEvent?.next?.find(e=>e.name==='phaseLoop');
+   if(!(phase instanceof lib.element.GameEvent)||
+      !(phase.player instanceof lib.element.Player))
+    throw err('V3_NATIVE_PHASE_EVENT_MISSING');
+   if(!ui.window){
+    ui.window=document.createElement('div');
+    ui.window.style.display='none';
+    document.body.appendChild(ui.window);
+   }
+   if(!Array.isArray(lib.onphase))throw err('V3_NATIVE_PHASE_HOOKS_MISSING');
+   const state={phase,pauseTriggered:false,failure:null,finished:false};
+   // This hook runs in original content.js phaseLoop step 1, immediately
+   // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
+   // hook and must never be installed in production V3.
+   const hold=()=>{
+    state.pauseTriggered=true;
+    game.pause();
+   };
+   lib.onphase.push(hold);
+   Object.defineProperty(game,'__v3PausedPhaseRuntime',{
+    enumerable:false,configurable:false,value:state
+   });
+   try{
+    phase.start().then(()=>{state.finished=true}).catch(e=>{
+     state.failure=String(e?.code??e?.message??e).slice(0,100);
+    });
+   }catch(e){
+    state.failure=String(e?.message??e).slice(0,100);
+   }
+   return Object.freeze({started:state.failure===null,
+    event:phase.name,realEvent:phase instanceof lib.element.GameEvent});
+  },
+  inspectPausedFirstNativePhase(){
+   const state=game.__v3PausedPhaseRuntime;
+   if(!state)throw err('V3_NATIVE_PHASE_PROBE_NOT_STARTED');
+   return Object.freeze({
+    pauseTriggered:state.pauseTriggered,
+    failed:state.failure!==null,error:state.failure,
+    firstPhaseQueued:state.phase.next?.some(e=>e.name==='phase')===true,
+    paused:_status.paused===true,
+    seatNumbers:players.map(p=>p.getSeatNum()),
+    redMorale:game.hongShiQi,blueMorale:game.lanShiQi,
+    maxMorale:game.shiQiMax,
+    scoreboardCreated:!!ui.shiQiInfo,
+    phaseLoopCompleted:state.finished,
+    hostOffboard:!players.includes(game.me)&&game.me?.side===undefined
+   });
+  },
   probeNativeFirstPhaseSetup(){
    // Execute original Player.setSeatNum and XingBei $initZhanJi, which are
    // called in phaseLoop step 0. Does not run phaseLoop.start()/skills.
