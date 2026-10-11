@@ -482,6 +482,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    try{
     phase.start().then(()=>{state.finished=true}).catch(e=>{
      state.failure=String(e?.code??e?.message??e).slice(0,100);
+     state.trace=String(e?.stack??'').slice(0,320);
     });
    }catch(e){
     state.failure=String(e?.message??e).slice(0,100);
@@ -504,6 +505,11 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    const originalXingDong=Player.prototype.xingDong;
    if(typeof originalSend!=='function'||typeof originalXingDong!=='function')
     throw err('V3_NATIVE_ACTION_GATE_METHOD_UNAVAILABLE');
+   // Normal full UI boot initializes its dialogs registry before phase step 4.
+   // Plain isolated ESM imports leave the field undefined.
+   if(ui.dialogs===undefined)ui.dialogs=[];
+   if(!Array.isArray(ui.dialogs))
+    throw err('V3_NATIVE_DIALOG_REGISTRY_INVALID');
    const hookIndex=lib.onphase.indexOf(state.hold);
    if(hookIndex<0)throw err('V3_NATIVE_ACTION_GATE_HOOK_MISSING');
    // Original phase step 2 notifies the active human client to play a local
@@ -547,6 +553,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    return Object.freeze({
     entryReleased:state.entryReleased,
     failed:state.failure!==null,error:state.failure,
+    trace:state.trace??null,
     actionGateReached:state.actionGate===true,
     actionEventNative:event instanceof lib.element.GameEvent,
     actionEventName:event?.name??null,
