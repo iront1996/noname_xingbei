@@ -191,3 +191,34 @@ test('only live authority may renew preview lease; invalid, expired and old tick
  assert.equal(m.renewNativePreview({...defaults,roomId:'roomB',
   ticket:native.view.ticket}).code,'PREVIEW_LEASE_RENEW_DENIED');
 });
+
+test('only verified no-card pass can consume a native preview result; card attacks stay preview-only',()=>{
+ const m=started(),opt=['v3card_012345','v3card_abcdef','pass'];
+ const w=m.open({...defaults,source:'preview',kind:'card',prompt:'原生取消',
+  options:opt});
+ assert.equal(w.ok,true);
+ const ctx={...defaults,ticket:w.view.ticket};
+ assert.equal(m.nativePreviewPassApplied(ctx).code,'CHOICE_PREVIEW_PASS_APPLY_DENIED');
+ assert.equal(m.submit({...ctx,option:'pass'}).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+ assert.equal(m.nativePreviewPassApplied(ctx).code,'CHOICE_PREVIEW_PASS_APPLY_DENIED');
+ assert.equal(m.deliveryReceipt({...ctx,option:'pass'}).code,'CHOICE_DELIVERED_NOT_APPLIED');
+ assert.equal(m.advancePreview({roomId:'roomA',seat:0,playerId:id(1),
+  previousTicket:w.view.ticket,previousOption:'pass',
+  kind:'target',prompt:'禁止選擇目標',options:['s1','s3']}).code,
+  'PREVIEW_ADVANCE_DENIED');
+ assert.equal(m.nativePreviewPassApplied({...ctx,playerId:id(2)}).code,
+  'CHOICE_PREVIEW_PASS_APPLY_DENIED');
+ assert.equal(m.nativePreviewPassApplied(ctx).code,'CHOICE_PREVIEW_PASS_APPLIED');
+ assert.equal(m.view('roomA',0,id(1)).state,'applied');
+ assert.equal(m.nativeApplied({...ctx,option:'pass'}).code,'CHOICE_NATIVE_APPLY_DENIED');
+ assert.equal(m.renewNativePreview(ctx).code,'PREVIEW_LEASE_RENEW_DENIED');
+ assert.equal(m.submit({...ctx,option:'v3card_012345'}).code,'CHOICE_ALREADY_LOCKED');
+ const next=m.open({...defaults,source:'preview',kind:'card',
+  prompt:'新事件',options:opt});
+ assert.equal(next.ok,true);
+ assert.notEqual(next.view.ticket,w.view.ticket);
+ const card={...defaults,ticket:next.view.ticket,option:'v3card_012345'};
+ m.submit(card);m.deliveryReceipt(card);
+ assert.equal(m.nativePreviewPassApplied(card).code,'CHOICE_PREVIEW_PASS_APPLY_DENIED');
+ assert.equal(m.view('roomA',0,id(1)).state,'delivered');
+});
