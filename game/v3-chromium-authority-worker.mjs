@@ -160,7 +160,7 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       const opts=${cfg};
       const ws=new WebSocket(opts.url);
       let connected=false,seenRoster=false,seatCount=0,revision=-1,bindings=[];
-      let choiceOpenResult=null;const deliveryReceipts=[];
+      let choiceOpenResult=null;const deliveryReceipts=[];let nativeChoiceHooks=null;
       ws.addEventListener('open',()=>ws.send(JSON.stringify({
        type:'authority_hello',roomId:opts.roomId,secret:opts.secret
       })));
@@ -169,6 +169,9 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
        if(msg.type==='authority_accepted'&&msg.roomId===opts.roomId)connected=true;
        if(msg.type==='authority_choice_open_result'){
         if(msg.ok===true&&msg.view?.roomId===opts.roomId)choiceOpenResult=msg.view;
+        if(msg.view?.source==='native'&&nativeChoiceHooks){
+         try{nativeChoiceHooks.opened(msg)}catch{}
+        }
        }
        if(msg.type==='authority_choice_delivery'&&connected&&msg.roomId===opts.roomId&&
           Number.isInteger(msg.seat)&&typeof msg.playerId==='string'&&
@@ -176,11 +179,20 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
           typeof msg.option==='string'){
         const b=bindings.find(x=>x.seat===msg.seat&&x.playerId===msg.playerId);
         if(b){
+         if(msg.source==='native'){
+          if(!nativeChoiceHooks)return;
+          let consumed=false;
+          try{consumed=nativeChoiceHooks.delivered(msg)===true}catch{return}
+          if(!consumed)return;
+         }
          deliveryReceipts.push(Object.freeze({roomId:opts.roomId,seat:msg.seat,
           playerId:msg.playerId,ticket:msg.ticket,option:msg.option}));
          // Only receipt of delivery. Does NOT unblock or resolve GameEvent.
          ws.send(JSON.stringify({type:'authority_choice_receipt',roomId:opts.roomId,
           seat:msg.seat,playerId:msg.playerId,ticket:msg.ticket,option:msg.option}));
+         if(msg.source==='native')
+          ws.send(JSON.stringify({type:'authority_choice_native_applied',roomId:opts.roomId,
+           seat:msg.seat,playerId:msg.playerId,ticket:msg.ticket,option:msg.option}));
         }
        }
        if(msg.type==='authority_transport_probe'&&connected&&msg.roomId===opts.roomId&&
@@ -213,6 +225,23 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          boundPeerCount:bindings.filter(b=>b.connectionId!==null).length}),
          // Used by trusted V3-only native engine bootstrap, never by human clients.
          getSeatBindings:()=>bindings.map(b=>({...b})),
+         registerNativeChoiceHooks:hooks=>{
+          if(nativeChoiceHooks||!hooks||typeof hooks.opened!=='function'||
+             typeof hooks.delivered!=='function')return false;
+          nativeChoiceHooks=hooks;
+          return true;
+         },
+         requestNativeChoice:data=>{
+          if(!nativeChoiceHooks||!connected||!seenRoster||!data||typeof data!=='object')
+           return false;
+          const b=bindings.find(x=>x.seat===data.seat);
+          if(!b)return false;
+          if(data.kind!=='control'||!Array.isArray(data.options))return false;
+          ws.send(JSON.stringify({type:'authority_choice_open',source:'native',
+            roomId:opts.roomId,seat:b.seat,playerId:b.playerId,
+            kind:'control',prompt:data.prompt,options:data.options}));
+          return true;
+         },
          openChoiceExperiment:data=>{
           if(!connected||!seenRoster||!data||typeof data!=='object')return false;
           const b=bindings.find(x=>x.seat===data.seat);
