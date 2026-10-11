@@ -294,9 +294,12 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     throw err('V3_NATIVE_TURN_EVENT_STACK_NOT_EMPTY');
    manager.rootEvent=root;
    manager.eventStack.push(root);
-   let draw;
+   let draw=null;
    try{
-    draw=game.gameDraw(first,4);
+    // If opening hands were already drawn by original GameEvent.start(),
+    // NEVER schedule gameDraw again. Otherwise the next native turn would
+    // silently double-deal the entire room.
+    if(!nativeOpeningDrawExecuted)draw=game.gameDraw(first,4);
     game.phaseLoop(first);
    }finally{
     if(manager.eventStack.pop()!==root)
@@ -304,14 +307,17 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    }
    const siblings=Array.isArray(root.next)?root.next:[];
    const phase=siblings.find(x=>x.name==='phaseLoop');
-   if(!(draw instanceof lib.element.GameEvent)||draw.name!=='gameDraw'||
-      !(phase instanceof lib.element.GameEvent)||phase.player!==first||
-      draw.player!==first||draw.num!==4||phase._isStandardLoop!==true||
-      !siblings.includes(draw))
+   if(!(phase instanceof lib.element.GameEvent)||phase.player!==first||
+      phase._isStandardLoop!==true||
+      (!nativeOpeningDrawExecuted&&(!(draw instanceof lib.element.GameEvent)||
+       draw.name!=='gameDraw'||draw.player!==first||draw.num!==4||
+       !siblings.includes(draw)))||
+      (nativeOpeningDrawExecuted&&siblings.some(x=>x.name==='gameDraw')))
     throw err('V3_NATIVE_TURN_EVENT_SHAPE_INVALID');
    const result=Object.freeze({
     realNativeEvents:true,firstSeat,playerId:first.playerid,
-    drawEvent:draw.name,phaseEvent:phase.name,drawCount:draw.num,
+    drawEvent:'gameDraw',phaseEvent:phase.name,drawCount:4,
+    openingDrawAlreadyExecuted:nativeOpeningDrawExecuted,
     standardPhaseLoop:phase._isStandardLoop===true,
     eventsQueued:siblings.map(x=>x.name),
     eventLoopStarted:false,turnResolved:false
