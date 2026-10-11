@@ -619,6 +619,11 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     const waiting=await chrome.inspectNativeUseCardPreview();
     assert.equal(waiting.state,'open');
     assert.equal(waiting.samePausedEvent,true);
+    assert.equal(await chrome.evaluateSeatExperiment(
+     "window.__v3AuthorityBridge.inspectPreviewLeaseCount()"),1);
+    await sleep(25);
+    assert.equal(await chrome.evaluateSeatExperiment(
+     "window.__v3AuthorityBridge.testRenewPreviewLeases()"),true);
     let replacement=await connect(broker.address);
     peers.push(replacement);
     currentBySeat[0]=replacement;
@@ -633,6 +638,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
      x.window.ticket===previewWindow.ticket
     )?.window);
     assert.deepEqual(recovered.options,previewWindow.options);
+    assert.ok(recovered.expiresAt>previewWindow.expiresAt);
     assert.equal((await ask(replacement,'choice_submit',{
      ticket:recovered.ticket,option:'v3card_ffffff'
     })).code,'CHOICE_OPTION_NOT_ALLOWED');
@@ -676,6 +682,11 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
      const beforeTargetRecovery=await chrome.inspectNativeUseCardPreview();
      assert.equal(beforeTargetRecovery.targetPreviewState,'open');
      assert.equal(beforeTargetRecovery.samePausedEvent,true);
+     assert.equal(await chrome.evaluateSeatExperiment(
+      "window.__v3AuthorityBridge.inspectPreviewLeaseCount()"),1);
+     await sleep(25);
+     assert.equal(await chrome.evaluateSeatExperiment(
+      "window.__v3AuthorityBridge.testRenewPreviewLeases()"),true);
      replacement=await connect(broker.address);
      peers.push(replacement);
      currentBySeat[0]=replacement;
@@ -689,6 +700,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
       x.window.kind==='target'&&x.window.ticket===targetWindow.ticket
      )?.window);
      assert.deepEqual(restoredTarget.options,enemies);
+     assert.ok(restoredTarget.expiresAt>targetWindow.expiresAt);
      assert.equal((await ask(replacement,'choice_submit',{
       ticket:recovered.ticket,option:selected.cardId
      })).code,'CHOICE_WINDOW_NOT_FOUND');
