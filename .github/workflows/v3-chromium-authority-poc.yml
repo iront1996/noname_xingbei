@@ -6,8 +6,11 @@ on:
       - feature/host-reconnect-v3-playtest
     paths:
       - 'game/v3-chromium-authority-worker.mjs'
+      - 'game/v3-authority-runtime-coordinator.mjs'
       - 'game/v3-authority-seat-preflight.mjs'
       - 'tools/test-v3-chromium-authority-worker.mjs'
+      - 'tools/test-v3-chromium-coordinator-integration.mjs'
+      - 'tools/test-v3-authority-runtime-coordinator.mjs'
       - 'noname/game/index.js'
       - '.github/workflows/v3-chromium-authority-poc.yml'
   workflow_dispatch:
@@ -27,7 +30,9 @@ jobs:
       - name: Check Chromium experiment sources
         run: |
           node --check game/v3-chromium-authority-worker.mjs
+          node --check game/v3-authority-runtime-coordinator.mjs
           node --check tools/test-v3-chromium-authority-worker.mjs
+          node --check tools/test-v3-chromium-coordinator-integration.mjs
           node --check game/v3-authority-seat-preflight.mjs
       - name: Run actual headless Chromium seat and lifecycle experiment
         env:
@@ -42,4 +47,4 @@ jobs:
             echo 'FAIL: runner lacks installed Chromium/Chrome; not a skipped PASS.' >&2
             exit 1
           fi
-          V3_CHROMIUM="$browser" node --test tools/test-v3-chromium-authority-worker.mjs
+          V3_CHROMIUM="$browser" node --test tools/test-v3-chromium-authority-worker.mjs tools/test-v3-chromium-coordinator-integration.mjs
