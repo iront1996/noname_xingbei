@@ -686,6 +686,38 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     targetCount:candidates.length,fullRulesValidated:false,
     targetFullyValidated:false,actionExecuted:false});
   },
+  inspectNativeActionInvariant(){
+   // Trusted CI/CDP-only full-state comparison. This is never sent to
+   // public players: it contains ALL seats' physical card identifiers.
+   const gate=game.__v3PausedPhaseRuntime;
+   if(!gate||!gate.selectionGate||!_status.paused||
+      gate.selectionEvent?.name!=='gongJiOrFaShu')
+    throw err('V3_NATIVE_INVARIANT_NOT_READY');
+   return Object.freeze({
+    paused:_status.paused===true,
+    nativeActionEvent:gate.actionEvent instanceof lib.element.GameEvent,
+    nativeSelectionEvent:gate.selectionEvent instanceof lib.element.GameEvent,
+    actionEventName:gate.actionEvent.name,
+    selectionEventName:gate.selectionEvent.name,
+    actorId:gate.selectionEvent.player.playerid,
+    phaseNumber:game.phaseNumber,
+    currentPhaseId:_status.currentPhase?.playerid??null,
+    actionCounter:gate.selectionEvent.player?.storage?.gongJiOrFaShu??null,
+    redMorale:game.hongShiQi,blueMorale:game.lanShiQi,
+    maxMorale:game.shiQiMax,
+    eventStackDepth:_status.eventManager.eventStack.length,
+    // The active hand is read from REAL native Card/Player DOM, never from
+    // a client-owned mirror or a broker private projection.
+    hands:players.map(p=>p.getCards('h').map(c=>c.__v3PhysicalId)),
+    hp:players.map(p=>p.hp??null),
+    maxHp:players.map(p=>p.maxHp??null),
+    activePlayers:game.players.map(p=>p.playerid),
+    deck:Array.from(ui.cardPile?.childNodes??[]).map(c=>c.__v3PhysicalId),
+    waitingNodes:Object.keys(lib.node?.torespond??{}).sort(),
+    originalSelectionContentExecuted:false,
+    fullRulesValidated:false
+   });
+  },
   auditNativePrintedAttackStaticRules({seat,playerId,cardId,targetSeat}={}){
    // Read-only capability audit, NOT a legal chooseToUse / useResult.
    // Original lib.filter.filterCard/cardUsable can write event.addCount_extra
