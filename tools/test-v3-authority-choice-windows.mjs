@@ -9,7 +9,7 @@ test('open pending prompt and only valid option accepts one-time delivery',()=>{
  assert.equal(m.size(),1);
  assert.equal(opened.view.state,'open');
  assert.match(opened.view.ticket,/^[a-f0-9]{32}$/);
- const submitted=m.submit({...defaults,ticket:opened.view.ticket,option:'defend'});
+ const submitted=m.submit({...defaults,ticket:opened.view.ticket,option:'defend',source:'experiment'});
  assert.equal(submitted.code,'CHOICE_SUBMITTED_NOT_APPLIED');
  assert.deepEqual(submitted.delivery,{roomId:'roomA',seat:0,playerId:id(1),ticket:opened.view.ticket,option:'defend'});
  assert.equal(m.submit({...defaults,ticket:opened.view.ticket,option:'pass'}).code,'CHOICE_ALREADY_LOCKED');
@@ -59,4 +59,31 @@ test('strict capacity bound limits open windows',()=>{
  const m=createV3AuthorityChoiceWindows({maxOpen:1});
  assert.equal(m.open(defaults).ok,true);
  assert.equal(m.open({...defaults,roomId:'roomB'}).code,'CHOICE_CAPACITY_EXCEEDED');
+});
+
+test('native choice must pass delivered receipt before applied and then may retire',()=>{
+ const m=started();
+ const opened=m.open({...defaults,source:'native'});assert.equal(opened.ok,true);
+ const body={...defaults,ticket:opened.view.ticket,option:'pass'};
+ assert.equal(m.nativeApplied(body).code,'CHOICE_NATIVE_APPLY_DENIED');
+ assert.equal(m.submit(body).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+ assert.equal(m.nativeApplied(body).code,'CHOICE_NATIVE_APPLY_DENIED');
+ assert.equal(m.deliveryReceipt(body).code,'CHOICE_DELIVERED_NOT_APPLIED');
+ assert.equal(m.nativeApplied({...body,playerId:id(2)}).code,'CHOICE_NATIVE_APPLY_DENIED');
+ assert.equal(m.nativeApplied({...body,option:'defend'}).code,'CHOICE_NATIVE_APPLY_DENIED');
+ assert.equal(m.nativeApplied(body).code,'CHOICE_NATIVE_APPLIED');
+ assert.equal(m.nativeApplied(body).code,'CHOICE_ALREADY_APPLIED');
+ assert.equal(m.view('roomA',0,id(1)).state,'applied');
+ assert.equal(m.submit(body).code,'CHOICE_ALREADY_APPLIED');
+ const second=m.open({...defaults,source:'native'});
+ assert.equal(second.ok,true);
+ assert.notEqual(second.view.ticket,opened.view.ticket);
+ assert.equal(m.submit(body).code,'CHOICE_WINDOW_NOT_FOUND');
+});
+test('experimental choice cannot falsely claim native application',()=>{
+ const m=started(),opened=m.open(defaults);
+ const body={...defaults,ticket:opened.view.ticket,option:'defend'};
+ m.submit(body);m.deliveryReceipt(body);
+ assert.equal(m.nativeApplied(body).code,'CHOICE_NATIVE_APPLY_DENIED');
+ assert.equal(m.view('roomA',0,id(1)).state,'delivered');
 });
