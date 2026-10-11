@@ -4,6 +4,7 @@ import {createV3AuthorityWebSocketBroker} from '../game/v3-authority-websocket-b
 import {launchV3ChromiumAuthorityWorker} from '../game/v3-chromium-authority-worker.mjs';
 import {buildV3NativeAuthorizedSeatProbe} from './v3-native-seat-probe.mjs';
 import {createV3NativeModuleTestServer} from './v3-native-module-test-server.mjs';
+import {buildV3RealSessionOutcomeProbe} from './v3-real-native-result-probe.mjs';
 import {dirname,resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
@@ -105,6 +106,18 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   assert.equal(nativeAfter.offboard,true);
   assert.equal(nativeAfter.socketBindingsPreserved,true);
   assert.deepEqual(nativeAfter.ids,nativeBefore.ids);
+  // Actual imported XingBei mode's result hook on the real singleton Game,
+  // with verified stable Player IDs from all four real WebSockets.
+  const match=await browser.evaluateSeatExperiment(buildV3RealSessionOutcomeProbe());
+  assert.equal(match.ok,true);
+  assert.equal(match.hostOffboard,true);
+  assert.equal(match.fromRealGame,true);
+  assert.equal(match.realMode,'xingBei');
+  assert.equal(match.fromAuthenticatedBindings,true);
+  assert.equal(match.publishedOnce,true);
+  assert.equal(match.winner,'hong');
+  assert.equal(match.perPlayer.length,4);
+  assert.equal(match.perPlayer.filter(p=>p.won).length,2);
   assert.equal((await broker.inspectWorker('V3_REAL_POC')).code,'WORKER_PROOF_ALIVE');
   assert.equal(broker.roomView('V3_REAL_POC').roster.every(s=>s.connected),true);
   for(const peer of peers){
