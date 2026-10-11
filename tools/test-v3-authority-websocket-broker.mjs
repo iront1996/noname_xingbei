@@ -195,6 +195,67 @@ test('private choice pending state persists for creator and guest despite socket
   assert.equal(x.started,1);
  }finally{await x.broker.close()}
 });
+test('server target preview requires delivered authenticated card ticket and locks old stage',async()=>{
+ const previous=process.env.V3_ALLOW_SEAT_EXPERIMENT;
+ process.env.V3_ALLOW_SEAT_EXPERIMENT='1';
+ let x;
+ try{
+  x=await setup({choiceExperiment:true,ownershipExperiment:true});
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  const source=x.authority;
+  const publish=obj=>source.clientSend({type:'authority_choice_open',
+   roomId:'TEST',seat:0,playerId:sessions[0].playerId,
+   source:'preview',...obj});
+  const card='v3card_123456';
+  publish({kind:'card',prompt:'請選擇手牌',options:[card,'v3card_abcdef']});
+  const first=await waitFor(source,m=>m.type==='authority_choice_open_result'&&m.view?.kind==='card');
+  assert.equal(first.ok,true);
+  const ticket=first.view.ticket;
+  const next={kind:'target',prompt:'請選擇印刷目標',options:['s1','s3'],
+   previousTicket:ticket,previousOption:card};
+  publish(next);
+  assert.equal((await waitFor(source,m=>m.type==='authority_choice_open_result'&&
+   m.code==='PREVIEW_ADVANCE_DENIED')).ok,false);
+  assert.equal((await ask(ws[1],{type:'choice_submit',
+   ticket,option:card})).code,'CHOICE_WINDOW_NOT_FOUND');
+  assert.equal((await ask(ws[0],{type:'choice_submit',
+   ticket,option:card})).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+  await waitFor(ws[0],m=>m.type==='choice_window'&&m.window.state==='delivered'&&
+   m.window.ticket===ticket);
+  publish({...next,previousOption:'v3card_abcdef'});
+  const bad=await waitFor(source,m=>m.type==='authority_choice_open_result'&&
+   m.code==='PREVIEW_ADVANCE_DENIED'&&m!==undefined);
+  assert.equal(bad.ok,false);
+  publish(next);
+  const opened=await waitFor(source,m=>m.type==='authority_choice_open_result'&&
+   m.view?.kind==='target');
+  assert.equal(opened.ok,true);
+  assert.notEqual(opened.view.ticket,ticket);
+  assert.deepEqual(opened.view.options,['s1','s3']);
+  assert.equal((await ask(ws[0],{type:'choice_submit',
+   ticket,option:card})).code,'CHOICE_WINDOW_NOT_FOUND');
+  assert.equal((await ask(ws[1],{type:'choice_submit',
+   ticket:opened.view.ticket,option:'s1'})).code,'CHOICE_WINDOW_NOT_FOUND');
+  assert.equal((await ask(ws[0],{type:'choice_submit',
+   ticket:opened.view.ticket,option:'s0'})).code,'CHOICE_OPTION_NOT_ALLOWED');
+  assert.equal((await ask(ws[0],{type:'choice_submit',
+   ticket:opened.view.ticket,option:'s1'})).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+  await waitFor(ws[0],m=>m.type==='choice_window'&&m.window.ticket===opened.view.ticket&&
+   m.window.state==='delivered');
+  source.clientSend({type:'authority_choice_native_applied',roomId:'TEST',
+   seat:0,playerId:sessions[0].playerId,
+   ticket:opened.view.ticket,option:'s1'});
+  assert.equal((await waitFor(source,m=>m.type==='error'&&
+   m.code==='CHOICE_NATIVE_APPLY_DENIED')).code,'CHOICE_NATIVE_APPLY_DENIED');
+  assert.equal((await ask(ws[0],{type:'command',action:'playCard'})).code,
+   'RULES_ENGINE_NOT_IMPLEMENTED');
+ }finally{
+  if(x)await x.broker.close();
+  if(previous===undefined)delete process.env.V3_ALLOW_SEAT_EXPERIMENT;
+  else process.env.V3_ALLOW_SEAT_EXPERIMENT=previous;
+ }
+});
 test('choice experiment disabled by default and worker loss cancels all pending choices',async()=>{
  const x=await setup();
  try{
