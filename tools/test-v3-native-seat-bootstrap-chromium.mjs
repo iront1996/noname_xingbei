@@ -141,13 +141,10 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(new Set(drafted.roster.map(p=>p.character)).size,count);
    // Original native Card instances must physically inhabit the right
    // native Player hand zone, never the host virtual Player or other seats.
-   // 2v2 now uses the ORIGINAL gameDraw Event.start() for the four
-   // genuine opening cards. Other modes retain the already verified manual
-   // stage until native gameDraw first passes this isolation test.
-   const originalOpening=mode==='2v2';
-   const dealt=originalOpening
-    ?await chrome.dealNativeOpeningCardsByOriginalEvent()
-    :await chrome.dealNativeOpeningCards();
+   // All roster sizes use ORIGINAL native gameDraw Event.start() to
+   // construct the genuine four-card opening hands (not manual directgain).
+   const originalOpening=true;
+   const dealt=await chrome.dealNativeOpeningCardsByOriginalEvent();
    assert.equal(dealt.nativeCards,true);
    assert.equal(dealt.physicalCardsUnique,true);
    assert.equal(dealt.totalDealt,count*4);
