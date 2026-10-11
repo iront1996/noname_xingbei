@@ -41,6 +41,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
   let chrome;
   const broker=await createV3AuthorityWebSocketBroker({
    WebSocketServer,enableChoiceWindowExperiments:true,
+   enablePrivateHandExperiments:true,
    launchWorker:async()=>{
     chrome=await launchV3ChromiumAuthorityWorker({executable});
     assert.equal((await chrome.loadV3NativeModules({origin:host.origin})).loaded,true);
@@ -70,6 +71,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(original.roster.filter(p=>p.side==='lan').length,count/2);
    const pid=chrome.pid;
    const currentBySeat=peers.slice(0,count);
+   const reconnectCredentials=sessions.map(x=>x.reconnectToken);
    const guestSeat=count-2;
    peers[0].ws.close();peers[guestSeat].ws.close();
    await until(()=>!broker.roomView(roomId).roster[0].connected&&
@@ -88,6 +90,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     });
     assert.equal(reconnected.playerId,sessions[seat].playerId);
     assert.notEqual(reconnected.reconnectToken,sessions[seat].reconnectToken);
+    reconnectCredentials[seat]=reconnected.reconnectToken;
    }
    await until(async()=>{
     const current=await chrome.inspectNativeXingBeiSeats();
@@ -155,6 +158,53 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     const foreign=new Set(cards.filter(id=>!seatViews[seat].ownHand.some(c=>c.cardId===id)));
     const projection=JSON.stringify(seatViews[seat]);
     for(const id of foreign)assert.equal(projection.includes(id),false);
+   }
+   const afterDraw=await chrome.inspectNativeXingBeiSeats();
+   const publication=await chrome.publishNativeOpeningHands();
+   assert.equal(publication.count,count);
+   assert.deepEqual(publication.seats,Array.from({length:count},(_,i)=>i));
+   for(let seat=0;seat<count;seat++){
+    const own=seatViews[seat];
+    const player=currentBySeat[seat];
+    const message=await until(()=>player.received.find(x=>x.type==='private_hand'));
+    assert.equal(message.view.roomId,roomId);
+    assert.equal(message.view.playerId,sessions[seat].playerId);
+    assert.equal(message.view.revision,1);
+    assert.deepEqual(message.view.ownHand,own.ownHand);
+    assert.deepEqual(message.view.publicOtherHandCounts,own.publicOtherHandCounts);
+    const query=await ask(player,'private_hand_query');
+    assert.equal(query.code,'PRIVATE_HAND_STATE');
+    assert.deepEqual(query.view.ownHand,own.ownHand);
+    const personal=new Set(own.ownHand.map(x=>x.cardId));
+    for(let other=0;other<count;other++){
+     if(other===seat)continue;
+     for(const foreign of seatViews[other].ownHand)
+      assert.equal(JSON.stringify(message.view).includes(foreign.cardId),false);
+    }
+    assert.equal(personal.size,4);
+    assert.equal(JSON.stringify(broker.roomView(roomId)).includes(own.ownHand[0].cardId),false);
+   }
+   // Re-authentication after the cards are dealt must restore only the
+   // reconnecting user's original private hand and not another seat's cards.
+   for(const seat of [0,guestSeat]){
+    currentBySeat[seat].ws.close();
+    await until(()=>broker.roomView(roomId).roster[seat].connected===false);
+    const replacement=await connect(broker.address);
+    peers.push(replacement);
+    const token=(await ask(replacement,'reconnect',{
+     roomId,seat,
+     reconnectToken:reconnectCredentials[seat]
+    }));
+    assert.equal(token.playerId,sessions[seat].playerId);
+    reconnectCredentials[seat]=token.reconnectToken;
+    currentBySeat[seat]=replacement;
+    const replay=await until(()=>replacement.received.find(x=>x.type==='private_hand'));
+    assert.deepEqual(replay.view.ownHand,seatViews[seat].ownHand);
+    for(let other=0;other<count;other++){
+     if(other===seat)continue;
+     for(const foreign of seatViews[other].ownHand)
+      assert.equal(JSON.stringify(replay.view).includes(foreign.cardId),false);
+    }
    }
    const afterDraw=await chrome.inspectNativeXingBeiSeats();
    assert.equal(afterDraw.session.startingCardsDealt,true);
