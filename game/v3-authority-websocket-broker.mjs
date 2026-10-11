@@ -160,7 +160,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     if(!enableNativeOwnershipProbes)
      return send(ws,{type:'error',code:'ACTION_PROBE_DISABLED'});
     const p=outstandingCardProbes.get(obj.traceId);
-    if(!p||p.roomId!==ws.__v3AuthorityRoom||p.seat!==obj.seat||
+    if(!p||p.kind!=='ownership'||p.roomId!==ws.__v3AuthorityRoom||p.seat!==obj.seat||
        p.playerId!==obj.playerId||typeof obj.owned!=='boolean')
      return send(ws,{type:'error',code:'ACTION_PROBE_ACK_INVALID'});
     outstandingCardProbes.delete(obj.traceId);
@@ -170,6 +170,30 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
       ok:obj.owned,code:obj.owned?'ACTION_CARD_OWNERSHIP_PRECHECK_PASSED':
        'ACTION_CARD_OWNERSHIP_DENIED',
       fullRulesValidated:false,actionExecuted:false});
+    return;
+   }
+   if(obj.type==='authority_action_target_result'){
+    if(!enableNativeOwnershipProbes)
+     return send(ws,{type:'error',code:'ACTION_PROBE_DISABLED'});
+    const p=outstandingCardProbes.get(obj.traceId);
+    if(!p||p.kind!=='target'||p.roomId!==ws.__v3AuthorityRoom||
+       p.seat!==obj.seat||p.playerId!==obj.playerId||
+       p.targetSeat!==obj.targetSeat||
+       typeof obj.printedTargetEligible!=='boolean'||
+       typeof obj.supportedPrintedAttack!=='boolean'||
+       (obj.printedTargetEligible&&!obj.supportedPrintedAttack))
+     return send(ws,{type:'error',code:'ACTION_TARGET_ACK_INVALID'});
+    outstandingCardProbes.delete(obj.traceId);
+    clearTimeout(p.timer);
+    if(current(p.roomId,p.seat,p.ws))
+     send(p.ws,{type:'reply',requestId:p.requestId,
+      ok:obj.printedTargetEligible,
+      code:obj.printedTargetEligible?'ACTION_PRINTED_TARGET_PRECHECK_PASSED':
+       'ACTION_PRINTED_TARGET_PRECHECK_DENIED',
+      supportedPrintedAttack:obj.supportedPrintedAttack,
+      printedTargetEligible:obj.printedTargetEligible,
+      fullRulesValidated:false,targetFullyValidated:false,
+      actionExecuted:false,cardConsumed:false});
     return;
    }
    if(obj.type==='authority_probe_ack'){
@@ -254,6 +278,42 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     if(result.delivery)send(worker,{type:'authority_choice_delivery',...result.delivery});
     return;
    }
+   case 'action_target_probe':{
+    // Read-only printed attack-card target test, NOT a legal use-card action.
+    // Authenticated seat and player ID must NEVER come from client payload.
+    if(!enableNativeOwnershipProbes)
+     return respond(reply(false,'ACTION_PROBE_DISABLED'));
+    if(Object.keys(obj).some(k=>!['type','requestId','cardId','targetSeat'].includes(k)))
+     return respond(reply(false,'ACTION_PROBE_UNTRUSTED_FIELDS'));
+    if(!obj.requestId||typeof obj.cardId!=='string'||
+       !/^v3card_[a-f0-9]{6}$/.test(obj.cardId)||
+       !Number.isInteger(obj.targetSeat)||obj.targetSeat<0||
+       obj.targetSeat>=coordinator.roomView(bound.roomId)?.roster?.length)
+     return respond(reply(false,'ACTION_TARGET_PRECHECK_DENIED'));
+    const worker=workersByRoom.get(bound.roomId);
+    if(!live(worker))return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
+    if(outstandingCardProbes.size>=64)
+     return respond(reply(false,'ACTION_PROBE_CAPACITY_EXCEEDED'));
+    const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
+    if(!playerId)return respond(reply(false,'ACTION_TARGET_PRECHECK_DENIED'));
+    const traceId=randomBytes(16).toString('hex');
+    const timer=setTimeout(()=>{
+     const p=outstandingCardProbes.get(traceId);
+     if(!p)return;
+     outstandingCardProbes.delete(traceId);
+     if(current(p.roomId,p.seat,p.ws))
+      send(p.ws,{type:'reply',requestId:p.requestId,
+       ok:false,code:'ACTION_PROBE_TIMEOUT'});
+    },4000);
+    outstandingCardProbes.set(traceId,{
+     roomId:bound.roomId,seat:bound.seat,targetSeat:obj.targetSeat,
+     playerId,ws,requestId:obj.requestId,timer,kind:'target'
+    });
+    send(worker,{type:'authority_action_target_probe',
+     roomId:bound.roomId,seat:bound.seat,playerId,traceId,
+     cardId:obj.cardId,targetSeat:obj.targetSeat});
+    return;
+   }
    case 'action_ownership_probe':{
     if(!enableNativeOwnershipProbes)
      return respond(reply(false,'ACTION_PROBE_DISABLED'));
@@ -280,7 +340,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
        ok:false,code:'ACTION_PROBE_TIMEOUT'});
     },4000);
     outstandingCardProbes.set(traceId,{roomId:bound.roomId,seat:bound.seat,
-     playerId,ws,requestId:obj.requestId,timer});
+     playerId,ws,requestId:obj.requestId,timer,kind:'ownership'});
     send(worker,{type:'authority_action_ownership_probe',
      roomId:bound.roomId,seat:bound.seat,playerId,traceId,cardId:obj.cardId});
     return;
