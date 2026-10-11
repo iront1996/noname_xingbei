@@ -112,6 +112,54 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
     if(r.exceptionDetails||r.result?.value!==true)throw fail('WORKER_NOT_OFFBOARD');
     return Object.freeze({alive:true,offboard:true,pid:child.pid,gameRulesLoaded:false,statePersisted:false});
    },
+   async connectRoomChannel({roomId,url,secret}={}){
+    // Trusted server only. Never evaluate player-supplied JavaScript.
+    if(closed||typeof roomId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(roomId)||
+       typeof url!=='string'||!/^ws:\/\/127\.0\.0\.1:\d+$/.test(url)||
+       typeof secret!=='string'||!/^[a-f0-9]{64}$/.test(secret))
+      throw fail('WORKER_BRIDGE_CONFIG_INVALID');
+    const cfg=JSON.stringify({roomId,url,secret});
+    const script=`(()=>{
+      if(window.__v3AuthorityBridge)return false;
+      const opts=${cfg};
+      const ws=new WebSocket(opts.url);
+      let connected=false,seenRoster=false,seatCount=0,revision=-1;
+      ws.addEventListener('open',()=>ws.send(JSON.stringify({
+       type:'authority_hello',roomId:opts.roomId,secret:opts.secret
+      })));
+      ws.addEventListener('message',event=>{
+       let msg;try{msg=JSON.parse(event.data)}catch{return}
+       if(msg.type==='authority_accepted'&&msg.roomId===opts.roomId)connected=true;
+       if(msg.type==='authority_roster'&&msg.view?.roomId===opts.roomId&&
+          Array.isArray(msg.view.roster)&&Number.isInteger(msg.view.revision)){
+        seenRoster=true;seatCount=msg.view.roster.length;revision=msg.view.revision;
+       }
+      });
+      ws.addEventListener('close',()=>{connected=false});
+      ws.addEventListener('error',()=>{connected=false});
+      Object.defineProperty(window,'__v3AuthorityBridge',{configurable:false,
+        value:Object.freeze({inspect:()=>({connected,seenRoster,seatCount,revision})})});
+      return true;
+    })()`;
+    const result=await session.send('Runtime.evaluate',{expression:script,returnByValue:true});
+    if(result.exceptionDetails||result.result?.value!==true)throw fail('WORKER_BRIDGE_ATTACH_FAILED');
+    for(let i=0;i<100;i++){
+     const state=await this.inspectRoomChannel();
+     if(state.connected&&state.seenRoster)return state;
+     await sleep(50);
+    }
+    throw fail('WORKER_BRIDGE_HANDSHAKE_TIMEOUT');
+   },
+   async inspectRoomChannel(){
+    if(closed||child.exitCode!==null||child.signalCode!==null)throw fail('WORKER_UNAVAILABLE');
+    const result=await session.send('Runtime.evaluate',{
+     expression:'window.__v3AuthorityBridge?.inspect() ?? null',returnByValue:true
+    });
+    if(result.exceptionDetails||!result.result?.value)throw fail('WORKER_BRIDGE_NOT_READY');
+    const state=result.result.value;
+    return Object.freeze({connected:state.connected===true,seenRoster:state.seenRoster===true,
+      seatCount:state.seatCount,revision:state.revision});
+   },
    async evaluateSeatExperiment(expression){
     // Only for offline tests, never route untrusted client strings here.
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
