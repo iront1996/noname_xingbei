@@ -75,7 +75,52 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
  const adapter=installV3NativeEventWaitAdapter({core,bridge});
  for(let i=0;i<players.length;i++)
   adapter.registerPlayer({seat:i,player:players[i],client:clients[i]});
+ const drafts=new Map(),chosen=new Set();
+ const legalCharacters=new Set(game.__v3NativeContentStage.rosterChoices());
+ let draftFailure=null;
  const session=Object.freeze({
+  // Controlled choices are real GameEvents over the authenticated Chromium
+  // channel. The legacy online chooseCharacterOL implementation is NOT used.
+  beginCharacterDraft({seat,offers}={}){
+   if(draftFailure)throw err('V3_DRAFT_FATAL_ERROR');
+   if(!Number.isInteger(seat)||seat<0||seat>=players.length||
+      !Array.isArray(offers)||offers.length<2||offers.length>12||
+      !offers.every(id=>legalCharacters.has(id)&&!chosen.has(id))||
+      new Set(offers).size!==offers.length||
+      drafts.size!==0||players[seat].name1)
+    throw err('V3_NATIVE_DRAFT_INVALID');
+   const event=new lib.element.GameEvent('chooseControl',false);
+   event.player=players[seat];event.controls=offers.slice();
+   event.prompt='請選擇角色';
+   // Native unwait writes to _status.event and game.resume()s this event.
+   _status.eventManager.rootEvent=event;
+   drafts.set(seat,{event,offers:offers.slice()});
+   try{event.send()}
+   catch(e){draftFailure='EVENT_SEND_FAILED';throw e}
+   return Object.freeze({seat,playerId:players[seat].playerid,
+    nativeEvent:event instanceof lib.element.GameEvent,pending:true,
+    candidateCount:offers.length});
+  },
+  commitCharacterDraft({seat}={}){
+   const draft=drafts.get(seat);
+   if(!draft||draftFailure)throw err('V3_DRAFT_NOT_PENDING');
+   const answer=draft.event.result?.control;
+   if(!answer)return Object.freeze({ok:false,code:'V3_DRAFT_AWAITING_VERIFIED_REPLY'});
+   if(!draft.offers.includes(answer)||!legalCharacters.has(answer)||chosen.has(answer)){
+    draftFailure='ILLEGAL_CHARACTER_RESULT';
+    throw err('V3_DRAFT_RESULT_INVALID');
+   }
+   const player=players[seat];
+   try{
+    player.init(answer,null,null,false);
+    if(player.name1!==answer)throw err('V3_NATIVE_CHARACTER_INIT_MISMATCH');
+   }catch(e){draftFailure='NATIVE_CHARACTER_INIT_FAILED';throw e}
+   drafts.delete(seat);chosen.add(answer);
+   return Object.freeze({ok:true,code:'V3_NATIVE_CHARACTER_INITIALIZED',
+    seat,playerId:player.playerid,character:answer,
+    actualNativePlayer:player instanceof lib.element.Player,
+    nativeSkillCount:player.skills.length});
+  },
   mode:'xingBei',
   stagingOnly:true,
   fullRulesStarted:false,
@@ -94,6 +139,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     seatCount:players.length,
     actualNativePlayers:players.every(p=>p instanceof lib.element.Player),
     cardContentLoaded:!!game.__v3NativeContentStage,
+    characterCount:chosen.size,draftPending:drafts.size,
+    fatalDraftError:draftFailure,
     gameLoopStarted:false,
     pendingNativeChoices:adapter.inspect().pending
    });
