@@ -26,8 +26,8 @@ export async function stageV3NativeXingBeiContent({core}={}){
  try{
   Object.defineProperty(globalThis,'game',{configurable:true,writable:false,value:game});
   await import('/card/xingBei.js');
- }catch{
-  throw error('V3_NATIVE_CARD_PACK_IMPORT_FAILED');
+ }catch(e){
+  throw Object.assign(error('V3_NATIVE_CARD_PACK_IMPORT_FAILED'),{cause:e});
  }finally{
   if(prior)Object.defineProperty(globalThis,'game',prior);
   else delete globalThis.game;
@@ -37,8 +37,8 @@ export async function stageV3NativeXingBeiContent({core}={}){
    // Real local ESM, no import from third-party or player-supplied address.
    if(name==='poXiao')await import('/character/poXiao.js');
    else if(name==='yiDuanYeHuo')await import('/character/yiDuanYeHuo.js');
-  }catch{
-   throw error('V3_NATIVE_CHARACTER_PACK_IMPORT_FAILED');
+  }catch(e){
+   throw Object.assign(error('V3_NATIVE_CHARACTER_PACK_IMPORT_FAILED'),{cause:e});
   }
  }
  const pending=[
