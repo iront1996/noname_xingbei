@@ -221,6 +221,10 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          if(msg.source==='native')
           ws.send(JSON.stringify({type:'authority_choice_native_applied',roomId:opts.roomId,
            seat:msg.seat,playerId:msg.playerId,ticket:msg.ticket,option:msg.option}));
+         if(msg.source==='preview'&&msg.option==='pass')
+          ws.send(JSON.stringify({type:'authority_choice_preview_pass_applied',
+           roomId:opts.roomId,seat:msg.seat,playerId:msg.playerId,
+           ticket:msg.ticket}));
          if(msg.source==='preview'&&/^v3card_[a-f0-9]{6}$/.test(msg.option)){
           // The previous receipt was sent first on this same ordered
           // authenticated WS. Only the original paused native event may
@@ -369,8 +373,10 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
              !data||!['card','target'].includes(data.kind)||
              !Array.isArray(data.options)||data.options.length<2||
              data.options.length>(data.kind==='target'?8:12)||
-             !data.options.every(id=>typeof id==='string'&&
-              (data.kind==='card'?/^v3card_[a-f0-9]{6}$/.test(id):
+             !data.options.every((id,index)=>typeof id==='string'&&
+              (data.kind==='card'?
+               /^v3card_[a-f0-9]{6}$/.test(id)||
+                (id==='pass'&&index===data.options.length-1):
                /^s[0-7]$/.test(id)))||
              new Set(data.options).size!==data.options.length)
            return false;
