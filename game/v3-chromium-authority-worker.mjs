@@ -162,6 +162,7 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       let connected=false,seenRoster=false,seatCount=0,revision=-1,bindings=[];
       let choiceOpenResult=null;const deliveryReceipts=[];let nativeChoiceHooks=null;
       let nativeSelectionPreviewHooks=null;
+      const previewLeases=new Map();
       const privateHandAcks=new Map();
       ws.addEventListener('open',()=>ws.send(JSON.stringify({
        type:'authority_hello',roomId:opts.roomId,secret:opts.secret
@@ -182,7 +183,16 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          try{nativeChoiceHooks.opened(msg)}catch{}
         }
         if(msg.view?.source==='preview'&&nativeSelectionPreviewHooks){
-         try{nativeSelectionPreviewHooks.opened(msg)}catch{}
+         try{
+          if(nativeSelectionPreviewHooks.opened(msg)===true&&
+             msg.ok===true&&msg.view.roomId===opts.roomId&&
+             /^[a-f0-9]{32}$/.test(msg.view.ticket)){
+           previewLeases.set(msg.view.seat,Object.freeze({
+            seat:msg.view.seat,playerId:msg.view.playerId,
+            ticket:msg.view.ticket
+           }));
+          }
+         }catch{}
         }
        }
        if(msg.type==='authority_choice_delivery'&&connected&&msg.roomId===opts.roomId&&
@@ -298,10 +308,23 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
         }
        }
       });
-      ws.addEventListener('close',()=>{connected=false});
+      ws.addEventListener('close',()=>{connected=false;previewLeases.clear()});
       ws.addEventListener('error',()=>{connected=false});
+      // Only the live authenticated offboard worker renews pending
+      // previews; human disconnects do not affect that authority lease.
+      const renewPreviewLeases=()=>{
+       if(!connected||!seenRoster||ws.readyState!==WebSocket.OPEN)return false;
+       for(const p of previewLeases.values()){
+        const bound=bindings.find(b=>b.seat===p.seat&&b.playerId===p.playerId);
+        if(!bound)continue;
+        ws.send(JSON.stringify({type:'authority_choice_renew',roomId:opts.roomId,
+         seat:p.seat,playerId:p.playerId,ticket:p.ticket}));
+       }
+       return true;
+      };
+      setInterval(renewPreviewLeases,25000);
       Object.defineProperty(window,'__v3AuthorityBridge',{configurable:false,
-        value:Object.freeze({${process.env.V3_ALLOW_SEAT_EXPERIMENT==='1' ? "testDisconnectChannel:()=>{ws.close(4000,'CI_channel_drop');return true;}," : ""}inspect:()=>({connected,seenRoster,seatCount,revision,
+        value:Object.freeze({${process.env.V3_ALLOW_SEAT_EXPERIMENT==='1' ? "testDisconnectChannel:()=>{ws.close(4000,'CI_channel_drop');return true;},testRenewPreviewLeases:()=>renewPreviewLeases(),inspectPreviewLeaseCount:()=>previewLeases.size," : ""}inspect:()=>({connected,seenRoster,seatCount,revision,
          boundPeerCount:bindings.filter(b=>b.connectionId!==null).length}),
          // Used by trusted V3-only native engine bootstrap, never by human clients.
          getSeatBindings:()=>bindings.map(b=>({...b})),
