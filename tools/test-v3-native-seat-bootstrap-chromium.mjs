@@ -493,6 +493,71 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
      assert.equal(denied.code,'ACTION_CARD_OWNERSHIP_DENIED');
      assert.equal(JSON.stringify(denied).includes('ownHand'),false);
     }
+    // Native printed-card predicate via an authenticated network hop. Do
+    // not infer spell/skill legality, spend a card or advance GameEvent.
+    const printedStrikes=new Set([
+     'anMie','shuiLianZhan','huoYanZhan','fengShenZhan','leiGuangZhan'
+    ]);
+    for(const held of seatViews[0].ownHand){
+     const intrinsicSupported=printedStrikes.has(held.name);
+     const hostile=await chrome.preflightNativePrintedAttackTarget({
+      seat:0,playerId:sessions[0].playerId,
+      cardId:held.cardId,targetSeat:1
+     });
+     assert.equal(hostile.ownershipPreflightPassed,true);
+     assert.equal(hostile.supportedPrintedAttack,intrinsicSupported);
+     assert.equal(hostile.printedTargetEligible,intrinsicSupported);
+     assert.equal(hostile.fullRulesValidated,false);
+     assert.equal(hostile.targetFullyValidated,false);
+     assert.equal(hostile.cardConsumed,false);
+     assert.equal(hostile.actionExecuted,false);
+     const net=await ask(currentBySeat[0],'action_target_probe',{
+      cardId:held.cardId,targetSeat:1
+     });
+     assert.equal(net.ok,intrinsicSupported);
+     assert.equal(net.supportedPrintedAttack,intrinsicSupported);
+     assert.equal(net.printedTargetEligible,intrinsicSupported);
+     assert.equal(net.fullRulesValidated,false);
+     assert.equal(net.actionExecuted,false);
+     assert.equal(net.cardConsumed,false);
+     const friendly=await ask(currentBySeat[0],'action_target_probe',{
+      cardId:held.cardId,targetSeat:2
+     });
+     assert.equal(friendly.printedTargetEligible,false);
+     assert.equal(friendly.actionExecuted,false);
+    }
+    const enemyCard=await ask(currentBySeat[0],'action_target_probe',{
+     cardId:foreignCard,targetSeat:1
+    });
+    assert.equal(enemyCard.printedTargetEligible,false);
+    assert.equal(enemyCard.supportedPrintedAttack,false);
+    const inactive=await ask(currentBySeat[1],'action_target_probe',{
+     cardId:foreignCard,targetSeat:0
+    });
+    assert.equal(inactive.printedTargetEligible,false);
+    for(const extra of [
+     {seat:0},{playerId:sessions[0].playerId},
+     {traceId:'f'.repeat(32)},{script:'game.reload()'},
+     {action:'playCard'},{targetPlayerId:sessions[1].playerId}
+    ]){
+     const forged=await ask(currentBySeat[0],'action_target_probe',{
+      cardId:card,targetSeat:1,...extra
+     });
+     assert.equal(forged.code,'ACTION_PROBE_UNTRUSTED_FIELDS');
+    }
+    for(const targetSeat of [-1,count,count+1,'1',null]){
+     const bad=await ask(currentBySeat[0],'action_target_probe',{
+      cardId:card,targetSeat
+     });
+     assert.equal(bad.code,'ACTION_TARGET_PRECHECK_DENIED');
+    }
+    const counterfeit=await ask(currentBySeat[0],'authority_action_target_result',{
+     traceId:'f'.repeat(32),printedTargetEligible:true,
+     supportedPrintedAttack:true,targetSeat:1
+    });
+    assert.equal(counterfeit.code,'UNKNOWN_MESSAGE_TYPE');
+    assert.deepEqual((await chrome.inspectNativePrivateHand({seat:0})).ownHand,
+     seatViews[0].ownHand);
     assert.deepEqual((await ask(currentBySeat[0],'private_hand_query')).view.ownHand,
      seatViews[0].ownHand);
    }
