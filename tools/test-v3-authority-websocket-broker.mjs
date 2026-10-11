@@ -256,6 +256,64 @@ test('server target preview requires delivered authenticated card ticket and loc
   else process.env.V3_ALLOW_SEAT_EXPERIMENT=previous;
  }
 });
+test('only authenticated worker can renew live native preview, never a human or stale ticket',async()=>{
+ const previous=process.env.V3_ALLOW_SEAT_EXPERIMENT;
+ process.env.V3_ALLOW_SEAT_EXPERIMENT='1';
+ let x;
+ try{
+  x=await setup({choiceExperiment:true,ownershipExperiment:true});
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  const worker=x.authority;
+  const option='v3card_123456';
+  worker.clientSend({type:'authority_choice_open',source:'preview',
+   roomId:'TEST',seat:0,playerId:sessions[0].playerId,
+   kind:'card',prompt:'選擇手牌',options:[option,'v3card_abcdef']});
+  const opened=await waitFor(worker,m=>m.type==='authority_choice_open_result'&&m.view?.kind==='card');
+  assert.equal(opened.ok,true);
+  const first=opened.view;
+  assert.equal((await ask(ws[0],{type:'authority_choice_renew',
+   roomId:'TEST',seat:0,playerId:sessions[0].playerId,ticket:first.ticket})).code,
+   'UNKNOWN_MESSAGE_TYPE');
+  worker.clientSend({type:'authority_choice_renew',roomId:'TEST',seat:1,
+   playerId:sessions[1].playerId,ticket:first.ticket});
+  assert.equal((await waitFor(worker,m=>m.type==='error'&&
+   m.code==='PREVIEW_LEASE_RENEW_DENIED')).code,'PREVIEW_LEASE_RENEW_DENIED');
+  await new Promise(ok=>setTimeout(ok,15));
+  worker.clientSend({type:'authority_choice_renew',roomId:'TEST',seat:0,
+   playerId:sessions[0].playerId,ticket:first.ticket});
+  const renewed=await waitFor(worker,m=>m.type==='authority_choice_lease_renewed'&&m.ticket===first.ticket);
+  assert.ok(renewed.expiresAt>first.expiresAt);
+  assert.equal((await ask(ws[0],{type:'choice_query'})).window.ticket,first.ticket);
+  assert.equal((await ask(ws[0],{type:'choice_submit',
+   ticket:first.ticket,option})).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+  await waitFor(ws[0],m=>m.type==='choice_window'&&m.window.ticket===first.ticket&&m.window.state==='delivered');
+  worker.clientSend({type:'authority_choice_open',source:'preview',roomId:'TEST',
+   seat:0,playerId:sessions[0].playerId,kind:'target',prompt:'選擇目標',
+   options:['s1','s3'],previousTicket:first.ticket,previousOption:option});
+  const target=await waitFor(worker,m=>m.type==='authority_choice_open_result'&&m.view?.kind==='target');
+  assert.equal(target.ok,true);
+  assert.notEqual(target.view.ticket,first.ticket);
+  worker.clientSend({type:'authority_choice_renew',roomId:'TEST',seat:0,
+   playerId:sessions[0].playerId,ticket:first.ticket});
+  assert.equal((await waitFor(worker,m=>m.type==='error'&&
+   m.code==='PREVIEW_LEASE_RENEW_DENIED')).code,'PREVIEW_LEASE_RENEW_DENIED');
+  await new Promise(ok=>setTimeout(ok,15));
+  worker.clientSend({type:'authority_choice_renew',roomId:'TEST',seat:0,
+   playerId:sessions[0].playerId,ticket:target.view.ticket});
+  const second=await waitFor(worker,m=>m.type==='authority_choice_lease_renewed'&&m.ticket===target.view.ticket);
+  assert.ok(second.expiresAt>target.view.expiresAt);
+  // The proof belongs to the offboard worker channel. Its loss cancels
+  // both the only active ticket and further renewal capability.
+  worker.close();
+  await waitFor(ws[0],m=>m.type==='choice_interrupted');
+  assert.equal((await ask(ws[0],{type:'choice_query'})).window,null);
+ }finally{
+  if(x)await x.broker.close();
+  if(previous===undefined)delete process.env.V3_ALLOW_SEAT_EXPERIMENT;
+  else process.env.V3_ALLOW_SEAT_EXPERIMENT=previous;
+ }
+});
 test('choice experiment disabled by default and worker loss cancels all pending choices',async()=>{
  const x=await setup();
  try{
