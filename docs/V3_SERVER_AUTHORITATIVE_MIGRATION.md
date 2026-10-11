@@ -223,3 +223,37 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 **關鍵剩餘工作不可略過**：這仍是原生方法在受控 DOM/mock Game adapter 下的驗證，**尚未載入完整 GameEvent／星杯角色技能、尚未發真牌、尚未啟用回合引擎、尚未持久化**。測試到達 `chooseCharacterOL()` 的替身回呼不等同完成真實選角。需要把原生 WebSocket Client／NodeWS／GameEvent 透過新的 worker 連線代理實際串起來，並將已存在的純函式紅藍勝負判斷接在完整事件結束後。此後才能繼續私人手牌投影、技能結算與伺服器故障恢復。
 
 **隔離承諾**：全部提交僅在 `feature/host-reconnect-v3-playtest`；沒有推送 master、V1、V2，也沒有操作 VPS、8080、8081、Cloudflare Tunnel 或舊 V3 部署。
+
+
+## 2026-10-11：原生星杯 Game／mode 真實載入、伺服器視角勝負與雙向傳輸（本輪）
+
+本輪只有 `feature/host-reconnect-v3-playtest` 的新增 V3 專用檔案、隔離測試與對上述 V3 原型的修改。**沒有修改任何 `noname/**`、`mode/xingBei.js` 共用原始檔，也沒有修改既有 Playtest 服務、VPS、V1、V2 或 8080/8081。**
+
+### (A) 在真正 Chromium 載入原生 XingBei ESM
+
+- `tools/v3-native-module-test-server.mjs`：從 GitHub Actions checkout 的程式樹以唯讀方式提供原生靜態 ES modules，綁定 `127.0.0.1:0`，拒絕任意對外埠、特殊路徑、路徑穿越、非 GET/HEAD；提供獨立的空白測試 HTML，不載入正式首頁或連接線上大廳。
+- `game/v3-chromium-authority-worker.mjs`：新增經驗證的 `loadV3NativeModules({origin})`，只接受 localhost；用 CDP 導覽隔離空白頁並真正 `import('/noname.js')` 與 `import('/mode/xingBei.js')`，檢查實際 `Game`、`lib`、`ui`、`_status`、星杯模式及 `randomMapOL`、`checkResult` 的存在。此處 `gameLoopStarted:false` 必須保留。
+- `tools/test-v3-native-module-chromium.mjs`：在實際 Chromium 裡，針對真正從原生模組匯出的 `Game` singleton 與 `mode.default()` 安裝 V3 勝負轉接器，再測士氣結算、不同玩家結果、同一結果不重複結算，以及不得呼叫原版依賴房主的 `game.over(bool)`。
+- `tools/test-v3-real-websocket-chromium-broker.mjs` 亦同步提升：**四名真實 WebSocket 玩家及其獨立 Chromium 主持端**先匯入原生 XingBei 模組，再以真實認證 Player ID 完成原生座位映射、原開房者與另一席離線重連，最後在同一個原生 Game 物件驗證紅／藍士氣終局與每席投影。實際 `game.me` 是 offboard 主持虛擬 DOM 節點，不是第一位真人。
+
+### (B) 原生勝負轉接器，不再依賴真人房主
+
+- `game/v3-native-xingbei-outcome-adapter.mjs`：在 V3-only 工作程序裡以 `installV3HostNeutralOutcome({game,mode,onTerminal})` 取代原本依賴 `game.me.side` 的 `game.checkResult` 與 `game.checkOnlineResult`；對每位經認證的 `player_<id>` 配對其陣營與勝負結果。
+- 保證 `game.me` 不在 `game.players` 真正真人席位裡、主持端不得具有紅藍陣營、所有 4/6/8 位玩家具有唯一且合格 Player ID 與合法陣營。矛盾的同時達勝狀態、非法玩家身分、重複安裝、終局改寫均明確拒絕。
+- 此橋接不執行原版 `game.over()`，原因是該函式從真人主機視角顯示結果，並可能把所有人的手牌放入結果 UI。終局以單次 `onTerminal` callback 供之後的權威傳輸與持久化交易串接。**目前尚未發送任何真實對局勝負結果**。
+- `tools/test-v3-native-xingbei-outcome-adapter.mjs` 新增六項 Node 端純函式／原生 callback contract 測試。
+
+### (C) 真正端對端訊息往返，保持規則失效保護
+
+- Broker 支援受認證玩家限定的 `transport_probe`：由伺服器檢查當前座位和唯一固定 Player ID，派生獨立 trace ID，送到**私有 Chromium WebSocket**；Chromium 驗證 trace、seat、Player ID 與當前綁定，才返回 `authority_probe_ack`；Broker 只回傳給 **原本仍持有該座位的玩家 socket**。
+- 這是真實網路往返：真人 WebSocket → V3 broker → 獨立 Chromium → V3 broker → 同一位真人 WebSocket；房主與非房主刷新後重新登入也能走同一路徑，期間 Chromium PID 及原生 ESM 模組環境不需要跟著玩家重開。
+- 同時設置 64 筆 outstanding probe 上限、每筆 4 秒 timeout、座位驗證、重連後舊 socket 的回覆捨棄與 Close 時清除 pending。沒有讓玩家發送 JS、規則命令、其他玩家的私密資料，也沒有啟動真正的 `GameEvent` 事件循環。遊戲指令維持 `RULES_ENGINE_NOT_IMPLEMENTED`。
+
+### 自動驗收結果／尚未完成
+
+- GitHub Actions 在提交 `808de45550e8f405e330025fcd7612b07f44f226` 驗證：
+  - Chromium 原生 ESM＋四人真實 socket＋雙向 probe： https://github.com/iront1996/noname_xingbei/actions/runs/38114322613 —— **success，9 tests / 9 passed / 0 failed**。
+  - V3 離線回歸： https://github.com/iront1996/noname_xingbei/actions/runs/38114322602 —— **success**，含新增的六項結果安全案例。
+- **仍未完成／不得冒稱**：整場星杯原生選角、抽牌、真正 Player DOM 初始化、技能與 GameEvent、回合與合法行動校驗、私密手牌的端到端投影、同步終局通報、完整持久化、Chromium crash 與 VPS restart 續局。此輪雖匯入了真正原生 Game／mode，某些測試仍以受控的玩家 DOM／狀態替身驗證「原生接口」，不是原生完整遊戲流程。
+- 工作程序目前仍使用隔離 CI 專用 `--no-sandbox`，**禁止未經非 root 及 sandbox/資源限制修正就部署到 VPS 接玩家資料**。
+- 下一步優先把原生 `GameEvent`／`Client`／`NodeWS` 真正連上座位代理，完成原生選角、發牌、第一個回合與回應窗口的程式化測試；若事件環境無法脫離房主真人視角，需轉向可序列化規則核心。真人仍維持**一次集中驗收**政策。
