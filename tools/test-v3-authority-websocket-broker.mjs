@@ -357,6 +357,65 @@ test('native no-card pass application needs real worker identity and delivered p
   else process.env.V3_ALLOW_SEAT_EXPERIMENT=previous;
  }
 });
+test('choice delivery captures exact connection generation, never stable player identity alone',async()=>{
+ const previous=process.env.V3_ALLOW_SEAT_EXPERIMENT;
+ process.env.V3_ALLOW_SEAT_EXPERIMENT='1';
+ let x;
+ try{
+  x=await setup({choiceExperiment:true,ownershipExperiment:true});
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  const worker=x.authority;
+  const oldRoster=await waitFor(worker,m=>m.type==='authority_roster'&&
+   m.bindings?.some(b=>b.seat===0&&b.connectionId!==null));
+  const oldId=oldRoster.bindings.find(b=>b.seat===0).connectionId;
+  assert.match(oldId,/^[a-f0-9]{24}$/);
+  const playerId=sessions[0].playerId;
+  worker.clientSend({type:'authority_choice_open',roomId:'TEST',source:'preview',
+   seat:0,playerId,kind:'card',prompt:'請選擇手牌',
+   options:['v3card_123456','v3card_abcdef']});
+  const choice=await waitFor(worker,m=>m.type==='authority_choice_open_result'&&
+   m.view?.kind==='card'&&m.ok);
+  assert.equal(choice.ok,true);
+  // A new socket claims the SAME authenticated player seat using the
+  // rotating token, replacing the still-connected original socket.
+  const replacement=x.connect();
+  const attached=await ask(replacement,{type:'reconnect',roomId:'TEST',seat:0,
+   reconnectToken:sessions[0].reconnectToken});
+  assert.equal(attached.playerId,playerId);
+  assert.equal(ws[0].readyState,3);
+  assert.notEqual(attached.reconnectToken,sessions[0].reconnectToken);
+  const newRoster=await waitFor(worker,m=>m.type==='authority_roster'&&
+   m.bindings?.some(b=>b.seat===0&&b.connectionId!==null&&
+    b.connectionId!==oldId));
+  const newId=newRoster.bindings.find(b=>b.seat===0).connectionId;
+  assert.match(newId,/^[a-f0-9]{24}$/);
+  assert.notEqual(newId,oldId);
+  assert.equal(newRoster.bindings.find(b=>b.seat===0).playerId,playerId);
+  const resumed=await waitFor(replacement,m=>m.type==='choice_window'&&
+   m.window?.ticket===choice.view.ticket);
+  assert.equal(resumed.window.playerId,playerId);
+  assert.equal((await ask(replacement,{type:'choice_submit',
+   ticket:choice.view.ticket,option:'v3card_123456'})).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+  const delivery=await waitFor(worker,m=>m.type==='authority_choice_delivery'&&
+   m.ticket===choice.view.ticket);
+  assert.equal(delivery.playerId,playerId);
+  assert.equal(delivery.seat,0);
+  assert.equal(delivery.connectionId,newId);
+  assert.notEqual(delivery.connectionId,oldId);
+  assert.equal((await ask(replacement,{type:'choice_query'})).window.state,'delivered');
+  // A stale old socket is not allowed to affect the already accepted
+  // result. The authority delivery identifies one socket generation.
+  assert.equal((await ask(replacement,{type:'choice_submit',
+   ticket:choice.view.ticket,option:'v3card_abcdef'})).code,'CHOICE_ALREADY_LOCKED');
+  assert.equal((await ask(replacement,{type:'command',action:'playCard'})).code,
+   'RULES_ENGINE_NOT_IMPLEMENTED');
+ }finally{
+  if(x)await x.broker.close();
+  if(previous===undefined)delete process.env.V3_ALLOW_SEAT_EXPERIMENT;
+  else process.env.V3_ALLOW_SEAT_EXPERIMENT=previous;
+ }
+});
 test('choice experiment disabled by default and worker loss cancels all pending choices',async()=>{
  const x=await setup();
  try{
