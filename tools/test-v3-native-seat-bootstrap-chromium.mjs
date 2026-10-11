@@ -383,6 +383,8 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     const blocked=await chrome.evaluateSeatExperiment("(()=>{const p=window.__v3NativeXingBeiTest.core.game.players;let own=false,other=false;try{p[0].send(function(){game.reload()})}catch(e){own=e.code==='V3_NATIVE_REMOTE_CODE_SEND_DENIED'}try{p[1].send(function(){game.playAudio('effect','phaseStart')})}catch(e){other=e.code==='V3_NATIVE_REMOTE_CODE_SEND_DENIED'}return {own,other}})()");
     assert.equal(blocked.own,true);
     assert.equal(blocked.other,true);
+    const piggyback=await chrome.evaluateSeatExperiment("(()=>{const p=window.__v3NativeXingBeiTest.core.game.players[0];try{p.send(function(){game.playAudio('effect','phaseStart');game.reload()})}catch(e){return e.code==='V3_NATIVE_REMOTE_CODE_SEND_DENIED'}return false})()");
+    assert.equal(piggyback,true);
    }
    // Exercise the original xingDong -> attack-or-spell event on every seat topology.
    {
