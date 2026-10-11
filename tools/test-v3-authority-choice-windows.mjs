@@ -107,3 +107,45 @@ test('native chooseToUse read-only card preview receives a ticket but never appl
  assert.equal(m.cancelRoom('roomA'),1);
  assert.equal(m.view('roomA',0,id(1)),null);
 });
+
+test('only delivered original card preview can advance to a distinct target ticket',()=>{
+ const m=started();
+ const first=m.open({...defaults,source:'preview',kind:'card',
+  prompt:'請選牌',options:['v3card_012345','v3card_abcdef']});
+ const args={roomId:'roomA',seat:0,playerId:id(1),
+  previousTicket:first.view.ticket,previousOption:'v3card_012345',
+  kind:'target',prompt:'印刷目標預覽',options:['s1','s3']};
+ assert.equal(m.advancePreview(args).code,'PREVIEW_ADVANCE_DENIED');
+ assert.equal(m.submit({...defaults,ticket:first.view.ticket,
+  option:'v3card_012345'}).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+ assert.equal(m.advancePreview(args).code,'PREVIEW_ADVANCE_DENIED');
+ assert.equal(m.deliveryReceipt({...defaults,ticket:first.view.ticket,
+  option:'v3card_012345'}).code,'CHOICE_DELIVERED_NOT_APPLIED');
+ for(const forged of [
+  {...args,previousTicket:'f'.repeat(32)},
+  {...args,previousOption:'v3card_abcdef'},
+  {...args,playerId:id(2)},{...args,seat:1},
+  {...args,kind:'skill'},{...args,options:['s0','<script>']},
+  {...args,options:['s1','s1']},{...args,options:['s1']},
+  {...args,options:['s1','s8']}
+ ])assert.equal(m.advancePreview(forged).code,'PREVIEW_ADVANCE_DENIED');
+ assert.equal(m.view('roomA',0,id(1)).ticket,first.view.ticket);
+ const next=m.advancePreview(args);
+ assert.equal(next.code,'PREVIEW_TARGET_WINDOW_OPENED');
+ assert.equal(next.view.source,'preview');
+ assert.equal(next.view.kind,'target');
+ assert.equal(next.view.state,'open');
+ assert.notEqual(next.view.ticket,first.view.ticket);
+ assert.deepEqual(next.view.options,['s1','s3']);
+ assert.equal(m.submit({...defaults,ticket:first.view.ticket,
+  option:'v3card_012345'}).code,'CHOICE_WINDOW_NOT_FOUND');
+ assert.equal(m.advancePreview(args).code,'PREVIEW_ADVANCE_DENIED');
+ assert.equal(m.nativeApplied({...defaults,ticket:next.view.ticket,
+  option:'s1'}).code,'CHOICE_NATIVE_APPLY_DENIED');
+ const target={...defaults,ticket:next.view.ticket,option:'s3'};
+ assert.equal(m.submit(target).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+ assert.equal(m.deliveryReceipt(target).code,'CHOICE_DELIVERED_NOT_APPLIED');
+ assert.equal(m.nativeApplied(target).code,'CHOICE_NATIVE_APPLY_DENIED');
+ assert.equal(m.submit({...target,option:'s1'}).code,'CHOICE_ALREADY_LOCKED');
+ assert.equal(m.view('roomA',0,id(2)),null);
+});
