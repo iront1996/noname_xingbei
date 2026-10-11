@@ -147,6 +147,22 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     if(opened.ok)sendChoice(roomId,obj.seat);
     return;
    }
+   if(obj.type==='authority_choice_renew'){
+    // Lease renewal is a worker-authenticated private-channel capability,
+    // not a player request or an action/skill message.
+    if(!enableNativeOwnershipProbes||!enableChoiceWindowExperiments||
+       process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     return send(ws,{type:'error',code:'PREVIEW_LEASE_DISABLED'});
+    const roomId=ws.__v3AuthorityRoom;
+    if(!Number.isInteger(obj.seat)||obj.seat<0||obj.seat>7||
+       stablePlayersByRoom.get(roomId)?.get(obj.seat)!==obj.playerId)
+     return send(ws,{type:'error',code:'PREVIEW_LEASE_SEAT_DENIED'});
+    const renewed=choices.renewNativePreview({roomId,seat:obj.seat,
+     playerId:obj.playerId,ticket:obj.ticket});
+    if(!renewed.ok)return send(ws,{type:'error',code:renewed.code});
+    return send(ws,{type:'authority_choice_lease_renewed',seat:obj.seat,
+     ticket:obj.ticket,expiresAt:renewed.view.expiresAt});
+   }
    if(obj.type==='authority_choice_receipt'){
     if(!enableChoiceWindowExperiments)
      return send(ws,{type:'error',code:'CHOICE_EXPERIMENT_DISABLED'});
