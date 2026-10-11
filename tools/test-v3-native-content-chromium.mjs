@@ -41,6 +41,9 @@ test('original XingBei card deck and character packs import in real offboard Chr
    // initialize its character with real XingBei skills (no fake Player).
    let nativePlayer;
    try{
+    // Native boot creates a root event before Player.init touches caches.
+    if(!core._status.eventManager.rootEvent)
+     core._status.eventManager.rootEvent=new core.lib.element.GameEvent('v3_native_setup',false);
     const p=core.ui.create.player(document.body);
     p.playerid='player_'+'c'.repeat(32);
     p.side=true;
