@@ -121,6 +121,81 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     nativeEvent:event instanceof lib.element.GameEvent,pending:true,
     candidateCount:offers.length});
   },
+  async dealOpeningCardsNative(){
+   // V3-only genuine original gameDraw Event.start(), *instead of* manual
+   // opening directgain. Runs only after real authenticated character drafts.
+   if(draftFailure||startingCardsDealt||drafts.size!==0||
+      chosen.size!==players.length||game.__v3NativeDrawPile||
+      adapter.inspect().pending!==0)
+    throw err('V3_NATIVE_REAL_OPENING_DRAW_NOT_READY');
+   try{
+    await ensureNativeSecurity();
+    ensureCardSorter();
+    const pile=createV3NativeDrawPile({core});
+    if(pile.remaining()<players.length*4)
+     throw err('V3_NATIVE_REAL_OPENING_DECK_TOO_SMALL');
+    if(!ui.cardPile){
+     const zone=document.createElement('div');
+     zone.style.display='none';
+     document.body.appendChild(zone);
+     ui.cardPile=zone;
+    }
+    if(ui.cardPile.hasChildNodes())
+     throw err('V3_NATIVE_REAL_OPENING_PILE_DIRTY');
+    // The canonical shuffled native card content becomes genuine Card DOM
+    // instances in ui.cardPile, which original get.cards() consumes.
+    while(pile.remaining()){
+     const item=pile.draw();
+     const card=ui.create.card(ui.cardPile).init(item.face);
+     if(!(card instanceof lib.element.Card))
+      throw err('V3_NATIVE_REAL_OPENING_CARD_BUILD_FAILED');
+     Object.defineProperty(card,'__v3PhysicalId',{
+      value:item.instanceId,configurable:false,enumerable:false
+     });
+    }
+    const manager=_status.eventManager;
+    if(manager.eventStack.length!==0)
+     throw err('V3_NATIVE_REAL_OPENING_EVENT_STACK_BUSY');
+    const root=new lib.element.GameEvent('v3OpeningGameDraw',false);
+    manager.rootEvent=root;
+    manager.eventStack.push(root);
+    let draw;
+    try{draw=game.gameDraw(players[0],4)}
+    finally{
+     if(manager.eventStack.pop()!==root)
+      throw err('V3_NATIVE_REAL_OPENING_STACK_CHANGED');
+    }
+    if(!(draw instanceof lib.element.GameEvent)||draw.name!=='gameDraw')
+     throw err('V3_NATIVE_REAL_OPENING_WRONG_EVENT');
+    await draw.start();
+    const instances=[];
+    for(let seat=0;seat<players.length;seat++){
+     const hand=players[seat].getCards('h');
+     if(hand.length!==4||hand.some(c=>!(c instanceof lib.element.Card)||
+        typeof c.__v3PhysicalId!=='string'))
+      throw err('V3_NATIVE_REAL_OPENING_HAND_MISMATCH');
+     physicalCardsBySeat.set(seat,hand.slice());
+     instances.push(...hand.map(c=>c.__v3PhysicalId));
+    }
+    const remaining=Array.from(ui.cardPile.childNodes).map(c=>c.__v3PhysicalId);
+    if(remaining.some(id=>typeof id!=='string')||
+       new Set([...instances,...remaining]).size!==instances.length+remaining.length)
+     throw err('V3_NATIVE_REAL_OPENING_DECK_INCONSISTENT');
+    nativeOpeningDrawExecuted=true;
+    startingCardsDealt=true;
+    return Object.freeze({
+     nativeCards:true,physicalCardsUnique:true,
+     nativeGameDrawTriggered:true,realNativeGameEventCompleted:true,
+     totalDealt:instances.length,
+     handCounts:players.map(()=>4),
+     nativeHandCounts:players.map(p=>p.getCards('h').length),
+     remaining:remaining.length,privateDetailsIncluded:false
+    });
+   }catch(e){
+    draftFailure='V3_NATIVE_REAL_OPENING_DRAW_FAILED';
+    throw e;
+   }
+  },
   dealOpeningCards(){
    if(draftFailure||startingCardsDealt||drafts.size!==0||
       chosen.size!==players.length)
@@ -177,7 +252,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    if(typeof roomId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(roomId)||
       !Number.isSafeInteger(revision)||revision<1)
     throw err('V3_OPENING_CHECKPOINT_ARGS_INVALID');
-   const remaining=game.__v3NativeDrawPile.inspectIds();
+   const remaining=nativeOpeningDrawExecuted
+    ?Array.from(ui.cardPile.childNodes).map(card=>card.__v3PhysicalId)
+    :game.__v3NativeDrawPile.inspectIds();
    const snapshot={
     schema:'xingbei-v3-native-opening-only-v1',
     roomId,seatMode:(players.length/2)+'v'+(players.length/2),
@@ -357,7 +434,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     actualNativePlayers:players.every(p=>p instanceof lib.element.Player),
     cardContentLoaded:!!game.__v3NativeContentStage,
     characterCount:chosen.size,draftPending:drafts.size,
-    startingCardsDealt,
+    startingCardsDealt,nativeOpeningDrawExecuted,
     fatalDraftError:draftFailure,
     gameLoopStarted:false,
     pendingNativeChoices:adapter.inspect().pending
