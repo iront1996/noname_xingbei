@@ -299,6 +299,43 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
     }
     throw fail('WORKER_BRIDGE_HANDSHAKE_TIMEOUT');
    },
+   async restoreTrustedOpeningCheckpoint({checkpoint,roomId}={}){
+    // Trusted CI-host recovery only; not available to human WS clients.
+    // Node caller must verify authenticated checkpoint and exact Player IDs.
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed||!checkpoint||typeof checkpoint!=='object'||
+       typeof roomId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(roomId)||
+       checkpoint.roomId!==roomId||
+       ![4,6,8].includes(checkpoint.players?.length))
+     throw fail('V3_TRUSTED_OPENING_RESTORE_DENIED');
+    const restore=async ({checkpoint,roomId})=>{
+     try{
+      if(window.isNonameServer!==true||
+         !window.__v3AuthorityBridge?.inspect()?.seenRoster||
+         !window.__v3AuthorityBridge?.inspect()?.connected)
+       throw Error('V3_RESTORE_UNTRUSTED_CHROMIUM');
+      const {core}=window.__v3NativeXingBeiTest;
+      const stageModule=await import('/game/v3-native-xingbei-content-stager.mjs');
+      const seatsModule=await import('/game/v3-native-xingbei-seat-session.mjs');
+      const pack=await stageModule.stageV3NativeXingBeiContent({core});
+      const seats=seatsModule.prepareV3NativeXingBeiSeats({
+       core,bridge:window.__v3AuthorityBridge
+      });
+      const result=seats.restoreOpeningCheckpoint({checkpoint,roomId});
+      return {ok:true,pack:pack.realSource,result,roster:seats.roster()};
+     }catch(e){
+      return {ok:false,code:String(e?.code??e?.message??e).slice(0,100)};
+     }
+    };
+    const expression='('+restore.toString()+')('+JSON.stringify({checkpoint,roomId})+')';
+    const r=await session.send('Runtime.evaluate',{
+     expression,awaitPromise:true,returnByValue:true
+    });
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_TRUSTED_OPENING_RESTORE_FAILED_'+String(r.result?.value?.code??'CDP'));
+    return Object.freeze(r.result.value);
+   },
    async stageNativeXingBeiSeats(){
     // Explicit offboard test staging only. The real game start remains disabled.
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
