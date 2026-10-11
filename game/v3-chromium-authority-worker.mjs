@@ -397,6 +397,24 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      throw fail('V3_NATIVE_OPENING_DEAL_FAILED_'+String(r.result?.value?.code??'CDP'));
     return r.result.value.result;
    },
+   async exportNativeOpeningCheckpoint({roomId,revision=1}={}){
+    // Trusted offline integration only. Contains ALL private hands.
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(typeof roomId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(roomId)||
+       !Number.isSafeInteger(revision)||revision<1)
+     throw fail('V3_CHECKPOINT_REQUEST_INVALID');
+    const expression=`(()=>{
+     try{
+      const native=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+      return native?{ok:true,value:native.exportOpeningCheckpoint(${JSON.stringify({roomId,revision})})}:
+       {ok:false,code:'V3_NATIVE_SEAT_SESSION_MISSING'};
+     }catch(e){return {ok:false,code:String(e?.code??e?.message??e).slice(0,100)}}
+    })()`;
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_CHECKPOINT_EXPORT_FAILED_'+String(r.result?.value?.code??'CDP'));
+    return r.result.value.value;
+   },
    async inspectNativePrivateHand({seat}={}){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
     if(!Number.isInteger(seat)||seat<0||seat>7)throw fail('V3_PRIVATE_VIEW_TEST_INVALID');
