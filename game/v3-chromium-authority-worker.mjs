@@ -12,6 +12,8 @@ import {setTimeout as sleep} from 'node:timers/promises';
 
 const MAX_WAIT_MS=15000;
 const fail=(code)=>Object.assign(new Error(code),{code});
+// Chromium child processes may still flush profile data after the parent exits.
+const removeProfile=profile=>rm(profile,{recursive:true,force:true,maxRetries:30,retryDelay:100});
 
 function newCdpSession(url, timeoutMs){
  if(typeof url!=='string'||!/^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/[a-zA-Z0-9-]+$/.test(url))
@@ -127,13 +129,13 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      const exited=await Promise.race([new Promise(resolve=>child.once('exit',()=>resolve(true))),sleep(2000).then(()=>false)]);
      if(!exited)child.kill('SIGKILL');
     }
-    await rm(profile,{recursive:true,force:true});
+    await removeProfile(profile);
    }
   });
  }catch(err){
   session?.close();
   if(child&&child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');
-  await rm(profile,{recursive:true,force:true});
+  await removeProfile(profile);
   throw err;
  }
 }
