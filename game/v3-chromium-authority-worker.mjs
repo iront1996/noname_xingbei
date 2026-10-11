@@ -152,12 +152,29 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       const opts=${cfg};
       const ws=new WebSocket(opts.url);
       let connected=false,seenRoster=false,seatCount=0,revision=-1,bindings=[];
+      let choiceOpenResult=null;const deliveryReceipts=[];
       ws.addEventListener('open',()=>ws.send(JSON.stringify({
        type:'authority_hello',roomId:opts.roomId,secret:opts.secret
       })));
       ws.addEventListener('message',event=>{
        let msg;try{msg=JSON.parse(event.data)}catch{return}
        if(msg.type==='authority_accepted'&&msg.roomId===opts.roomId)connected=true;
+       if(msg.type==='authority_choice_open_result'){
+        if(msg.ok===true&&msg.view?.roomId===opts.roomId)choiceOpenResult=msg.view;
+       }
+       if(msg.type==='authority_choice_delivery'&&connected&&msg.roomId===opts.roomId&&
+          Number.isInteger(msg.seat)&&typeof msg.playerId==='string'&&
+          typeof msg.ticket==='string'&&/^[a-f0-9]{32}$/.test(msg.ticket)&&
+          typeof msg.option==='string'){
+        const b=bindings.find(x=>x.seat===msg.seat&&x.playerId===msg.playerId);
+        if(b){
+         deliveryReceipts.push(Object.freeze({roomId:opts.roomId,seat:msg.seat,
+          playerId:msg.playerId,ticket:msg.ticket,option:msg.option}));
+         // Only receipt of delivery. Does NOT unblock or resolve GameEvent.
+         ws.send(JSON.stringify({type:'authority_choice_receipt',roomId:opts.roomId,
+          seat:msg.seat,playerId:msg.playerId,ticket:msg.ticket,option:msg.option}));
+        }
+       }
        if(msg.type==='authority_transport_probe'&&connected&&msg.roomId===opts.roomId&&
           typeof msg.traceId==='string'&&/^[a-f0-9]{32}$/.test(msg.traceId)&&
           Number.isInteger(msg.seat)&&typeof msg.playerId==='string'){
@@ -187,7 +204,17 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
         value:Object.freeze({inspect:()=>({connected,seenRoster,seatCount,revision,
          boundPeerCount:bindings.filter(b=>b.connectionId!==null).length}),
          // Used by trusted V3-only native engine bootstrap, never by human clients.
-         getSeatBindings:()=>bindings.map(b=>({...b}))})});
+         getSeatBindings:()=>bindings.map(b=>({...b})),
+         openChoiceExperiment:data=>{
+          if(!connected||!seenRoster||!data||typeof data!=='object')return false;
+          const b=bindings.find(x=>x.seat===data.seat&&x.connectionId!==null);
+          if(!b||choiceOpenResult)return false;
+          ws.send(JSON.stringify({type:'authority_choice_open',roomId:opts.roomId,
+            seat:b.seat,playerId:b.playerId,kind:data.kind,prompt:data.prompt,options:data.options}));
+          return true;
+         },
+         inspectChoiceExperiment:()=>({opened:choiceOpenResult?{...choiceOpenResult}:null,
+          receipts:deliveryReceipts.map(x=>({...x}))})})});
       return true;
     })()`;
     const result=await session.send('Runtime.evaluate',{expression:script,returnByValue:true});
@@ -198,6 +225,34 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      await sleep(50);
     }
     throw fail('WORKER_BRIDGE_HANDSHAKE_TIMEOUT');
+   },
+   async openChoiceExperiment({seat,kind='control',prompt='選擇一個測試選項',options=['alpha','beta']}={}){
+    // Hard gate: only offline CI may request an experimental choice.
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('CHOICE_EXPERIMENT_DISABLED');
+    if(!Number.isInteger(seat)||seat<0||seat>7||
+       !['character','card','skill','control'].includes(kind)||
+       typeof prompt!=='string'||prompt.length<1||prompt.length>120||
+       !Array.isArray(options)||options.length<2||options.length>12||
+       !options.every(x=>typeof x==='string'&&/^[a-zA-Z0-9_-]{1,32}$/.test(x)))
+      throw fail('CHOICE_EXPERIMENT_INVALID');
+    const expression='window.__v3AuthorityBridge?.openChoiceExperiment('+JSON.stringify({seat,kind,prompt,options})+')';
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value!==true)throw fail('CHOICE_EXPERIMENT_REJECTED');
+    for(let i=0;i<100;i++){
+     const state=await this.inspectChoiceExperiment();
+     if(state.opened?.ticket)return state.opened;
+     await sleep(40);
+    }
+    throw fail('CHOICE_EXPERIMENT_TIMEOUT');
+   },
+   async inspectChoiceExperiment(){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('CHOICE_EXPERIMENT_DISABLED');
+    if(closed||child.exitCode!==null||child.signalCode!==null)throw fail('WORKER_UNAVAILABLE');
+    const r=await session.send('Runtime.evaluate',{
+     expression:'window.__v3AuthorityBridge?.inspectChoiceExperiment() ?? null',returnByValue:true
+    });
+    if(r.exceptionDetails||!r.result?.value)throw fail('CHOICE_EXPERIMENT_NOT_READY');
+    return r.result.value;
    },
    async inspectRoomChannel(){
     if(closed||child.exitCode!==null||child.signalCode!==null)throw fail('WORKER_UNAVAILABLE');
