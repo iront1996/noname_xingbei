@@ -146,3 +146,98 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   await nativeHost.close();
  }
 });
+
+for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
+ test('real Chromium survives two simultaneous owner/peer reconnect cycles '+mode,{
+  skip:!enabled,timeout:110000
+ },async()=>{
+  const {WebSocketServer}=await import('ws');
+  const nativeHost=await createV3NativeModuleTestServer({
+   root:resolve(dirname(fileURLToPath(import.meta.url)),'..')
+  });
+  let browser;
+  const broker=await createV3AuthorityWebSocketBroker({
+   WebSocketServer,
+   launchWorker:async()=>{
+    browser=await launchV3ChromiumAuthorityWorker({executable:chrome});
+    assert.equal((await browser.loadV3NativeModules({origin:nativeHost.origin})).loaded,true);
+    return browser;
+   }
+  });
+  const peers=[],livePeers=[],roomId='V3_CHAOS_'+mode;
+  const waitRoster=async(seats,online)=>{
+   for(let i=0;i<180;i++){
+    const roster=broker.roomView(roomId)?.roster;
+    if(roster&&seats.every(seat=>roster[seat].connected===online))return;
+    await sleep(25);
+   }
+   throw Error('CHAOS_ROSTER_TIMEOUT_'+mode);
+  };
+  try{
+   for(let i=0;i<count;i++){
+    const peer=await open(broker.address);peers.push(peer);livePeers[i]=peer;
+   }
+   const sessions=[await ask(livePeers[0],'create',{
+    roomId,config:{mode:'xingBei',seatMode:mode}
+   })];
+   for(let i=1;i<count;i++)
+    sessions.push(await ask(livePeers[i],'join',{roomId}));
+   assert.ok(sessions.every(x=>x.ok));
+   const ids=sessions.map(x=>x.playerId);
+   assert.equal(new Set(ids).size,count);
+   assert.equal((await ask(livePeers[0],'launch')).code,
+    'WORKER_PROOF_RUNNING_NOT_PLAYABLE');
+   const originalPid=browser.pid;
+   const attacker=await open(broker.address);peers.push(attacker);
+   for(let cycle=0;cycle<2;cycle++){
+    const disconnected=[0,cycle===0?Math.floor(count/2):count-1];
+    const unaffected=cycle===0?1:Math.floor(count/2);
+    const oldTokens=disconnected.map(seat=>sessions[seat].reconnectToken);
+    for(const seat of disconnected)livePeers[seat].ws.close();
+    await waitRoster(disconnected,false);
+    // The owner has no special runtime privilege: other players' requests
+    // still round-trip through the SAME independent Chromium process.
+    const probe=await ask(livePeers[unaffected],'transport_probe');
+    assert.equal(probe.code,'TRANSPORT_PROBE_ROUNDTRIP');
+    assert.equal(probe.playerId,ids[unaffected]);
+    for(const seat of disconnected.slice().reverse()){
+     const replacement=await open(broker.address);
+     peers.push(replacement);livePeers[seat]=replacement;
+     const next=await ask(replacement,'reconnect',{
+      roomId,seat,reconnectToken:sessions[seat].reconnectToken
+     });
+     assert.equal(next.code,'SESSION_RECONNECTED');
+     assert.equal(next.playerId,ids[seat]);
+     assert.notEqual(next.reconnectToken,sessions[seat].reconnectToken);
+     sessions[seat]=next;
+     assert.equal((await ask(attacker,'reconnect',{
+      roomId,seat,reconnectToken:oldTokens[disconnected.indexOf(seat)]
+     })).code,'RECONNECT_DENIED');
+    }
+    await waitRoster(disconnected,true);
+    for(let n=0;n<120;n++){
+     const channel=await browser.inspectRoomChannel();
+     if(channel.boundPeerCount===count&&
+        channel.revision===broker.roomView(roomId).revision)break;
+     await sleep(25);
+    }
+    assert.equal((await browser.inspectRoomChannel()).boundPeerCount,count);
+    assert.equal(browser.pid,originalPid);
+    assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_PROOF_ALIVE');
+    assert.equal(broker.roomView(roomId).status,'waiting');
+    assert.equal(broker.roomView(roomId).roster.every(x=>x.connected),true);
+    for(const seat of disconnected){
+     assert.equal((await ask(livePeers[seat],'transport_probe')).playerId,ids[seat]);
+     assert.equal((await ask(livePeers[seat],'command',{action:'playCard'})).code,
+      'RULES_ENGINE_NOT_IMPLEMENTED');
+    }
+   }
+   const publicRoster=JSON.stringify(broker.roomView(roomId));
+   for(const s of sessions)assert.equal(publicRoster.includes(s.reconnectToken),false);
+  }finally{
+   for(const peer of peers)try{peer.ws.close()}catch{}
+   await broker.close();
+   await nativeHost.close();
+  }
+ });
+}
