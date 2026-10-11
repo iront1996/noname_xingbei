@@ -123,7 +123,7 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       if(window.__v3AuthorityBridge)return false;
       const opts=${cfg};
       const ws=new WebSocket(opts.url);
-      let connected=false,seenRoster=false,seatCount=0,revision=-1;
+      let connected=false,seenRoster=false,seatCount=0,revision=-1,bindings=[];
       ws.addEventListener('open',()=>ws.send(JSON.stringify({
        type:'authority_hello',roomId:opts.roomId,secret:opts.secret
       })));
@@ -132,13 +132,25 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
        if(msg.type==='authority_accepted'&&msg.roomId===opts.roomId)connected=true;
        if(msg.type==='authority_roster'&&msg.view?.roomId===opts.roomId&&
           Array.isArray(msg.view.roster)&&Number.isInteger(msg.view.revision)){
+        const next=msg.bindings;
+        if(!Array.isArray(next)||next.length!==msg.view.roster.length||
+           !next.every(b=>Number.isInteger(b.seat)&&b.seat>=0&&
+             typeof b.playerId==='string'&&/^player_[a-f0-9]{32}$/.test(b.playerId)&&
+             (b.connectionId===null||typeof b.connectionId==='string'&&/^[a-f0-9]{24}$/.test(b.connectionId))))return;
+        const seats=new Set(next.map(b=>b.seat));
+        const ids=new Set(next.map(b=>b.playerId));
+        if(seats.size!==next.length||ids.size!==next.length)return;
+        bindings=next.map(b=>Object.freeze({seat:b.seat,playerId:b.playerId,connectionId:b.connectionId}));
         seenRoster=true;seatCount=msg.view.roster.length;revision=msg.view.revision;
        }
       });
       ws.addEventListener('close',()=>{connected=false});
       ws.addEventListener('error',()=>{connected=false});
       Object.defineProperty(window,'__v3AuthorityBridge',{configurable:false,
-        value:Object.freeze({inspect:()=>({connected,seenRoster,seatCount,revision})})});
+        value:Object.freeze({inspect:()=>({connected,seenRoster,seatCount,revision,
+         boundPeerCount:bindings.filter(b=>b.connectionId!==null).length}),
+         // Used by trusted V3-only native engine bootstrap, never by human clients.
+         getSeatBindings:()=>bindings.map(b=>({...b}))})});
       return true;
     })()`;
     const result=await session.send('Runtime.evaluate',{expression:script,returnByValue:true});
@@ -158,7 +170,8 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
     if(result.exceptionDetails||!result.result?.value)throw fail('WORKER_BRIDGE_NOT_READY');
     const state=result.result.value;
     return Object.freeze({connected:state.connected===true,seenRoster:state.seenRoster===true,
-      seatCount:state.seatCount,revision:state.revision});
+      seatCount:state.seatCount,revision:state.revision,
+      boundPeerCount:state.boundPeerCount});
    },
    async evaluateSeatExperiment(expression){
     // Only for offline tests, never route untrusted client strings here.
