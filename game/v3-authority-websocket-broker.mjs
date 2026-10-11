@@ -5,6 +5,7 @@
  */
 import {randomBytes} from 'node:crypto';
 import {createV3AuthorityRuntimeCoordinator} from './v3-authority-runtime-coordinator.mjs';
+import {createV3AuthorityChoiceWindows} from './v3-authority-choice-windows.mjs';
 
 const reply=(ok,code,extra={})=>({ok,code,...extra});
 const idOk=s=>typeof s==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(s);
@@ -13,9 +14,11 @@ const requestOk=s=>s===undefined||(typeof s==='string'&&/^[a-zA-Z0-9_-]{1,40}$/.
 const live=ws=>ws?.readyState===1;
 const send=(ws,obj)=>{if(!live(ws))return;try{ws.send(JSON.stringify(obj))}catch{try{ws.close(1011)}catch{}}};
 
-export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0}={}){
+export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0,enableChoiceWindowExperiments=false}={}){
  if(typeof WebSocketServer!=='function'||typeof launchWorker!=='function')throw new TypeError('BROKER_DEPENDENCY_MISSING');
  if(host!=='127.0.0.1'||port!==0)throw new Error('EXPERIMENT_LOOPBACK_EPHEMERAL_ONLY');
+ if(typeof enableChoiceWindowExperiments!=='boolean')throw new TypeError('EXPERIMENT_CONFIG_INVALID');
+ const choices=createV3AuthorityChoiceWindows();
  const stablePlayersByRoom=new Map();
  // Transport round-trip probes are NOT gameplay intents or engine commands.
  const outstandingProbes=new Map();
@@ -23,6 +26,13 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
  let closed=false,server;
  const seats=id=>seatsByRoom.get(id);
  const current=(roomId,seat,ws)=>seats(roomId)?.get(seat)?.ws===ws;
+ const sendChoice=(roomId,seat)=>{
+  const entry=seats(roomId)?.get(seat);
+  const playerId=stablePlayersByRoom.get(roomId)?.get(seat);
+  if(!entry||!live(entry.ws)||!playerId)return;
+  const window=choices.view(roomId,seat,playerId);
+  if(window)send(entry.ws,{type:'choice_window',window});
+ };
  const sendRoster=id=>{
   const view=coordinator.roomView(id);
   if(!view)return;
@@ -73,6 +83,27 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   if(!obj||typeof obj!=='object'||Array.isArray(obj)||!requestOk(obj.requestId))
    return send(ws,{type:'error',code:'INVALID_MESSAGE'});
   if(ws.__v3AuthorityRoom){
+   if(obj.type==='authority_choice_open'){
+    if(!enableChoiceWindowExperiments)
+     return send(ws,{type:'error',code:'CHOICE_EXPERIMENT_DISABLED'});
+    const roomId=ws.__v3AuthorityRoom;
+    if(!Number.isInteger(obj.seat)||obj.seat<0||obj.seat>7||
+       stablePlayersByRoom.get(roomId)?.get(obj.seat)!==obj.playerId)
+     return send(ws,{type:'error',code:'CHOICE_SEAT_INVALID'});
+    const opened=choices.open({roomId,seat:obj.seat,playerId:obj.playerId,
+      kind:obj.kind,prompt:obj.prompt,options:obj.options});
+    send(ws,{type:'authority_choice_open_result',...opened});
+    if(opened.ok)sendChoice(roomId,obj.seat);
+    return;
+   }
+   if(obj.type==='authority_choice_receipt'){
+    if(!enableChoiceWindowExperiments)
+     return send(ws,{type:'error',code:'CHOICE_EXPERIMENT_DISABLED'});
+    const result=choices.deliveryReceipt({...obj,roomId:ws.__v3AuthorityRoom});
+    if(!result.ok)return send(ws,{type:'error',code:result.code});
+    sendChoice(ws.__v3AuthorityRoom,obj.seat);
+    return;
+   }
    if(obj.type==='authority_probe_ack'){
     const p=outstandingProbes.get(obj.traceId);
     if(!p||p.roomId!==ws.__v3AuthorityRoom||p.playerId!==obj.playerId||p.seat!==obj.seat)
@@ -123,11 +154,30 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     try{previous.ws.close(4001,'seat_replaced')}catch{}
    }
    sendRoster(obj.roomId);
+   sendChoice(obj.roomId,result.seat);
    return;
   }
   const bound=ws.__v3Player;
   if(!bound||!current(bound.roomId,bound.seat,ws))return respond(reply(false,'NOT_AUTHENTICATED'));
   switch(obj.type){
+   case 'choice_query':{
+    if(!enableChoiceWindowExperiments)return respond(reply(false,'CHOICE_EXPERIMENT_DISABLED'));
+    const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
+    const window=choices.view(bound.roomId,bound.seat,playerId);
+    return respond(reply(true,'CHOICE_WINDOW_STATE',{window}));
+   }
+   case 'choice_submit':{
+    if(!enableChoiceWindowExperiments)return respond(reply(false,'CHOICE_EXPERIMENT_DISABLED'));
+    const worker=workersByRoom.get(bound.roomId);
+    if(!live(worker))return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
+    const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
+    const result=choices.submit({roomId:bound.roomId,seat:bound.seat,playerId,
+      ticket:obj.ticket,option:obj.option});
+    if(!result.ok)return respond(result);
+    respond({ok:true,code:result.code,window:result.view});
+    if(result.delivery)send(worker,{type:'authority_choice_delivery',...result.delivery});
+    return;
+   }
    case 'transport_probe':{
     if(!obj.requestId)return respond(reply(false,'REQUEST_ID_REQUIRED'));
     const worker=workersByRoom.get(bound.roomId);
@@ -176,7 +226,12 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     if(p.ws===ws){clearTimeout(p.timer);outstandingProbes.delete(traceId)}
    }
    if(ws.__v3AuthorityRoom){
-    if(workersByRoom.get(ws.__v3AuthorityRoom)===ws)workersByRoom.delete(ws.__v3AuthorityRoom);
+    if(workersByRoom.get(ws.__v3AuthorityRoom)===ws){
+     workersByRoom.delete(ws.__v3AuthorityRoom);
+     choices.cancelRoom(ws.__v3AuthorityRoom);
+     for(const entry of seats(ws.__v3AuthorityRoom)?.values()??[])
+      send(entry.ws,{type:'choice_interrupted',code:'WORKER_CHANNEL_OFFLINE'});
+    }
     return;
    }
    const p=ws.__v3Player;
@@ -199,6 +254,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    closed=true;
    for(const p of outstandingProbes.values())clearTimeout(p.timer);
    outstandingProbes.clear();
+   for(const roomId of seatsByRoom.keys())choices.cancelRoom(roomId);
    for(const ws of allSockets)try{ws.terminate?.()}catch{}
    for(const id of seatsByRoom.keys())await coordinator.stopRoomWorker(id);
    await new Promise(resolve=>server.close(()=>resolve()));
