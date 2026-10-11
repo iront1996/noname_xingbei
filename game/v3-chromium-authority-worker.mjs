@@ -216,6 +216,10 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
         if(seats.size!==next.length||ids.size!==next.length)return;
         bindings=next.map(b=>Object.freeze({seat:b.seat,playerId:b.playerId,connectionId:b.connectionId}));
         seenRoster=true;seatCount=msg.view.roster.length;revision=msg.view.revision;
+        // Native V3 Client identity persists while the transport changes.
+        if(nativeChoiceHooks&&typeof nativeChoiceHooks.roster==='function'){
+         try{nativeChoiceHooks.roster(bindings.map(x=>({...x})))}catch{}
+        }
        }
       });
       ws.addEventListener('close',()=>{connected=false});
