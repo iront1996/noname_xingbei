@@ -150,6 +150,35 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     nativeGameDrawTriggered:false
    });
   },
+  // Complete opening setup checkpoint. Server/CDP only, never publish via
+  // a human player socket or room-wide roster. NOT a game-event snapshot.
+  exportOpeningCheckpoint({roomId,revision=1}={}){
+   if(!startingCardsDealt||drafts.size!==0||chosen.size!==players.length||
+      !game.__v3NativeDrawPile||draftFailure)
+    throw err('V3_OPENING_CHECKPOINT_NOT_READY');
+   if(typeof roomId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(roomId)||
+      !Number.isSafeInteger(revision)||revision<1)
+    throw err('V3_OPENING_CHECKPOINT_ARGS_INVALID');
+   const remaining=game.__v3NativeDrawPile.inspectIds();
+   const snapshot={
+    schema:'xingbei-v3-native-opening-only-v1',
+    roomId,seatMode:(players.length/2)+'v'+(players.length/2),
+    revision,totalCards:remaining.length+players.length*4,
+    players:players.map((p,seat)=>({
+     seat,playerId:p.playerid,character:p.name1,
+     hand:(physicalCardsBySeat.get(seat)??[]).map(c=>({
+      cardId:c.__v3PhysicalId,name:c.name
+     }))
+    })),
+    remainingCardIds:remaining
+   };
+   // The opening-only checkpoint verifier is also run on the server process
+   // before encrypting; this client-side check catches staging mistakes early.
+   if(snapshot.players.some(p=>p.hand.length!==4||!p.character)||
+      new Set(snapshot.players.flatMap(p=>p.hand.map(c=>c.cardId)).concat(remaining)).size!==snapshot.totalCards)
+    throw err('V3_OPENING_CHECKPOINT_INCONSISTENT');
+   return snapshot;
+  },
   // Strictly trusted Chromium-side accessor only; broker must authenticate
   // before ever projecting this to a human WebSocket.
   privateSeatView({seat}={}){
