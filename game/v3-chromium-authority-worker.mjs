@@ -411,8 +411,13 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      }
     })()`;
     const r=await session.send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});
-    if(r.exceptionDetails||r.result?.value?.ok!==true)
-     throw fail('V3_REAL_GAME_DRAW_FAILED_'+String(r.result?.value?.code??'CDP'));
+    if(r.exceptionDetails||r.result?.value?.ok!==true){
+     // Offline CI only. Constrain diagnostic content to a safe error prefix;
+     // do not echo server secrets, card IDs, or raw player supplied input.
+     const safe=String(r.result?.value?.reason??'UNSPECIFIED')
+      .replace(/[^A-Za-z0-9_ ]/g,'_').slice(0,180);
+     throw fail('V3_REAL_GAME_DRAW_FAILED_'+String(r.result?.value?.code??'CDP')+'_'+safe);
+    }
     return r.result.value.result;
    },
    async stageNativeOpeningTurnBoundary({firstSeat=0}={}){
