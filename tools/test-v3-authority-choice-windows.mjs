@@ -149,3 +149,45 @@ test('only delivered original card preview can advance to a distinct target tick
  assert.equal(m.submit({...target,option:'s1'}).code,'CHOICE_ALREADY_LOCKED');
  assert.equal(m.view('roomA',0,id(2)),null);
 });
+
+test('only live authority may renew preview lease; invalid, expired and old tickets fail closed',()=>{
+ let time=1000;
+ const m=createV3AuthorityChoiceWindows({now:()=>time,ttlMs:10000});
+ const body={...defaults,source:'preview',kind:'card',prompt:'安全選牌',
+  options:['v3card_012345','v3card_abcdef']};
+ const first=m.open(body);
+ assert.equal(first.ok,true);
+ time=9000;
+ for(const attempt of [
+  {...body,ticket:'0'.repeat(32)},
+  {...body,playerId:id(2),ticket:first.view.ticket},
+  {...body,seat:1,ticket:first.view.ticket}
+ ])assert.equal(m.renewNativePreview(attempt).code,'PREVIEW_LEASE_RENEW_DENIED');
+ const renewed=m.renewNativePreview({...body,ticket:first.view.ticket});
+ assert.equal(renewed.code,'PREVIEW_LEASE_RENEWED');
+ assert.equal(renewed.view.expiresAt,19000);
+ time=11000;
+ assert.equal(m.view('roomA',0,id(1)).ticket,first.view.ticket);
+ assert.equal(m.submit({...body,ticket:first.view.ticket,
+  option:'v3card_012345'}).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+ assert.equal(m.deliveryReceipt({...body,ticket:first.view.ticket,
+  option:'v3card_012345'}).code,'CHOICE_DELIVERED_NOT_APPLIED');
+ const next=m.advancePreview({roomId:'roomA',seat:0,playerId:id(1),
+  previousTicket:first.view.ticket,previousOption:'v3card_012345',
+  kind:'target',prompt:'選擇敵方',options:['s1','s3']});
+ assert.equal(next.ok,true);
+ assert.equal(m.renewNativePreview({...body,ticket:first.view.ticket}).code,
+  'PREVIEW_LEASE_RENEW_DENIED');
+ time=15000;
+ assert.equal(m.renewNativePreview({...body,ticket:next.view.ticket}).code,
+  'PREVIEW_LEASE_RENEWED');
+ time=24000;
+ assert.equal(m.view('roomA',0,id(1)).ticket,next.view.ticket);
+ time=25000;
+ assert.equal(m.renewNativePreview({...body,ticket:next.view.ticket}).code,
+  'PREVIEW_LEASE_RENEW_DENIED');
+ const native=m.open({...defaults,roomId:'roomB',source:'native'});
+ assert.equal(native.ok,true);
+ assert.equal(m.renewNativePreview({...defaults,roomId:'roomB',
+  ticket:native.view.ticket}).code,'PREVIEW_LEASE_RENEW_DENIED');
+});
