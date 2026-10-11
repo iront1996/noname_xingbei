@@ -147,3 +147,20 @@ A 的第一輪完全自動測試需證實：
 3. 定義 worker 權威狀態與只供單一席位的私密資料；證明玩家中斷／刷新不會洩漏其他人手牌與牌堆順序。
 4. 增加事務式持久化、命令去重、事件回放／待決選擇，才可談 VPS 重啟續局；若 Chromium runtime 的閉包／Promise 不可恢復，必須切向可序列化的 server reducer。
 5. 以上端對端自動化覆蓋前，持續不安排真人反覆驗收、不改 VPS、不移除既有 V3。
+
+
+### 2026-10-11：房間與 Chromium 主持程序協調原型
+
+新增 `game/v3-authority-runtime-coordinator.mjs`（只供服務端呼叫）及相應 5 項離線測試。它與既有 `createV3AuthoritativeRoomModel()` 整合：
+
+- 由伺服器建立房間、綁定全部真人 seat；原開房者與其他玩家完全共用 `disconnect/reconnect`，reconnect token 由既有 session model 驗證及輪替。公開 roomView 不含 token／connectionId。
+- 房間座位人數、綁定與 worker 身分通過嚴格拓樸比對，才可啟動獨立 Chromium。啟動中禁止重複建立；在瀏覽器啟動期間房間 revision 有變化，立即停止該 worker 並拒絕進入可用狀態。
+- 原開房者或普通玩家斷線不自動關閉 worker；worker 健康檢查失敗、啟動失敗及重複啟動皆拒絕。任何攻擊／購買／抽牌行為仍只回 `RULES_ENGINE_NOT_IMPLEMENTED`，房間仍是 `waiting`。
+- `tools/test-v3-authority-runtime-coordinator.mjs`：5 個生命週期與競態案例。本地 5/5 通過。
+- `tools/test-v3-chromium-coordinator-integration.mjs`：再用**真 Chromium** + 對房間模型的真實 API 呼叫驗證 4 個 session／房主及普通玩家斷線重連／credential 輪替／worker PID 不變、無遊戲規則假成功。本地 1/1 通過。此案例尚非 WebSocket 網路測試；GitHub Actions 專用 Chromium workflow 已納入。
+
+合計本輪新增 **17 項**測試：Chromium 座位／生命週期 6，離線勝負 5，房間協調離線 5，Chromium 協調整合 1，本地均通過。舊有 V3 測試另行執行。
+
+GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478efb26999788034cccebe8bf92` 成功；含後續 coordinator 整合的新版 workflow 需要單獨核實。仍**沒有**真正 4 人 WebSocket 全局、完整技能運算或 SQLite 持久化，因此不可向玩家宣稱已完成無房主權威 V3。
+
+下一步將獨立建立真正的網路 broker 及與原生星杯引擎的橋接，不得將未驗證的 Chromium 執行程序直接替換現行 8081。
