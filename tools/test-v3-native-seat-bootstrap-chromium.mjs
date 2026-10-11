@@ -322,6 +322,31 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     }
    }
    assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_PROOF_ALIVE');
+   if(count===4){
+    // The Chrome OS process can remain alive when ONLY its authenticated
+    // private WebSocket channel drops. The server must quarantine and stop
+    // that orphan, not blindly accept its still-live PID as game authority.
+    const orphanPid=chrome.pid;
+    assert.equal(await chrome.simulateRoomChannelLoss(),true);
+    await until(async()=>(await broker.inspectWorker(roomId)).code==='WORKER_CHANNEL_OFFLINE');
+    assert.equal(chrome.pid,orphanPid);
+    const recoveredChannel=await broker.recoverOpeningCheckpoint(roomId);
+    assert.equal(recoveredChannel.ok,true,JSON.stringify(recoveredChannel));
+    assert.equal(recoveredChannel.code,'OPENING_RECOVERY_REHYDRATED');
+    assert.equal(recoveredChannel.gameEventStackRestored,false);
+    assert.notEqual(chrome.pid,orphanPid);
+    for(let seat=0;seat<count;seat++){
+     const state=await ask(currentBySeat[seat],'private_hand_query');
+     assert.equal(state.code,'PRIVATE_HAND_STATE');
+     assert.deepEqual(state.view.ownHand,seatViews[seat].ownHand);
+     for(let other=0;other<count;other++){
+      if(seat===other)continue;
+      for(const foreign of seatViews[other].ownHand)
+       assert.equal(JSON.stringify(state.view).includes(foreign.cardId),false);
+     }
+    }
+    assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_PROOF_ALIVE');
+   }
    // gameDraw has ALREADY executed to deal the four opening cards.
    // Queue ONLY original phaseLoop, so next start cannot deal twice.
    const turn=await chrome.stageNativeOpeningTurnBoundary({firstSeat:0});
