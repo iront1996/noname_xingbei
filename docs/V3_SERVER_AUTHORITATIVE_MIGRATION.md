@@ -164,3 +164,11 @@ A 的第一輪完全自動測試需證實：
 GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478efb26999788034cccebe8bf92` 成功；含後續 coordinator 整合的新版 workflow 需要單獨核實。仍**沒有**真正 4 人 WebSocket 全局、完整技能運算或 SQLite 持久化，因此不可向玩家宣稱已完成無房主權威 V3。
 
 下一步將獨立建立真正的網路 broker 及與原生星杯引擎的橋接，不得將未驗證的 Chromium 執行程序直接替換現行 8081。
+
+
+### 2026-10-11：GitHub Actions 整合驗證結果
+
+- 在加入真正 Chromium + coordinator 的 CI 測試後，首次 GitHub Actions 測試於 Chromium profile 目錄清理遇到 `ENOTEMPTY`；其餘 6 個 Chromium 案例已通過。這是進程退出與子程序寫入 profile 的競態，不是原生星杯座位結算錯誤。
+- 修正 `game/v3-chromium-authority-worker.mjs` 清理使用 Node `fs.rm` 的有界重試（最多 30 次、間隔 100ms），保留不能清理成功時的顯式失敗。修正後本地重新執行 7/7 Chromium 測試通過。
+- GitHub Actions 在提交 `88934f83f7d5419e3d6da2572f9457556cab0e9b` 上，`V3 Chromium Authority Worker PoC` 與 `V3 Playtest Offline Safety Tests` **均顯示 success**。Chromium CI run：https://github.com/iront1996/noname_xingbei/actions/runs/38112113935；既有 V3 離線回歸：https://github.com/iront1996/noname_xingbei/actions/runs/38112113927。
+- 限制未變：只是 CI 隔離的 Chromium 執行程序與 session model 整合，尚無真實 WebSocket 全局、完整星杯規則執行或持久存檔，**禁止直接發布為可原局續玩的伺服器權威版**。
