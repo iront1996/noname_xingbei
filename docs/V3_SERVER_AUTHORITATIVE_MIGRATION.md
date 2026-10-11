@@ -203,3 +203,23 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 - 仍需建立可靠的 V3-only native engine bootstrap：將原生 `Game`、`Player`、`GameEvent`、`randomMapOL` 與 WS routing 綁到以上 worker，並處理原生 `game.me` 在不占席位時的特殊分支；必須確定 sessionSeat 與隨機角色／engineSeat 的映射。
 - 要讓勝負判定回到伺服器：在原生星杯所有事件完整結算後，用純函式產生紅藍勝方，對每個 seat 產生合法勝負 projection，不得以假主持端的 `game.me.side` 判斷。
 - 更後續才是完整 hidden card privacy、待決技能窗口、idempotent command、持久化 DB、worker 失效恢復以及伺服器程序 crash 後重啟續局。以上未完成前，禁止切換正式 V3 或要求真人反覆測試。
+
+
+### 2026-10-11：穩定 Player ID 與真實 WebSocket 驗證後的原生初始化試驗
+
+在真正的遊戲重連中，原本 `Player.playerid` 不能直接等同每一次新 WebSocket 的 ID。否則刷新後雖然 seat 回來了，原生技能與選擇回應可能被綁到新身分。
+
+本輪因此把兩者拆開：
+- Broker 為每個新真人座位產生一次 `player_<32 hex>` 的穩定 Player ID，保存於該房間伺服器記憶體。重連必須出示原先的 reconnectToken；驗證成功後只輪替 session token 與 connectionId，穩定 Player ID 不變。
+- 只對內部受驗證的 Chromium channel 發送 `authority_roster.bindings`：`{seat,playerId,connectionId|null}`。一般玩家的 `roster` 仍沒有其他人的連線 ID／secret；本人收到自己的 Player ID。Chromium 嚴格核對結構、唯一 playerId、座位與連線 ID 格式。
+- Chromium 的 `__v3AuthorityBridge.getSeatBindings()` 僅存在於伺服器所持有的瀏覽器，供未來原生遊戲初始建立 `lib.node.clients`／`Player` 路由。它不供真人 WebSocket 呼叫。
+- 新增 `tools/v3-native-seat-probe.mjs`：CI 的專用原生驗證模式將**實際的** `noname/game/index.js` 裡 `randomMapOL()` 提取出來，在此 Chromium DOM 上以剛剛驗證過的 Player ID 建立 native player mappings。驗證工作主程序 `game.me` 不占 seat、所有 session 玩家都分配到席位並抵達原生 `chooseCharacterOL()` 入口（測試替身，**未進入實際選角畫面**）、斷線重連後 Player ID 集合完全一致、WebSocket connectionId 可更換。
+- `tools/test-v3-authority-websocket-broker.mjs` 與 `tools/test-v3-real-websocket-chromium-broker.mjs` 均新增 Player ID 穩定性與私有 socket bindings 驗證。
+
+**已確認的 CI 實際證據**（以 `b33054498fd6649d3a2e40f1f3fb6c62bfd634aa` 為準）：
+- 真 Chromium／四名真 WebSocket 與原生 `randomMapOL` 座位試驗：https://github.com/iront1996/noname_xingbei/actions/runs/38113825757 —— **success**。
+- V3 所有離線回歸測試：https://github.com/iront1996/noname_xingbei/actions/runs/38113825766 —— **success**。
+
+**關鍵剩餘工作不可略過**：這仍是原生方法在受控 DOM/mock Game adapter 下的驗證，**尚未載入完整 GameEvent／星杯角色技能、尚未發真牌、尚未啟用回合引擎、尚未持久化**。測試到達 `chooseCharacterOL()` 的替身回呼不等同完成真實選角。需要把原生 WebSocket Client／NodeWS／GameEvent 透過新的 worker 連線代理實際串起來，並將已存在的純函式紅藍勝負判斷接在完整事件結束後。此後才能繼續私人手牌投影、技能結算與伺服器故障恢復。
+
+**隔離承諾**：全部提交僅在 `feature/host-reconnect-v3-playtest`；沒有推送 master、V1、V2，也沒有操作 VPS、8080、8081、Cloudflare Tunnel 或舊 V3 部署。
