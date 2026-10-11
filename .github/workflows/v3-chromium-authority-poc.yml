@@ -24,6 +24,7 @@ on:
       - 'tools/test-v3-native-choice-matrix-chromium.mjs'
       - 'tools/test-v3-native-content-chromium.mjs'
       - 'tools/test-v3-native-seat-bootstrap-chromium.mjs'
+      - 'tools/test-v3-original-choose-to-use-wait-chromium.mjs'
       - 'tools/v3-native-cold-rebuild-probe.mjs'
       - 'tools/test-v3-chromium-sandbox-policy.mjs'
       - 'tools/test-v3-authority-choice-windows.mjs'
@@ -69,6 +70,7 @@ jobs:
           node --check tools/test-v3-native-choice-matrix-chromium.mjs
           node --check tools/test-v3-native-content-chromium.mjs
           node --check tools/test-v3-native-seat-bootstrap-chromium.mjs
+          node --check tools/test-v3-original-choose-to-use-wait-chromium.mjs
           node --check tools/v3-native-cold-rebuild-probe.mjs
           node --check tools/test-v3-chromium-sandbox-policy.mjs
           node --check tools/v3-native-module-test-server.mjs
@@ -91,4 +93,4 @@ jobs:
             echo 'FAIL: runner lacks installed Chromium/Chrome; not a skipped PASS.' >&2
             exit 1
           fi
-          timeout --signal=TERM --kill-after=5s 360s env V3_CHROMIUM="$browser" node --test --test-concurrency=2 tools/test-v3-chromium-authority-worker.mjs tools/test-v3-chromium-coordinator-integration.mjs tools/test-v3-real-websocket-chromium-broker.mjs tools/test-v3-native-module-chromium.mjs tools/test-v3-real-choice-window-chromium.mjs tools/test-v3-native-gameevent-choice-chromium.mjs tools/test-v3-native-choice-matrix-chromium.mjs tools/test-v3-native-content-chromium.mjs tools/test-v3-native-seat-bootstrap-chromium.mjs tools/test-v3-chromium-sandbox-policy.mjs
+          timeout --signal=TERM --kill-after=5s 360s env V3_CHROMIUM="$browser" node --test --test-concurrency=2 tools/test-v3-chromium-authority-worker.mjs tools/test-v3-chromium-coordinator-integration.mjs tools/test-v3-real-websocket-chromium-broker.mjs tools/test-v3-native-module-chromium.mjs tools/test-v3-real-choice-window-chromium.mjs tools/test-v3-native-gameevent-choice-chromium.mjs tools/test-v3-native-choice-matrix-chromium.mjs tools/test-v3-native-content-chromium.mjs tools/test-v3-native-seat-bootstrap-chromium.mjs tools/test-v3-original-choose-to-use-wait-chromium.mjs tools/test-v3-chromium-sandbox-policy.mjs
