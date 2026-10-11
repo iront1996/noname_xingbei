@@ -159,7 +159,6 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     const projection=JSON.stringify(seatViews[seat]);
     for(const id of foreign)assert.equal(projection.includes(id),false);
    }
-   const afterDraw=await chrome.inspectNativeXingBeiSeats();
    const publication=await chrome.publishNativeOpeningHands();
    assert.equal(publication.count,count);
    assert.deepEqual(publication.seats,Array.from({length:count},(_,i)=>i));
