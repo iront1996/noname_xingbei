@@ -31,10 +31,11 @@ async function ask(ws,obj){
  return waitFor(ws,r=>r.type==='reply'&&r.requestId===requestId);
 }
 const config={mode:'xingBei',seatMode:'2v2'};
-async function setup({latency=0}={}){
+async function setup({latency=0,choiceExperiment=false}={}){
  let started=0,stopped=0,authority;
  const broker=await createV3AuthorityWebSocketBroker({
   WebSocketServer:FakeWebSocketServer,
+  enableChoiceWindowExperiments:choiceExperiment,
   launchWorker:async()=>{
    started++;let alive=true;
    return {
@@ -45,6 +46,10 @@ async function setup({latency=0}={}){
      authority.send=text=>{
       originalSend(text);
       const msg=JSON.parse(text);
+      if(msg.type==='authority_choice_delivery')authority.clientSend({
+       type:'authority_choice_receipt',roomId:msg.roomId,seat:msg.seat,
+       playerId:msg.playerId,ticket:msg.ticket,option:msg.option
+      });
       if(msg.type==='authority_transport_probe')authority.clientSend({
        type:'authority_probe_ack',roomId:msg.roomId,seat:msg.seat,
        playerId:msg.playerId,traceId:msg.traceId
@@ -148,4 +153,69 @@ test('disconnect during slow Chromium startup rejects and stops launched worker'
 test('separate broker can only listen on loopback random port',async()=>{
  for(const args of [{host:'0.0.0.0'},{port:8081},{port:8080}])
   await assert.rejects(createV3AuthorityWebSocketBroker({WebSocketServer:FakeWebSocketServer,launchWorker:async()=>{},...args}),/EXPERIMENT_LOOPBACK_EPHEMERAL_ONLY/);
+});
+
+test('private choice pending state persists for creator and guest despite socket replacement',async()=>{
+ const x=await setup({choiceExperiment:true});
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  const issue=(seat,options)=>{
+   x.authority.clientSend({type:'authority_choice_open',roomId:'TEST',seat,
+    playerId:sessions[seat].playerId,kind:'control',prompt:'請選擇測試回應',options});
+  };
+  issue(0,['yes','no']);
+  const opened=await waitFor(x.authority,m=>m.type==='authority_choice_open_result');
+  assert.equal(opened.ok,true);
+  const ticket=opened.view.ticket;
+  const privateOwner=await waitFor(ws[0],m=>m.type==='choice_window');
+  assert.equal(privateOwner.window.ticket,ticket);
+  for(let i=1;i<4;i++)assert.equal(ws[i].outbound.some(m=>m.type==='choice_window'),false);
+  assert.equal((await ask(ws[1],{type:'choice_submit',ticket,option:'yes'})).code,'CHOICE_WINDOW_NOT_FOUND');
+  assert.equal((await ask(ws[0],{type:'choice_submit',ticket,option:'evil'})).code,'CHOICE_OPTION_NOT_ALLOWED');
+  ws[0].close();
+  const replacement=x.connect();
+  const reconnected=await ask(replacement,{type:'reconnect',roomId:'TEST',seat:0,
+   reconnectToken:sessions[0].reconnectToken});
+  assert.equal(reconnected.playerId,sessions[0].playerId);
+  assert.equal((await waitFor(replacement,m=>m.type==='choice_window')).window.ticket,ticket);
+  assert.equal((await ask(replacement,{type:'choice_submit',ticket,option:'yes'})).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+  const delivered=await waitFor(replacement,m=>m.type==='choice_window'&&m.window.state==='delivered');
+  assert.equal(delivered.window.state,'delivered');
+  assert.equal((await ask(replacement,{type:'choice_submit',ticket,option:'no'})).code,'CHOICE_ALREADY_LOCKED');
+  ws[2].close();
+  issue(2,['accept','decline']);
+  const second=await waitFor(x.authority,m=>m.type==='authority_choice_open_result'&&m.view?.seat===2);
+  assert.equal(second.ok,true);
+  const guest=x.connect();
+  await ask(guest,{type:'reconnect',roomId:'TEST',seat:2,reconnectToken:sessions[2].reconnectToken});
+  assert.equal((await waitFor(guest,m=>m.type==='choice_window')).window.ticket,second.view.ticket);
+  assert.equal((await ask(guest,{type:'choice_submit',ticket:second.view.ticket,option:'decline'})).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+  assert.equal(x.started,1);
+ }finally{await x.broker.close()}
+});
+test('choice experiment disabled by default and worker loss cancels all pending choices',async()=>{
+ const x=await setup();
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  x.authority.clientSend({type:'authority_choice_open',roomId:'TEST',seat:0,
+   playerId:sessions[0].playerId,kind:'control',prompt:'Select',options:['yes','no']});
+  assert.equal((await waitFor(x.authority,m=>m.type==='error'&&m.code==='CHOICE_EXPERIMENT_DISABLED')).code,'CHOICE_EXPERIMENT_DISABLED');
+  assert.equal((await ask(ws[0],{type:'choice_query'})).code,'CHOICE_EXPERIMENT_DISABLED');
+ }finally{await x.broker.close()}
+ const y=await setup({choiceExperiment:true});
+ try{
+  const {ws,sessions}=await fill(y);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  y.authority.clientSend({type:'authority_choice_open',roomId:'TEST',seat:0,
+   playerId:sessions[0].playerId,kind:'control',prompt:'Select',options:['yes','no']});
+  const opened=await waitFor(y.authority,m=>m.type==='authority_choice_open_result');
+  assert.equal(opened.ok,true);
+  y.authority.close();
+  const interrupt=await waitFor(ws[0],m=>m.type==='choice_interrupted');
+  assert.equal(interrupt.code,'WORKER_CHANNEL_OFFLINE');
+  assert.equal((await ask(ws[0],{type:'choice_query'})).window,null);
+  assert.equal((await ask(ws[0],{type:'choice_submit',ticket:opened.view.ticket,option:'yes'})).code,'WORKER_CHANNEL_OFFLINE');
+ }finally{await y.broker.close()}
 });
