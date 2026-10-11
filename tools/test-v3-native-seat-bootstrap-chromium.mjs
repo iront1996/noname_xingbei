@@ -358,9 +358,10 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(firstPhase.blueMorale,firstPhase.maxMorale);
    assert.deepEqual(firstPhase.seatNumbers,Array.from({length:count},(_,i)=>i+1));
    assert.equal(firstPhase.phaseLoopCompleted,false);
-   // First restricted original Player.phase() / xingDong transition:
-   // native event exists, but its card/skill content remains fully gated.
-   if(mode==='2v2'){
+   // Every 4/6/8-player configuration executes the actual original
+   // Player.phase() up to its true XingBei xingDong event. Stop before skill
+   // effects/actions; never infer that the game is already playable.
+   {
     const released=await chrome.releaseOriginalPhaseToActionGate();
     assert.equal(released.started,true);
     assert.equal(released.firstPlayerId,sessions[0].playerId);
