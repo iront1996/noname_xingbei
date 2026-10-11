@@ -243,6 +243,22 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
       assert.equal(JSON.stringify(replay.view).includes(foreign.cardId),false);
     }
    }
+   // Real original gameDraw() and phaseLoop() GameEvents are queued, but
+   // deliberately NOT started before skill legality + hidden state support.
+   const turn=await chrome.stageNativeOpeningTurnBoundary({firstSeat:0});
+   assert.equal(turn.realNativeEvents,true);
+   assert.equal(turn.firstSeat,0);
+   assert.equal(turn.playerId,sessions[0].playerId);
+   assert.equal(turn.drawEvent,'gameDraw');
+   assert.equal(turn.phaseEvent,'phaseLoop');
+   assert.equal(turn.drawCount,4);
+   assert.equal(turn.standardPhaseLoop,true);
+   assert.ok(turn.eventsQueued.includes('gameDraw'));
+   assert.ok(turn.eventsQueued.includes('phaseLoop'));
+   assert.equal(turn.eventLoopStarted,false);
+   assert.equal(turn.turnResolved,false);
+   await assert.rejects(chrome.stageNativeOpeningTurnBoundary({firstSeat:0}),
+    /V3_TURN_BOUNDARY_FAILED_V3_NATIVE_TURN_BOUNDARY_NOT_READY/);
    const afterDraw=await chrome.inspectNativeXingBeiSeats();
    assert.equal(afterDraw.session.startingCardsDealt,true);
    assert.deepEqual(afterDraw.roster.map(x=>x.handCount),Array(count).fill(4));
