@@ -64,6 +64,7 @@ export function createV3AuthorityChoiceWindows({now=()=>Date.now(),ttlMs=120000,
    const prior=locate({roomId,seat,playerId:pid,ticket:previousTicket});
    if(!prior||prior.source!=='preview'||prior.kind!=='card'||
       prior.state!=='delivered'||prior.selection!==previousOption||
+      !/^v3card_[a-f0-9]{6}$/.test(previousOption)||
       !prior.options.includes(previousOption)||kind!=='target'||
       typeof prompt!=='string'||prompt.length<1||prompt.length>120||
       /[<>\u0000-\u001f]/.test(prompt)||
@@ -110,6 +111,16 @@ export function createV3AuthorityChoiceWindows({now=()=>Date.now(),ttlMs=120000,
    e.state='delivered';e.deliveryAcknowledged=true;
    // Do NOT mark resolved; a native GameEvent has not consumed the response.
    return ok('CHOICE_DELIVERED_NOT_APPLIED',{view:expose(e)});
+  },
+  nativePreviewPassApplied({roomId,seat,playerId:pid,ticket:proof}={}){
+   // The only current executable response from genuine chooseToUse:
+   // explicit no-card pass with an already delivered preview ticket.
+   const e=locate({roomId,seat,playerId:pid,ticket:proof});
+   if(!e||e.source!=='preview'||e.kind!=='card'||
+      e.selection!=='pass'||e.state!=='delivered')
+    return no('CHOICE_PREVIEW_PASS_APPLY_DENIED');
+   e.state='applied';
+   return ok('CHOICE_PREVIEW_PASS_APPLIED',{view:expose(e)});
   },
   nativeApplied({roomId,seat,playerId:pid,ticket:proof,option}={}){
    expire();
