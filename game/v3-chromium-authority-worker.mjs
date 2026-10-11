@@ -254,7 +254,7 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       ws.addEventListener('close',()=>{connected=false});
       ws.addEventListener('error',()=>{connected=false});
       Object.defineProperty(window,'__v3AuthorityBridge',{configurable:false,
-        value:Object.freeze({inspect:()=>({connected,seenRoster,seatCount,revision,
+        value:Object.freeze({${process.env.V3_ALLOW_SEAT_EXPERIMENT==='1' ? "testDisconnectChannel:()=>{ws.close(4000,'CI_channel_drop');return true;}," : ""}inspect:()=>({connected,seenRoster,seatCount,revision,
          boundPeerCount:bindings.filter(b=>b.connectionId!==null).length}),
          // Used by trusted V3-only native engine bootstrap, never by human clients.
          getSeatBindings:()=>bindings.map(b=>({...b})),
@@ -786,6 +786,17 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
     });
     if(r.exceptionDetails||!r.result?.value)throw fail('CHOICE_EXPERIMENT_NOT_READY');
     return r.result.value;
+   },
+   async simulateRoomChannelLoss(){
+    // Strictly server-held CI control; never exposed to human WebSockets.
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const result=await session.send('Runtime.evaluate',{
+     expression:'window.__v3AuthorityBridge?.testDisconnectChannel?.() === true',returnByValue:true
+    });
+    if(result.exceptionDetails||result.result?.value!==true)
+     throw fail('WORKER_CHANNEL_TEST_DROP_FAILED');
+    return true;
    },
    async inspectRoomChannel(){
     if(closed||child.exitCode!==null||child.signalCode!==null)throw fail('WORKER_UNAVAILABLE');
