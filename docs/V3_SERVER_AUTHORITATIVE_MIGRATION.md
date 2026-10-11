@@ -172,3 +172,34 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 - 修正 `game/v3-chromium-authority-worker.mjs` 清理使用 Node `fs.rm` 的有界重試（最多 30 次、間隔 100ms），保留不能清理成功時的顯式失敗。修正後本地重新執行 7/7 Chromium 測試通過。
 - GitHub Actions 在提交 `88934f83f7d5419e3d6da2572f9457556cab0e9b` 上，`V3 Chromium Authority Worker PoC` 與 `V3 Playtest Offline Safety Tests` **均顯示 success**。Chromium CI run：https://github.com/iront1996/noname_xingbei/actions/runs/38112113935；既有 V3 離線回歸：https://github.com/iront1996/noname_xingbei/actions/runs/38112113927。
 - 限制未變：只是 CI 隔離的 Chromium 執行程序與 session model 整合，尚無真實 WebSocket 全局、完整星杯規則執行或持久存檔，**禁止直接發布為可原局續玩的伺服器權威版**。
+
+
+## 2026-10-11：V3 獨立 WebSocket 傳輸 + 真 Chromium 的四人重連驗證
+
+**性質：完全隔離的本機／GitHub Actions 概念驗證，並未啟用於任何 VPS 或正式網址。不得宣稱完整遊戲已可續局。**
+
+### 新增程式
+
+- `game/v3-authority-websocket-broker.mjs`：新的伺服器權威 room/session WebSocket broker，僅允許監聽 `127.0.0.1:0`（系統分配隨機埠），刻意禁止公開監聽與占用 8080／8081。僅透過注入的 `ws.WebSocketServer` 使用，不取代 `game/v3-playtest-server.cjs`。
+- 每一真人 WebSocket 由伺服器產生獨立 connectionId，先通過 `createV3AuthoritativeRoomModel` 的座位／256-bit reconnectToken 驗證後才取得 seat。建立房間者只是 seat 0，具有等待階段的啟動權，**不是**房間程序／訊息代理。
+- 同一 seat 重連時，舊 WebSocket 會收到撤銷訊息並斷線；因舊 socket 已解除綁定，其遲到的 close 不會把新玩家再踢出。憑證輪替後舊 token 不可再用。其他房間不能冒領該 seat。
+- 伺服器另為每一 Chromium 程序簽發一次性 256-bit 內部 secret，僅授權其使用獨立的 `authority_hello` 通道。不給真人座位；私有 secret 不會寫入房間公開 roster 或發給玩家。
+- `game/v3-chromium-authority-worker.mjs` 新增 `connectRoomChannel`、`inspectRoomChannel`。真 Chromium 透過本機 WebSocket 收取伺服器的 roster 變化，主持程序不依賴創建者的網頁生命週期。瀏覽器只暴露不含 secret 的連線健康摘要。
+- **邊界**：此 Chromium 目前只啟動私有傳輸橋接，**尚未載入星杯完整引擎、選角、卡牌、技能事件與私密 playerView**。因此 `command: attack` 等仍回 `RULES_ENGINE_NOT_IMPLEMENTED`，`room.status` 仍為 `waiting`。此前獨立的 `v3-xingbei-authority-outcome.mjs` 提供了不依賴 `game.me.side` 的勝負純函式，但尚未掛到原生事件結算。
+
+### 自動測試與錯誤修復
+
+- `tools/test-v3-authority-websocket-broker.mjs`：6 項離線協定測試，覆蓋建立房間、真／假操作者重連、舊連線撤銷、密鑰不可見、未授權假主持、座位不足、啟動途中斷線及禁止危險埠。本地 6/6 PASS；V3 offline CI 也成功。
+- `tools/test-v3-real-websocket-chromium-broker.mjs`：真正 4 條 Node WebSocket client + `ws` server + 真 Chromium 内部 WebSocket。驗證建立房間、四人入席、私有 host 認證、開房者及普通玩家雙重斷線重連、舊 token 拒絕、主持 PID 不變、身份資訊不廣播、攻擊仍拒絕，不冒充技能成功。
+- 第一輪新的真 WS CI 失敗：`WORKER_START_FAILED`。原因是 5 秒的 authority handshake timer 在 Chromium **冷啟動之前**開始，GitHub runner 初始化瀏覽器超時。已把握手計時改成 **launchWorker 成功後**才開始，期限 10 秒；未放寬任何 token／座位驗證。重跑後成功。
+- GitHub Actions 實際驗證於提交 `2d8a3ae0ac1f7a800cf5f287ef29cb8cafbce138`：
+  - Chromium 端對端工作流程： https://github.com/iront1996/noname_xingbei/actions/runs/38113577027 —— **success**；含原有 7 項與新增 1 項真 WebSocket+Chromium 實驗。
+  - V3 離線完整回歸工作流程： https://github.com/iront1996/noname_xingbei/actions/runs/38113577033 —— **success**。
+- 這些是網路層與程序生命週期的可重現結果，不是完整星杯遊戲對局的 E2E，也不是伺服器重啟後恢復。
+
+### 不可碰觸範圍／後續實作阻塞
+
+- 沒有修改 `mode/xingBei.js`、`noname/game/index.js` 等可能影響其他版本的原生共用遊戲檔案；沒有部署到 VPS、重啟任何 service、調整 tunnel、動 8080／8081、修改 V1/V2 分支。
+- 仍需建立可靠的 V3-only native engine bootstrap：將原生 `Game`、`Player`、`GameEvent`、`randomMapOL` 與 WS routing 綁到以上 worker，並處理原生 `game.me` 在不占席位時的特殊分支；必須確定 sessionSeat 與隨機角色／engineSeat 的映射。
+- 要讓勝負判定回到伺服器：在原生星杯所有事件完整結算後，用純函式產生紅藍勝方，對每個 seat 產生合法勝負 projection，不得以假主持端的 `game.me.side` 判斷。
+- 更後續才是完整 hidden card privacy、待決技能窗口、idempotent command、持久化 DB、worker 失效恢復以及伺服器程序 crash 後重啟續局。以上未完成前，禁止切換正式 V3 或要求真人反覆測試。
