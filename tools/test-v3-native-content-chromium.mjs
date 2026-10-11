@@ -46,7 +46,7 @@ test('original XingBei card deck and character packs import in real offboard Chr
     minHandSize:Math.min(...hands.map(x=>x.length)),
     hasPlayableCharacters:characterNames.length>=8,
     firstSeatHand:oneSeat.map(c=>c.name)};
-  }catch(e){return {stageError:String(e?.code??e?.message??e),details:String(e?.stack??'').slice(0,550)}}
+  }catch(e){return {stageError:String(e?.code??e?.message??e),details:String(e?.cause?.stack??e?.stack??'').slice(0,850)}}
   })()`);
   assert.equal(report.stageError,undefined,JSON.stringify(report));
   assert.equal(report.stage.realSource,true);
