@@ -339,7 +339,9 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     /V3_TURN_BOUNDARY_FAILED_V3_NATIVE_TURN_BOUNDARY_NOT_READY/);
    // Run the ORIGINAL phaseLoop.start() to enter native step 0/1,
    // and freeze BEFORE the first Player.phase() child can execute.
-   const startedPhase=await chrome.startPausedNativePhaseLoop();
+   const startedPhase=await broker.beginNativePhaseAtOpening(roomId);
+   assert.equal(startedPhase.code,'OPENING_PHASE_STARTED_NO_RECOVERY');
+   assert.equal((await broker.recoverOpeningCheckpoint(roomId)).code,'OPENING_RECOVERY_DISARMED');
    assert.equal(startedPhase.realEvent,true);
    assert.equal(startedPhase.event,'phaseLoop');
    assert.equal(startedPhase.started,true);
@@ -371,6 +373,8 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
       assert.equal(JSON.stringify(res).includes(secret.cardId),false);
     }
    }
+   assert.equal((await broker.beginNativePhaseAtOpening(roomId)).code,
+    'OPENING_RECOVERY_DISARMED');
    await assert.rejects(chrome.startPausedNativePhaseLoop(),
     /V3_NATIVE_PHASE_START_FAILED_V3_NATIVE_PHASE_PROBE_NOT_READY/);
    const afterDraw=await chrome.inspectNativeXingBeiSeats();
