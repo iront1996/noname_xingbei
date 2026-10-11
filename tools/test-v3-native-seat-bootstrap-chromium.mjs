@@ -498,6 +498,21 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     const printedStrikes=new Set([
      'anMie','shuiLianZhan','huoYanZhan','fengShenZhan','leiGuangZhan'
     ]);
+    // Cross-check the five actual imported XingBei attack-card definitions;
+    // these tests do not rely on a random opening hand containing each one.
+    const published=await chrome.evaluateSeatExperiment(`(()=>{
+     const {lib,game}=window.__v3NativeXingBeiTest.core;
+     const a=game.players[0],enemy=game.players[1],ally=game.players[2];
+     return ['anMie','shuiLianZhan','huoYanZhan','fengShenZhan','leiGuangZhan']
+      .map(name=>{
+       const card=lib.card[name];
+       return {name,printed:card?.type==='gongJi'&&card.selectTarget===1,
+        enemy:card?.filterTarget?.({name},a,enemy)===true,
+        ally:card?.filterTarget?.({name},a,ally)===true};
+      });
+    })()`);
+    assert.equal(published.length,5);
+    assert.ok(published.every(p=>p.printed&&p.enemy&&!p.ally));
     for(const held of seatViews[0].ownHand){
      const intrinsicSupported=printedStrikes.has(held.name);
      const hostile=await chrome.preflightNativePrintedAttackTarget({
