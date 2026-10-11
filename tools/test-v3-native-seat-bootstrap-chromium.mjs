@@ -636,25 +636,79 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal((await ask(replacement,'choice_submit',{
      ticket:recovered.ticket,option:'v3card_ffffff'
     })).code,'CHOICE_OPTION_NOT_ALLOWED');
+    // Prefer a real native printed strike when the random hand contains
+    // one, then test an actual chained target ticket. Otherwise the card
+    // preview must remain fail-closed for this unsupported card class.
+    const selected=seatViews[0].ownHand.find(c=>printedStrikes.has(c.name))??
+     seatViews[0].ownHand[0];
+    const strike=printedStrikes.has(selected.name);
     const chose=await ask(replacement,'choice_submit',{
-     ticket:recovered.ticket,option:recovered.options[0]
+     ticket:recovered.ticket,option:selected.cardId
     });
     assert.equal(chose.code,'CHOICE_SUBMITTED_NOT_APPLIED');
     const recorded=await until(async()=>{
      const p=await chrome.inspectNativeUseCardPreview();
      return p.recorded&&p;
     });
-    assert.equal(recorded.selectedCardId,recovered.options[0]);
+    assert.equal(recorded.selectedCardId,selected.cardId);
     assert.equal(recorded.samePausedEvent,true);
     assert.equal(recorded.nativeGameEvent,true);
     assert.equal(recorded.nativeUnwaitInvoked,false);
     assert.equal(recorded.fullRulesValidated,false);
     assert.equal(recorded.cardConsumed,false);
     assert.equal(recorded.actionExecuted,false);
-    assert.equal((await ask(replacement,'choice_query')).window?.state,'delivered');
-    assert.equal((await ask(replacement,'choice_submit',{
-     ticket:recovered.ticket,option:recovered.options[1]
-    })).code,'CHOICE_ALREADY_LOCKED');
+    if(strike){
+     // Worker receipt of the card choice precedes a NEW, server-owned
+     // target ticket. The old card ticket must be irreversibly revoked.
+     const targetWindow=await until(()=>replacement.received.find(x=>
+      x.type==='choice_window'&&x.window?.source==='preview'&&
+      x.window.kind==='target'
+     )?.window);
+     const enemies=Array.from({length:count},(_,i)=>i)
+      .filter(i=>i%2===1).map(i=>'s'+i);
+     assert.deepEqual(targetWindow.options,enemies);
+     assert.notEqual(targetWindow.ticket,recovered.ticket);
+     assert.equal(targetWindow.state,'open');
+     assert.equal((await ask(replacement,'choice_submit',{
+      ticket:recovered.ticket,option:selected.cardId
+     })).code,'CHOICE_WINDOW_NOT_FOUND');
+     assert.equal((await ask(replacement,'choice_submit',{
+      ticket:targetWindow.ticket,option:'s0'
+     })).code,'CHOICE_OPTION_NOT_ALLOWED');
+     assert.equal((await ask(replacement,'choice_submit',{
+      ticket:targetWindow.ticket,option:'s99'
+     })).code,'CHOICE_OPTION_NOT_ALLOWED');
+     for(let foreign=1;foreign<count;foreign++){
+      const v=await ask(currentBySeat[foreign],'choice_query');
+      assert.equal(JSON.stringify(v).includes(targetWindow.ticket),false);
+      assert.equal((await ask(currentBySeat[foreign],'choice_submit',{
+       ticket:targetWindow.ticket,option:enemies[0]
+      })).code,'CHOICE_WINDOW_NOT_FOUND');
+     }
+     assert.equal((await ask(replacement,'choice_submit',{
+      ticket:targetWindow.ticket,option:enemies[0]
+     })).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+     const targetRecorded=await until(async()=>{
+      const p=await chrome.inspectNativeUseCardPreview();
+      return p.targetPreviewState==='recorded'&&p;
+     });
+     assert.equal(targetRecorded.selectedTargetSeat,Number(enemies[0].slice(1)));
+     assert.equal(targetRecorded.selectedCardId,selected.cardId);
+     assert.equal(targetRecorded.samePausedEvent,true);
+     assert.equal(targetRecorded.nativeUnwaitInvoked,false);
+     assert.equal(targetRecorded.fullRulesValidated,false);
+     assert.equal(targetRecorded.actionExecuted,false);
+     await until(async()=>(await ask(replacement,'choice_query')).window?.state==='delivered');
+     assert.equal((await ask(replacement,'choice_submit',{
+      ticket:targetWindow.ticket,option:enemies[1]
+     })).code,'CHOICE_ALREADY_LOCKED');
+    }else{
+     assert.equal((await chrome.inspectNativeUseCardPreview()).targetPreviewOpened,false);
+     assert.equal((await ask(replacement,'choice_query')).window?.state,'delivered');
+     assert.equal((await ask(replacement,'choice_submit',{
+      ticket:recovered.ticket,option:recovered.options.find(c=>c!==selected.cardId)
+     })).code,'CHOICE_ALREADY_LOCKED');
+    }
     assert.equal((await ask(replacement,'command',{
      action:'playCard',cardId:recovered.options[0],targetSeat:1
     })).code,'RULES_ENGINE_NOT_IMPLEMENTED');
