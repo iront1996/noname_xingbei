@@ -397,6 +397,24 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      throw fail('V3_NATIVE_OPENING_DEAL_FAILED_'+String(r.result?.value?.code??'CDP'));
     return r.result.value.result;
    },
+   async probeNativeOriginalGameDraw(){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const expression=`(async()=>{
+     try{
+      const native=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+      return native?{ok:true,result:await native.probeNativeGameDrawExecution()}:
+       {ok:false,code:'V3_NATIVE_SEAT_SESSION_MISSING'};
+     }catch(e){
+      return {ok:false,code:String(e?.code??e?.message??e).slice(0,100),
+       reason:String(e?.cause?.stack??e?.stack??'').slice(0,400)};
+     }
+    })()`;
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_REAL_GAME_DRAW_FAILED_'+String(r.result?.value?.code??'CDP'));
+    return r.result.value.result;
+   },
    async stageNativeOpeningTurnBoundary({firstSeat=0}={}){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
     if(!Number.isInteger(firstSeat)||firstSeat<0||firstSeat>7)
