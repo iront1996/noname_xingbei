@@ -55,6 +55,8 @@ async function fill(runtime){
  const sessions=[await ask(ws[0],{type:'create',roomId:'TEST',config})];
  for(let i=1;i<4;i++)sessions.push(await ask(ws[i],{type:'join',roomId:'TEST'}));
  assert.ok(sessions.every(s=>s.ok));
+ assert.equal(new Set(sessions.map(s=>s.playerId)).size,4);
+ assert.ok(sessions.every(s=>/^player_[a-f0-9]{32}$/.test(s.playerId)));
  return {ws,sessions};
 }
 test('owner and guest reconnect with rotated credentials; Chromium host remains independent',async()=>{
@@ -70,6 +72,7 @@ test('owner and guest reconnect with rotated credentials; Chromium host remains 
    const replacement=x.connect();
    const next=await ask(replacement,{type:'reconnect',roomId:'TEST',seat,reconnectToken:sessions[seat].reconnectToken});
    assert.ok(next.ok);assert.notEqual(next.reconnectToken,sessions[seat].reconnectToken);
+   assert.equal(next.playerId,sessions[seat].playerId);
    assert.equal((await x.broker.inspectWorker('TEST')).code,'WORKER_PROOF_ALIVE');
    assert.equal((await ask(replacement,{type:'command',action:'attack'})).code,'RULES_ENGINE_NOT_IMPLEMENTED');
   }
