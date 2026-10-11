@@ -861,10 +861,10 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    })).code,'WORKER_CHANNEL_OFFLINE');
    assert.equal((await ask(currentBySeat[0],'choice_query')).window,null);
    assert.equal((await ask(currentBySeat[0],'choice_submit',{
-    ticket:recovered.ticket,option:selected.cardId
+    ticket:'f'.repeat(32),option:'s1'
    })).code,'WORKER_CHANNEL_OFFLINE');
    assert.equal((await ask(currentBySeat[0],'authority_choice_renew',{
-    roomId,seat:0,playerId:sessions[0].playerId,ticket:recovered.ticket
+    roomId,seat:0,playerId:sessions[0].playerId,ticket:'f'.repeat(32)
    })).code,'UNKNOWN_MESSAGE_TYPE');
    assert.deepEqual(broker.roomView(roomId).roster.map(p=>p.seat),
     Array.from({length:count},(_,i)=>i));
