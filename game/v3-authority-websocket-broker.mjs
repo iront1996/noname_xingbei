@@ -130,8 +130,14 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     if(!Number.isInteger(obj.seat)||obj.seat<0||obj.seat>7||
        stablePlayersByRoom.get(roomId)?.get(obj.seat)!==obj.playerId)
      return send(ws,{type:'error',code:'CHOICE_SEAT_INVALID'});
+    if(obj.source==='preview'&&
+       (!enableNativeOwnershipProbes||!enableChoiceWindowExperiments||
+        process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1'||obj.kind!=='card'))
+     return send(ws,{type:'error',code:'NATIVE_USE_PREVIEW_DISABLED'});
     const opened=choices.open({roomId,seat:obj.seat,playerId:obj.playerId,
-      kind:obj.kind,prompt:obj.prompt,options:obj.options,source:obj.source==='native'?'native':'experiment'});
+      kind:obj.kind,prompt:obj.prompt,options:obj.options,
+      source:obj.source==='native'?'native':
+       obj.source==='preview'?'preview':'experiment'});
     send(ws,{type:'authority_choice_open_result',...opened});
     if(opened.ok)sendChoice(roomId,obj.seat);
     return;
