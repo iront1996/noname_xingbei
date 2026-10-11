@@ -78,7 +78,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   adapter.registerPlayer({seat:i,player:players[i],client:clients[i]});
  const drafts=new Map(),chosen=new Set();
  const legalCharacters=new Set(game.__v3NativeContentStage.rosterChoices());
- let draftFailure=null,startingCardsDealt=false,nativeOpeningDrawExecuted=false;
+ let draftFailure=null,startingCardsDealt=false,nativeOpeningDrawExecuted=false,restoredOpening=false;
  const physicalCardsBySeat=new Map();
  const ensureNativeSecurity=async()=>{
   if(game.__v3NativeSecurityBootstrapped)return;
@@ -243,11 +243,128 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     nativeGameDrawTriggered:false
    });
   },
+  restoreOpeningCheckpoint({checkpoint,roomId}={}){
+   // Fully staged native ESM+Player objects in a FRESH offboard Chromium.
+   // This is opening-only state rehydration, NOT EventStack/turn recovery.
+   if(globalThis.isNonameServer!==true||!checkpoint||
+      typeof checkpoint!=='object'||Array.isArray(checkpoint)||
+      typeof roomId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(roomId)||
+      !game.__v3NativeContentStage||startingCardsDealt||
+      restoredOpening||nativeOpeningDrawExecuted||chosen.size!==0||
+      drafts.size!==0||draftFailure||game.__v3NativeDrawPile)
+    throw err('V3_OPENING_RESTORE_DENIED');
+   const specs=game.__v3NativeContentStage.cardEntries();
+   const validCardId=x=>typeof x==='string'&&/^v3card_[a-f0-9]{6}$/.test(x);
+   const cardIndex=id=>parseInt(id.slice(7),16);
+   const acceptedKeys=['schema','roomId','seatMode','revision','totalCards','players','remainingCardIds'];
+   if(Object.keys(checkpoint).some(k=>!acceptedKeys.includes(k))||
+      checkpoint.schema!=='xingbei-v3-native-opening-only-v1'||
+      checkpoint.roomId!==roomId||
+      checkpoint.seatMode!==(players.length/2)+'v'+(players.length/2)||
+      !Number.isSafeInteger(checkpoint.revision)||checkpoint.revision<1||
+      checkpoint.totalCards!==specs.length||!Array.isArray(checkpoint.players)||
+      checkpoint.players.length!==players.length||
+      !Array.isArray(checkpoint.remainingCardIds)||
+      checkpoint.remainingCardIds.length!==specs.length-4*players.length)
+    throw err('V3_OPENING_RESTORE_SCHEMA_INVALID');
+   const allowedCharacters=new Set(game.__v3NativeContentStage.rosterChoices());
+   const usedCharacters=new Set(),usedCards=new Set();
+   const validateCard=c=>{
+    if(!c||typeof c!=='object'||Array.isArray(c)||
+       Object.keys(c).some(k=>!['cardId','name'].includes(k))||
+       !validCardId(c.cardId)||typeof c.name!=='string'||
+       cardIndex(c.cardId)>=specs.length||
+       specs[cardIndex(c.cardId)][2]!==c.name||
+       usedCards.has(c.cardId))
+     throw err('V3_OPENING_RESTORE_CARD_INVALID');
+    usedCards.add(c.cardId);
+   };
+   // Reject EVERY inconsistency before mutating any native card or Player.
+   for(let seat=0;seat<players.length;seat++){
+    const p=checkpoint.players[seat];
+    if(!p||typeof p!=='object'||Array.isArray(p)||
+       Object.keys(p).some(k=>!['seat','playerId','character','hand'].includes(k))||
+       p.seat!==seat||p.playerId!==players[seat].playerid||
+       !allowedCharacters.has(p.character)||usedCharacters.has(p.character)||
+       !Array.isArray(p.hand)||p.hand.length!==4)
+     throw err('V3_OPENING_RESTORE_PLAYER_MISMATCH');
+    usedCharacters.add(p.character);
+    for(const c of p.hand)validateCard(c);
+   }
+   for(const id of checkpoint.remainingCardIds){
+    const ix=validCardId(id)?cardIndex(id):-1;
+    if(ix<0||ix>=specs.length||usedCards.has(id))
+     throw err('V3_OPENING_RESTORE_DECK_INVALID');
+    usedCards.add(id);
+   }
+   if(usedCards.size!==specs.length)
+    throw err('V3_OPENING_RESTORE_DECK_INCOMPLETE');
+   for(let ix=0;ix<specs.length;ix++){
+    const id='v3card_'+ix.toString(16).padStart(6,'0');
+    if(!usedCards.has(id))throw err('V3_OPENING_RESTORE_CARD_MISSING');
+   }
+   if(ui.cardPile?.hasChildNodes())
+    throw err('V3_OPENING_RESTORE_EXISTING_PILE');
+   if(typeof ui.create.card!=='function')throw err('V3_OPENING_RESTORE_CARD_UI_MISSING');
+   try{
+    if(!ui.cardPile){
+     const pileNode=document.createElement('div');
+     pileNode.style.display='none';
+     document.body.appendChild(pileNode);
+     ui.cardPile=pileNode;
+    }
+    const makeCard=({cardId})=>{
+     const index=cardIndex(cardId);
+     const c=ui.create.card().init(specs[index]);
+     if(!(c instanceof lib.element.Card))
+      throw err('V3_OPENING_RESTORE_CARD_BUILD_FAILED');
+     Object.defineProperty(c,'__v3PhysicalId',{
+      configurable:false,enumerable:false,value:cardId
+     });
+     return c;
+    };
+    for(const p of checkpoint.players){
+     const native=players[p.seat];
+     native.init(p.character,null,null,false);
+     if(native.name1!==p.character)
+      throw err('V3_OPENING_RESTORE_CHARACTER_INIT_FAILED');
+     chosen.add(p.character);
+     const cards=p.hand.map(makeCard);
+     for(const c of cards)native.node.handcards1.appendChild(c);
+     physicalCardsBySeat.set(p.seat,cards);
+    }
+    for(const cardId of checkpoint.remainingCardIds)
+     ui.cardPile.appendChild(makeCard({cardId}));
+    const nativeIds=players.flatMap(p=>p.getCards('h').map(c=>c.__v3PhysicalId));
+    const remaining=Array.from(ui.cardPile.childNodes).map(c=>c.__v3PhysicalId);
+    if(nativeIds.length!==players.length*4||
+       JSON.stringify(remaining)!==JSON.stringify(checkpoint.remainingCardIds)||
+       checkpoint.players.some((p,seat)=>
+        JSON.stringify(players[seat].getCards('h').map(c=>c.__v3PhysicalId))!==
+        JSON.stringify(p.hand.map(c=>c.cardId))))
+     throw err('V3_OPENING_RESTORE_POSTCHECK_FAILED');
+    nativeOpeningDrawExecuted=true;
+    restoredOpening=true;
+    startingCardsDealt=true;
+    return Object.freeze({
+     restoredOpening:true,restorableRunningGame:false,
+     realNativePlayers:players.every(p=>p instanceof lib.element.Player),
+     realNativeCards:players.every(p=>p.getCards('h').every(c=>c instanceof lib.element.Card)),
+     roomId,revision:checkpoint.revision,seatMode:checkpoint.seatMode,
+     seatCount:players.length,handCounts:players.map(p=>p.getCards('h').length),
+     deckRemaining:remaining.length,playerIdsMatch:true,
+     gameLoopStarted:false,gameEventStackRestored:false
+    });
+   }catch(e){
+    draftFailure='V3_OPENING_RESTORE_FATAL_ERROR';
+    throw e;
+   }
+  },
   // Complete opening setup checkpoint. Server/CDP only, never publish via
   // a human player socket or room-wide roster. NOT a game-event snapshot.
   exportOpeningCheckpoint({roomId,revision=1}={}){
    if(!startingCardsDealt||drafts.size!==0||chosen.size!==players.length||
-      !game.__v3NativeDrawPile||draftFailure)
+      (!game.__v3NativeDrawPile&&!restoredOpening)||draftFailure)
     throw err('V3_OPENING_CHECKPOINT_NOT_READY');
    if(typeof roomId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(roomId)||
       !Number.isSafeInteger(revision)||revision<1)
@@ -542,7 +659,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     actualNativePlayers:players.every(p=>p instanceof lib.element.Player),
     cardContentLoaded:!!game.__v3NativeContentStage,
     characterCount:chosen.size,draftPending:drafts.size,
-    startingCardsDealt,nativeOpeningDrawExecuted,
+    startingCardsDealt,nativeOpeningDrawExecuted,restoredOpening,
     fatalDraftError:draftFailure,
     gameLoopStarted:false,
     pendingNativeChoices:adapter.inspect().pending
