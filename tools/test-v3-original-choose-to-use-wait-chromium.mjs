@@ -242,6 +242,16 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
    assert.equal(progressed.originalEvent,'gongJiOrFaShu');
    assert.equal(progressed.actionEvent,'xingDong');
    assert.equal(progressed.counter,0);
+   const nextActor=await until(async()=>{
+    const state=await chrome.inspectOriginalActionGate();
+    if(state.failed)throw Error('NEXT_NATIVE_ACTOR_FAILED_'+state.error+
+     '_'+String(state.trace??'').slice(0,230));
+    return state.nextActionGateReached&&state.paused&&state;
+   });
+   assert.equal(nextActor.nextActionPlayerId,sessions[1].playerId);
+   assert.equal(nextActor.nextActionEventNative,true);
+   assert.equal(nextActor.loopComplete,false);
+   assert.equal(nextActor.actualActionStepExecuted,false);
   }
   const after=await chrome.inspectNativePrivateHand({seat:0});
   assert.deepEqual(after.ownHand,before.ownHand);
