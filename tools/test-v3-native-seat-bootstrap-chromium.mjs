@@ -407,6 +407,31 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(selection.selectionContentExecuted,false);
     assert.equal(selection.skillsVerified,false);
     assert.equal(selection.replaySafe,false);
+    // First native action security prerequisite: validate actual Card
+    // ownership against native Player.getCards('h'), not a claimed client id.
+    const card=seatViews[0].ownHand[0].cardId;
+    const foreignCard=seatViews[1].ownHand[0].cardId;
+    const owner=await chrome.preflightNativeActionCardOwnership({
+     seat:0,playerId:sessions[0].playerId,cardId:card
+    });
+    assert.equal(owner.ownedByActivePlayer,true);
+    assert.equal(owner.ownershipPreflightOnly,true);
+    assert.equal(owner.fullRulesValidated,false);
+    assert.equal(owner.targetValidated,false);
+    assert.equal(owner.cardConsumed,false);
+    assert.equal(owner.actionExecuted,false);
+    for(const input of [
+     {seat:0,playerId:sessions[0].playerId,cardId:foreignCard},
+     {seat:1,playerId:sessions[1].playerId,cardId:foreignCard},
+     {seat:0,playerId:sessions[1].playerId,cardId:card},
+     {seat:0,playerId:sessions[0].playerId,cardId:'v3card_ffffff'},
+     {seat:0,playerId:sessions[0].playerId,cardId:'<script>'}
+    ])await assert.rejects(
+     chrome.preflightNativeActionCardOwnership(input),
+     /V3_NATIVE_CARD_OWNERSHIP_DENIED/
+    );
+    assert.deepEqual((await chrome.inspectNativePrivateHand({seat:0})).ownHand,
+     seatViews[0].ownHand);
    }
    // A game-in-progress checkpoint must NOT be relabeled as opening-only.
    assert.equal((await broker.captureOpeningCheckpoint(roomId)).code,
