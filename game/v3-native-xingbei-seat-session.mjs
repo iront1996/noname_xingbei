@@ -78,8 +78,26 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   adapter.registerPlayer({seat:i,player:players[i],client:clients[i]});
  const drafts=new Map(),chosen=new Set();
  const legalCharacters=new Set(game.__v3NativeContentStage.rosterChoices());
- let draftFailure=null,startingCardsDealt=false;
+ let draftFailure=null,startingCardsDealt=false,nativeOpeningDrawExecuted=false;
  const physicalCardsBySeat=new Map();
+ const ensureNativeSecurity=async()=>{
+  if(game.__v3NativeSecurityBootstrapped)return;
+  const realms=await import('/noname/util/initRealms.js');
+  const security=(await import('/noname/util/security.js')).default;
+  await realms.initializeSandboxRealms(true);
+  await security.initSecurity({
+   lib,game,ui,get:core.get,ai:core.ai,_status,gnc:core.gnc
+  });
+  Object.defineProperty(game,'__v3NativeSecurityBootstrapped',{
+   value:true,enumerable:false,configurable:false
+  });
+ };
+ const ensureCardSorter=()=>{
+  if(typeof lib.config?.sort_card==='function')return;
+  const sort=core.get?.sortCard?.(lib.config?.sort);
+  if(typeof sort!=='function')throw err('V3_NATIVE_CARD_SORTER_UNAVAILABLE');
+  lib.config.sort_card=sort;
+ };
  const session=Object.freeze({
   // Controlled choices are real GameEvents over the authenticated Chromium
   // channel. The legacy online chooseCharacterOL implementation is NOT used.
@@ -189,17 +207,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     throw err('V3_NATIVE_TURN_BOUNDARY_NOT_READY');
    // Mirror original boot's security initialization BEFORE compiling any
    // native step-content. Never suppress sandbox failures or fall back to eval.
-   if(!game.__v3NativeSecurityBootstrapped){
-    const realms=await import('/noname/util/initRealms.js');
-    const security=(await import('/noname/util/security.js')).default;
-    await realms.initializeSandboxRealms(true);
-    await security.initSecurity({
-     lib,game,ui,get:core.get,ai:core.ai,_status,gnc:core.gnc
-    });
-    Object.defineProperty(game,'__v3NativeSecurityBootstrapped',{
-     value:true,enumerable:false,configurable:false
-    });
-   }
+   await ensureNativeSecurity();
    const first=players[firstSeat];
    const root=new lib.element.GameEvent('v3OpeningBoundary',false);
    const manager=_status.eventManager;
@@ -260,11 +268,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    if(ui.cardPile.hasChildNodes())throw err('V3_NATIVE_DRAW_PILE_DIRTY');
    // Native boot normally derives a card comparator from get.sortCard().
    // This isolated ESM bootstrap must use that ORIGINAL comparator too.
-   if(typeof lib.config?.sort_card!=='function'){
-    const sort=core.get?.sortCard?.(lib.config?.sort);
-    if(typeof sort!=='function')throw err('V3_NATIVE_CARD_SORTER_UNAVAILABLE');
-    lib.config.sort_card=sort;
-   }
+   ensureCardSorter();
    const originalCount=players.map(x=>x.getCards('h').length);
    for(let i=0;i<players.length*4;i++){
     const card=game.__v3NativeDrawPile.draw();
