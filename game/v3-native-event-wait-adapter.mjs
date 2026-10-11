@@ -108,6 +108,15 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
   }
  };
  const hooked=bridge.registerNativeChoiceHooks({
+  roster(currentBindings){
+   if(!alive||!Array.isArray(currentBindings))return;
+   for(const [pid,reg] of registered){
+    const b=currentBindings.find(x=>x.seat===reg.seat&&x.playerId===pid);
+    // No AI fallback, timeout, or GameEvent result modification.
+    reg.client.closed=(!b||b.connectionId===null);
+    reg.client.inited=!!b?.connectionId;
+   }
+  },
   opened(message){
    const view=message?.view;
    if(!message?.ok||view?.source!=='native')return false;
@@ -158,12 +167,15 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
       !(player instanceof Player)||!(client instanceof Client)||
       registered.has(b.playerId))
     throw failure('V3_NATIVE_PLAYER_REGISTRATION_DENIED');
+   client.closed=b.connectionId===null;
+   client.inited=b.connectionId!==null;
    registered.set(b.playerId,{seat,player,client});
    return b.playerId;
   },
   inspect(){
    return Object.freeze({active:alive,registered:registered.size,pending:pending.size,
     consumed,interrupted,paused:_status.paused===true,
+    connectedPlayers:Array.from(registered.values()).filter(v=>!v.client.closed).length,
     waitingCount:lib.node?.torespond?Object.keys(lib.node.torespond).length:0});
   }
  });
