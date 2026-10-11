@@ -41,6 +41,15 @@ async function setup({latency=0}={}){
     async connectRoomChannel({roomId,secret}){
      if(latency)await new Promise(r=>setTimeout(r,latency));
      authority=FakeWebSocketServer.instance.connect();
+     const originalSend=authority.send.bind(authority);
+     authority.send=text=>{
+      originalSend(text);
+      const msg=JSON.parse(text);
+      if(msg.type==='authority_transport_probe')authority.clientSend({
+       type:'authority_probe_ack',roomId:msg.roomId,seat:msg.seat,
+       playerId:msg.playerId,traceId:msg.traceId
+      });
+     };
      authority.clientSend({type:'authority_hello',roomId,secret});
     },
     async inspect(){if(!alive)throw Error('crashed');return {alive:true,offboard:true,pid:123,gameRulesLoaded:false,statePersisted:false}},
@@ -67,12 +76,18 @@ test('owner and guest reconnect with rotated credentials; Chromium host remains 
   assert.equal(ready.code,'WORKER_PROOF_RUNNING_NOT_PLAYABLE');
   assert.equal(x.started,1);
   await waitFor(x.authority,r=>r.type==='authority_accepted');
+  const firstHop=await ask(ws[0],{type:'transport_probe'});
+  assert.equal(firstHop.code,'TRANSPORT_PROBE_ROUNDTRIP');
+  assert.equal(firstHop.playerId,sessions[0].playerId);
   ws[0].close();ws[2].close();
   for(const seat of [0,2]){
    const replacement=x.connect();
    const next=await ask(replacement,{type:'reconnect',roomId:'TEST',seat,reconnectToken:sessions[seat].reconnectToken});
    assert.ok(next.ok);assert.notEqual(next.reconnectToken,sessions[seat].reconnectToken);
    assert.equal(next.playerId,sessions[seat].playerId);
+   const hop=await ask(replacement,{type:'transport_probe'});
+   assert.equal(hop.code,'TRANSPORT_PROBE_ROUNDTRIP');
+   assert.equal(hop.playerId,sessions[seat].playerId);
    assert.equal((await x.broker.inspectWorker('TEST')).code,'WORKER_PROOF_ALIVE');
    assert.equal((await ask(replacement,{type:'command',action:'attack'})).code,'RULES_ENGINE_NOT_IMPLEMENTED');
   }
@@ -104,6 +119,7 @@ test('untrusted peer cannot take worker identity or start private browser',async
   assert.equal(spy.readyState,3);
   assert.ok(!JSON.stringify(x.broker.roomView('TEST')).includes(first.reconnectToken));
   assert.equal(x.started,0);
+  assert.equal((await ask(creator,{type:'transport_probe'})).code,'WORKER_CHANNEL_OFFLINE');
  }finally{await x.broker.close()}
 });
 test('guest launch prohibited; partial roster cannot start authority',async()=>{
