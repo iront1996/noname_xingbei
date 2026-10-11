@@ -425,3 +425,16 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 - V3 offline regressions 含預設禁用保護與任意 gameplay 禁止： https://github.com/iront1996/noname_xingbei/actions/runs/38171261527 —— **SUCCESS**。
 
 下一個關鍵阻塞：原版 chooseToUse 事件的卡牌規則／角色技能／傷害與應戰、目標範圍、隱藏資訊與結果執行的完整伺服器主導方案，以及事件／RNG／reconnect token 持久化。尚不應請求 VPS 更新或真人反覆試玩。
+
+
+## 2026-10-12：獨立主持通道失聯快速拒絕與 4/6/8 人雙輪重連矩陣
+
+本輪只修改 V3 實驗分支上的 `game/v3-authority-websocket-broker.mjs`、兩個 `tools/test-v3-*.mjs` 測試及本文件；沒有變更共用 `noname/**`、`mode/xingBei.js`、V1/V2／線上 V3 或 VPS 服務。
+
+- 主持 Chromium 的**私有認證 WS** 一旦關閉，broker 立即清掉同房間尚未回應的 transport probes、計時器，通知仍有效的原真人 socket `WORKER_CHANNEL_OFFLINE`；其後即使舊 channel 發出延遲回覆，也不得轉換為成功。
+- worker channel 失去當前權威 mapping 時，拒絕任何舊 channel 的投影更新、回執或事件操作（`WORKER_CHANNEL_REVOKED`）。`broker.inspectWorker()` 同時確認 Chromium OS 程序與受驗證通道存在；**僅 PID 存活不足以宣稱主持健康**。
+- 假 WebSocket 回歸重現「傳輸探測送達 Chromium 但 Chromium 不回覆」後突然斷線，驗證立刻失敗、舊 ACK 不生效、原本尚未實作的 gameplay 仍拒絕。
+- 真 Chromium 整合測試新增 `2v2`、`3v3`、`4v4` 各兩輪原開房者與另一個座位**同時斷線／逆序重連**。斷線期間其他真人依然可以透過原本 Chromium PID 完成 transport probe，恢復後的固定 Player ID 不變、session token 必須輪替、舊 token 被拒絕，重連後所有座位同步且不會偷偷允許出牌。
+- **本輪 CI 結果**：V3 Playtest Offline Safety Tests [38173171386](https://github.com/iront1996/noname_xingbei/actions/runs/38173171386) **SUCCESS**；V3 Chromium Authority Worker PoC [38173171463](https://github.com/iront1996/noname_xingbei/actions/runs/38173171463) **SUCCESS**。對應包含程式與測試的提交 `f1f1a7494c42165df0f57e06b8ae12dbebc61a29`。
+
+**仍未達上線／真人驗收門檻**：`gongJiOrFaShu`／`chooseToUse` 真正合法出牌、技能／觸發事件完整執行、私有遊戲行動結果、完整勝負發布和持久化中途事件恢復都沒有完成。這些測試證明的是獨立主持連線的故障邊界，不是完整一局星杯對戰。舊版 V3 playtest 與 V1/V2 均維持不變。
