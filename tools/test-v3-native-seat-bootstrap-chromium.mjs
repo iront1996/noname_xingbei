@@ -379,6 +379,27 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(action.replaySafe,false);
     assert.equal(action.loopComplete,false);
    }
+   if(mode==='2v2'){
+    const releasedSelection=await chrome.releaseOriginalActionToSelectionGate();
+    assert.equal(releasedSelection.started,true);
+    assert.equal(releasedSelection.ownerPlayerId,sessions[0].playerId);
+    const selection=await until(async()=>{
+     const state=await chrome.inspectOriginalSelectionGate();
+     if(state.failed)throw Error('V3_NATIVE_SELECTION_ORIGINAL_ERROR_'+
+      state.error+'_'+String(state.trace??'').slice(0,180));
+     return state.selectionGateReached&&state.paused&&state;
+    });
+    assert.equal(selection.originalXingDongEvent,true);
+    assert.equal(selection.selectionEventNative,true);
+    assert.equal(selection.selectionEventName,'gongJiOrFaShu');
+    assert.equal(selection.selectionOwnerPlayerId,sessions[0].playerId);
+    assert.equal(selection.expectedOwnerPlayerId,sessions[0].playerId);
+    assert.equal(selection.actionCounter,1);
+    assert.equal(selection.phaseLoopComplete,false);
+    assert.equal(selection.selectionContentExecuted,false);
+    assert.equal(selection.skillsVerified,false);
+    assert.equal(selection.replaySafe,false);
+   }
    // A game-in-progress checkpoint must NOT be relabeled as opening-only.
    assert.equal((await broker.captureOpeningCheckpoint(roomId)).code,
     'OPENING_CAPTURE_NATIVE_NOT_READY');
