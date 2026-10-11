@@ -571,6 +571,93 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
      supportedPrintedAttack:true,targetSeat:1
     });
     assert.equal(counterfeit.code,'UNKNOWN_MESSAGE_TYPE');
+    // Next native action milestone: retain the genuine paused chooseToUse
+    // GameEvent, offer only THIS seat's physical cards in a broker ticket,
+    // and record the human intent WITHOUT native unwait/useResult/effects.
+    await assert.rejects(chrome.beginNativeUseCardPreview({
+     seat:1,playerId:sessions[1].playerId
+    }),/V3_NATIVE_USE_PREVIEW_DENIED/);
+    const begun=await chrome.beginNativeUseCardPreview({
+     seat:0,playerId:sessions[0].playerId
+    });
+    assert.equal(begun.nativeGameEvent,true);
+    assert.equal(begun.originalEvent,'gongJiOrFaShu');
+    assert.equal(begun.handCount,4);
+    assert.equal(begun.originalChooseToUseExecuted,false);
+    assert.equal(begun.fullRulesValidated,false);
+    assert.equal(begun.cardConsumed,false);
+    assert.equal(begun.actionExecuted,false);
+    const previewWindow=await until(()=>currentBySeat[0].received.find(x=>
+     x.type==='choice_window'&&x.window?.source==='preview'&&
+     x.window?.playerId===sessions[0].playerId
+    )?.window);
+    assert.equal(previewWindow.kind,'card');
+    assert.equal(previewWindow.state,'open');
+    assert.deepEqual([...previewWindow.options].sort(),
+     seatViews[0].ownHand.map(c=>c.cardId).sort());
+    for(let seat=1;seat<count;seat++){
+     const stranger=await ask(currentBySeat[seat],'choice_query');
+     assert.notEqual(stranger.window?.ticket,previewWindow.ticket);
+     assert.equal(JSON.stringify(stranger).includes(previewWindow.options[0]),false);
+     const denied=await ask(currentBySeat[seat],'choice_submit',{
+      ticket:previewWindow.ticket,option:previewWindow.options[0]
+     });
+     assert.equal(denied.code,'CHOICE_WINDOW_NOT_FOUND');
+    }
+    assert.equal((await chrome.inspectNativeUseCardPreview()).state,'open');
+    await assert.rejects(chrome.beginNativeUseCardPreview({
+     seat:0,playerId:sessions[0].playerId
+    }),/V3_NATIVE_USE_PREVIEW_DENIED/);
+    // Disconnect the creator DURING the read-only native card window:
+    // ticket and original event remain server-owned, no AI/autoplay.
+    currentBySeat[0].ws.close();
+    await until(()=>!broker.roomView(roomId).roster[0].connected);
+    const waiting=await chrome.inspectNativeUseCardPreview();
+    assert.equal(waiting.state,'open');
+    assert.equal(waiting.samePausedEvent,true);
+    const replacement=await connect(broker.address);
+    peers.push(replacement);
+    currentBySeat[0]=replacement;
+    const reconnect=await ask(replacement,'reconnect',{
+     roomId,seat:0,reconnectToken:reconnectCredentials[0]
+    });
+    assert.equal(reconnect.code,'SESSION_RECONNECTED');
+    assert.equal(reconnect.playerId,sessions[0].playerId);
+    reconnectCredentials[0]=reconnect.reconnectToken;
+    const recovered=await until(()=>replacement.received.find(x=>
+     x.type==='choice_window'&&x.window?.source==='preview'&&
+     x.window.ticket===previewWindow.ticket
+    )?.window);
+    assert.deepEqual(recovered.options,previewWindow.options);
+    assert.equal((await ask(replacement,'choice_submit',{
+     ticket:recovered.ticket,option:'v3card_ffffff'
+    })).code,'CHOICE_OPTION_NOT_ALLOWED');
+    const chose=await ask(replacement,'choice_submit',{
+     ticket:recovered.ticket,option:recovered.options[0]
+    });
+    assert.equal(chose.code,'CHOICE_SUBMITTED_NOT_APPLIED');
+    const recorded=await until(async()=>{
+     const p=await chrome.inspectNativeUseCardPreview();
+     return p.recorded&&p;
+    });
+    assert.equal(recorded.selectedCardId,recovered.options[0]);
+    assert.equal(recorded.samePausedEvent,true);
+    assert.equal(recorded.nativeGameEvent,true);
+    assert.equal(recorded.nativeUnwaitInvoked,false);
+    assert.equal(recorded.fullRulesValidated,false);
+    assert.equal(recorded.cardConsumed,false);
+    assert.equal(recorded.actionExecuted,false);
+    assert.equal((await ask(replacement,'choice_query')).window?.state,'delivered');
+    assert.equal((await ask(replacement,'choice_submit',{
+     ticket:recovered.ticket,option:recovered.options[1]
+    })).code,'CHOICE_ALREADY_LOCKED');
+    assert.equal((await ask(replacement,'command',{
+     action:'playCard',cardId:recovered.options[0],targetSeat:1
+    })).code,'RULES_ENGINE_NOT_IMPLEMENTED');
+    assert.deepEqual((await chrome.inspectNativePrivateHand({seat:0})).ownHand,
+     seatViews[0].ownHand);
+    assert.equal((await chrome.inspectOriginalSelectionGate()).paused,true);
+    assert.equal((await chrome.inspectOriginalSelectionGate()).selectionContentExecuted,false);
     assert.deepEqual((await chrome.inspectNativePrivateHand({seat:0})).ownHand,
      seatViews[0].ownHand);
     assert.deepEqual((await ask(currentBySeat[0],'private_hand_query')).view.ownHand,
