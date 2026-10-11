@@ -16,23 +16,27 @@ const requestOk=s=>s===undefined||(typeof s==='string'&&/^[a-zA-Z0-9_-]{1,40}$/.
 const live=ws=>ws?.readyState===1;
 const send=(ws,obj)=>{if(!live(ws))return;try{ws.send(JSON.stringify(obj))}catch{try{ws.close(1011)}catch{}}};
 
-export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0,enableChoiceWindowExperiments=false,enablePrivateHandExperiments=false,enableOpeningRecoveryExperiments=false,openingCheckpointStore=null}={}){
+export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0,enableChoiceWindowExperiments=false,enablePrivateHandExperiments=false,enableOpeningRecoveryExperiments=false,openingCheckpointStore=null,enableNativeOwnershipProbes=false}={}){
  if(typeof WebSocketServer!=='function'||typeof launchWorker!=='function')throw new TypeError('BROKER_DEPENDENCY_MISSING');
  if(host!=='127.0.0.1'||port!==0)throw new Error('EXPERIMENT_LOOPBACK_EPHEMERAL_ONLY');
  if(typeof enableChoiceWindowExperiments!=='boolean'||typeof enablePrivateHandExperiments!=='boolean'||
-    typeof enableOpeningRecoveryExperiments!=='boolean')
+    typeof enableOpeningRecoveryExperiments!=='boolean'||
+    typeof enableNativeOwnershipProbes!=='boolean')
   throw new TypeError('EXPERIMENT_CONFIG_INVALID');
  if(enableOpeningRecoveryExperiments&&
     (process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1'||
      typeof openingCheckpointStore?.load!=='function'||
      typeof openingCheckpointStore?.save!=='function'))
   throw new TypeError('OPENING_RECOVERY_OFFLINE_STORE_REQUIRED');
+ if(enableNativeOwnershipProbes&&process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+  throw new TypeError('NATIVE_CARD_OWNERSHIP_PROBE_CI_ONLY');
  const choices=createV3AuthorityChoiceWindows();
  const privateHands=createV3AuthorityPrivateProjections();
  const stablePlayersByRoom=new Map();
  const openingRecoveryArmed=new Set(); // Revoked BEFORE native phase starts.
  // Transport round-trip probes are NOT gameplay intents or engine commands.
  const outstandingProbes=new Map();
+ const outstandingCardProbes=new Map();
  const seatsByRoom=new Map(),pendingWorker=new Map(),workersByRoom=new Map(),allSockets=new Set();
  let closed=false,server;
  const seats=id=>seatsByRoom.get(id);
@@ -148,6 +152,22 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     sendChoice(roomId,obj.seat);
     return;
    }
+   if(obj.type==='authority_action_ownership_result'){
+    if(!enableNativeOwnershipProbes)
+     return send(ws,{type:'error',code:'ACTION_PROBE_DISABLED'});
+    const p=outstandingCardProbes.get(obj.traceId);
+    if(!p||p.roomId!==ws.__v3AuthorityRoom||p.seat!==obj.seat||
+       p.playerId!==obj.playerId||typeof obj.owned!=='boolean')
+     return send(ws,{type:'error',code:'ACTION_PROBE_ACK_INVALID'});
+    outstandingCardProbes.delete(obj.traceId);
+    clearTimeout(p.timer);
+    if(current(p.roomId,p.seat,p.ws))
+     send(p.ws,{type:'reply',requestId:p.requestId,
+      ok:obj.owned,code:obj.owned?'ACTION_CARD_OWNERSHIP_PRECHECK_PASSED':
+       'ACTION_CARD_OWNERSHIP_DENIED',
+      fullRulesValidated:false,actionExecuted:false});
+    return;
+   }
    if(obj.type==='authority_probe_ack'){
     const p=outstandingProbes.get(obj.traceId);
     if(!p||p.roomId!==ws.__v3AuthorityRoom||p.playerId!==obj.playerId||p.seat!==obj.seat)
@@ -230,6 +250,33 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     if(result.delivery)send(worker,{type:'authority_choice_delivery',...result.delivery});
     return;
    }
+   case 'action_ownership_probe':{
+    if(!enableNativeOwnershipProbes)
+     return respond(reply(false,'ACTION_PROBE_DISABLED'));
+    if(!obj.requestId||typeof obj.cardId!=='string'||
+       !/^v3card_[a-f0-9]{6}$/.test(obj.cardId))
+     return respond(reply(false,'ACTION_CARD_OWNERSHIP_DENIED'));
+    const worker=workersByRoom.get(bound.roomId);
+    if(!live(worker))return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
+    if(outstandingCardProbes.size>=64)
+     return respond(reply(false,'ACTION_PROBE_CAPACITY_EXCEEDED'));
+    const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
+    if(!playerId)return respond(reply(false,'ACTION_CARD_OWNERSHIP_DENIED'));
+    const traceId=randomBytes(16).toString('hex');
+    const timer=setTimeout(()=>{
+     const p=outstandingCardProbes.get(traceId);
+     if(!p)return;
+     outstandingCardProbes.delete(traceId);
+     if(current(p.roomId,p.seat,p.ws))
+      send(p.ws,{type:'reply',requestId:p.requestId,
+       ok:false,code:'ACTION_PROBE_TIMEOUT'});
+    },4000);
+    outstandingCardProbes.set(traceId,{roomId:bound.roomId,seat:bound.seat,
+     playerId,ws,requestId:obj.requestId,timer});
+    send(worker,{type:'authority_action_ownership_probe',
+     roomId:bound.roomId,seat:bound.seat,playerId,traceId,cardId:obj.cardId});
+    return;
+   }
    case 'transport_probe':{
     if(!obj.requestId)return respond(reply(false,'REQUEST_ID_REQUIRED'));
     const worker=workersByRoom.get(bound.roomId);
@@ -274,6 +321,9 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   ws.on('message',(raw,isBinary)=>{chain=chain.then(()=>handle(ws,raw,isBinary)).catch(()=>send(ws,{type:'error',code:'BROKER_INTERNAL_ERROR'}))});
   ws.on('close',()=>{
    allSockets.delete(ws);
+   for(const [traceId,p] of outstandingCardProbes){
+    if(p.ws===ws){clearTimeout(p.timer);outstandingCardProbes.delete(traceId)}
+   }
    for(const [traceId,p] of outstandingProbes){
     if(p.ws===ws){clearTimeout(p.timer);outstandingProbes.delete(traceId)}
    }
@@ -282,6 +332,14 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
      workersByRoom.delete(ws.__v3AuthorityRoom);
      choices.cancelRoom(ws.__v3AuthorityRoom);
      privateHands.clearRoom(ws.__v3AuthorityRoom);
+     for(const [traceId,p] of outstandingCardProbes){
+      if(p.roomId===ws.__v3AuthorityRoom){
+       clearTimeout(p.timer);outstandingCardProbes.delete(traceId);
+       if(current(p.roomId,p.seat,p.ws))
+        send(p.ws,{type:'reply',requestId:p.requestId,
+         ok:false,code:'WORKER_CHANNEL_OFFLINE'});
+      }
+     }
      for(const entry of seats(ws.__v3AuthorityRoom)?.values()??[])
       send(entry.ws,{type:'choice_interrupted',code:'WORKER_CHANNEL_OFFLINE'});
     }
@@ -417,6 +475,8 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    closed=true;
    for(const p of outstandingProbes.values())clearTimeout(p.timer);
    outstandingProbes.clear();
+   for(const p of outstandingCardProbes.values())clearTimeout(p.timer);
+   outstandingCardProbes.clear();
    openingRecoveryArmed.clear();
    for(const roomId of seatsByRoom.keys()){
     choices.cancelRoom(roomId);
