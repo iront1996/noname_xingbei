@@ -17,6 +17,7 @@ test('original XingBei card deck and character packs import in real offboard Chr
   const native=await chrome.loadV3NativeModules({origin:server.origin});
   assert.equal(native.loaded,true);
   const report=await chrome.evaluateSeatExperiment(String.raw`(async()=>{
+  try{
    const {core}=window.__v3NativeXingBeiTest;
    const {stageV3NativeXingBeiContent,createV3NativeDrawPile}=
     await import('/game/v3-native-xingbei-content-stager.mjs');
@@ -45,7 +46,9 @@ test('original XingBei card deck and character packs import in real offboard Chr
     minHandSize:Math.min(...hands.map(x=>x.length)),
     hasPlayableCharacters:characterNames.length>=8,
     firstSeatHand:oneSeat.map(c=>c.name)};
+  }catch(e){return {stageError:String(e?.code??e?.message??e),details:String(e?.stack??'').slice(0,550)}}
   })()`);
+  assert.equal(report.stageError,undefined,JSON.stringify(report));
   assert.equal(report.stage.realSource,true);
   assert.equal(report.stage.cardPack,'xingBei');
   assert.deepEqual(report.stage.characterPacks,['poXiao','yiDuanYeHuo']);
