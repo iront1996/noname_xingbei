@@ -305,7 +305,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(recovered.gameEventStackRestored,false);
    assert.equal(recovered.restorableRunningGame,false);
    assert.notEqual(chrome.pid,oldHostPid);
-   const replacementPid=chrome.pid;
+   let replacementPid=chrome.pid;
    await until(async()=>{
     const native=await chrome.inspectNativeXingBeiSeats();
     return native.session.restoredOpening&&native.roster.every(p=>p.connected)&&native;
@@ -346,6 +346,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
      }
     }
     assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_PROOF_ALIVE');
+    replacementPid=chrome.pid;
    }
    // gameDraw has ALREADY executed to deal the four opening cards.
    // Queue ONLY original phaseLoop, so next start cannot deal twice.
