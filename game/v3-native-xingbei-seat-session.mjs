@@ -619,6 +619,45 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     cardConsumed:false,seat,playerId
    });
   },
+  preflightNativePrintedAttackTarget({seat,playerId,cardId,targetSeat}={}){
+   // Read-only printed-card target check at the still-paused original
+   // gongJiOrFaShu event. NOT a rules authorization or target selection.
+   this.preflightNativeActionCardOwnership({seat,playerId,cardId});
+   if(!Number.isInteger(targetSeat)||targetSeat<0||
+      targetSeat>=players.length)
+    throw err('V3_NATIVE_ATTACK_TARGET_DENIED');
+   const actor=players[seat],target=players[targetSeat];
+   if(!game.players.includes(actor)||!game.players.includes(target)||
+      target===actor||!target.isIn())
+    throw err('V3_NATIVE_ATTACK_TARGET_DENIED');
+   const physical=actor.getCards('h').find(c=>
+    c instanceof lib.element.Card&&c.__v3PhysicalId===cardId);
+   if(!physical)throw err('V3_NATIVE_ATTACK_TARGET_DENIED');
+   // These five printed XingBei strikes have an original one-target
+   // enemy-only predicate. Never infer rules for spells/skills/virtual cards.
+   const printedStrikes=new Set([
+    'anMie','shuiLianZhan','huoYanZhan','fengShenZhan','leiGuangZhan'
+   ]);
+   const info=lib.card[physical.name];
+   const supported=printedStrikes.has(physical.name)&&
+    info?.type==='gongJi'&&info.selectTarget===1&&
+    typeof info.filterTarget==='function';
+   let printedTargetEligible=false;
+   if(supported){
+    // No changing _status.event, ui.selected or pause state. If the
+    // original filter throws, deny rather than accepting a guessed target.
+    try{printedTargetEligible=info.filterTarget(physical,actor,target)===true}
+    catch{throw err('V3_NATIVE_ATTACK_TARGET_DENIED')}
+   }
+   return Object.freeze({
+    ownershipPreflightPassed:true,
+    supportedPrintedAttack:supported,
+    printedTargetEligible,
+    fullRulesValidated:false,targetFullyValidated:false,
+    actionExecuted:false,cardConsumed:false,
+    targetSeat,seat,playerId
+   });
+  },
   inspectOriginalSelectionGate(){
    const state=game.__v3PausedPhaseRuntime;
    if(!state)throw err('V3_NATIVE_SELECTION_GATE_NOT_STARTED');
