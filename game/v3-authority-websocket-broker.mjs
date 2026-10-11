@@ -171,6 +171,22 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     sendChoice(ws.__v3AuthorityRoom,obj.seat);
     return;
    }
+   if(obj.type==='authority_choice_preview_pass_applied'){
+    if(!enableNativeOwnershipProbes||!enableChoiceWindowExperiments||
+       process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     return send(ws,{type:'error',code:'NATIVE_PASS_EXPERIMENT_DISABLED'});
+    const roomId=ws.__v3AuthorityRoom;
+    if(!Number.isInteger(obj.seat)||obj.seat<0||obj.seat>7||
+       stablePlayersByRoom.get(roomId)?.get(obj.seat)!==obj.playerId)
+     return send(ws,{type:'error',code:'NATIVE_PASS_SEAT_DENIED'});
+    const applied=choices.nativePreviewPassApplied({roomId,seat:obj.seat,
+     playerId:obj.playerId,ticket:obj.ticket});
+    if(!applied.ok)return send(ws,{type:'error',code:applied.code});
+    send(ws,{type:'authority_choice_applied_confirmed',seat:obj.seat,
+     ticket:obj.ticket,playerId:obj.playerId,code:applied.code});
+    sendChoice(roomId,obj.seat);
+    return;
+   }
    if(obj.type==='authority_choice_native_applied'){
     if(!enableChoiceWindowExperiments)
      return send(ws,{type:'error',code:'CHOICE_EXPERIMENT_DISABLED'});
