@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import {createV3AuthorityWebSocketBroker} from '../game/v3-authority-websocket-broker.mjs';
 import {launchV3ChromiumAuthorityWorker} from '../game/v3-chromium-authority-worker.mjs';
 import {buildV3NativeAuthorizedSeatProbe} from './v3-native-seat-probe.mjs';
+import {createV3NativeModuleTestServer} from './v3-native-module-test-server.mjs';
+import {dirname,resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
 
 const chrome=process.env.V3_CHROMIUM;
 const enabled=typeof chrome==='string'&&chrome.startsWith('/');
@@ -32,10 +35,14 @@ async function ask(peer,type,payload={}){
 test('four real socket players reconnect across real Chromium room-host lifetime',{skip:!enabled,timeout:60000},async()=>{
  const {WebSocketServer}=await import('ws');
  let browser;
+ const nativeHost=await createV3NativeModuleTestServer({root:resolve(dirname(fileURLToPath(import.meta.url)),'..')});
  const broker=await createV3AuthorityWebSocketBroker({
   WebSocketServer,
   launchWorker:async()=>{
    browser=await launchV3ChromiumAuthorityWorker({executable:chrome});
+   const native=await browser.loadV3NativeModules({origin:nativeHost.origin});
+   assert.equal(native.loaded,true);
+   assert.equal(native.gameLoopStarted,false);
    return browser;
   }
  });
@@ -50,6 +57,7 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   const launched=await ask(peers[0],'launch');
   assert.equal(launched.code,'WORKER_PROOF_RUNNING_NOT_PLAYABLE');
   assert.equal(launched.gameRulesLoaded,false);
+  assert.equal((await browser.inspect()).offboard,true);
   const initialHost=await browser.inspectRoomChannel();
   assert.equal(initialHost.connected,true);
   assert.equal(initialHost.seenRoster,true);
@@ -110,5 +118,6 @@ test('four real socket players reconnect across real Chromium room-host lifetime
  }finally{
   for(const peer of peers)try{peer.ws.close()}catch{}
   await broker.close();
+  await nativeHost.close();
  }
 });
