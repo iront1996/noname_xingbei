@@ -18,6 +18,13 @@ export async function stageV3NativeXingBeiContent({core}={}){
  if(game.__v3NativeContentStage)throw error('V3_CONTENT_ALREADY_STAGED');
  if(typeof game.import!=='function'||typeof lib.element?.Character!=='function')
   throw error('V3_CONTENT_NATIVE_API_MISSING');
+ // Native boot() installs this file before loading any card/character packs.
+ // The imported source depends on its Array.prototype.add/addArray helpers.
+ // Do not invent mock polyfills: load the project's unmodified implementation.
+ try{await import('/noname/init/polyfill.js')}
+ catch(e){throw Object.assign(error('V3_NATIVE_POLYFILL_IMPORT_FAILED'),{cause:e})}
+ if(typeof [].add!=='function'||typeof [].addArray!=='function')
+  throw error('V3_NATIVE_POLYFILL_NOT_READY');
 
  // The original card/xingBei.js is a classic module with an unqualified
  // "game" global. Set only for the import and restore its previous descriptor.
