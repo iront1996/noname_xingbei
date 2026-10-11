@@ -224,6 +224,32 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
           playerId:msg.playerId,owned}));
         }
        }
+       if(msg.type==='authority_action_target_probe'&&connected&&
+          msg.roomId===opts.roomId&&
+          typeof msg.traceId==='string'&&/^[a-f0-9]{32}$/.test(msg.traceId)&&
+          Number.isInteger(msg.seat)&&msg.seat>=0&&msg.seat<8&&
+          Number.isInteger(msg.targetSeat)&&msg.targetSeat>=0&&msg.targetSeat<8&&
+          typeof msg.playerId==='string'&&/^player_[a-f0-9]{32}$/.test(msg.playerId)&&
+          typeof msg.cardId==='string'&&/^v3card_[a-f0-9]{6}$/.test(msg.cardId)){
+        const binding=bindings.find(x=>x.seat===msg.seat&&
+         x.playerId===msg.playerId&&x.connectionId!==null);
+        if(binding){
+         let printedTargetEligible=false,supportedPrintedAttack=false;
+         try{
+          const native=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+          const check=native?.preflightNativePrintedAttackTarget({
+           seat:msg.seat,playerId:msg.playerId,cardId:msg.cardId,
+           targetSeat:msg.targetSeat
+          });
+          printedTargetEligible=check?.printedTargetEligible===true;
+          supportedPrintedAttack=check?.supportedPrintedAttack===true;
+         }catch{}
+         ws.send(JSON.stringify({type:'authority_action_target_result',
+          roomId:opts.roomId,traceId:msg.traceId,seat:msg.seat,
+          playerId:msg.playerId,targetSeat:msg.targetSeat,
+          printedTargetEligible,supportedPrintedAttack}));
+        }
+       }
        if(msg.type==='authority_transport_probe'&&connected&&msg.roomId===opts.roomId&&
           typeof msg.traceId==='string'&&/^[a-f0-9]{32}$/.test(msg.traceId)&&
           Number.isInteger(msg.seat)&&typeof msg.playerId==='string'){
@@ -527,6 +553,30 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
     const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
     if(r.exceptionDetails||r.result?.value?.ok!==true)
      throw fail('V3_NATIVE_CARD_OWNERSHIP_DENIED');
+    return r.result.value.result;
+   },
+   async preflightNativePrintedAttackTarget({seat,playerId,cardId,targetSeat}={}){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed||!Number.isInteger(seat)||seat<0||seat>7||
+       !Number.isInteger(targetSeat)||targetSeat<0||targetSeat>7||
+       typeof playerId!=='string'||!/^player_[a-f0-9]{32}$/.test(playerId)||
+       typeof cardId!=='string'||!/^v3card_[a-f0-9]{6}$/.test(cardId))
+     throw fail('V3_NATIVE_ATTACK_TARGET_DENIED');
+    const args=JSON.stringify({seat,playerId,cardId,targetSeat});
+    const inspect=({seat,playerId,cardId,targetSeat})=>{
+     try{
+      const native=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+      return native?{ok:true,result:native.preflightNativePrintedAttackTarget({
+       seat,playerId,cardId,targetSeat
+      })}:{ok:false,code:'V3_NATIVE_SEAT_SESSION_MISSING'};
+     }catch{return {ok:false,code:'V3_NATIVE_ATTACK_TARGET_DENIED'}}
+    };
+    const r=await session.send('Runtime.evaluate',{
+     expression:'('+inspect.toString()+')('+args+')',returnByValue:true
+    });
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_NATIVE_ATTACK_TARGET_DENIED');
     return r.result.value.result;
    },
    async inspectOriginalSelectionGate(){
