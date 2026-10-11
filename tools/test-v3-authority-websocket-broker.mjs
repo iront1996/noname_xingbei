@@ -239,6 +239,7 @@ test('worker loss fails outstanding transport immediately and ignores stale host
   const answer=await pending;
   assert.equal(answer.code,'WORKER_CHANNEL_OFFLINE');
   assert.equal(answer.ok,false);
+  assert.equal((await x.broker.inspectWorker('TEST')).code,'WORKER_CHANNEL_OFFLINE');
   // A stray late host packet cannot override a failed request.
   authority.clientSend=emit;
   authority.clientSend({type:'authority_probe_ack',roomId:'TEST',
