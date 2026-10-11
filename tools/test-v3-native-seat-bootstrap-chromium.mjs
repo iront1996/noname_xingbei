@@ -718,6 +718,52 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
      assert.equal(targetRecorded.nativeUnwaitInvoked,false);
      assert.equal(targetRecorded.fullRulesValidated,false);
      assert.equal(targetRecorded.actionExecuted,false);
+     const rules=targetRecorded.staticRuleAudit;
+     assert.equal(rules.printedTargetEligible,true);
+     assert.equal(rules.printedDefinitionVerified,true);
+     assert.equal(rules.staticPreconditionsPassed,true);
+     assert.equal(rules.originalEventStillPaused,true);
+     assert.equal(rules.cardEnabledEvaluated,false);
+     assert.equal(rules.cardUsableEvaluated,false);
+     assert.equal(rules.rangeModsEvaluated,false);
+     assert.equal(rules.dynamicRulesEvaluated,false);
+     assert.equal(rules.fullRulesValidated,false);
+     assert.equal(rules.actionExecuted,false);
+     assert.equal(rules.cardConsumed,false);
+     // Inject a deliberately hostile GLOBAL skill modifier only into the
+     // isolated CI browser. Static audit must DETECT but NEVER EXECUTE it,
+     // even if the modifier could try to mutate the live native event.
+     const dynamicProof=await chrome.evaluateSeatExperiment(`(()=>{
+      const {lib,game}=window.__v3NativeXingBeiTest.core;
+      const globals=lib.skill.global;
+      if(!Array.isArray(globals))return {ok:false,code:'GLOBAL_SKILLS_UNAVAILABLE'};
+      const id='v3_probe_untrusted_mod';
+      const before=globals.length;
+      let invoked=0,result;
+      lib.skill[id]={mod:{cardEnabled(){invoked++;game.resume();return true}},
+       onChooseToUse(){invoked++;game.resume();}};
+      globals.push(id);
+      try{
+       result=game.__v3NativeSeatSession.auditNativePrintedAttackStaticRules(
+        {seat:0,playerId:${JSON.stringify(sessions[0].playerId)},
+         cardId:${JSON.stringify(selected.cardId)},
+         targetSeat:${Number(enemies[0].slice(1))}}
+       );
+      }finally{
+       globals.splice(before,1);
+       delete lib.skill[id];
+      }
+      return {ok:true,invoked,dynamicHooksPresent:result.dynamicHooksPresent,
+       dynamicHookCount:result.dynamicHookCount,
+       stillPaused:result.originalEventStillPaused,
+       fullRulesValidated:result.fullRulesValidated};
+     })()`);
+     assert.equal(dynamicProof.ok,true);
+     assert.equal(dynamicProof.invoked,0);
+     assert.equal(dynamicProof.dynamicHooksPresent,true);
+     assert.ok(dynamicProof.dynamicHookCount>0);
+     assert.equal(dynamicProof.stillPaused,true);
+     assert.equal(dynamicProof.fullRulesValidated,false);
      await until(async()=>(await ask(replacement,'choice_query')).window?.state==='delivered');
      assert.equal((await ask(replacement,'choice_submit',{
       ticket:targetWindow.ticket,option:enemies[1]
