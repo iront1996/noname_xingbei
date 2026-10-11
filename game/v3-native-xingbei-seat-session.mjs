@@ -592,6 +592,33 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    return Object.freeze({started:true,ownerPlayerId:first.playerid,
     actualSelectionContentExecuted:false});
   },
+  preflightNativeActionCardOwnership({seat,playerId,cardId}={}){
+   // Read-only, NOT a legal card-action authorization. Only checks that
+   // the authenticated active native Player physically holds this card.
+   // Full target legality, costs, skills, and effect resolution are pending.
+   const gate=game.__v3PausedPhaseRuntime;
+   const actorSeat=game.__v3OpeningTurnBoundary?.firstSeat;
+   const actor=players[actorSeat];
+   if(!gate||gate.failure||!gate.selectionGate||
+      !gate.selectionEvent||gate.selectionEvent.name!=='gongJiOrFaShu'||
+      !gate.actionEvent||gate.actionEvent.name!=='xingDong'||
+      !_status.paused||gate.selectionEvent.player!==actor||
+      !Number.isInteger(seat)||seat!==actorSeat||
+      typeof playerId!=='string'||actor?.playerid!==playerId||
+      typeof cardId!=='string'||!/^v3card_[a-f0-9]{6}$/.test(cardId))
+    throw err('V3_NATIVE_CARD_OWNERSHIP_DENIED');
+   const owned=actor.getCards('h').filter(c=>
+    c instanceof lib.element.Card&&c.__v3PhysicalId===cardId);
+   if(owned.length!==1)
+    throw err('V3_NATIVE_CARD_OWNERSHIP_DENIED');
+   return Object.freeze({
+    ownedByActivePlayer:true,
+    ownershipPreflightOnly:true,
+    fullRulesValidated:false,
+    targetValidated:false,actionExecuted:false,
+    cardConsumed:false,seat,playerId
+   });
+  },
   inspectOriginalSelectionGate(){
    const state=game.__v3PausedPhaseRuntime;
    if(!state)throw err('V3_NATIVE_SELECTION_GATE_NOT_STARTED');
