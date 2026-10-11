@@ -339,3 +339,30 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 本輪有先遇到一項離線回歸失敗：新增 `source` 後，舊測試的 delivery 期望物件缺少該欄位。已修正原斷言並補上原生 applied 交易的非法轉移測試；修復後才視為驗證通過。本輪所有原生 Chromium 測試在 GitHub hosted runner **預設沙箱啟用**的狀態執行；測試使用原生 `Player.unwait` 完成控制項選擇，而非僅檢查收到的確認碼。
 
 **仍不等同完全可玩／沒有完成原局持久化**：原生整場啟動、技能結算、多人嵌套事件、隱藏資訊、發牌、第一回合與 VPS 重啟後從同一遊戲狀態恢復仍待開發。此測試目前只覆蓋 2～8 人配置的真原生 `chooseControl` 離線續答協定，不應視為所有星杯關鍵詞或技能可正常結算。
+
+
+## 2026-10-11 深夜：原生四張開局、加密牌堆檢驗與首次 phaseLoop 入口
+
+所有變更持續限制於 `feature/host-reconnect-v3-playtest`，不接現有 V3／V2／V1 服務、不改 `noname/**`、`mode/xingBei.js` 共用原始檔、不碰 VPS。
+
+### 本次新增的原生執行驗證
+
+1. 原始 `game/config.js`、XingBei 卡牌與角色包載入後，全部 4/6/8 位實際原生 `Player` 各完成受驗證的 `GameEvent('chooseControl')` 選角、`Player.init()`。在真 Chromium 裡驗證首位玩家與每張實體卡身分。
+2. `game/v3-native-xingbei-seat-session.mjs` 新增 `dealOpeningCardsNative()`：將已由伺服器私有 WebCrypto 隨機洗牌的原生星杯卡組建立為真正的 `ui.cardPile` 原生 Card DOM，排入 `game.gameDraw(...,4)` 原生 `GameEvent`，實際 `await draw.start()`，使用原版 `get.cards` / `Player.directgain` 分別發給 4/6/8 位角色四張牌。**不再把手動 `directgain` 當成正式開局流程**；後者僅保留隔離重試探針。
+3. `exportOpeningCheckpoint()` 以真正已抽出的 `Card.__v3PhysicalId` 和 `ui.cardPile.childNodes` 取得手牌和剩餘牌堆，驗證「所有牌 ID 不重複、總數不變、正確座位」後，交由原有 `createV3NativeOpeningCheckpointStore()` 使用 AES-GCM 加密寫入、從全新儲存實例重新讀取。所存的 **仍是開局資料，不是原生 GameEvent／技能／RNG／回合堆疊的恢復**。
+4. 在 GameEvent 真正可編譯前，沿用本專案原生 `initializeSandboxRealms(true)`、`security.initSecurity()`、`get.sortCard(lib.config.sort)`；並遵循 `GameEventManager.eventStack` 而非只掛 `rootEvent`。未禁用遊戲程式安全沙箱。先前幾次原生建構／抽牌 CI 失敗均依據 GitHub 錯誤修正、成功後才合併測試證據。
+5. 開局已由 `gameDraw` 執行後，`stageOpeningTurnBoundary()` **只排一次 `phaseLoop`**，不會再排第二次 `gameDraw` 導致重複發牌。
+6. `startPausedFirstNativePhase()` 在 CI 專用 Chromium 啟動**原版 `phaseLoop.start()`**，實際執行 native phase 的座位編號和 `game.$initZhanJi()` 紅藍士氣／原版計分 UI 初始化，並以 `lib.onphase` 的**測試專用**暫停鉤子，在第一個 `Player.phase()` 待決事件開始前停住。測試加強檢查 `phase` 確為原生 `GameEvent`，且綁定伺服器認證的第一位 Player ID；不會執行任何玩家出牌、技能或敵方私牌揭露。
+
+### 最新已驗證 CI 證據
+
+- 真 Chromium＋WebSocket 2v2／3v3／4v4，原版 gameDraw 開局＋原生 phaseLoop 暫停： https://github.com/iront1996/noname_xingbei/actions/runs/38149230110 —— **success，18/18 passed**。
+- 同提交 V3 離線安全回歸：https://github.com/iront1996/noname_xingbei/actions/runs/38149230209 —— **success**。
+- 在全部 2v2／3v3／4v4 使用原生 gameDraw 開局且 AES-GCM checkpoint 冷讀取：https://github.com/iront1996/noname_xingbei/actions/runs/38148735422 —— **success，18/18 passed**。
+
+### 並未完成、不可對外宣稱可玩
+
+- 尚未將 `Player.phase()` 運行至第一個**合法玩家出牌或星杯技能**，`chooseToUse` 等原生 `GameEvent.send()` 仍受 `V3_NATIVE_EVENT_UNSUPPORTED` 安全限制，連複雜 nested/parallel events 也無可靠的等待／續行支持。正式回合只能在上述 CI pause gate 停止。
+- 原生技能列表雖已載入，但沒有跨版本完整技能效果、規則關鍵詞、角色合法選取、勝負事件串接的完整自動化覆蓋；對局仍會拒絕 `command`（`RULES_ENGINE_NOT_IMPLEMENTED`）。
+- 目前只有「加密開局狀態寫入＋冷讀取」，尚不能在 Chromium crash／VPS 重啟後 **恢復原生進行中事件和同一回合**。缺完整規則狀態 checkpoint、事件日志、隨機性及私密資訊重放。
+- 仍只有 V3 分支內 loopback ephemeral PoC；線上 V3 使用舊架構。不可提早要求用戶更新 VPS 或召集真人反覆試玩。只在完整合法行動、技能、勝負、掉線、存檔回復安全通過後安排一次集中驗收。
