@@ -605,6 +605,35 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    return Object.freeze({started:true,ownerPlayerId:first.playerid,
     actualSelectionContentExecuted:false});
   },
+  releaseOriginalSelectionToNativeWait(){
+   // The only deliberate CI path allowed to execute the original
+   // chooseToUse step 0. Arm a ONE-SHOT GameEvent.send interception,
+   // then let original engine reach that native online waiting point.
+   // All actual human choices and useResult remain blocked.
+   const gate=game.__v3PausedPhaseRuntime;
+   const seat=game.__v3OpeningTurnBoundary?.firstSeat,actor=players[seat];
+   if(!previewHooksAvailable||!gate?.selectionGate||gate.failure||
+      !gate.selectionEvent||gate.selectionEvent.player!==actor||
+      gate.selectionContentReleased||gate.originalUseWaitReached||
+      useCardPreview!==null||!_status.paused||
+      adapter.inspect().pending!==0||
+      !actor||typeof actor.playerid!=='string')
+    throw err('V3_NATIVE_ORIGINAL_USE_RELEASE_DENIED');
+   const armed=adapter.armOriginalUseWait({
+    seat,playerId:actor.playerid,event:gate.selectionEvent
+   });
+   if(armed.armed!==true)
+    throw err('V3_NATIVE_ORIGINAL_USE_ARM_FAILED');
+   gate.selectionContentReleased=true;
+   game.resume();
+   return Object.freeze({
+    started:true,nativeChooseToUse:true,
+    ownerPlayerId:actor.playerid,
+    originalStep0Reached:false,
+    originalStep2Executed:false,cardConsumed:false,
+    actionExecuted:false,fullRulesValidated:false
+   });
+  },
   beginNativeUseCardPreview({seat,playerId}={}){
    // Original gongJiOrFaShu already contains a chooseToUse handler, but
    // chooseToUse step 0 is unsafe until skill callbacks are isolated.
@@ -924,8 +953,10 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     phaseNumber:game.phaseNumber,
     actionCounter:first?.storage?.gongJiOrFaShu??null,
     paused:_status.paused===true,phaseLoopComplete:state.finished,
-    selectionContentExecuted:false,skillsVerified:false,
-    replaySafe:false
+    selectionContentExecuted:state.originalUseWaitReached===true,
+    originalOnlineWaitReached:state.originalUseWaitReached===true,
+    selectionContentReleased:state.selectionContentReleased===true,
+    skillsVerified:false,replaySafe:false
    });
   },
   inspectOriginalActionGate(){
