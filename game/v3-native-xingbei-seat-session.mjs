@@ -258,6 +258,13 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     ui.cardPile=holder;
    }
    if(ui.cardPile.hasChildNodes())throw err('V3_NATIVE_DRAW_PILE_DIRTY');
+   // Native boot normally derives a card comparator from get.sortCard().
+   // This isolated ESM bootstrap must use that ORIGINAL comparator too.
+   if(typeof lib.config?.sort_card!=='function'){
+    const sort=core.get?.sortCard?.(lib.config?.sort);
+    if(typeof sort!=='function')throw err('V3_NATIVE_CARD_SORTER_UNAVAILABLE');
+    lib.config.sort_card=sort;
+   }
    const originalCount=players.map(x=>x.getCards('h').length);
    for(let i=0;i<players.length*4;i++){
     const card=game.__v3NativeDrawPile.draw();
