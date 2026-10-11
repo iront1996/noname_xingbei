@@ -41,6 +41,9 @@ export function createV3AuthorityRuntimeCoordinator({launchWorker}={}){
    return result;
   },
   roomView(roomId){return rooms.snapshot(roomId)},
+  // Host-process-only reference for checkpoint recovery; never serialized or
+  // exposed through any authenticated/untrusted WebSocket message.
+  internalWorkerForRecovery(roomId){return find(roomId)?.worker??null},
   command(args){return rooms.command(args)},
   async launchRoomWorker({roomId,workerClientIds}={}){
    const room=find(roomId),before=rooms.snapshot(roomId);
