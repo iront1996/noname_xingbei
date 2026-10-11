@@ -35,7 +35,7 @@ async function ask(peer,type,body={}){
  return until(()=>peer.received.find(x=>x.type==='reply'&&x.requestId===requestId));
 }
 
-test('original XingBei chooseToUse executes step zero but waits in server Chrome without running card',{
+for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+' waits or passes without using a card',{
  skip:!enabled,timeout:90000
 },async()=>{
  const {WebSocketServer}=await import('ws');
@@ -124,7 +124,7 @@ test('original XingBei chooseToUse executes step zero but waits in server Chrome
    m.window.kind==='card'
   )?.window);
   assert.deepEqual([...window.options].sort(),
-   before.ownHand.map(c=>c.cardId).sort());
+   [...before.ownHand.map(c=>c.cardId),'pass'].sort());
   assert.equal((await chrome.inspectNativeUseCardPreview()).state,'open');
   const waitState=await chrome.evaluateSeatExperiment(
    'window.__v3NativeXingBeiTest.core.game.__v3NativeWaitAdapter.inspect()'
@@ -153,29 +153,46 @@ test('original XingBei chooseToUse executes step zero but waits in server Chrome
    x.window.ticket===window.ticket
   )?.window);
   assert.deepEqual(reopened.options,window.options);
+  const submittedOption=answer==='pass'?'pass':
+   reopened.options.find(c=>c!=='pass');
   assert.equal((await ask(next,'choice_submit',{
-   ticket:reopened.ticket,option:reopened.options[0]
+   ticket:reopened.ticket,option:submittedOption
   })).code,'CHOICE_SUBMITTED_NOT_APPLIED');
-  await until(async()=>(await chrome.inspectNativeUseCardPreview()).recorded);
+  if(answer==='card'){
+   await until(async()=>(await chrome.inspectNativeUseCardPreview()).recorded);
+   assert.equal((await chrome.inspectNativeUseCardPreview()).nativeUnwaitInvoked,false);
+   assert.equal((await chrome.inspectOriginalSelectionGate()).paused,true);
+  }else{
+   await until(async()=>(await chrome.inspectNativeUseCardPreview()).passed);
+   const consumed=await chrome.evaluateSeatExperiment(
+    'window.__v3NativeXingBeiTest.core.game.__v3NativeWaitAdapter.inspect()'
+   );
+   assert.equal(consumed.originalUsePassApplied,1);
+   assert.equal(consumed.waitingOriginalUse,false);
+   await until(async()=>(await ask(next,'choice_query')).window?.state==='applied');
+   assert.equal((await ask(next,'choice_submit',{
+    ticket:reopened.ticket,option:submittedOption
+   })).code,'CHOICE_ALREADY_APPLIED');
+  }
   const after=await chrome.inspectNativePrivateHand({seat:0});
   assert.deepEqual(after.ownHand,before.ownHand);
-  assert.equal((await chrome.inspectNativeUseCardPreview()).nativeUnwaitInvoked,false);
-  assert.equal((await chrome.inspectOriginalSelectionGate()).paused,true);
   assert.equal((await ask(next,'command',{action:'playCard'})).code,
    'RULES_ENGINE_NOT_IMPLEMENTED');
   assert.equal(chrome.pid,pid);
-  // The original step 0 may legitimately initialize dynamic skill state;
-  // it has not reached the original useResult, card movement or next step.
-  const afterNative=await chrome.evaluateSeatExperiment(
-   'window.__v3NativeXingBeiTest.core.game.__v3NativeSeatSession.inspectNativeActionInvariant()'
-  );
-  assert.deepEqual(afterNative.hands,beforeNative.hands);
-  assert.deepEqual(afterNative.deck,beforeNative.deck);
-  assert.deepEqual(afterNative.hp,beforeNative.hp);
-  assert.equal(afterNative.redMorale,beforeNative.redMorale);
-  assert.equal(afterNative.blueMorale,beforeNative.blueMorale);
-  assert.equal(afterNative.actionCounter,beforeNative.actionCounter);
-  assert.equal(afterNative.paused,true);
+  // A card preview is still paused in original step zero. Native pass
+  // may advance original phase actions but cannot consume any card.
+  if(answer==='card'){
+   const afterNative=await chrome.evaluateSeatExperiment(
+    'window.__v3NativeXingBeiTest.core.game.__v3NativeSeatSession.inspectNativeActionInvariant()'
+   );
+   assert.deepEqual(afterNative.hands,beforeNative.hands);
+   assert.deepEqual(afterNative.deck,beforeNative.deck);
+   assert.deepEqual(afterNative.hp,beforeNative.hp);
+   assert.equal(afterNative.redMorale,beforeNative.redMorale);
+   assert.equal(afterNative.blueMorale,beforeNative.blueMorale);
+   assert.equal(afterNative.actionCounter,beforeNative.actionCounter);
+   assert.equal(afterNative.paused,true);
+  }
  }finally{
   for(const p of peers)try{p.ws.close()}catch{}
   await broker.close();
