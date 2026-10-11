@@ -379,7 +379,8 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(action.replaySafe,false);
     assert.equal(action.loopComplete,false);
    }
-   if(mode==='2v2'){
+   // Exercise the original xingDong -> attack-or-spell event on every seat topology.
+   {
     const releasedSelection=await chrome.releaseOriginalActionToSelectionGate();
     assert.equal(releasedSelection.started,true);
     assert.equal(releasedSelection.ownerPlayerId,sessions[0].playerId);
