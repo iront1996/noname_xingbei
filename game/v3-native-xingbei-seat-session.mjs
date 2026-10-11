@@ -648,6 +648,44 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     originalChooseToUseExecuted:false,fullRulesValidated:false,
     actionExecuted:false,cardConsumed:false});
   },
+  beginNativeUsePrintedTargetPreview({seat,playerId,previousTicket}={}){
+   const p=useCardPreview,gate=game.__v3PausedPhaseRuntime;
+   if(!previewHooksAvailable||!p||p.state!=='recorded'||p.targetStage||
+      p.seat!==seat||p.playerId!==playerId||
+      p.ticket!==previousTicket||gate?.selectionEvent!==p.event||
+      !_status.paused)
+    throw err('V3_NATIVE_USE_TARGET_PREVIEW_DENIED');
+   this.preflightNativeActionCardOwnership({
+    seat,playerId,cardId:p.selectedCardId
+   });
+   // STRICTLY the original printed one-target XingBei strikes. The
+   // complete chooseToUse skill/range/game.checkMod pipeline is not run.
+   // All other card classes fail closed without suggesting a target.
+   const candidates=[];
+   for(let targetSeat=0;targetSeat<players.length;targetSeat++){
+    if(targetSeat===seat)continue;
+    const result=this.preflightNativePrintedAttackTarget({
+     seat,playerId,cardId:p.selectedCardId,targetSeat
+    });
+    if(result.supportedPrintedAttack&&result.printedTargetEligible)
+     candidates.push('s'+targetSeat);
+   }
+   if(candidates.length<2)
+    return Object.freeze({started:false,code:'V3_PRINTED_TARGET_PREVIEW_UNSUPPORTED',
+     fullRulesValidated:false,actionExecuted:false});
+   p.targetStage={options:candidates,ticket:null,state:'requested',
+    selectedTargetSeat:null};
+   try{
+    if(bridge.requestNativeSelectionPreview({
+     seat,kind:'target',prompt:'原生行動：選擇印刷規則允許的目標（不會攻擊）',
+     options:candidates,previousTicket:p.ticket,previousOption:p.selectedCardId
+    })!==true)
+     throw err('V3_NATIVE_TARGET_PREVIEW_NOT_ROUTED');
+   }catch(e){p.targetStage=null;throw e}
+   return Object.freeze({started:true,printedTargetsOnly:true,
+    targetCount:candidates.length,fullRulesValidated:false,
+    targetFullyValidated:false,actionExecuted:false});
+  },
   inspectNativeUseCardPreview(){
    const p=useCardPreview;
    if(!p)return Object.freeze({opened:false,recorded:false});
@@ -656,6 +694,11 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     state:p.state,recorded:p.state==='recorded',
     seat:p.seat,playerId:p.playerId,
     selectedCardId:p.selectedCardId,
+    targetPreviewOpened:p.targetStage?.ticket!==null&&
+     p.targetStage?.ticket!==undefined,
+    targetPreviewState:p.targetStage?.state??null,
+    targetOptions:p.targetStage?[...p.targetStage.options]:[],
+    selectedTargetSeat:p.targetStage?.selectedTargetSeat??null,
     nativeGameEvent:p.event instanceof lib.element.GameEvent,
     originalEvent:p.event.name,
     samePausedEvent:gate?.selectionEvent===p.event&&_status.paused===true,
@@ -955,29 +998,50 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
  const previewHooked=bridge.registerNativeSelectionPreviewHooks({
   opened(message){
    const view=message?.view,p=useCardPreview;
-   if(!message?.ok||!p||p.state!=='requested'||p.ticket!==null||
-      view?.source!=='preview'||view.kind!=='card'||view.state!=='open'||
-      view.seat!==p.seat||view.playerId!==p.playerId||
-      JSON.stringify(view.options)!==JSON.stringify(p.options)||
+   if(!message?.ok||!p||view?.source!=='preview'||
+      view.state!=='open'||view.seat!==p.seat||
+      view.playerId!==p.playerId||
       typeof view.ticket!=='string'||!(/^[a-f0-9]{32}$/.test(view.ticket)))
     return false;
-   p.ticket=view.ticket;p.state='open';return true;
+   if(view.kind==='card'){
+    if(p.state!=='requested'||p.ticket!==null||
+       JSON.stringify(view.options)!==JSON.stringify(p.options))return false;
+    p.ticket=view.ticket;p.state='open';return true;
+   }
+   const target=p.targetStage;
+   if(view.kind!=='target'||p.state!=='recorded'||!target||
+      target.state!=='requested'||target.ticket!==null||
+      JSON.stringify(view.options)!==JSON.stringify(target.options))
+    return false;
+   target.ticket=view.ticket;target.state='open';return true;
   },
   delivered(message){
    const p=useCardPreview,gate=game.__v3PausedPhaseRuntime;
-   if(!p||p.state!=='open'||!p.ticket||
-      message?.seat!==p.seat||message.playerId!==p.playerId||
-      message.ticket!==p.ticket||!p.options.includes(message.option)||
-      gate?.selectionEvent!==p.event||!_status.paused)
+   if(!p||gate?.selectionEvent!==p.event||!_status.paused||
+      message?.seat!==p.seat||message.playerId!==p.playerId)
     return false;
-   try{
-    session.preflightNativeActionCardOwnership({
+   if(p.state==='open'&&p.ticket===message.ticket&&
+      p.options.includes(message.option)){
+    try{session.preflightNativeActionCardOwnership({
      seat:p.seat,playerId:p.playerId,cardId:message.option
+    })}catch{return false}
+    p.selectedCardId=message.option;p.state='recorded';
+    return true;
+   }
+   const target=p.targetStage;
+   if(p.state!=='recorded'||!target||target.state!=='open'||
+      target.ticket!==message.ticket||
+      !target.options.includes(message.option)||!/^s[0-7]$/.test(message.option))
+    return false;
+   const targetSeat=Number(message.option.slice(1));
+   try{
+    const checked=session.preflightNativePrintedAttackTarget({
+     seat:p.seat,playerId:p.playerId,cardId:p.selectedCardId,targetSeat
     });
+    if(!checked.supportedPrintedAttack||!checked.printedTargetEligible)return false;
    }catch{return false}
-   // The only mutation is this preview record. Never write event.result,
-   // call Player.unwait(), resume() or execute original chooseToUse.
-   p.selectedCardId=message.option;p.state='recorded';
+   // Only record a still-eligible intended target; no GameEvent result.
+   target.selectedTargetSeat=targetSeat;target.state='recorded';
    return true;
   }
  });
