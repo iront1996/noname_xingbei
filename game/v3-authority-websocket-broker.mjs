@@ -377,7 +377,14 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
  return Object.freeze({
   address:'ws://127.0.0.1:'+localPort(),
   roomView:id=>coordinator.roomView(id),
-  inspectWorker:id=>coordinator.inspectWorker(id),
+  // A live Chromium OS process without its authenticated broker channel
+  // is NOT a healthy room authority.
+  async inspectWorker(id){
+   const status=await coordinator.inspectWorker(id);
+   if(status.ok&&!live(workersByRoom.get(id)))
+    return reply(false,'WORKER_CHANNEL_OFFLINE');
+   return status;
+  },
   // Internal host methods. Not exposed via WS 'type' dispatch; the broker
   // never accepts client-supplied snapshots or worker launch credentials.
   async captureOpeningCheckpoint(roomId){
