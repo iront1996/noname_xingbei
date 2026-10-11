@@ -686,6 +686,49 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     targetCount:candidates.length,fullRulesValidated:false,
     targetFullyValidated:false,actionExecuted:false});
   },
+  inspectNativeChooseToUseWaitContract({seat,playerId}={}){
+   // Identity/provenance preflight for the ORIGINAL GameEvent waiting
+   // boundary, not an interpreter, client-owned event or use-card action.
+   const gate=game.__v3PausedPhaseRuntime,actor=players[seat],
+    event=gate?.selectionEvent;
+   if(!Number.isInteger(seat)||seat!==game.__v3OpeningTurnBoundary?.firstSeat||
+      typeof playerId!=='string'||actor?.playerid!==playerId||
+      !gate?.selectionGate||gate.failure||!_status.paused||
+      !(event instanceof lib.element.GameEvent)||event.player!==actor||
+      event.name!=='gongJiOrFaShu'||gate.actionEvent?.name!=='xingDong'||
+      lib.playerOL[playerId]!==actor||game.playerMap[playerId]!==actor||
+      actor.ws?.id!==playerId)
+    throw err('V3_NATIVE_WAIT_OWNER_DENIED');
+   const compiled=event.content?.compiled===true&&
+    (event.content.original==='chooseToUse'||
+     event.content.original===lib.element.content?.chooseToUse);
+   if(!compiled||!Array.isArray(event._args)||event._args.length!==0||
+      event.filterCard!==lib.filter.filterCard||
+      event.filterTarget!==lib.filter.filterTarget)
+    throw err('V3_NATIVE_WAIT_CONTENT_UNSUPPORTED');
+   const local=actor.getSkills('invisible'),global=lib.skill.global;
+   if(!Array.isArray(local)||!Array.isArray(global))
+    throw err('V3_NATIVE_WAIT_SKILLS_UNAVAILABLE');
+   const skills=new Set([...local,...global]);
+   const callbackCount=Array.from(skills).filter(id=>
+    typeof lib.skill[id]?.onChooseToUse==='function').length;
+   return Object.freeze({
+    originalNativeGameEvent:true,
+    originalGameEventName:event.name,
+    compiledChooseToUse:true,
+    originalCompilerType:event.content.type??null,
+    stablePlayerBound:true,
+    playerOnlineViaServer:actor.isOnline()===true,
+    ownerSeat:seat,playerId,
+    originalEventPaused:true,
+    originalContentExecuted:false,
+    potentialOnChooseToUseCallbacks:callbackCount,
+    callbacksExecuted:false,arbitraryRemoteCodeAllowed:false,
+    waitingTransportHookImplemented:false,
+    nativeChoiceApplied:false,fullRulesValidated:false,
+    actionExecuted:false
+   });
+  },
   inspectNativeActionInvariant(){
    // Trusted CI/CDP-only full-state comparison. This is never sent to
    // public players: it contains ALL seats' physical card identifiers.
