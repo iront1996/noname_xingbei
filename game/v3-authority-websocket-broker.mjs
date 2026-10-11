@@ -253,6 +253,10 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    case 'action_ownership_probe':{
     if(!enableNativeOwnershipProbes)
      return respond(reply(false,'ACTION_PROBE_DISABLED'));
+    // Only the physically authenticated session supplies the seat and ID.
+    // Never interpret client-claimed player/seat/trace/target/script fields.
+    if(Object.keys(obj).some(k=>!['type','requestId','cardId'].includes(k)))
+     return respond(reply(false,'ACTION_PROBE_UNTRUSTED_FIELDS'));
     if(!obj.requestId||typeof obj.cardId!=='string'||
        !/^v3card_[a-f0-9]{6}$/.test(obj.cardId))
      return respond(reply(false,'ACTION_CARD_OWNERSHIP_DENIED'));
