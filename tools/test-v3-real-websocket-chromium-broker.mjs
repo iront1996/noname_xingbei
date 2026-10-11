@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createV3AuthorityWebSocketBroker} from '../game/v3-authority-websocket-broker.mjs';
 import {launchV3ChromiumAuthorityWorker} from '../game/v3-chromium-authority-worker.mjs';
+import {buildV3NativeAuthorizedSeatProbe} from './v3-native-seat-probe.mjs';
 
 const chrome=process.env.V3_CHROMIUM;
 const enabled=typeof chrome==='string'&&chrome.startsWith('/');
@@ -54,6 +55,14 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   assert.equal(initialHost.seenRoster,true);
   assert.equal(initialHost.seatCount,4);
   assert.equal(initialHost.boundPeerCount,4);
+  // Run the actual randomMapOL() source using this room's authenticated
+  // stable playerIds, not fabricated ws_0/1/2/3 identifiers.
+  const nativeBefore=await browser.evaluateSeatExperiment(buildV3NativeAuthorizedSeatProbe());
+  assert.equal(nativeBefore.offboard,true);
+  assert.equal(nativeBefore.playerCount,4);
+  assert.equal(nativeBefore.nativeReachedChoice,true);
+  assert.equal(nativeBefore.socketBindingsPreserved,true);
+  assert.deepEqual(nativeBefore.ids,sessions.map(s=>s.playerId).sort());
   const pid=browser.pid;
   peers[0].ws.close();peers[2].ws.close();
   for(let i=0;i<120;i++){
@@ -78,7 +87,16 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   assert.equal((await ask(a,'command',{action:'attack'})).code,'RULES_ENGINE_NOT_IMPLEMENTED');
   assert.equal(browser.pid,pid);
   assert.equal((await browser.inspectRoomChannel()).connected,true);
+  for(let i=0;i<100;i++){
+   const h=await browser.inspectRoomChannel();
+   if(h.revision===broker.roomView('V3_REAL_POC').revision)break;
+   await sleep(20);
+  }
   assert.equal((await browser.inspectRoomChannel()).boundPeerCount,4);
+  const nativeAfter=await browser.evaluateSeatExperiment(buildV3NativeAuthorizedSeatProbe());
+  assert.equal(nativeAfter.offboard,true);
+  assert.equal(nativeAfter.socketBindingsPreserved,true);
+  assert.deepEqual(nativeAfter.ids,nativeBefore.ids);
   assert.equal((await broker.inspectWorker('V3_REAL_POC')).code,'WORKER_PROOF_ALIVE');
   assert.equal(broker.roomView('V3_REAL_POC').roster.every(s=>s.connected),true);
   for(const peer of peers){
