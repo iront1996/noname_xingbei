@@ -465,7 +465,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     document.body.appendChild(ui.window);
    }
    if(!Array.isArray(lib.onphase))throw err('V3_NATIVE_PHASE_HOOKS_MISSING');
-   const state={phase,pauseTriggered:false,failure:null,finished:false};
+   const state={phase,pauseTriggered:false,failure:null,finished:false,
+    entryReleased:false,actionGate:false,actionEvent:null,hold:null};
    // This hook runs in original content.js phaseLoop step 1, immediately
    // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
    // hook and must never be installed in production V3.
@@ -473,6 +474,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     state.pauseTriggered=true;
     game.pause();
    };
+   state.hold=hold;
    lib.onphase.push(hold);
    Object.defineProperty(game,'__v3PausedPhaseRuntime',{
     enumerable:false,configurable:false,value:state
@@ -486,6 +488,76 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    }
    return Object.freeze({started:state.failure===null,
     event:phase.name,realEvent:phase instanceof lib.element.GameEvent});
+  },
+  releaseOriginalPhaseToActionGate(){
+   // Offline-only proof of the authentic Player.phase() control flow,
+   // with the real XingBei xingDong event stopped BEFORE any card, skill
+   // or untrusted remote-send callback can execute.
+   const state=game.__v3PausedPhaseRuntime;
+   const first=players[game.__v3OpeningTurnBoundary?.firstSeat??-1];
+   if(!state||state.failure||!state.pauseTriggered||
+      !_status.paused||state.entryReleased||!first||
+      state.phase.next?.find(e=>e.name==='phase')?.player!==first)
+    throw err('V3_NATIVE_ACTION_GATE_NOT_READY');
+   const Player=lib.element.Player;
+   const originalSend=Player.prototype.send;
+   const originalXingDong=Player.prototype.xingDong;
+   if(typeof originalSend!=='function'||typeof originalXingDong!=='function')
+    throw err('V3_NATIVE_ACTION_GATE_METHOD_UNAVAILABLE');
+   const hookIndex=lib.onphase.indexOf(state.hold);
+   if(hookIndex<0)throw err('V3_NATIVE_ACTION_GATE_HOOK_MISSING');
+   // Original phase step 2 notifies the active human client to play a local
+   // sound. In server-only Chromium it cannot transmit arbitrary JS. Permit
+   // exactly this audiovisual NO-OP; everything else remains fail-closed.
+   Player.prototype.send=function(callback,...args){
+    if(this!==first||typeof callback!=='function'||args.length!==0)
+     throw err('V3_NATIVE_REMOTE_CODE_SEND_DENIED');
+    const source=Function.prototype.toString.call(callback)
+     .replace(/\s+/g,'');
+    if(!source.includes("game.playAudio('effect','phaseStart')")&&
+       !source.includes('game.playAudio("effect","phaseStart")'))
+     throw err('V3_NATIVE_REMOTE_CODE_SEND_DENIED');
+    return false; // Never execute arbitrary JS in a real human browser.
+   };
+   Player.prototype.xingDong=function(...args){
+    if(this!==first||state.actionGate||args.length!==0)
+     throw err('V3_NATIVE_ACTION_UNEXPECTED_OWNER');
+    const event=originalXingDong.call(this);
+    if(!(event instanceof lib.element.GameEvent)||
+       event.name!=='xingDong'||event.player!==first)
+     throw err('V3_NATIVE_ACTION_EVENT_INVALID');
+    state.actionEvent=event;
+    state.actionGate=true;
+    game.pause(); // Before the original xingDong step 0 can run.
+    return event;
+   };
+   lib.onphase.splice(hookIndex,1);
+   state.entryReleased=true;
+   game.resume();
+   return Object.freeze({
+    started:true,firstPlayerId:first.playerid,
+    originalPhaseEvent:true,actualActionStepExecuted:false
+   });
+  },
+  inspectOriginalActionGate(){
+   const state=game.__v3PausedPhaseRuntime;
+   if(!state)throw err('V3_NATIVE_ACTION_GATE_NOT_STARTED');
+   const first=players[game.__v3OpeningTurnBoundary?.firstSeat??-1];
+   const event=state.actionEvent;
+   return Object.freeze({
+    entryReleased:state.entryReleased,
+    failed:state.failure!==null,error:state.failure,
+    actionGateReached:state.actionGate===true,
+    actionEventNative:event instanceof lib.element.GameEvent,
+    actionEventName:event?.name??null,
+    actionPlayerId:event?.player?.playerid??null,
+    firstPlayerId:first?.playerid??null,
+    phaseNumber:game.phaseNumber,
+    currentPhasePlayerId:_status.currentPhase?.playerid??null,
+    paused:_status.paused===true,loopComplete:state.finished,
+    actualActionStepExecuted:false,
+    replaySafe:false // Mid-turn event state remains non-persisted.
+   });
   },
   inspectPausedFirstNativePhase(){
    const state=game.__v3PausedPhaseRuntime;
