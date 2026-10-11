@@ -209,6 +209,8 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
    if(!wait||!p||p.seat!==seat||wait.seat!==seat||
       wait.playerId!==pid||wait.event!==event||
       p.player!==event?.player||!_status.paused||
+      _status.event!==event||event.forced===true||
+      event.content?.compiled!==true||
       game.__v3PausedPhaseRuntime?.selectionEvent!==event||
       game.__v3PausedPhaseRuntime?.originalUseWaitReached!==true||
       lib.node?.torespond?.[pid]!=='_noname_waiting'||
