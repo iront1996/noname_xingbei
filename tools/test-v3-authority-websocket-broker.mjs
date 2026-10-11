@@ -221,6 +221,37 @@ test('choice experiment disabled by default and worker loss cancels all pending 
 });
 
 
+test('worker loss fails outstanding transport immediately and ignores stale host acks',async()=>{
+ const x=await setup();
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  const authority=x.authority;
+  const emit=authority.clientSend.bind(authority);
+  authority.clientSend=msg=>{
+   // Simulate a crashed browser which received the request but never ACKed it.
+   if(msg.type!=='authority_probe_ack')emit(msg);
+  };
+  const pending=ask(ws[0],{type:'transport_probe'});
+  const outbound=await waitFor(authority,m=>m.type==='authority_transport_probe');
+  assert.equal(outbound.playerId,sessions[0].playerId);
+  authority.close();
+  const answer=await pending;
+  assert.equal(answer.code,'WORKER_CHANNEL_OFFLINE');
+  assert.equal(answer.ok,false);
+  // A stray late host packet cannot override a failed request.
+  authority.clientSend=emit;
+  authority.clientSend({type:'authority_probe_ack',roomId:'TEST',
+   seat:0,playerId:sessions[0].playerId,traceId:outbound.traceId});
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(ws[0].outbound.filter(m=>m.type==='reply'&&
+   m.requestId===answer.requestId).length,1);
+  assert.equal((await ask(ws[0],{type:'transport_probe'})).code,'WORKER_CHANNEL_OFFLINE');
+  assert.equal((await ask(ws[0],{type:'command',action:'attack'})).code,
+   'RULES_ENGINE_NOT_IMPLEMENTED');
+ }finally{await x.broker.close()}
+});
+
 test('native action ownership preflight is disabled by default and can never become arbitrary gameplay',async()=>{
  const x=await setup();
  try{
