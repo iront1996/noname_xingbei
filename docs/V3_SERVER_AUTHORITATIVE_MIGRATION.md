@@ -406,3 +406,22 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 - V3 離線安全回歸： https://github.com/iront1996/noname_xingbei/actions/runs/38170680121 —— SUCCESS。
 
 下一個核心工作：建立原版 gongJiOrFaShu/chooseToUse 的可信合法卡牌 ID、目標與行動驗證協定，接通真正星杯技能與觸發事件，並在持久化 event history、原生事件恢復、broker 重新啟動狀態接管之前保持 fail-closed。現階段不更新 VPS、不請真人測試。
+
+
+## 2026-10-12：首張真原生手牌的伺服器認證所有權預檢
+
+本階段繼續在 feature/host-reconnect-v3-playtest 隔離分支，不改共用非 V3 程式、既有 VPS 或線上 V3。第一個真正原版 XingBei gongJiOrFaShu GameEvent 尚被安全閘門暫停；此階段只完成「伺服器認證選牌資格的最前置所有權檢查」，**沒有完成合法出牌、選目標、技能效果或攻擊結算**。
+
+- game/v3-native-xingbei-seat-session.mjs 透過 preflightNativeActionCardOwnership，在原生 gongJiOrFaShu 事件已由 original xingDong 建立且仍暫停的狀態下，核對目前原生 Player 是否就是當前行動座位、固定認證 Player ID 是否吻合，並對原版 Player.getCards('h') 的原版 Card DOM 實體以唯一 v3card ID 查核。別人的牌、別人的座位、偽造 ID 一律拒絕；不會消耗或移動卡牌，不會觸發任何卡牌效果。
+- game/v3-authority-websocket-broker.mjs 新增預設關閉且 CI-only 的 enableNativeOwnershipProbes；只有 V3_ALLOW_SEAT_EXPERIMENT=1 才能開啟。玩家的 WS action_ownership_probe 只允許 type/requestId/cardId 三個欄位，不接受自稱的 seat、playerId、traceId、target、script 或 action。
+- broker 從當前已認證 socket 取 seat 和固定 Player ID，產生不可預測 trace，私訊主持 Chromium authority_action_ownership_probe；原生 Chromium 在真 Player DOM 上重新核對，僅回覆 boolean owned，broker 再把結果回傳原仍持有該座位的 socket。回覆標示 fullRulesValidated:false、actionExecuted:false，且沒有外人手牌名稱／卡牌 ID。
+- 64 個 outstanding 上限、4 秒逾時、socket 斷線／替換後不回覆舊 socket、工作程序私有 WS 失聯或 broker close 均清除 outstanding。人類客戶端偽造 authority_action_ownership_result 仍遭 UNKNOWN_MESSAGE_TYPE。
+- command(action:'playCard') 等正式指令依舊 RULES_ENGINE_NOT_IMPLEMENTED。此預檢不授權動作，不提供規則結果，且不能被視為出牌合法性驗證。
+
+### 全模式自動驗證
+
+提交 1a501c33f68cac609bc12db33318a7cfc870b36f：
+- 真 4/6/8 人 WebSocket＋原版 Card/Player Chromium 原生事件，合法本人持牌、他人卡牌、非行動座位、冒充 Player ID/追蹤碼/目標/腳本／回執，以及 Chromium 失聯： https://github.com/iront1996/noname_xingbei/actions/runs/38171261536 —— **SUCCESS：18/18 passed, 0 failed**。
+- V3 offline regressions 含預設禁用保護與任意 gameplay 禁止： https://github.com/iront1996/noname_xingbei/actions/runs/38171261527 —— **SUCCESS**。
+
+下一個關鍵阻塞：原版 chooseToUse 事件的卡牌規則／角色技能／傷害與應戰、目標範圍、隱藏資訊與結果執行的完整伺服器主導方案，以及事件／RNG／reconnect token 持久化。尚不應請求 VPS 更新或真人反覆試玩。
