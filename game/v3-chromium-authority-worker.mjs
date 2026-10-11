@@ -198,8 +198,15 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
        if(msg.type==='authority_choice_delivery'&&connected&&msg.roomId===opts.roomId&&
           Number.isInteger(msg.seat)&&typeof msg.playerId==='string'&&
           typeof msg.ticket==='string'&&/^[a-f0-9]{32}$/.test(msg.ticket)&&
-          typeof msg.option==='string'){
-        const b=bindings.find(x=>x.seat===msg.seat&&x.playerId===msg.playerId);
+          typeof msg.option==='string'&&
+          typeof msg.connectionId==='string'&&
+          /^[a-f0-9]{24}$/.test(msg.connectionId)){
+        // A seat's stable Player ID survives reconnect; its socket
+        // generation does NOT. Late delivery from a revoked session
+        // must not consume an action on the replacement session.
+        const b=bindings.find(x=>x.seat===msg.seat&&
+         x.playerId===msg.playerId&&
+         x.connectionId===msg.connectionId);
         if(b){
          if(msg.source==='native'){
           if(!nativeChoiceHooks)return;
