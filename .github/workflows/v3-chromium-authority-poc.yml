@@ -11,6 +11,7 @@ on:
       - 'game/v3-authority-websocket-broker.mjs'
       - 'game/v3-authority-choice-windows.mjs'
       - 'game/v3-native-event-wait-adapter.mjs'
+      - 'game/v3-native-xingbei-content-stager.mjs'
       - 'game/v3-authority-seat-preflight.mjs'
       - 'tools/test-v3-chromium-authority-worker.mjs'
       - 'tools/test-v3-chromium-coordinator-integration.mjs'
@@ -19,6 +20,7 @@ on:
       - 'tools/test-v3-real-choice-window-chromium.mjs'
       - 'tools/test-v3-native-gameevent-choice-chromium.mjs'
       - 'tools/test-v3-native-choice-matrix-chromium.mjs'
+      - 'tools/test-v3-native-content-chromium.mjs'
       - 'tools/test-v3-chromium-sandbox-policy.mjs'
       - 'tools/test-v3-authority-choice-windows.mjs'
       - 'tools/v3-native-module-test-server.mjs'
@@ -51,12 +53,14 @@ jobs:
           node --check game/v3-authority-websocket-broker.mjs
           node --check game/v3-authority-choice-windows.mjs
           node --check game/v3-native-event-wait-adapter.mjs
+          node --check game/v3-native-xingbei-content-stager.mjs
           node --check tools/test-v3-chromium-authority-worker.mjs
           node --check tools/test-v3-chromium-coordinator-integration.mjs
           node --check tools/test-v3-real-websocket-chromium-broker.mjs
           node --check tools/test-v3-real-choice-window-chromium.mjs
           node --check tools/test-v3-native-gameevent-choice-chromium.mjs
           node --check tools/test-v3-native-choice-matrix-chromium.mjs
+          node --check tools/test-v3-native-content-chromium.mjs
           node --check tools/test-v3-chromium-sandbox-policy.mjs
           node --check tools/v3-native-module-test-server.mjs
           node --check tools/test-v3-native-module-chromium.mjs
@@ -78,4 +82,4 @@ jobs:
             echo 'FAIL: runner lacks installed Chromium/Chrome; not a skipped PASS.' >&2
             exit 1
           fi
-          V3_CHROMIUM="$browser" node --test tools/test-v3-chromium-authority-worker.mjs tools/test-v3-chromium-coordinator-integration.mjs tools/test-v3-real-websocket-chromium-broker.mjs tools/test-v3-native-module-chromium.mjs tools/test-v3-real-choice-window-chromium.mjs tools/test-v3-native-gameevent-choice-chromium.mjs tools/test-v3-native-choice-matrix-chromium.mjs tools/test-v3-chromium-sandbox-policy.mjs
+          V3_CHROMIUM="$browser" node --test tools/test-v3-chromium-authority-worker.mjs tools/test-v3-chromium-coordinator-integration.mjs tools/test-v3-real-websocket-chromium-broker.mjs tools/test-v3-native-module-chromium.mjs tools/test-v3-real-choice-window-chromium.mjs tools/test-v3-native-gameevent-choice-chromium.mjs tools/test-v3-native-choice-matrix-chromium.mjs tools/test-v3-native-content-chromium.mjs tools/test-v3-chromium-sandbox-policy.mjs
