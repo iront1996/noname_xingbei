@@ -105,6 +105,10 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   if(!obj||typeof obj!=='object'||Array.isArray(obj)||!requestOk(obj.requestId))
    return send(ws,{type:'error',code:'INVALID_MESSAGE'});
   if(ws.__v3AuthorityRoom){
+   // A superseded/offline Chromium channel must never mutate private
+   // projections or acknowledge requests after its authority was revoked.
+   if(workersByRoom.get(ws.__v3AuthorityRoom)!==ws)
+    return send(ws,{type:'error',code:'WORKER_CHANNEL_REVOKED'});
    if(obj.type==='authority_private_hand'){
     if(!enablePrivateHandExperiments)
      return send(ws,{type:'error',code:'PRIVATE_HAND_EXPERIMENT_DISABLED'});
@@ -336,6 +340,16 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
      workersByRoom.delete(ws.__v3AuthorityRoom);
      choices.cancelRoom(ws.__v3AuthorityRoom);
      privateHands.clearRoom(ws.__v3AuthorityRoom);
+     // Abort in-flight transport probes immediately. Waiting for the
+     // four-second timer could misrepresent a dead host as still pending.
+     for(const [traceId,p] of outstandingProbes){
+      if(p.roomId===ws.__v3AuthorityRoom){
+       clearTimeout(p.timer);outstandingProbes.delete(traceId);
+       if(current(p.roomId,p.seat,p.ws))
+        send(p.ws,{type:'reply',requestId:p.requestId,
+         ok:false,code:'WORKER_CHANNEL_OFFLINE'});
+      }
+     }
      for(const [traceId,p] of outstandingCardProbes){
       if(p.roomId===ws.__v3AuthorityRoom){
        clearTimeout(p.timer);outstandingCardProbes.delete(traceId);
