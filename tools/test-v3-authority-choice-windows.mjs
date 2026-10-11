@@ -9,9 +9,9 @@ test('open pending prompt and only valid option accepts one-time delivery',()=>{
  assert.equal(m.size(),1);
  assert.equal(opened.view.state,'open');
  assert.match(opened.view.ticket,/^[a-f0-9]{32}$/);
- const submitted=m.submit({...defaults,ticket:opened.view.ticket,option:'defend',source:'experiment'});
+ const submitted=m.submit({...defaults,ticket:opened.view.ticket,option:'defend'});
  assert.equal(submitted.code,'CHOICE_SUBMITTED_NOT_APPLIED');
- assert.deepEqual(submitted.delivery,{roomId:'roomA',seat:0,playerId:id(1),ticket:opened.view.ticket,option:'defend'});
+ assert.deepEqual(submitted.delivery,{roomId:'roomA',seat:0,playerId:id(1),ticket:opened.view.ticket,option:'defend',source:'experiment'});
  assert.equal(m.submit({...defaults,ticket:opened.view.ticket,option:'pass'}).code,'CHOICE_ALREADY_LOCKED');
  assert.equal(m.submit({...defaults,ticket:opened.view.ticket,option:'defend'}).code,'CHOICE_ALREADY_SUBMITTED');
  assert.equal(m.deliveryReceipt({...defaults,ticket:opened.view.ticket,option:'pass'}).code,'CHOICE_DELIVERY_DENIED');
