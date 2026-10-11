@@ -141,14 +141,21 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(new Set(drafted.roster.map(p=>p.character)).size,count);
    // Original native Card instances must physically inhabit the right
    // native Player hand zone, never the host virtual Player or other seats.
-   const dealt=await chrome.dealNativeOpeningCards();
+   // 2v2 now uses the ORIGINAL gameDraw Event.start() for the four
+   // genuine opening cards. Other modes retain the already verified manual
+   // stage until native gameDraw first passes this isolation test.
+   const originalOpening=mode==='2v2';
+   const dealt=originalOpening
+    ?await chrome.dealNativeOpeningCardsByOriginalEvent()
+    :await chrome.dealNativeOpeningCards();
    assert.equal(dealt.nativeCards,true);
    assert.equal(dealt.physicalCardsUnique,true);
    assert.equal(dealt.totalDealt,count*4);
    assert.deepEqual(dealt.handCounts,Array(count).fill(4));
    assert.deepEqual(dealt.nativeHandCounts,Array(count).fill(4));
    assert.equal(dealt.privateDetailsIncluded,false);
-   assert.equal(dealt.nativeGameDrawTriggered,false);
+   assert.equal(dealt.nativeGameDrawTriggered,originalOpening);
+   if(originalOpening)assert.equal(dealt.realNativeGameEventCompleted,true);
    // Real native cards and untouched remaining draw pile -> encrypted disk.
    // This test proves save/reload of opening data, NOT restoration of an
    // executing GameEvent, RNG state, battle, or a crashed Chromium.
@@ -274,14 +281,16 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    // Run one *original* gameDraw event only after all private-hand
    // projections/restore contracts have been checked. This is a destructive
    // staging probe and cannot be published as a valid play session.
-   const executed=await chrome.probeNativeOriginalGameDraw();
-   assert.equal(executed.realNativeGameDrawExecuted,true);
-   assert.equal(executed.eventName,'gameDraw');
-   assert.equal(executed.gainedExactlyFour,true);
-   assert.deepEqual(executed.before,Array(count).fill(4));
-   assert.deepEqual(executed.after,Array(count).fill(8));
-   assert.equal(executed.nativePhaseLoopExecuted,false);
-   assert.equal(executed.turnResolved,false);
+   if(!originalOpening){
+    const executed=await chrome.probeNativeOriginalGameDraw();
+    assert.equal(executed.realNativeGameDrawExecuted,true);
+    assert.equal(executed.eventName,'gameDraw');
+    assert.equal(executed.gainedExactlyFour,true);
+    assert.deepEqual(executed.before,Array(count).fill(4));
+    assert.deepEqual(executed.after,Array(count).fill(8));
+    assert.equal(executed.nativePhaseLoopExecuted,false);
+    assert.equal(executed.turnResolved,false);
+   }
   }finally{
    for(const p of peers)try{p.ws.close()}catch{}
    await broker.close();
