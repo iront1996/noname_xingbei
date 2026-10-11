@@ -132,12 +132,17 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
      return send(ws,{type:'error',code:'CHOICE_SEAT_INVALID'});
     if(obj.source==='preview'&&
        (!enableNativeOwnershipProbes||!enableChoiceWindowExperiments||
-        process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1'||obj.kind!=='card'))
+        process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1'||
+        !['card','target'].includes(obj.kind)))
      return send(ws,{type:'error',code:'NATIVE_USE_PREVIEW_DISABLED'});
-    const opened=choices.open({roomId,seat:obj.seat,playerId:obj.playerId,
-      kind:obj.kind,prompt:obj.prompt,options:obj.options,
-      source:obj.source==='native'?'native':
-       obj.source==='preview'?'preview':'experiment'});
+    const opened=obj.source==='preview'&&obj.kind==='target'
+     ?choices.advancePreview({roomId,seat:obj.seat,playerId:obj.playerId,
+       kind:'target',prompt:obj.prompt,options:obj.options,
+       previousTicket:obj.previousTicket,previousOption:obj.previousOption})
+     :choices.open({roomId,seat:obj.seat,playerId:obj.playerId,
+       kind:obj.kind,prompt:obj.prompt,options:obj.options,
+       source:obj.source==='native'?'native':
+        obj.source==='preview'?'preview':'experiment'});
     send(ws,{type:'authority_choice_open_result',...opened});
     if(opened.ok)sendChoice(roomId,obj.seat);
     return;
