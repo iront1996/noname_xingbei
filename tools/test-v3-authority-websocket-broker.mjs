@@ -31,11 +31,12 @@ async function ask(ws,obj){
  return waitFor(ws,r=>r.type==='reply'&&r.requestId===requestId);
 }
 const config={mode:'xingBei',seatMode:'2v2'};
-async function setup({latency=0,choiceExperiment=false}={}){
+async function setup({latency=0,choiceExperiment=false,ownershipExperiment=false}={}){
  let started=0,stopped=0,authority;
  const broker=await createV3AuthorityWebSocketBroker({
   WebSocketServer:FakeWebSocketServer,
   enableChoiceWindowExperiments:choiceExperiment,
+  enableNativeOwnershipProbes:ownershipExperiment,
   launchWorker:async()=>{
    started++;let alive=true;
    return {
@@ -271,6 +272,78 @@ test('native action ownership preflight is disabled by default and can never bec
    'ACTION_PROBE_DISABLED');
   assert.equal((await ask(ws[0],{type:'command',action:'playCard',
    cardId:'v3card_000001'})).code,'RULES_ENGINE_NOT_IMPLEMENTED');
+ }finally{await x.broker.close()}
+});
+test('native attack target reply is bound to original player, trace, target and session',async()=>{
+ const prior=process.env.V3_ALLOW_SEAT_EXPERIMENT;
+ process.env.V3_ALLOW_SEAT_EXPERIMENT='1';
+ let x;
+ try{x=await setup({ownershipExperiment:true})}
+ finally{
+  if(prior===undefined)delete process.env.V3_ALLOW_SEAT_EXPERIMENT;
+  else process.env.V3_ALLOW_SEAT_EXPERIMENT=prior;
+ }
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  const cardId='v3card_000001';
+  const pending=ask(ws[0],{type:'action_target_probe',cardId,targetSeat:1});
+  const sent=await waitFor(x.authority,m=>m.type==='authority_action_target_probe');
+  assert.equal(sent.seat,0);
+  assert.equal(sent.playerId,sessions[0].playerId);
+  assert.equal(sent.targetSeat,1);
+  assert.equal(sent.cardId,cardId);
+  // Invalid target cannot borrow a pending authenticated trace.
+  x.authority.clientSend({
+   type:'authority_action_target_result',roomId:'TEST',
+   seat:0,playerId:sessions[0].playerId,targetSeat:2,traceId:sent.traceId,
+   supportedPrintedAttack:true,printedTargetEligible:true
+  });
+  assert.equal((await waitFor(x.authority,m=>
+   m.type==='error'&&m.code==='ACTION_TARGET_ACK_INVALID')).code,
+   'ACTION_TARGET_ACK_INVALID');
+  x.authority.clientSend({
+   type:'authority_action_target_result',roomId:'TEST',
+   seat:0,playerId:sessions[0].playerId,targetSeat:1,traceId:sent.traceId,
+   supportedPrintedAttack:true,printedTargetEligible:true
+  });
+  const result=await pending;
+  assert.equal(result.ok,true);
+  assert.equal(result.code,'ACTION_PRINTED_TARGET_PRECHECK_PASSED');
+  assert.equal(result.fullRulesValidated,false);
+  assert.equal(result.targetFullyValidated,false);
+  assert.equal(result.cardConsumed,false);
+  assert.equal(result.actionExecuted,false);
+  assert.equal(JSON.stringify(result).includes(cardId),false);
+  // Replay cannot acknowledge the same trace twice.
+  x.authority.clientSend({
+   type:'authority_action_target_result',roomId:'TEST',
+   seat:0,playerId:sessions[0].playerId,targetSeat:1,traceId:sent.traceId,
+   supportedPrintedAttack:true,printedTargetEligible:true
+  });
+  await new Promise(resolve=>setTimeout(resolve,10));
+  assert.equal(ws[0].outbound.filter(r=>r.type==='reply'&&
+   r.requestId===result.requestId).length,1);
+  // A real session takeover replaces socket ownership before the delayed
+  // Chromium answer is considered, and the old socket sees no reply.
+  const later=ask(ws[0],{type:'action_target_probe',cardId,targetSeat:3});
+  const second=await waitFor(x.authority,m=>
+   m.type==='authority_action_target_probe'&&m.targetSeat===3);
+  const replacement=x.connect();
+  const auth=await ask(replacement,{type:'reconnect',roomId:'TEST',seat:0,
+   reconnectToken:sessions[0].reconnectToken});
+  assert.equal(auth.playerId,sessions[0].playerId);
+  x.authority.clientSend({
+   type:'authority_action_target_result',roomId:'TEST',
+   seat:0,playerId:sessions[0].playerId,targetSeat:3,traceId:second.traceId,
+   supportedPrintedAttack:true,printedTargetEligible:true
+  });
+  assert.equal((await waitFor(x.authority,m=>m.type==='error'&&
+   m.code==='ACTION_TARGET_ACK_INVALID')).code,'ACTION_TARGET_ACK_INVALID');
+  assert.equal((await ask(replacement,{type:'command',action:'playCard'})).code,
+   'RULES_ENGINE_NOT_IMPLEMENTED');
+  // The old pending Promise never needs to resolve after session revocation.
+  void later;
  }finally{await x.broker.close()}
 });
 test('native printed attack target preflight defaults to denied and cannot enable gameplay',async()=>{
