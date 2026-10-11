@@ -581,7 +581,6 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     await assert.rejects(chrome.beginNativeUseCardPreview({
      seat:1,playerId:sessions[1].playerId
     }),/V3_NATIVE_USE_PREVIEW_DENIED/);
-    console.error('V3_PREVIEW_DIAG_'+mode+'_START');
     const begun=await chrome.beginNativeUseCardPreview({
      seat:0,playerId:sessions[0].playerId
     });
@@ -592,7 +591,6 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(begun.fullRulesValidated,false);
     assert.equal(begun.cardConsumed,false);
     assert.equal(begun.actionExecuted,false);
-    console.error('V3_PREVIEW_DIAG_'+mode+'_BEGIN_DONE');
     const previewWindow=await until(()=>currentBySeat[0].received.find(x=>
      x.type==='choice_window'&&x.window?.source==='preview'&&
      x.window?.playerId===sessions[0].playerId
@@ -616,7 +614,6 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     }),/V3_NATIVE_USE_PREVIEW_DENIED/);
     // Disconnect the creator DURING the read-only native card window:
     // ticket and original event remain server-owned, no AI/autoplay.
-    console.error('V3_PREVIEW_DIAG_'+mode+'_WINDOW_DONE');
     currentBySeat[0].ws.close();
     await until(()=>!broker.roomView(roomId).roster[0].connected);
     const waiting=await chrome.inspectNativeUseCardPreview();
@@ -639,12 +636,10 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal((await ask(replacement,'choice_submit',{
      ticket:recovered.ticket,option:'v3card_ffffff'
     })).code,'CHOICE_OPTION_NOT_ALLOWED');
-    console.error('V3_PREVIEW_DIAG_'+mode+'_RECONNECTED');
     const chose=await ask(replacement,'choice_submit',{
      ticket:recovered.ticket,option:recovered.options[0]
     });
     assert.equal(chose.code,'CHOICE_SUBMITTED_NOT_APPLIED');
-    console.error('V3_PREVIEW_DIAG_'+mode+'_SUBMITTED');
     const recorded=await until(async()=>{
      const p=await chrome.inspectNativeUseCardPreview();
      return p.recorded&&p;
@@ -656,7 +651,6 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(recorded.fullRulesValidated,false);
     assert.equal(recorded.cardConsumed,false);
     assert.equal(recorded.actionExecuted,false);
-    console.error('V3_PREVIEW_DIAG_'+mode+'_RECORDED');
     assert.equal((await ask(replacement,'choice_query')).window?.state,'delivered');
     assert.equal((await ask(replacement,'choice_submit',{
      ticket:recovered.ticket,option:recovered.options[1]
