@@ -55,6 +55,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    enablePrivateHandExperiments:true,
    enableOpeningRecoveryExperiments:true,
    openingCheckpointStore:recoveryStore,
+   enableNativeOwnershipProbes:true,
    launchWorker:async()=>{
     chrome=await launchV3ChromiumAuthorityWorker({executable});
     assert.equal((await chrome.loadV3NativeModules({origin:host.origin})).loaded,true);
@@ -432,6 +433,26 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     );
     assert.deepEqual((await chrome.inspectNativePrivateHand({seat:0})).ownHand,
      seatViews[0].ownHand);
+    // Real human socket -> authenticated broker -> real Chromium Player hand
+    // -> broker -> ONLY same human socket. No action is performed.
+    const allowed=await ask(currentBySeat[0],'action_ownership_probe',{
+     cardId:card
+    });
+    assert.equal(allowed.code,'ACTION_CARD_OWNERSHIP_PRECHECK_PASSED');
+    assert.equal(allowed.ok,true);
+    assert.equal(allowed.fullRulesValidated,false);
+    assert.equal(allowed.actionExecuted,false);
+    for(const [seat,id] of [
+     [0,foreignCard],[1,foreignCard],[1,card],[0,'v3card_ffffff'],
+     [0,'<script>']
+    ]){
+     const denied=await ask(currentBySeat[seat],'action_ownership_probe',{cardId:id});
+     assert.equal(denied.ok,false);
+     assert.equal(denied.code,'ACTION_CARD_OWNERSHIP_DENIED');
+     assert.equal(JSON.stringify(denied).includes('ownHand'),false);
+    }
+    assert.deepEqual((await ask(currentBySeat[0],'private_hand_query')).view.ownHand,
+     seatViews[0].ownHand);
    }
    // A game-in-progress checkpoint must NOT be relabeled as opening-only.
    assert.equal((await broker.captureOpeningCheckpoint(roomId)).code,
@@ -477,6 +498,9 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(refused.ok,false);
    assert.equal(refused.code,'OPENING_RECOVERY_DISARMED');
    assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_UNAVAILABLE');
+   assert.equal((await ask(currentBySeat[0],'action_ownership_probe',{
+    cardId:seatViews[0].ownHand[0].cardId
+   })).code,'WORKER_CHANNEL_OFFLINE');
    assert.deepEqual(broker.roomView(roomId).roster.map(p=>p.seat),
     Array.from({length:count},(_,i)=>i));
 
