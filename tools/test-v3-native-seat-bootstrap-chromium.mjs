@@ -282,6 +282,18 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(firstPhase.blueMorale,firstPhase.maxMorale);
    assert.deepEqual(firstPhase.seatNumbers,Array.from({length:count},(_,i)=>i+1));
    assert.equal(firstPhase.phaseLoopCompleted,false);
+   // Phase start is a public event; it must not broadcast private hand data.
+   // Each authenticated player may still recover only their own four cards.
+   for(let seat=0;seat<count;seat++){
+    const res=await ask(currentBySeat[seat],'private_hand_query');
+    assert.equal(res.code,'PRIVATE_HAND_STATE');
+    assert.deepEqual(res.view.ownHand,seatViews[seat].ownHand);
+    for(let foreign=0;foreign<count;foreign++){
+     if(foreign===seat)continue;
+     for(const secret of seatViews[foreign].ownHand)
+      assert.equal(JSON.stringify(res).includes(secret.cardId),false);
+    }
+   }
    await assert.rejects(chrome.startPausedNativePhaseLoop(),
     /V3_NATIVE_PHASE_START_FAILED_V3_NATIVE_PHASE_PROBE_NOT_READY/);
    const afterDraw=await chrome.inspectNativeXingBeiSeats();
