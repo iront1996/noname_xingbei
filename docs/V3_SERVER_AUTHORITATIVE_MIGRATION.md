@@ -497,3 +497,25 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 ### 下一項阻塞
 
 要變成**真正玩家出牌**，仍須在完整 `chooseToUse` 的安全沙箱內重現 `lib.filter.cardEnabled/cardUsable`、`event.filterCard`、技能／距離／目標選擇、原版 `Player.useResult()`、敵方應戰、傷害、士氣與終局，並有實際原生多回合 4／6／8 人驗證與回合中途持久化。此階段既未執行 step 0，也不能聲稱技能已核准。V1/V2、`master`、`noname/**`、`mode/xingBei.js`、線上 V3、VPS、Cloudflare／8080／8081 未觸碰。
+
+
+## 2026-10-12：原生選牌後的印刷攻擊目標候選與雙階段重連
+
+只在 V3 隔離分支加入**尚未執行的選牌 → 目標候選**流程。依前一階段的真原版 `gongJiOrFaShu` `GameEvent`（仍 `game.pause()`）持牌選擇預覽，Chromium 接收到已認證座位提交的實體 `v3card_*` 後，在**不執行原版 `chooseToUse` step 0**、不解除暫停的情況下，對原生 `Player` 與原卡包 `lib.card[name].filterTarget` 做只讀的目標候選篩選。
+
+- 目前**只支援** `anMie`、`shuiLianZhan`、`huoYanZhan`、`fengShenZhan`、`leiGuangZhan` 這五種 `gongJi`、一目標的印刷攻擊牌；不支援的法術、技能、虛擬牌、未持有卡牌或事件非暫停狀態一律不開新視窗。原版技能修正、射程、額外目標、真正 `chooseToUse` 選牌合法性均**未驗證**。
+- Chromium 僅建立 `s0` 至 `s7` 的目標座位選項，不把其他人的私有卡牌送到任何客戶端；兩階段皆由 broker 建立新的 128-bit 隨機 ticket，綁定同房間、同座位、同固定 `Player ID`。
+- `createV3AuthorityChoiceWindows.advancePreview()` 必須看到**前一張選牌票券已提交且已被 Chromium 回執**，並核對前一張卡片的確切選項與票券，才會原子替換成 `kind:'target'`。舊票券立即撤銷。玩家不能直接跳過第一階段、提前開目標視窗，或提交不在清單內的目標。非預覽來源無法開 `target` 選項。
+- 原生 preview hooks 再確認目前仍是**同一個暫停的 `gongJiOrFaShu` `GameEvent`**、目前手牌仍屬於本人，以及提交的目標仍通過卡牌印刷目標規則，才記錄 `selectedTargetSeat`。不呼叫 `Player.unwait()`、`game.resume()`、`Player.useResult()`、不扣牌，不使敵方受傷，也不更新星杯／士氣／終局。
+- WebSocket 真人座位中途斷線不會清除 broker 的未完成預覽票券：開房者可先在第一階段斷線、重連選牌，再在第二階段斷線、重連選目標；不改 Chromium PID／`GameEvent`。每次重連的 token 按既有機制輪替，別人的座位無法提交舊票券或新票券。
+- `tools/test-v3-authority-choice-windows.mjs` 和 `tools/test-v3-authority-websocket-broker.mjs` 增加錯誤先後順序、冒充座位、錯誤前張選項、重放／改選、非預覽來源目標及 `authority_choice_native_applied` 冒充已結算的安全回歸。真 Chromium 測試對 4／6／8 人和真手牌做條件化的印刷攻擊預覽（避免依賴隨機手牌一定抽到指定類型）。
+
+### 測試資源隔離
+
+原先 Node.js 預設同時執行全部 Chromium 測試，曾使單個測試觸發 `MATRIX_WAIT_TIMEOUT`，並使 240 秒 CI 上限失敗。V3-only CI 已將 `--test-concurrency=2` 配合明確 360 秒總上限，限制同時啟動的無頭瀏覽器數量。這是**測試穩定性調整**，不修改真實房間的玩家數、主持服務啟動設定或 V1/V2。
+
+### 尚未完成
+
+**伺服器主導的完整原生合法出牌**需要先安全執行 `event.filterCard`、`lib.filter.cardEnabled/cardUsable`、技能 `game.checkMod`、`targetInRange`，接著執行原版 `chooseToUse` 的觸發、應戰、傷害、士氣及勝負事件，並實作回合中的 `GameEvent`／牌庫／RNG 持久化。此處兩階段的預覽和已確認的印刷 `filterTarget` **不是**完整合法出牌或攻擊結算，也不能自動完成一局遊戲。現階段不應進行 VPS 部署或要求真人反覆試玩。
+
+僅修改 `game/v3-*.mjs`、`tools/test-v3-*.mjs`、V3 Chromium 專用 CI 和本工程文件；`noname/**`、`mode/xingBei.js`、V1/V2、線上 V3、VPS、Cloudflare、8080／8081 未修改。
