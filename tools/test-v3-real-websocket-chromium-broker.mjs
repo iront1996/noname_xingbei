@@ -64,6 +64,12 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   assert.equal(initialHost.seenRoster,true);
   assert.equal(initialHost.seatCount,4);
   assert.equal(initialHost.boundPeerCount,4);
+  // Full network hop: authenticated human -> broker -> private Chromium
+  // -> broker -> the same human, with no game command execution.
+  const initialProbe=await ask(peers[0],'transport_probe');
+  assert.equal(initialProbe.code,'TRANSPORT_PROBE_ROUNDTRIP');
+  assert.equal(initialProbe.playerId,sessions[0].playerId);
+  assert.equal(initialProbe.seat,0);
   // Run the actual randomMapOL() source using this room's authenticated
   // stable playerIds, not fabricated ws_0/1/2/3 identifiers.
   const nativeBefore=await browser.evaluateSeatExperiment(buildV3NativeAuthorizedSeatProbe());
@@ -102,6 +108,12 @@ test('four real socket players reconnect across real Chromium room-host lifetime
    await sleep(20);
   }
   assert.equal((await browser.inspectRoomChannel()).boundPeerCount,4);
+  for(const [peer,seat] of [[a,0],[c,2]]){
+   const proof=await ask(peer,'transport_probe');
+   assert.equal(proof.code,'TRANSPORT_PROBE_ROUNDTRIP');
+   assert.equal(proof.playerId,sessions[seat].playerId);
+   assert.equal(proof.seat,seat);
+  }
   const nativeAfter=await browser.evaluateSeatExperiment(buildV3NativeAuthorizedSeatProbe());
   assert.equal(nativeAfter.offboard,true);
   assert.equal(nativeAfter.socketBindingsPreserved,true);
