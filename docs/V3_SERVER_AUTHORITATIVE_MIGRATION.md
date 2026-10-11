@@ -257,3 +257,7 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 - **仍未完成／不得冒稱**：整場星杯原生選角、抽牌、真正 Player DOM 初始化、技能與 GameEvent、回合與合法行動校驗、私密手牌的端到端投影、同步終局通報、完整持久化、Chromium crash 與 VPS restart 續局。此輪雖匯入了真正原生 Game／mode，某些測試仍以受控的玩家 DOM／狀態替身驗證「原生接口」，不是原生完整遊戲流程。
 - 工作程序目前仍使用隔離 CI 專用 `--no-sandbox`，**禁止未經非 root 及 sandbox/資源限制修正就部署到 VPS 接玩家資料**。
 - 下一步優先把原生 `GameEvent`／`Client`／`NodeWS` 真正連上座位代理，完成原生選角、發牌、第一個回合與回應窗口的程式化測試；若事件環境無法脫離房主真人視角，需轉向可序列化規則核心。真人仍維持**一次集中驗收**政策。
+
+## 2026-10-11 後續：原生回應封包的拒絕式邊界
+
+新增 `game/v3-native-response-envelope.mjs` 與 `tools/test-v3-native-response-envelope.mjs`。目前僅驗證 roomId、traceId、seat、固定 Player ID 與活躍 connectionId；任何包含 `script`、`action` 或 `result` 的玩家輸入都拒絕。此函式尚未接入原生 `GameEvent` 或正式 V3 WebSocket 服務，不能視為已完成技能、出牌或斷線原局恢復。下一階段應先建立受控的伺服器 pending event window、單次消耗 nonce、座位重連後的綁定更新與結果校驗，再允許有限的原生選擇回應。
