@@ -10,6 +10,7 @@ on:
       - 'game/v3-authority-runtime-coordinator.mjs'
       - 'game/v3-authority-websocket-broker.mjs'
       - 'game/v3-authority-choice-windows.mjs'
+      - 'game/v3-authority-private-projections.mjs'
       - 'game/v3-native-event-wait-adapter.mjs'
       - 'game/v3-native-xingbei-content-stager.mjs'
       - 'game/v3-native-xingbei-seat-session.mjs'
@@ -25,6 +26,7 @@ on:
       - 'tools/test-v3-native-seat-bootstrap-chromium.mjs'
       - 'tools/test-v3-chromium-sandbox-policy.mjs'
       - 'tools/test-v3-authority-choice-windows.mjs'
+      - 'tools/test-v3-authority-private-projections.mjs'
       - 'tools/v3-native-module-test-server.mjs'
       - 'tools/test-v3-native-module-chromium.mjs'
       - 'tools/v3-real-native-result-probe.mjs'
@@ -54,6 +56,7 @@ jobs:
           node --check game/v3-authority-runtime-coordinator.mjs
           node --check game/v3-authority-websocket-broker.mjs
           node --check game/v3-authority-choice-windows.mjs
+          node --check game/v3-authority-private-projections.mjs
           node --check game/v3-native-event-wait-adapter.mjs
           node --check game/v3-native-xingbei-content-stager.mjs
           node --check game/v3-native-xingbei-seat-session.mjs
