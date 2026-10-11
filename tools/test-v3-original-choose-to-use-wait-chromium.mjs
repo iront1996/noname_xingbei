@@ -141,6 +141,11 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
   assert.equal((await ask(peers[1],'choice_submit',{
    ticket:window.ticket,option:window.options[0]
   })).code,'CHOICE_WINDOW_NOT_FOUND');
+  const boundBeforeDisconnect=await chrome.evaluateSeatExperiment(
+   'window.__v3AuthorityBridge.getSeatBindings()'
+  );
+  assert.equal(boundBeforeDisconnect.length,4);
+  assert.ok(boundBeforeDisconnect.every(p=>/^[a-f0-9]{24}$/.test(p.connectionId)));
   // Every human including the creator leaves at the live original
   // GameEvent wait. The authoritative browser must NOT belong to any
   // human socket, nor answer using AI while all sockets are gone.
@@ -188,6 +193,16 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
   }
   assert.equal((await chrome.inspectRoomChannel()).boundPeerCount,4);
   assert.equal(chrome.pid,pid);
+  const boundAfterReconnect=await chrome.evaluateSeatExperiment(
+   'window.__v3AuthorityBridge.getSeatBindings()'
+  );
+  assert.equal(boundAfterReconnect.length,4);
+  for(let seat=0;seat<4;seat++){
+   assert.equal(boundAfterReconnect[seat].playerId,boundBeforeDisconnect[seat].playerId);
+   assert.match(boundAfterReconnect[seat].connectionId,/^[a-f0-9]{24}$/);
+   assert.notEqual(boundAfterReconnect[seat].connectionId,
+    boundBeforeDisconnect[seat].connectionId);
+  }
   const submittedOption=answer==='pass'?'pass':
    reopened.options.find(c=>c!=='pass');
   assert.equal((await ask(next,'choice_submit',{
