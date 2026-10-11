@@ -121,6 +121,18 @@ export function createV3AuthorityChoiceWindows({now=()=>Date.now(),ttlMs=120000,
    e.state='applied';
    return ok('CHOICE_NATIVE_APPLIED',{view:expose(e)});
   },
+  renewNativePreview({roomId,seat,playerId:pid,ticket:proof}={}){
+   // Only the authenticated Chromium worker may call this through the
+   // broker's private channel. Human sockets cannot extend this lease.
+   // A dead worker, expired proof, wrong seat, native (non-preview)
+   // window or a previous-stage ticket must never be renewable.
+   expire();
+   const e=locate({roomId,seat,playerId:pid,ticket:proof});
+   if(!e||e.source!=='preview'||e.state==='applied')
+    return no('PREVIEW_LEASE_RENEW_DENIED');
+   e.expiresAt=now()+ttlMs;
+   return ok('PREVIEW_LEASE_RENEWED',{view:expose(e)});
+  },
   cancelRoom(roomId){
    let count=0;
    for(const [k,v] of windows)if(v.roomId===roomId){windows.delete(k);count++}
