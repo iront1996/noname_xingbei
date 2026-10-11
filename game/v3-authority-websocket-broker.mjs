@@ -7,6 +7,7 @@ import {randomBytes} from 'node:crypto';
 import {createV3AuthorityRuntimeCoordinator} from './v3-authority-runtime-coordinator.mjs';
 import {createV3AuthorityChoiceWindows} from './v3-authority-choice-windows.mjs';
 import {createV3AuthorityPrivateProjections} from './v3-authority-private-projections.mjs';
+import {verifyV3NativeOpeningCheckpoint} from './v3-native-opening-checkpoint.mjs';
 
 const reply=(ok,code,extra={})=>({ok,code,...extra});
 const idOk=s=>typeof s==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(s);
@@ -15,11 +16,17 @@ const requestOk=s=>s===undefined||(typeof s==='string'&&/^[a-zA-Z0-9_-]{1,40}$/.
 const live=ws=>ws?.readyState===1;
 const send=(ws,obj)=>{if(!live(ws))return;try{ws.send(JSON.stringify(obj))}catch{try{ws.close(1011)}catch{}}};
 
-export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0,enableChoiceWindowExperiments=false,enablePrivateHandExperiments=false}={}){
+export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0,enableChoiceWindowExperiments=false,enablePrivateHandExperiments=false,enableOpeningRecoveryExperiments=false,openingCheckpointStore=null}={}){
  if(typeof WebSocketServer!=='function'||typeof launchWorker!=='function')throw new TypeError('BROKER_DEPENDENCY_MISSING');
  if(host!=='127.0.0.1'||port!==0)throw new Error('EXPERIMENT_LOOPBACK_EPHEMERAL_ONLY');
- if(typeof enableChoiceWindowExperiments!=='boolean'||typeof enablePrivateHandExperiments!=='boolean')
+ if(typeof enableChoiceWindowExperiments!=='boolean'||typeof enablePrivateHandExperiments!=='boolean'||
+    typeof enableOpeningRecoveryExperiments!=='boolean')
   throw new TypeError('EXPERIMENT_CONFIG_INVALID');
+ if(enableOpeningRecoveryExperiments&&
+    (process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1'||
+     typeof openingCheckpointStore?.load!=='function'||
+     typeof openingCheckpointStore?.save!=='function'))
+  throw new TypeError('OPENING_RECOVERY_OFFLINE_STORE_REQUIRED');
  const choices=createV3AuthorityChoiceWindows();
  const privateHands=createV3AuthorityPrivateProjections();
  const stablePlayersByRoom=new Map();
@@ -294,6 +301,91 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   address:'ws://127.0.0.1:'+localPort(),
   roomView:id=>coordinator.roomView(id),
   inspectWorker:id=>coordinator.inspectWorker(id),
+  // Internal host methods. Not exposed via WS 'type' dispatch; the broker
+  // never accepts client-supplied snapshots or worker launch credentials.
+  async captureOpeningCheckpoint(roomId){
+   if(!enableOpeningRecoveryExperiments)return reply(false,'OPENING_RECOVERY_DISABLED');
+   const view=coordinator.roomView(roomId);
+   const worker=coordinator.internalWorkerForRecovery(roomId);
+   if(!view||!worker)return reply(false,'OPENING_CAPTURE_ROOM_NOT_READY');
+   if((await coordinator.inspectWorker(roomId)).code!=='WORKER_PROOF_ALIVE')
+    return reply(false,'OPENING_CAPTURE_WORKER_NOT_ALIVE');
+   let snapshot;
+   try{snapshot=await worker.exportNativeOpeningCheckpoint({roomId,revision:1})}
+   catch{return reply(false,'OPENING_CAPTURE_NATIVE_NOT_READY')}
+   const verified=verifyV3NativeOpeningCheckpoint(snapshot);
+   const playerIds=stablePlayersByRoom.get(roomId);
+   const count=({'2v2':4,'3v3':6,'4v4':8})[view.config?.seatMode];
+   if(!verified.ok||snapshot.seatMode!==view.config.seatMode||
+      count!==snapshot.players.length||playerIds?.size!==count||
+      snapshot.players.some((p,i)=>p.seat!==i||p.playerId!==playerIds.get(i)))
+    return reply(false,'OPENING_CAPTURE_ROSTER_MISMATCH');
+   try{
+    const saved=await openingCheckpointStore.save(snapshot);
+    return reply(true,'OPENING_CAPTURE_ENCRYPTED',{
+     revision:saved.revision,seatCount:count,restorableRunningGame:false
+    });
+   }catch{return reply(false,'OPENING_CAPTURE_WRITE_FAILED')}
+  },
+  async recoverOpeningCheckpoint(roomId){
+   if(!enableOpeningRecoveryExperiments)return reply(false,'OPENING_RECOVERY_DISABLED');
+   const view=coordinator.roomView(roomId);
+   if(!view||view.status!=='waiting')
+    return reply(false,'OPENING_RECOVERY_ROOM_NOT_WAITING');
+   const healthy=await coordinator.inspectWorker(roomId);
+   if(healthy.code==='WORKER_PROOF_ALIVE')
+    return reply(false,'OPENING_RECOVERY_WORKER_STILL_ALIVE');
+   let checkpoint;
+   try{checkpoint=await openingCheckpointStore.load(roomId)}
+   catch{return reply(false,'OPENING_RECOVERY_CHECKPOINT_INVALID')}
+   if(!checkpoint?.value||checkpoint.restorable!==false||
+      !verifyV3NativeOpeningCheckpoint(checkpoint.value).ok)
+    return reply(false,'OPENING_RECOVERY_CHECKPOINT_MISSING');
+   const snapshot=checkpoint.value,roster=seats(roomId),ids=stablePlayersByRoom.get(roomId);
+   const count=({'2v2':4,'3v3':6,'4v4':8})[view.config?.seatMode];
+   if(!count||snapshot.seatMode!==view.config.seatMode||
+      snapshot.players.length!==count||ids?.size!==count||
+      snapshot.players.some((p,i)=>p.seat!==i||p.playerId!==ids.get(i))||
+      !roster||roster.size!==count||
+      [...Array(count).keys()].some(i=>!live(roster.get(i)?.ws)))
+    return reply(false,'OPENING_RECOVERY_ROSTER_MISMATCH');
+   // Any previously running GameEvent is NOT recovered: stop it and only
+   // replay the checkpoint captured before a real phase began.
+   const stopped=await coordinator.stopRoomWorker(roomId);
+   if(stopped.code!=='WORKER_STOPPED')
+    return reply(false,'OPENING_RECOVERY_OLD_WORKER_STOP_FAILED');
+   for(let i=0;i<120&&workersByRoom.has(roomId);i++)
+    await new Promise(resolve=>setTimeout(resolve,25));
+   if(workersByRoom.has(roomId))
+    return reply(false,'OPENING_RECOVERY_OLD_CHANNEL_STILL_OPEN');
+   const clientIds=[...Array(count).keys()].map(i=>roster.get(i).connectionId);
+   const launched=await coordinator.launchRoomWorker({
+    roomId,workerClientIds:clientIds
+   });
+   if(!launched.ok)return reply(false,'OPENING_RECOVERY_RESTART_FAILED');
+   try{
+    const worker=coordinator.internalWorkerForRecovery(roomId);
+    if(!worker||typeof worker.restoreTrustedOpeningCheckpoint!=='function')
+     throw Error('RESTARTED_WORKER_RESTORE_UNSUPPORTED');
+    const rebuild=await worker.restoreTrustedOpeningCheckpoint({checkpoint:snapshot,roomId});
+    if(rebuild.ok!==true||rebuild.result?.restoredOpening!==true||
+       rebuild.result?.seatCount!==count||
+       rebuild.roster?.some((p,i)=>p.playerId!==snapshot.players[i].playerId))
+     throw Error('RESTARTED_WORKER_REHYDRATION_INVALID');
+    const published=await worker.publishNativeOpeningHands();
+    if(published.count!==count)throw Error('RESTARTED_WORKER_PRIVATE_REPLAY_INCOMPLETE');
+    return reply(true,'OPENING_RECOVERY_REHYDRATED',{
+     seatCount:count,oldWorkerGone:true,
+     revision:snapshot.revision,restorableRunningGame:false,
+     gameEventStackRestored:false,phaseLoopStarted:false
+    });
+   }catch{
+    await coordinator.stopRoomWorker(roomId);
+    privateHands.clearRoom(roomId);
+    return reply(false,'OPENING_RECOVERY_REBUILD_FAILED');
+   }
+  },
+
   async close(){
    if(closed)return;
    closed=true;
