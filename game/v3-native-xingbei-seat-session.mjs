@@ -364,7 +364,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   // a human player socket or room-wide roster. NOT a game-event snapshot.
   exportOpeningCheckpoint({roomId,revision=1}={}){
    if(!startingCardsDealt||drafts.size!==0||chosen.size!==players.length||
-      (!game.__v3NativeDrawPile&&!restoredOpening)||draftFailure)
+      (!game.__v3NativeDrawPile&&!restoredOpening)||draftFailure||
+      game.__v3PausedPhaseRuntime||_status.eventManager.eventStack.length!==0||
+      adapter.inspect().pending!==0)
     throw err('V3_OPENING_CHECKPOINT_NOT_READY');
    if(typeof roomId!=='string'||!/^[A-Za-z0-9_-]{1,64}$/.test(roomId)||
       !Number.isSafeInteger(revision)||revision<1)
