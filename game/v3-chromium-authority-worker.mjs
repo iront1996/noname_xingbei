@@ -264,6 +264,100 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
     }
     throw fail('WORKER_BRIDGE_HANDSHAKE_TIMEOUT');
    },
+   async beginNativeChoiceExperiment({seat,controls=['guard','evade'],prompt='請選擇防禦方式'}={}){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(!Number.isInteger(seat)||seat<0||seat>7||
+       !Array.isArray(controls)||controls.length<2||controls.length>12||
+       !controls.every(x=>typeof x==='string'&&x.length>0&&x.length<=80)||
+       new Set(controls).size!==controls.length||
+       typeof prompt!=='string'||prompt.length<1||prompt.length>120||
+       /[<>\u0000-\u001f]/.test(prompt))throw fail('NATIVE_CHOICE_TEST_INVALID');
+    const args=JSON.stringify({seat,controls,prompt});
+    const expression=`(async()=>{
+      if(window.isNonameServer!==true||!window.__v3AuthorityBridge||
+         !window.__v3NativeXingBeiTest)return {ok:false,error:'NOT_READY'};
+      const cfg=${args};
+      const bridge=window.__v3AuthorityBridge;
+      const b=bridge.getSeatBindings().find(x=>x.seat===cfg.seat);
+      if(!b)return {ok:false,error:'SEAT_NOT_BOUND'};
+      const {core}=window.__v3NativeXingBeiTest;
+      const game=core.game,lib=core.lib,status=core._status;
+      if(!game.__v3NativeWaitAdapter){
+       const module=await import('/game/v3-native-event-wait-adapter.mjs');
+       module.installV3NativeEventWaitAdapter({core,bridge});
+      }
+      if(!lib.node)lib.node={};
+      if(!lib.node.torespond)lib.node.torespond={};
+      if(!lib.node.torespondtimeout)lib.node.torespondtimeout={};
+      if(!lib.playerOL)lib.playerOL={};
+      if(!window.__v3NativeEventTestSessions)
+       window.__v3NativeEventTestSessions=new Map();
+      let record=window.__v3NativeEventTestSessions.get(cfg.seat);
+      if(!record){
+       const p=document.createElement('div');
+       Object.setPrototypeOf(p,lib.element.Player.prototype);
+       p.playerid=b.playerId;
+       p.hideTimer=()=>{};
+       p.showTimer=()=>{};
+       const ws=new lib.element.Client({wsid:b.playerId,send(){},close(){}},true);
+       p.ws=ws;
+       lib.playerOL[b.playerId]=p;
+       game.__v3NativeWaitAdapter.registerPlayer({seat:cfg.seat,player:p,client:ws});
+       record={player:p,client:ws,event:null};
+       window.__v3NativeEventTestSessions.set(cfg.seat,record);
+      }
+      if(record.player.playerid!==b.playerId)return {ok:false,error:'PLAYER_ID_CHANGED'};
+      const event=new lib.element.GameEvent('chooseControl',false);
+      event.player=record.player;
+      event.controls=cfg.controls;
+      event.prompt=cfg.prompt;
+      status.eventManager.rootEvent=event;
+      record.event=event;
+      event.send();
+      return {ok:true,nativeInstance:event instanceof lib.element.GameEvent,
+       nativePlayer:record.player instanceof lib.element.Player,
+       paused:status.paused===true,
+       pending:game.__v3NativeWaitAdapter.inspect().pending,
+       waitSlot:lib.node.torespond[b.playerId],
+       noAITimer:Object.keys(lib.node.torespondtimeout).length===0,
+       playerId:b.playerId,seat:b.seat};
+    })()`;
+    const r=await session.send('Runtime.evaluate',{expression,awaitPromise:true,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)throw fail('NATIVE_CHOICE_TEST_START_FAILED');
+    return r.result.value;
+   },
+   async inspectNativeChoiceExperiment({seat}={}){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(!Number.isInteger(seat)||seat<0||seat>7)throw fail('NATIVE_CHOICE_TEST_INVALID');
+    const expression=`(()=>{
+      const session=window.__v3NativeEventTestSessions?.get(${seat});
+      const {core}=window.__v3NativeXingBeiTest??{};
+      const adapter=core?.game?.__v3NativeWaitAdapter;
+      if(!session||!adapter)return null;
+      return {nativeResult:session.event?.result??null,
+       nativeResultOL:session.event?.resultOL??null,
+       nativePaused:core._status.paused===true,
+       waiting:core.lib.node.torespond[session.player.playerid]??null,
+       closed:session.client.closed===true,
+       adapter:adapter.inspect()};
+    })()`;
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||!r.result?.value)throw fail('NATIVE_CHOICE_TEST_INSPECT_FAILED');
+    return r.result.value;
+   },
+   async simulateNativeClientClose({seat}={}){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(!Number.isInteger(seat)||seat<0||seat>7)throw fail('NATIVE_CHOICE_TEST_INVALID');
+    const expression=`(()=>{
+      const session=window.__v3NativeEventTestSessions?.get(${seat});
+      if(!session)return false;
+      session.client.close();
+      return true;
+    })()`;
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value!==true)throw fail('NATIVE_CHOICE_TEST_CLIENT_CLOSE_FAILED');
+    return true;
+   },
    async openChoiceExperiment({seat,kind='control',prompt='選擇一個測試選項',options=['alpha','beta']}={}){
     // Hard gate: only offline CI may request an experimental choice.
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('CHOICE_EXPERIMENT_DISABLED');
