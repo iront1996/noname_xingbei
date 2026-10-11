@@ -297,6 +297,40 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      throw fail('V3_NATIVE_SEAT_STAGE_FAILED_'+String(r.result?.value?.code??'CDP_EXCEPTION'));
     return Object.freeze(r.result.value);
    },
+   async beginNativeCharacterDraft({seat,offers}={}){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(!Number.isInteger(seat)||seat<0||seat>7||
+       !Array.isArray(offers)||offers.length<2||offers.length>12||
+       !offers.every(x=>typeof x==='string'&&/^[A-Za-z0-9_]{1,80}$/.test(x)))
+     throw fail('V3_DRAFT_TEST_INVALID');
+    const args=JSON.stringify({seat,offers});
+    const expression=`(()=>{
+     try{
+      const s=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+      return s?{ok:true,choice:s.beginCharacterDraft(${args})}:
+       {ok:false,code:'V3_DRAFT_SESSION_NOT_READY'};
+     }catch(e){return {ok:false,code:String(e?.code??e?.message??e).slice(0,100)}}
+    })()`;
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_DRAFT_START_FAILED_'+String(r.result?.value?.code??'CDP'));
+    return r.result.value.choice;
+   },
+   async commitNativeCharacterDraft({seat}={}){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(!Number.isInteger(seat)||seat<0||seat>7)throw fail('V3_DRAFT_TEST_INVALID');
+    const expression=`(()=>{
+     try{
+      const s=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+      return s?{ok:true,result:s.commitCharacterDraft({seat:${seat}})}:
+       {ok:false,code:'V3_DRAFT_SESSION_NOT_READY'};
+     }catch(e){return {ok:false,code:String(e?.code??e?.message??e).slice(0,100)}}
+    })()`;
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_DRAFT_COMMIT_FAILED_'+String(r.result?.value?.code??'CDP'));
+    return r.result.value.result;
+   },
    async inspectNativeXingBeiSeats(){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
     if(closed)throw fail('WORKER_UNAVAILABLE');
