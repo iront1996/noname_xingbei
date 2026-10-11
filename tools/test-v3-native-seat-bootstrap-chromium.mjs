@@ -130,6 +130,37 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(drafted.session.gameLoopStarted,false);
    assert.ok(drafted.roster.every(p=>p.character!==null));
    assert.equal(new Set(drafted.roster.map(p=>p.character)).size,count);
+   // Original native Card instances must physically inhabit the right
+   // native Player hand zone, never the host virtual Player or other seats.
+   const dealt=await chrome.dealNativeOpeningCards();
+   assert.equal(dealt.nativeCards,true);
+   assert.equal(dealt.physicalCardsUnique,true);
+   assert.equal(dealt.totalDealt,count*4);
+   assert.deepEqual(dealt.handCounts,Array(count).fill(4));
+   assert.deepEqual(dealt.nativeHandCounts,Array(count).fill(4));
+   assert.equal(dealt.privateDetailsIncluded,false);
+   assert.equal(dealt.nativeGameDrawTriggered,false);
+   const seatViews=[];
+   for(let seat=0;seat<count;seat++){
+    const own=await chrome.inspectNativePrivateHand({seat});
+    assert.equal(own.playerId,sessions[seat].playerId);
+    assert.equal(own.ownHand.length,4);
+    assert.deepEqual(own.publicOtherHandCounts.map(x=>x.handCount),Array(count).fill(4));
+    assert.ok(own.ownHand.every(c=>c.cardId&&c.name));
+    seatViews.push(own);
+   }
+   const cards=seatViews.flatMap(x=>x.ownHand.map(c=>c.cardId));
+   assert.equal(new Set(cards).size,count*4);
+   for(let seat=0;seat<count;seat++){
+    const foreign=new Set(cards.filter(id=>!seatViews[seat].ownHand.some(c=>c.cardId===id)));
+    const projection=JSON.stringify(seatViews[seat]);
+    for(const id of foreign)assert.equal(projection.includes(id),false);
+   }
+   const afterDraw=await chrome.inspectNativeXingBeiSeats();
+   assert.equal(afterDraw.session.startingCardsDealt,true);
+   assert.deepEqual(afterDraw.roster.map(x=>x.handCount),Array(count).fill(4));
+   assert.equal((await ask(currentBySeat[0],'command',{action:'draw'})).code,
+    'RULES_ENGINE_NOT_IMPLEMENTED');
    assert.equal(chrome.pid,pid);
    const spy=await connect(broker.address);peers.push(spy);
    assert.equal((await ask(spy,'reconnect',{
