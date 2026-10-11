@@ -161,12 +161,20 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       const ws=new WebSocket(opts.url);
       let connected=false,seenRoster=false,seatCount=0,revision=-1,bindings=[];
       let choiceOpenResult=null;const deliveryReceipts=[];let nativeChoiceHooks=null;
+      const privateHandAcks=new Map();
       ws.addEventListener('open',()=>ws.send(JSON.stringify({
        type:'authority_hello',roomId:opts.roomId,secret:opts.secret
       })));
       ws.addEventListener('message',event=>{
        let msg;try{msg=JSON.parse(event.data)}catch{return}
        if(msg.type==='authority_accepted'&&msg.roomId===opts.roomId)connected=true;
+       if(msg.type==='authority_private_hand_stored'&&connected&&
+          Number.isInteger(msg.seat)&&typeof msg.playerId==='string'&&
+          Number.isSafeInteger(msg.revision)&&msg.revision>=1&&
+          msg.code==='PRIVATE_PROJECTION_STORED'){
+        const b=bindings.find(x=>x.seat===msg.seat&&x.playerId===msg.playerId);
+        if(b)privateHandAcks.set(msg.seat,msg.revision);
+       }
        if(msg.type==='authority_choice_open_result'){
         if(msg.ok===true&&msg.view?.roomId===opts.roomId)choiceOpenResult=msg.view;
         if(msg.view?.source==='native'&&nativeChoiceHooks){
@@ -229,6 +237,29 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          boundPeerCount:bindings.filter(b=>b.connectionId!==null).length}),
          // Used by trusted V3-only native engine bootstrap, never by human clients.
          getSeatBindings:()=>bindings.map(b=>({...b})),
+         publishNativeOpeningHands:()=>{
+          if(!connected||!seenRoster)return false;
+          const game=window.__v3NativeXingBeiTest?.core?.game;
+          const native=game?.__v3NativeSeatSession;
+          if(!native||native.inspect().startingCardsDealt!==true||
+             native.inspect().characterCount!==bindings.length)return false;
+          privateHandAcks.clear();
+          for(const b of bindings){
+           const own=native.privateSeatView({seat:b.seat});
+           if(own.playerId!==b.playerId)return false;
+           ws.send(JSON.stringify({type:'authority_private_hand',
+            roomId:opts.roomId,seat:b.seat,playerId:b.playerId,
+            revision:1,character:own.character,
+            ownHand:own.ownHand,
+            publicOtherHandCounts:own.publicOtherHandCounts
+           }));
+          }
+          return true;
+         },
+         inspectPrivateHandAcks:()=>({
+          count:privateHandAcks.size,
+          seats:Array.from(privateHandAcks.keys()).sort((a,b)=>a-b)
+         }),
          registerNativeChoiceHooks:hooks=>{
           if(nativeChoiceHooks||!hooks||typeof hooks.opened!=='function'||
              typeof hooks.delivered!=='function')return false;
@@ -331,6 +362,26 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
     if(r.exceptionDetails||r.result?.value?.ok!==true)
      throw fail('V3_DRAFT_COMMIT_FAILED_'+String(r.result?.value?.code??'CDP'));
     return r.result.value.result;
+   },
+   async publishNativeOpeningHands(){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const expression='window.__v3AuthorityBridge?.publishNativeOpeningHands()??false';
+    const result=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(result.exceptionDetails||result.result?.value!==true)
+     throw fail('V3_PRIVATE_NATIVE_HAND_PUBLISH_DENIED');
+    for(let i=0;i<120;i++){
+     const result=await session.send('Runtime.evaluate',{
+      expression:'window.__v3AuthorityBridge.inspectPrivateHandAcks()',
+      returnByValue:true
+     });
+     const stats=result.result?.value;
+     const target=(await this.inspectNativeXingBeiSeats()).session.seatCount;
+     if(stats?.count===target)return stats;
+     await sleep(40);
+    }
+    throw fail('V3_PRIVATE_NATIVE_HAND_PUBLISH_TIMEOUT');
    },
    async dealNativeOpeningCards(){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')throw fail('WORKER_EXPERIMENT_DISABLED');
