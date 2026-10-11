@@ -358,6 +358,26 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(firstPhase.blueMorale,firstPhase.maxMorale);
    assert.deepEqual(firstPhase.seatNumbers,Array.from({length:count},(_,i)=>i+1));
    assert.equal(firstPhase.phaseLoopCompleted,false);
+   // First restricted original Player.phase() / xingDong transition:
+   // native event exists, but its card/skill content remains fully gated.
+   if(mode==='2v2'){
+    const released=await chrome.releaseOriginalPhaseToActionGate();
+    assert.equal(released.started,true);
+    assert.equal(released.firstPlayerId,sessions[0].playerId);
+    const action=await until(async()=>{
+     const state=await chrome.inspectOriginalActionGate();
+     if(state.failed)throw Error('V3_ORIGINAL_PHASE_CHILD_FAILED_'+state.error);
+     return state.actionGateReached&&state.paused&&state;
+    });
+    assert.equal(action.actionEventNative,true);
+    assert.equal(action.actionEventName,'xingDong');
+    assert.equal(action.actionPlayerId,sessions[0].playerId);
+    assert.equal(action.firstPlayerId,sessions[0].playerId);
+    assert.equal(action.currentPhasePlayerId,sessions[0].playerId);
+    assert.equal(action.actualActionStepExecuted,false);
+    assert.equal(action.replaySafe,false);
+    assert.equal(action.loopComplete,false);
+   }
    // A game-in-progress checkpoint must NOT be relabeled as opening-only.
    assert.equal((await broker.captureOpeningCheckpoint(roomId)).code,
     'OPENING_CAPTURE_NATIVE_NOT_READY');
