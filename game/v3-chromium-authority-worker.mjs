@@ -64,16 +64,24 @@ function newCdpSession(url, timeoutMs){
  };
 }
 
-export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_WAIT_MS}={}){
+export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_WAIT_MS,unsafeTestSandbox=false}={}){
  if(typeof executable!=='string'||!executable.startsWith('/')||!Number.isInteger(timeoutMs)||
-    timeoutMs<500||timeoutMs>60000)throw fail('WORKER_CONFIG_INVALID');
+    timeoutMs<500||timeoutMs>60000||typeof unsafeTestSandbox!=='boolean')
+  throw fail('WORKER_CONFIG_INVALID');
+ // Unsafe only in a deliberately opted-in isolated test. No live worker
+ // can silently launch without Chromium's process sandbox.
+ const unsafe=unsafeTestSandbox&&process.env.V3_ALLOW_SEAT_EXPERIMENT==='1'&&
+   process.env.V3_ALLOW_UNSANDBOXED_TESTS==='1';
+ if(unsafeTestSandbox&&!unsafe)throw fail('WORKER_UNSANDBOXED_DENIED');
+ if(typeof process.getuid==='function'&&process.getuid()===0&&!unsafe)
+  throw fail('WORKER_ROOT_SANDBOX_REQUIRED');
  const profile=await mkdtemp(join(tmpdir(),'v3-authority-worker-'));
  let child,session,closed=false,spawnError=null;
  try{
   child=spawn(executable,[
    '--headless=new','--no-first-run','--no-default-browser-check',
    '--disable-extensions','--disable-background-networking',
-   '--disable-dev-shm-usage','--no-sandbox',
+   '--disable-dev-shm-usage',...(unsafe?['--no-sandbox']:[]),
    '--remote-debugging-address=127.0.0.1','--remote-debugging-port=0',
    `--user-data-dir=${profile}`,'about:blank'
   ],{stdio:'ignore',env:{...process.env,CHROME_LOG_FILE:'/dev/null'}});
