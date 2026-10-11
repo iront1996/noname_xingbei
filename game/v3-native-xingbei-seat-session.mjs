@@ -143,6 +143,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     physicalCardsUnique:new Set(copies.map(x=>x.__v3PhysicalId)).size===copies.length,
     totalDealt:copies.length,
     handCounts:players.map((_,seat)=>physicalCardsBySeat.get(seat)?.length??0),
+    nativeHandCounts:players.map(player=>player.getCards('h').length),
     remaining:pile.remaining(),
     // These are counts only. Never return opponents' private card identities.
     privateDetailsIncluded:false,
