@@ -378,6 +378,11 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(action.actualActionStepExecuted,false);
     assert.equal(action.replaySafe,false);
     assert.equal(action.loopComplete,false);
+    // The native phase sound callback is a server-side no-op. Arbitrary JS,
+    // even from the current player or another seat, cannot use legacy send.
+    const blocked=await chrome.evaluateSeatExperiment("(()=>{const p=window.__v3NativeXingBeiTest.core.game.players;let own=false,other=false;try{p[0].send(function(){game.reload()})}catch(e){own=e.code==='V3_NATIVE_REMOTE_CODE_SEND_DENIED'}try{p[1].send(function(){game.playAudio('effect','phaseStart')})}catch(e){other=e.code==='V3_NATIVE_REMOTE_CODE_SEND_DENIED'}return {own,other}})()");
+    assert.equal(blocked.own,true);
+    assert.equal(blocked.other,true);
    }
    // Exercise the original xingDong -> attack-or-spell event on every seat topology.
    {
