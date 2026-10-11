@@ -275,6 +275,8 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     return state.pauseTriggered&&state.paused&&state.firstPhaseQueued&&state;
    });
    assert.equal(firstPhase.hostOffboard,true);
+   assert.equal(firstPhase.firstPhaseActualNativeEvent,true);
+   assert.equal(firstPhase.firstPhasePlayerId,sessions[0].playerId);
    assert.equal(firstPhase.scoreboardCreated,true);
    assert.equal(firstPhase.redMorale,firstPhase.maxMorale);
    assert.equal(firstPhase.blueMorale,firstPhase.maxMorale);
