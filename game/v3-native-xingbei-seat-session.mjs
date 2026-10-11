@@ -634,7 +634,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     actionExecuted:false,fullRulesValidated:false
    });
   },
-  beginNativeUseCardPreview({seat,playerId}={}){
+  beginNativeUseCardPreview({seat,playerId,allowPass=false}={}){
    // Original gongJiOrFaShu already contains a chooseToUse handler, but
    // chooseToUse step 0 is unsafe until skill callbacks are isolated.
    // Offer physical, PRIVATE hand identifiers only to its authenticated owner.
@@ -656,16 +656,23 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
       event.position!=='hs')
     throw err('V3_NATIVE_USE_EVENT_CONTRACT_UNSUPPORTED');
    const cards=players[seat].getCards('h');
-   const options=cards.map(c=>c.__v3PhysicalId);
-   if(cards.length<2||cards.length>12||
+   const handIds=cards.map(c=>c.__v3PhysicalId);
+   if(typeof allowPass!=='boolean'||cards.length<2||
+      cards.length>(allowPass?11:12)||
       cards.some(c=>!(c instanceof lib.element.Card))||
-      options.some(id=>typeof id!=='string'||!/^v3card_[a-f0-9]{6}$/.test(id))||
-      new Set(options).size!==options.length)
+      handIds.some(id=>typeof id!=='string'||!/^v3card_[a-f0-9]{6}$/.test(id))||
+      new Set(handIds).size!==handIds.length)
     throw err('V3_NATIVE_USE_HAND_INVALID');
-   for(const cardId of options)
+   for(const cardId of handIds)
     this.preflightNativeActionCardOwnership({seat,playerId,cardId});
+   // 'pass' exists ONLY after the original chooseToUse step 0 has
+   // reached the verified server waiting boundary; manual CI-only
+   // read-only card previews never have the privilege to unwind an event.
+   if(allowPass&&game.__v3PausedPhaseRuntime?.originalUseWaitReached!==true)
+    throw err('V3_NATIVE_USE_PASS_NOT_AUTHORIZED');
+   const options=allowPass?[...handIds,'pass']:handIds;
    useCardPreview={event,seat,playerId,options:[...options],
-    ticket:null,state:'requested',selectedCardId:null};
+    allowPass,ticket:null,state:'requested',selectedCardId:null};
    try{
     if(bridge.requestNativeSelectionPreview({
      seat,kind:'card',prompt:'原生行動：選擇一張手牌（僅預檢，不會出牌）',
@@ -856,6 +863,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    const gate=game.__v3PausedPhaseRuntime;
    return Object.freeze({opened:p.ticket!==null,
     state:p.state,recorded:p.state==='recorded',
+    passed:p.state==='passed',
     seat:p.seat,playerId:p.playerId,
     selectedCardId:p.selectedCardId,
     targetPreviewOpened:p.targetStage?.ticket!==null&&
@@ -1189,6 +1197,19 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     return false;
    if(p.state==='open'&&p.ticket===message.ticket&&
       p.options.includes(message.option)){
+    if(message.option==='pass'){
+     if(!p.allowPass)return false;
+     // A trusted, real native Player.unwait({bool:false}) advances
+     // the original engine only with a NO-CARD response.
+     p.state='passed';
+     try{
+      const applied=adapter.consumeOriginalUsePass({
+       seat:p.seat,playerId:p.playerId,event:p.event
+      });
+      if(applied?.nativePassApplied===true)return true;
+     }catch{}
+     p.state='open';return false;
+    }
     try{session.preflightNativeActionCardOwnership({
      seat:p.seat,playerId:p.playerId,cardId:message.option
     })}catch{return false}
