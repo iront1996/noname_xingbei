@@ -318,7 +318,8 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
       ticket:obj.ticket,option:obj.option});
     if(!result.ok)return respond(result);
     respond({ok:true,code:result.code,window:result.view});
-    if(result.delivery)send(worker,{type:'authority_choice_delivery',...result.delivery});
+    if(result.delivery)send(worker,{type:'authority_choice_delivery',
+     ...result.delivery,connectionId:bound.connectionId});
     return;
    }
    case 'action_target_probe':{
