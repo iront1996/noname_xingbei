@@ -11,6 +11,7 @@ import {createV3NativeOpeningCheckpointStore,verifyV3NativeOpeningCheckpoint}
 import {createV3AuthorityWebSocketBroker} from '../game/v3-authority-websocket-broker.mjs';
 import {launchV3ChromiumAuthorityWorker} from '../game/v3-chromium-authority-worker.mjs';
 import {createV3NativeModuleTestServer} from './v3-native-module-test-server.mjs';
+import {proveV3ColdNativeOpening} from './v3-native-cold-rebuild-probe.mjs';
 const executable=process.env.V3_CHROMIUM;
 const enabled=typeof executable==='string'&&executable.startsWith('/');
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
@@ -184,6 +185,40 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     const cold=await coldStore.load(roomId);
     assert.equal(cold.restorable,false);
     assert.deepEqual(cold.value,snapshot);
+    // Different Chrome process and empty JS realm: regenerate original
+    // native Player/Card/ordered deck from the encrypted cold-read snapshot.
+    // This test uses synthetic authenticated bindings (not a restarted WS
+    // broker); mid-game EventStack persistence is NOT demonstrated.
+    const coldChrome=await launchV3ChromiumAuthorityWorker({executable});
+    try{
+     assert.notEqual(coldChrome.pid,chrome.pid);
+     assert.equal((await coldChrome.loadV3NativeModules({origin:host.origin})).loaded,true);
+     const proof=await proveV3ColdNativeOpening({
+      worker:coldChrome,snapshot:cold.value,roomId
+     });
+     assert.equal(proof.ok,true,JSON.stringify(proof));
+     assert.equal(proof.pack,true);
+     assert.equal(proof.preflightNoCharacters,true);
+     assert.equal(proof.tamperRejected,true);
+     assert.equal(proof.wrongRoomRejected,true);
+     assert.equal(proof.wrongIdRejected,true);
+     assert.equal(proof.restored.restoredOpening,true);
+     assert.equal(proof.restored.restorableRunningGame,false);
+     assert.equal(proof.restored.gameEventStackRestored,false);
+     assert.equal(proof.restored.realNativePlayers,true);
+     assert.equal(proof.restored.realNativeCards,true);
+     assert.deepEqual(proof.restored.handCounts,Array(count).fill(4));
+     assert.equal(proof.restored.seatCount,count);
+     assert.equal(proof.byteEquivalent,true);
+     assert.equal(proof.allPlayerIdsMatch,true);
+     assert.equal(proof.duplicateDenied,true);
+     assert.equal(proof.phaseOnly,true);
+     assert.equal(proof.phaseEvent,'phaseLoop');
+     assert.equal(proof.phaseStarted,false);
+     assert.equal(proof.brokerConnected,false);
+    }finally{
+     await coldChrome.stop();
+    }
    }finally{await rm(checkpointDir,{recursive:true,force:true})}
    const seatViews=[];
    for(let seat=0;seat<count;seat++){
