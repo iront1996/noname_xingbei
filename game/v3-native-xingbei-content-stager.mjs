@@ -18,6 +18,21 @@ export async function stageV3NativeXingBeiContent({core}={}){
  if(game.__v3NativeContentStage)throw error('V3_CONTENT_ALREADY_STAGED');
  if(typeof game.import!=='function'||typeof lib.element?.Character!=='function')
   throw error('V3_CONTENT_NATIVE_API_MISSING');
+ // Plain module import skips boot()'s initial configuration. Use the project's
+ // stock game/config.js instead of inventing a fake browser configuration.
+ if(!lib.config){
+  if(Object.hasOwn(globalThis,'config'))throw error('V3_CONTENT_CONFIG_GLOBAL_CONFLICT');
+  try{await import('/game/config.js')}
+  catch(e){throw Object.assign(error('V3_NATIVE_CONFIG_IMPORT_FAILED'),{cause:e})}
+  if(!globalThis.config||typeof globalThis.config!=='object')
+   throw error('V3_NATIVE_CONFIG_UNAVAILABLE');
+  lib.config={...globalThis.config,mode:'xingBei'};
+  delete globalThis.config;
+ }
+ if(!lib.configOL)lib.configOL={
+  mode:'xingBei',versus_mode:'4v4',number:8,choose_timeout:'60',
+  bannedcards:[],characterPack:[],cardPack:['xingBei']
+ };
  // Native boot() installs this file before loading any card/character packs.
  // The imported source depends on its Array.prototype.add/addArray helpers.
  // Do not invent mock polyfills: load the project's unmodified implementation.
