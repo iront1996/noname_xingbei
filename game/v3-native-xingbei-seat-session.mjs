@@ -532,8 +532,13 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
      throw err('V3_NATIVE_REMOTE_CODE_SEND_DENIED');
     const source=Function.prototype.toString.call(callback)
      .replace(/\s+/g,'');
-    if(!source.includes("game.playAudio('effect','phaseStart')")&&
-       !source.includes('game.playAudio("effect","phaseStart")'))
+    const allowedSound=new Set([
+     "function(){game.playAudio('effect','phaseStart');}",
+     "function(){game.playAudio('effect','phaseStart')}",
+     'function(){game.playAudio("effect","phaseStart");}',
+     'function(){game.playAudio("effect","phaseStart")}'
+    ]);
+    if(!allowedSound.has(source))
      throw err('V3_NATIVE_REMOTE_CODE_SEND_DENIED');
     return false; // Never execute arbitrary JS in a real human browser.
    };
