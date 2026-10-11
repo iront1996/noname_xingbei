@@ -207,8 +207,9 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          getSeatBindings:()=>bindings.map(b=>({...b})),
          openChoiceExperiment:data=>{
           if(!connected||!seenRoster||!data||typeof data!=='object')return false;
-          const b=bindings.find(x=>x.seat===data.seat&&x.connectionId!==null);
-          if(!b||choiceOpenResult)return false;
+          const b=bindings.find(x=>x.seat===data.seat);
+          if(!b)return false;
+          choiceOpenResult=null;
           ws.send(JSON.stringify({type:'authority_choice_open',roomId:opts.roomId,
             seat:b.seat,playerId:b.playerId,kind:data.kind,prompt:data.prompt,options:data.options}));
           return true;
