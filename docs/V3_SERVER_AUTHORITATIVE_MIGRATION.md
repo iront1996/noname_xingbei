@@ -438,3 +438,15 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 - **本輪 CI 結果**：V3 Playtest Offline Safety Tests [38173171386](https://github.com/iront1996/noname_xingbei/actions/runs/38173171386) **SUCCESS**；V3 Chromium Authority Worker PoC [38173171463](https://github.com/iront1996/noname_xingbei/actions/runs/38173171463) **SUCCESS**。對應包含程式與測試的提交 `f1f1a7494c42165df0f57e06b8ae12dbebc61a29`。
 
 **仍未達上線／真人驗收門檻**：`gongJiOrFaShu`／`chooseToUse` 真正合法出牌、技能／觸發事件完整執行、私有遊戲行動結果、完整勝負發布和持久化中途事件恢復都沒有完成。這些測試證明的是獨立主持連線的故障邊界，不是完整一局星杯對戰。舊版 V3 playtest 與 V1/V2 均維持不變。
+
+
+## 2026-10-12：Chromium 程序存活、認證通道中斷時的開局安全接管
+
+- 在 V3-only Chromium worker 增加**僅 `V3_ALLOW_SEAT_EXPERIMENT=1` 時生成的測試注入方法**，由 Node/CDP 本機控制主動切斷內部 authority WebSocket，不更改遊戲引擎，也不向玩家暴露呼叫途徑。
+- `broker.inspectWorker(roomId)` 必須同時驗證 worker process 與認證通道；即使 PID 還在，失聯回傳 `WORKER_CHANNEL_OFFLINE`。
+- 除既有「Chromium 整個進程消失」的恢復測試外，在真實 2v2 Chromium 開局資料完成加密捕獲、一次冷重建後，再讓**活著的 Chromium**僅失去認證通道：恢復程式確認原房間全部座位在線、原始 Player ID／卡牌順序／開局存檔一致，主動停止舊 Chromium、另起程序重建，逐席重新核對本人手牌與其他玩家手牌不得洩漏。
+- 僅在 `openingRecoveryArmed`、尚未開始真實 phaseLoop、持有可信加密開局存檔時，這條路徑才可執行。任何尚在有效連線中的主持不被強制重啟；回合開始後的私有事件／技能／RNG 不可用開局 checkpoint 偷渡恢復，仍回 `OPENING_RECOVERY_DISARMED`。
+- 真 Chromium CI 在提交 `669325977a66f76eed32d83d0171a59a4e216258` 驗證通過：[V3 Chromium Authority Worker PoC 38173570549](https://github.com/iront1996/noname_xingbei/actions/runs/38173570549) **SUCCESS**（21/21 tests）；[V3 Playtest Offline Safety Tests 38173570539](https://github.com/iront1996/noname_xingbei/actions/runs/38173570539) **SUCCESS**。
+- 某個較早提交 `c81d791...` 的 CI 曾在新 2v2 測試失敗，原因是測試仍比較第一次冷重建的 PID，沒有更新成第二次重建的新 PID；後續提交修正測試比對並**重新跑完**真 Chromium CI 為 SUCCESS。沒有把初次失敗隱藏或視為通過。
+
+這仍**只恢復未開局的原生角色／手牌／牌庫**，不代表已恢復中途 GameEvent、技能效果或任何已執行動作。尚未實作的 `gongJiOrFaShu`、`chooseToUse` 完整合法牌／目標驗證、回應、結算及終局仍採拒絕式安全界線。整個變更在 V3 實驗分支、loopback ephemeral broker 與 GitHub CI；V1/V2、正式 V3、VPS 服務沒有更新。
