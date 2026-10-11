@@ -203,6 +203,27 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
            seat:msg.seat,playerId:msg.playerId,ticket:msg.ticket,option:msg.option}));
         }
        }
+       if(msg.type==='authority_action_ownership_probe'&&connected&&
+          msg.roomId===opts.roomId&&
+          typeof msg.traceId==='string'&&/^[a-f0-9]{32}$/.test(msg.traceId)&&
+          Number.isInteger(msg.seat)&&msg.seat>=0&&msg.seat<8&&
+          typeof msg.playerId==='string'&&/^player_[a-f0-9]{32}$/.test(msg.playerId)&&
+          typeof msg.cardId==='string'&&/^v3card_[a-f0-9]{6}$/.test(msg.cardId)){
+        const binding=bindings.find(x=>x.seat===msg.seat&&
+         x.playerId===msg.playerId&&x.connectionId!==null);
+        if(binding){
+         let owned=false;
+         try{
+          const session=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+          owned=session?.preflightNativeActionCardOwnership({
+           seat:msg.seat,playerId:msg.playerId,cardId:msg.cardId
+          })?.ownedByActivePlayer===true;
+         }catch{owned=false}
+         ws.send(JSON.stringify({type:'authority_action_ownership_result',
+          roomId:opts.roomId,traceId:msg.traceId,seat:msg.seat,
+          playerId:msg.playerId,owned}));
+        }
+       }
        if(msg.type==='authority_transport_probe'&&connected&&msg.roomId===opts.roomId&&
           typeof msg.traceId==='string'&&/^[a-f0-9]{32}$/.test(msg.traceId)&&
           Number.isInteger(msg.seat)&&typeof msg.playerId==='string'){
