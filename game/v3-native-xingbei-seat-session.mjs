@@ -371,10 +371,16 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   inspectPausedFirstNativePhase(){
    const state=game.__v3PausedPhaseRuntime;
    if(!state)throw err('V3_NATIVE_PHASE_PROBE_NOT_STARTED');
+   const firstPhase=state.phase.next?.find(e=>e.name==='phase');
+   const first=players[game.__v3OpeningTurnBoundary?.firstSeat??-1];
    return Object.freeze({
     pauseTriggered:state.pauseTriggered,
     failed:state.failure!==null,error:state.failure,
-    firstPhaseQueued:state.phase.next?.some(e=>e.name==='phase')===true,
+    firstPhaseQueued:firstPhase instanceof lib.element.GameEvent&&
+     firstPhase.player===first&&
+     state.phase.player===first,
+    firstPhasePlayerId:first?.playerid??null,
+    firstPhaseActualNativeEvent:firstPhase instanceof lib.element.GameEvent,
     paused:_status.paused===true,
     seatNumbers:players.map(p=>p.getSeatNum()),
     redMorale:game.hongShiQi,blueMorale:game.lanShiQi,
