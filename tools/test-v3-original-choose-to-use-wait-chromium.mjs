@@ -78,7 +78,8 @@ test('original XingBei chooseToUse executes step zero but waits in server Chrome
    await until(async()=>(await chrome.commitNativeCharacterDraft({seat})).ok);
   }
   const dealt=await chrome.dealNativeOpeningCardsByOriginalEvent();
-  assert.equal(dealt.realNativeGameDrawExecuted,true);
+  assert.equal(dealt.nativeGameDrawTriggered,true);
+  assert.equal(dealt.realNativeGameEventCompleted,true);
   assert.deepEqual(dealt.nativeHandCounts,[4,4,4,4]);
   const before=await chrome.inspectNativePrivateHand({seat:0});
   const pid=chrome.pid;
