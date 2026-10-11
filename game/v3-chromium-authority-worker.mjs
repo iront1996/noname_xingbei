@@ -161,6 +161,7 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       const ws=new WebSocket(opts.url);
       let connected=false,seenRoster=false,seatCount=0,revision=-1,bindings=[];
       let choiceOpenResult=null;const deliveryReceipts=[];let nativeChoiceHooks=null;
+      let nativeSelectionPreviewHooks=null;
       const privateHandAcks=new Map();
       ws.addEventListener('open',()=>ws.send(JSON.stringify({
        type:'authority_hello',roomId:opts.roomId,secret:opts.secret
@@ -180,6 +181,9 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
         if(msg.view?.source==='native'&&nativeChoiceHooks){
          try{nativeChoiceHooks.opened(msg)}catch{}
         }
+        if(msg.view?.source==='preview'&&nativeSelectionPreviewHooks){
+         try{nativeSelectionPreviewHooks.opened(msg)}catch{}
+        }
        }
        if(msg.type==='authority_choice_delivery'&&connected&&msg.roomId===opts.roomId&&
           Number.isInteger(msg.seat)&&typeof msg.playerId==='string'&&
@@ -192,6 +196,12 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
           let consumed=false;
           try{consumed=nativeChoiceHooks.delivered(msg)===true}catch{return}
           if(!consumed)return;
+         }
+         if(msg.source==='preview'){
+          if(!nativeSelectionPreviewHooks)return;
+          let recorded=false;
+          try{recorded=nativeSelectionPreviewHooks.delivered(msg)===true}catch{return}
+          if(!recorded)return;
          }
          deliveryReceipts.push(Object.freeze({roomId:opts.roomId,seat:msg.seat,
           playerId:msg.playerId,ticket:msg.ticket,option:msg.option}));
@@ -311,6 +321,28 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
           if(nativeChoiceHooks||!hooks||typeof hooks.opened!=='function'||
              typeof hooks.delivered!=='function')return false;
           nativeChoiceHooks=hooks;
+          return true;
+         },
+         registerNativeSelectionPreviewHooks:hooks=>{
+          if(nativeSelectionPreviewHooks||!hooks||
+             typeof hooks.opened!=='function'||typeof hooks.delivered!=='function')
+           return false;
+          nativeSelectionPreviewHooks=hooks;
+          return true;
+         },
+         requestNativeSelectionPreview:data=>{
+          if(!nativeSelectionPreviewHooks||!connected||!seenRoster||
+             !data||data.kind!=='card'||!Array.isArray(data.options)||
+             data.options.length<2||data.options.length>12||
+             !data.options.every(id=>typeof id==='string'&&
+              /^v3card_[a-f0-9]{6}$/.test(id))||
+             new Set(data.options).size!==data.options.length)
+           return false;
+          const b=bindings.find(x=>x.seat===data.seat&&x.connectionId!==null);
+          if(!b)return false;
+          ws.send(JSON.stringify({type:'authority_choice_open',source:'preview',
+           roomId:opts.roomId,seat:b.seat,playerId:b.playerId,
+           kind:'card',prompt:data.prompt,options:data.options}));
           return true;
          },
          requestNativeChoice:data=>{
@@ -531,6 +563,28 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
     const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
     if(r.exceptionDetails||r.result?.value?.ok!==true)
      throw fail('V3_NATIVE_SELECTION_RELEASE_FAILED_'+String(r.result?.value?.code??'CDP'));
+    return r.result.value.result;
+   },
+   async beginNativeUseCardPreview({seat,playerId}={}){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed||!Number.isInteger(seat)||seat<0||seat>7||
+       typeof playerId!=='string'||!/^player_[a-f0-9]{32}$/.test(playerId))
+     throw fail('V3_NATIVE_USE_PREVIEW_DENIED');
+    const expression='(()=>{try{const n=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;return n?{ok:true,result:n.beginNativeUseCardPreview('+JSON.stringify({seat,playerId})+')}:{ok:false,code:"V3_NATIVE_SEAT_SESSION_MISSING"}}catch(e){return {ok:false,code:String(e?.code??e?.message??e).slice(0,100)}}})()';
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_NATIVE_USE_PREVIEW_DENIED_'+String(r.result?.value?.code??'CDP'));
+    return r.result.value.result;
+   },
+   async inspectNativeUseCardPreview(){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const expression='(()=>{try{const n=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;return n?{ok:true,result:n.inspectNativeUseCardPreview()}:{ok:false,code:"V3_NATIVE_SEAT_SESSION_MISSING"}}catch(e){return {ok:false,code:String(e?.code??e?.message??e).slice(0,100)}}})()';
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_NATIVE_USE_PREVIEW_INSPECT_FAILED');
     return r.result.value.result;
    },
    async preflightNativeActionCardOwnership({seat,playerId,cardId}={}){
