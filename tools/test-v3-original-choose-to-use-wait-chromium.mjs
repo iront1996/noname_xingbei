@@ -232,9 +232,11 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
      return {counter:game.players[0].storage.gongJiOrFaShu,
       originalEvent:gate.selectionEvent?.name,
       actionEvent:gate.actionEvent?.name,
-      error:gate.failure??null}
+      error:gate.failure??null,
+      trace:String(gate.trace??'').slice(0,380)}
     })()`);
-    if(state.error)throw Error('ORIGINAL_PASS_PROGRESSION_'+state.error);
+    if(state.error)throw Error('ORIGINAL_PASS_PROGRESSION_'+state.error+
+     '_'+state.trace);
     return state.counter===0&&state;
    });
    assert.equal(progressed.originalEvent,'gongJiOrFaShu');
