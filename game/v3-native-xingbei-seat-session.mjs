@@ -686,6 +686,66 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     targetCount:candidates.length,fullRulesValidated:false,
     targetFullyValidated:false,actionExecuted:false});
   },
+  auditNativePrintedAttackStaticRules({seat,playerId,cardId,targetSeat}={}){
+   // Read-only capability audit, NOT a legal chooseToUse / useResult.
+   // Original lib.filter.filterCard/cardUsable can write event.addCount_extra
+   // and game.checkMod executes arbitrary character skill callbacks.
+   // Never call those functions on the paused authoritative event here.
+   const target=this.preflightNativePrintedAttackTarget({
+    seat,playerId,cardId,targetSeat
+   });
+   const actor=players[seat],def=lib.card[actor.getCards('h').find(c=>
+    c.__v3PhysicalId===cardId)?.name];
+   const gate=game.__v3PausedPhaseRuntime;
+   const staticCardContract=target.supportedPrintedAttack===true&&
+    def?.enable===true&&def?.selectTarget===1&&
+    def?.usable===undefined&&def?.updateUsable===undefined&&
+    def?.range===undefined&&def?.outrange===undefined&&
+    def?.modTarget===undefined&&def?.singleCard===undefined&&
+    gate?.selectionEvent?.filterCard===lib.filter.filterCard&&
+    gate?.selectionEvent?.filterTarget===lib.filter.filterTarget;
+   // Original chooseToUse step 0 expands invisible/global skills and
+   // invokes onChooseToUse. Original game.checkMod may invoke mod hooks.
+   // Detect possible callbacks by inspecting definitions, never execute.
+   // Even zero detected hooks is not a full legality proof: hidden skill
+   // expansion, virtual cards, usage history, response windows remain.
+   const actorSkills=actor.getSkills('invisible');
+   const targetSkills=players[targetSeat].getSkills('invisible');
+   const globalSkills=lib.skill.global;
+   const listsWellFormed=Array.isArray(actorSkills)&&
+    Array.isArray(targetSkills)&&Array.isArray(globalSkills);
+   const ids=listsWellFormed?new Set([
+    ...actorSkills,...targetSkills,...globalSkills
+   ]):new Set();
+   let dynamicHookCount=0,unresolvedSkillDefinitions=0;
+   for(const skillId of ids){
+    if(typeof skillId!=='string'||!skillId||
+       !lib.skill[skillId]||typeof lib.skill[skillId]!=='object'){
+     unresolvedSkillDefinitions++;continue;
+    }
+    const info=lib.skill[skillId];
+    if(info.mod!==undefined||info.onChooseToUse!==undefined||
+       info.group!==undefined||info.global!==undefined||
+       info.inherit!==undefined)
+     dynamicHookCount++;
+   }
+   const staticPreconditionsPassed=staticCardContract&&
+    target.printedTargetEligible===true&&listsWellFormed&&
+    unresolvedSkillDefinitions===0;
+   return Object.freeze({
+    staticPreconditionsPassed,
+    printedTargetEligible:target.printedTargetEligible,
+    printedDefinitionVerified:staticCardContract,
+    dynamicHooksPresent:dynamicHookCount>0,
+    dynamicHookCount,unresolvedSkillDefinitions,
+    dynamicRulesEvaluated:false,cardEnabledEvaluated:false,
+    cardUsableEvaluated:false,rangeModsEvaluated:false,
+    fullRulesValidated:false,actionExecuted:false,cardConsumed:false,
+    originalEventStillPaused:_status.paused===true&&
+     gate?.selectionEvent?.name==='gongJiOrFaShu',
+    seat,playerId,cardId,targetSeat
+   });
+  },
   inspectNativeUseCardPreview(){
    const p=useCardPreview;
    if(!p)return Object.freeze({opened:false,recorded:false});
@@ -699,6 +759,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     targetPreviewState:p.targetStage?.state??null,
     targetOptions:p.targetStage?[...p.targetStage.options]:[],
     selectedTargetSeat:p.targetStage?.selectedTargetSeat??null,
+    staticRuleAudit:p.targetStage?.staticRuleAudit??null,
     nativeGameEvent:p.event instanceof lib.element.GameEvent,
     originalEvent:p.event.name,
     samePausedEvent:gate?.selectionEvent===p.event&&_status.paused===true,
@@ -1034,13 +1095,16 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
       !target.options.includes(message.option)||!/^s[0-7]$/.test(message.option))
     return false;
    const targetSeat=Number(message.option.slice(1));
+   let audit;
    try{
-    const checked=session.preflightNativePrintedAttackTarget({
+    audit=session.auditNativePrintedAttackStaticRules({
      seat:p.seat,playerId:p.playerId,cardId:p.selectedCardId,targetSeat
     });
-    if(!checked.supportedPrintedAttack||!checked.printedTargetEligible)return false;
+    if(!audit.printedTargetEligible||!audit.printedDefinitionVerified)return false;
    }catch{return false}
-   // Only record a still-eligible intended target; no GameEvent result.
+   // Only record a still-eligible intended target and its conservative
+   // original-definition audit; no GameEvent result or skill effects.
+   target.staticRuleAudit=audit;
    target.selectedTargetSeat=targetSeat;target.state='recorded';
    return true;
   }
