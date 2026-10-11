@@ -17,6 +17,8 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
  if(typeof WebSocketServer!=='function'||typeof launchWorker!=='function')throw new TypeError('BROKER_DEPENDENCY_MISSING');
  if(host!=='127.0.0.1'||port!==0)throw new Error('EXPERIMENT_LOOPBACK_EPHEMERAL_ONLY');
  const stablePlayersByRoom=new Map();
+ // Transport round-trip probes are NOT gameplay intents or engine commands.
+ const outstandingProbes=new Map();
  const seatsByRoom=new Map(),pendingWorker=new Map(),workersByRoom=new Map(),allSockets=new Set();
  let closed=false,server;
  const seats=id=>seatsByRoom.get(id);
@@ -71,6 +73,16 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   if(!obj||typeof obj!=='object'||Array.isArray(obj)||!requestOk(obj.requestId))
    return send(ws,{type:'error',code:'INVALID_MESSAGE'});
   if(ws.__v3AuthorityRoom){
+   if(obj.type==='authority_probe_ack'){
+    const p=outstandingProbes.get(obj.traceId);
+    if(!p||p.roomId!==ws.__v3AuthorityRoom||p.playerId!==obj.playerId||p.seat!==obj.seat)
+     return send(ws,{type:'error',code:'PROBE_ACK_INVALID'});
+    outstandingProbes.delete(obj.traceId);
+    clearTimeout(p.timer);
+    if(current(p.roomId,p.seat,p.ws))send(p.ws,{type:'reply',requestId:p.requestId,
+      ok:true,code:'TRANSPORT_PROBE_ROUNDTRIP',seat:p.seat,playerId:p.playerId});
+    return;
+   }
    if(obj.type==='authority_ping'&&obj.roomId===ws.__v3AuthorityRoom)
     return send(ws,{type:'authority_pong'});
    return send(ws,{type:'error',code:'WORKER_GAMEPLAY_NOT_IMPLEMENTED'});
@@ -116,6 +128,26 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   const bound=ws.__v3Player;
   if(!bound||!current(bound.roomId,bound.seat,ws))return respond(reply(false,'NOT_AUTHENTICATED'));
   switch(obj.type){
+   case 'transport_probe':{
+    if(!obj.requestId)return respond(reply(false,'REQUEST_ID_REQUIRED'));
+    const worker=workersByRoom.get(bound.roomId);
+    if(!live(worker))return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
+    if(outstandingProbes.size>=64)return respond(reply(false,'PROBE_CAPACITY_EXCEEDED'));
+    const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
+    if(!playerId)return respond(reply(false,'PLAYER_ID_NOT_READY'));
+    const traceId=randomBytes(16).toString('hex');
+    const timer=setTimeout(()=>{
+     const pending=outstandingProbes.get(traceId);
+     if(!pending)return;
+     outstandingProbes.delete(traceId);
+     if(current(pending.roomId,pending.seat,pending.ws))
+      send(pending.ws,{type:'reply',requestId:pending.requestId,ok:false,code:'WORKER_PROBE_TIMEOUT'});
+    },4000);
+    outstandingProbes.set(traceId,{roomId:bound.roomId,seat:bound.seat,playerId,
+      ws,requestId:obj.requestId,timer});
+    send(worker,{type:'authority_transport_probe',roomId:bound.roomId,seat:bound.seat,playerId,traceId});
+    return;
+   }
    case 'configure':{
     const result=coordinator.configure({...bound,config:obj.config});
     respond(result);if(result.ok)sendRoster(bound.roomId);return;
@@ -140,6 +172,9 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   ws.on('message',(raw,isBinary)=>{chain=chain.then(()=>handle(ws,raw,isBinary)).catch(()=>send(ws,{type:'error',code:'BROKER_INTERNAL_ERROR'}))});
   ws.on('close',()=>{
    allSockets.delete(ws);
+   for(const [traceId,p] of outstandingProbes){
+    if(p.ws===ws){clearTimeout(p.timer);outstandingProbes.delete(traceId)}
+   }
    if(ws.__v3AuthorityRoom){
     if(workersByRoom.get(ws.__v3AuthorityRoom)===ws)workersByRoom.delete(ws.__v3AuthorityRoom);
     return;
@@ -162,6 +197,8 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   async close(){
    if(closed)return;
    closed=true;
+   for(const p of outstandingProbes.values())clearTimeout(p.timer);
+   outstandingProbes.clear();
    for(const ws of allSockets)try{ws.terminate?.()}catch{}
    for(const id of seatsByRoom.keys())await coordinator.stopRoomWorker(id);
    await new Promise(resolve=>server.close(()=>resolve()));
