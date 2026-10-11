@@ -46,9 +46,15 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    root:resolve(dirname(fileURLToPath(import.meta.url)),'..')
   });
   let chrome;
+  const recoveryDir=await mkdtemp(join(tmpdir(),'v3-authority-live-recovery-'));
+  const recoveryStore=createV3NativeOpeningCheckpointStore({
+   directory:recoveryDir,key:randomBytes(32)
+  });
   const broker=await createV3AuthorityWebSocketBroker({
    WebSocketServer,enableChoiceWindowExperiments:true,
    enablePrivateHandExperiments:true,
+   enableOpeningRecoveryExperiments:true,
+   openingCheckpointStore:recoveryStore,
    launchWorker:async()=>{
     chrome=await launchV3ChromiumAuthorityWorker({executable});
     assert.equal((await chrome.loadV3NativeModules({origin:host.origin})).loaded,true);
@@ -282,6 +288,39 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
       assert.equal(JSON.stringify(replay.view).includes(foreign.cardId),false);
     }
    }
+   // Capture inside Node ONLY from original Chromium state, then kill the
+   // actual Chromium process. All authenticated human WS sockets and their
+   // fixed Player IDs remain in the same broker during replacement.
+   const captured=await broker.captureOpeningCheckpoint(roomId);
+   assert.equal(captured.code,'OPENING_CAPTURE_ENCRYPTED');
+   assert.equal(captured.seatCount,count);
+   const oldHostPid=chrome.pid;
+   await chrome.stop();
+   await until(async()=>(await broker.inspectWorker(roomId)).code==='WORKER_UNAVAILABLE');
+   const recovered=await broker.recoverOpeningCheckpoint(roomId);
+   assert.equal(recovered.ok,true,JSON.stringify(recovered));
+   assert.equal(recovered.code,'OPENING_RECOVERY_REHYDRATED');
+   assert.equal(recovered.seatCount,count);
+   assert.equal(recovered.gameEventStackRestored,false);
+   assert.equal(recovered.restorableRunningGame,false);
+   assert.notEqual(chrome.pid,oldHostPid);
+   const replacementPid=chrome.pid;
+   await until(async()=>{
+    const native=await chrome.inspectNativeXingBeiSeats();
+    return native.session.restoredOpening&&native.roster.every(p=>p.connected)&&native;
+   });
+   for(let seat=0;seat<count;seat++){
+    const res=await ask(currentBySeat[seat],'private_hand_query');
+    assert.equal(res.code,'PRIVATE_HAND_STATE');
+    assert.deepEqual(res.view.ownHand,seatViews[seat].ownHand);
+    assert.equal(res.view.playerId,sessions[seat].playerId);
+    for(let foreign=0;foreign<count;foreign++){
+     if(foreign===seat)continue;
+     for(const secret of seatViews[foreign].ownHand)
+      assert.equal(JSON.stringify(res.view).includes(secret.cardId),false);
+    }
+   }
+   assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_PROOF_ALIVE');
    // gameDraw has ALREADY executed to deal the four opening cards.
    // Queue ONLY original phaseLoop, so next start cannot deal twice.
    const turn=await chrome.stageNativeOpeningTurnBoundary({firstSeat:0});
@@ -317,6 +356,9 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(firstPhase.blueMorale,firstPhase.maxMorale);
    assert.deepEqual(firstPhase.seatNumbers,Array.from({length:count},(_,i)=>i+1));
    assert.equal(firstPhase.phaseLoopCompleted,false);
+   // A game-in-progress checkpoint must NOT be relabeled as opening-only.
+   assert.equal((await broker.captureOpeningCheckpoint(roomId)).code,
+    'OPENING_CAPTURE_NATIVE_NOT_READY');
    // Phase start is a public event; it must not broadcast private hand data.
    // Each authenticated player may still recover only their own four cards.
    for(let seat=0;seat<count;seat++){
@@ -336,7 +378,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.deepEqual(afterDraw.roster.map(x=>x.handCount),Array(count).fill(4));
    assert.equal((await ask(currentBySeat[0],'command',{action:'draw'})).code,
     'RULES_ENGINE_NOT_IMPLEMENTED');
-   assert.equal(chrome.pid,pid);
+   assert.equal(chrome.pid,replacementPid);
    const spy=await connect(broker.address);peers.push(spy);
    assert.equal((await ask(spy,'reconnect',{
     roomId,seat:0,reconnectToken:sessions[0].reconnectToken
@@ -360,6 +402,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    for(const p of peers)try{p.ws.close()}catch{}
    await broker.close();
    await host.close();
+   await rm(recoveryDir,{recursive:true,force:true});
   }
  });
 }
