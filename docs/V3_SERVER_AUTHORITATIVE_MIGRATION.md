@@ -327,3 +327,15 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 - 全部提交僅在 GitHub `feature/host-reconnect-v3-playtest`；沒有修改 V1/V2 或正式 Git 分支、VPS、Cloudflare、服務或 8080／8081。
 - 新 broker 仍僅能綁 `127.0.0.1:0` 且 choice 適配流程預設關閉；正式 V3 尚未切換到此主持方案。
 - Chromium 預設使用沙箱；非 root/限制資源/CDP 防護/worker state persistence 仍需要上線前完整驗收。
+
+
+### 2026-10-11 本輪最終 CI 檢驗紀錄
+
+以提交 `f6e3086a255a7f4f5e13187da4a86e18dce262b4` 為程式快照，**兩套 CI 全綠**：
+
+- 真 Chromium／原生 Noname GameEvent／2v2、3v3、4v4 全人數模式的真 WebSocket 續答： https://github.com/iront1996/noname_xingbei/actions/runs/38139070812 —— **success：14 tests／14 passed／0 failed**。
+- V3 離線安全與回歸： https://github.com/iront1996/noname_xingbei/actions/runs/38139070820 —— **success**。
+
+本輪有先遇到一項離線回歸失敗：新增 `source` 後，舊測試的 delivery 期望物件缺少該欄位。已修正原斷言並補上原生 applied 交易的非法轉移測試；修復後才視為驗證通過。本輪所有原生 Chromium 測試在 GitHub hosted runner **預設沙箱啟用**的狀態執行；測試使用原生 `Player.unwait` 完成控制項選擇，而非僅檢查收到的確認碼。
+
+**仍不等同完全可玩／沒有完成原局持久化**：原生整場啟動、技能結算、多人嵌套事件、隱藏資訊、發牌、第一回合與 VPS 重啟後從同一遊戲狀態恢復仍待開發。此測試目前只覆蓋 2～8 人配置的真原生 `chooseControl` 離線續答協定，不應視為所有星杯關鍵詞或技能可正常結算。
