@@ -16,6 +16,7 @@ const send=(ws,obj)=>{if(!live(ws))return;try{ws.send(JSON.stringify(obj))}catch
 export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0}={}){
  if(typeof WebSocketServer!=='function'||typeof launchWorker!=='function')throw new TypeError('BROKER_DEPENDENCY_MISSING');
  if(host!=='127.0.0.1'||port!==0)throw new Error('EXPERIMENT_LOOPBACK_EPHEMERAL_ONLY');
+ const stablePlayersByRoom=new Map();
  const seatsByRoom=new Map(),pendingWorker=new Map(),workersByRoom=new Map(),allSockets=new Set();
  let closed=false,server;
  const seats=id=>seatsByRoom.get(id);
@@ -25,7 +26,13 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   if(!view)return;
   for(const entry of seats(id)?.values()??[])send(entry.ws,{type:'roster',view});
   const authority=workersByRoom.get(id);
-  if(authority)send(authority,{type:'authority_roster',view});
+  if(authority){
+   // Player ID survives socket replacement; connection ID never does.
+   const bindings=Array.from(stablePlayersByRoom.get(id)?.entries()??[],([seat,playerId])=>({
+    seat,playerId,connectionId:seats(id)?.get(seat)?.connectionId??null
+   }));
+   send(authority,{type:'authority_roster',view,bindings});
+  }
  };
  const localPort=()=>{
   const a=server?.address();
@@ -93,7 +100,11 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    const previous=roster.get(result.seat);
    roster.set(result.seat,{ws,connectionId});
    ws.__v3Player={roomId:obj.roomId,seat:result.seat,connectionId};
-   respond(result);
+   let stable=stablePlayersByRoom.get(obj.roomId);
+   if(!stable){stable=new Map();stablePlayersByRoom.set(obj.roomId,stable)}
+   let playerId=stable.get(result.seat);
+   if(!playerId){playerId='player_'+randomBytes(16).toString('hex');stable.set(result.seat,playerId)}
+   respond({...result,playerId});
    if(previous?.ws&&previous.ws!==ws){
     previous.ws.__v3Player=null;
     send(previous.ws,{type:'session_revoked'});
