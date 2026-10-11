@@ -450,3 +450,27 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 - 某個較早提交 `c81d791...` 的 CI 曾在新 2v2 測試失敗，原因是測試仍比較第一次冷重建的 PID，沒有更新成第二次重建的新 PID；後續提交修正測試比對並**重新跑完**真 Chromium CI 為 SUCCESS。沒有把初次失敗隱藏或視為通過。
 
 這仍**只恢復未開局的原生角色／手牌／牌庫**，不代表已恢復中途 GameEvent、技能效果或任何已執行動作。尚未實作的 `gongJiOrFaShu`、`chooseToUse` 完整合法牌／目標驗證、回應、結算及終局仍採拒絕式安全界線。整個變更在 V3 實驗分支、loopback ephemeral broker 與 GitHub CI；V1/V2、正式 V3、VPS 服務沒有更新。
+
+
+## 2026-10-12：原版攻擊卡牌目標的伺服器認證預檢（尚不出牌）
+
+本輪延續 V3 Chromium offboard，新增 `action_target_probe` 的**只讀印刷規則預檢**，並未開放 `command: playCard`。此功能延用預設關閉的 `enableNativeOwnershipProbes`，且只能在 `V3_ALLOW_SEAT_EXPERIMENT=1` 的隔離測試啟用；正式 V3 仍不支援此指令。
+
+- 真玩家 WS 只允許 `{type:'action_target_probe',requestId,cardId,targetSeat}`。由 broker 依當前 socket 取得 `seat`、穩定 `playerId`，建立不可預測 trace，轉交私有 Chromium 主持通道；客戶端提交的 `seat`、`playerId`、`traceId`、`script`、`action`、`targetPlayerId` 等一律拒絕。
+- Chromium 在**原版 `xingDong → gongJiOrFaShu` 已建立且暫停**的事件上呼叫既有 `preflightNativeActionCardOwnership`，實際確認原生 `Player.getCards('h')` 擁有該唯一實體牌，再驗證目標是存活的 native Player／合法座位。禁止查詢其他玩家秘密牌或在非當前出牌座位預檢。
+- 僅對原生 XingBei 卡包明確確認的五種一目標攻擊牌 `anMie`、`shuiLianZhan`、`huoYanZhan`、`fengShenZhan`、`leiGuangZhan`，呼叫**原卡包的** `lib.card[card.name].filterTarget(physicalCard,actor,target)`。同陣營拒絕、異陣營可通過**印刷卡面目標的必要條件**。其餘法術、技能、虛擬牌一律返回 `supportedPrintedAttack:false`，不推測合法性。
+- 回覆只有此目標預檢判斷，永遠包含 `fullRulesValidated:false`、`targetFullyValidated:false`、`actionExecuted:false`、`cardConsumed:false`。它不選目標、不扣手牌、不觸發傷害，也不改動 `GameEvent`、`_status.event` 或沙箱。
+- 所有 pending 皆有 trace、原 socket／seat／Player ID／目標座位比對、四秒逾時、64 outstanding 共用上限、房間/worker 失聯撤銷，以及同座位重新連線後舊請求回覆捨棄。偽造另一個目標的 ACK、重放同一 trace、玩家冒充 Chromium 回覆和任意 JS 均有安全回歸測試。
+- 真 Chromium 2v2、3v3、4v4 測試對所有當前真人座位持有的開局卡牌檢驗目標預檢，並**不依賴亂數手牌恰好抽到攻擊牌**：直接核對原始星杯卡包五種攻擊的印刷 `filterTarget`，確認同陣營／異陣營、卡牌位置和私密投影界線。
+
+### 已完成自動驗證
+
+- [V3 Chromium Authority Worker PoC，38174132791](https://github.com/iront1996/noname_xingbei/actions/runs/38174132791)：**SUCCESS，21/21 passed，0 failed**（含原生 Player/Card、完整三種人數拓樸與新攻擊目標預檢）。
+- [V3 Playtest Offline Safety Tests，38174132796](https://github.com/iront1996/noname_xingbei/actions/runs/38174132796)：**SUCCESS**。
+- 在提交 `0a706a88...` 的早期測試版本，曾因一個已被 socket 撤銷的模擬 pending Promise 未妥善等待／捕捉而造成 offline CI failure；後續提交 `09614ec0...` 修正並重新跑綠。不可將原 failure 當作已驗證成功。
+
+### 下一個必須解決的阻塞
+
+原版 `chooseToUse` 有 `event.filterCard`、`lib.filter.cardEnabled/cardUsable`、可變技能 `game.checkMod`、`targetInRange`、`ui.selected`、角色技能、遠端原生 `GameEvent.send()`、攻擊應戰與 `Player.useResult()`。上述「五種印刷攻擊牌的目標預檢」**不能替代**任何一個，亦不代表完成合法牌行動、傷害／士氣／星杯與勝負結算。下一個工程先在隔離 Chromium 建立完整原生選牌／目標選擇事件的可驗證 waiting contract，再接到受認證 seat、原版執行與私有結果。直到完整操作/技能/終局/持久化續行驗證通過，不切換線上 V3、不更新 VPS、不安排真人反覆測試。
+
+V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 沒有修改或重啟。
