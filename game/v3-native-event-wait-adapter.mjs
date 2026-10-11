@@ -77,7 +77,9 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
    throw failure('V3_NATIVE_EVENT_UNSUPPORTED');
   const player=this.player,reg=registered.get(player.playerid);
   const choices=this.controls;
-  if(!legalControls(choices)||pending.has(reg.seat))
+  // The original engine exposes one global pause/event result slot.
+  // Serialise native choice windows until a real multi-event scheduler exists.
+  if(!legalControls(choices)||pending.size!==0)
    throw failure('V3_NATIVE_CHOICE_INVALID_OR_PENDING');
   const current=binding(reg.seat);
   if(!current||current.playerId!==player.playerid)
