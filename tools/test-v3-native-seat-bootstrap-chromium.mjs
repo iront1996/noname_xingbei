@@ -271,6 +271,17 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    })).code,'RECONNECT_DENIED');
    assert.equal((await ask(peers[1],'command',{action:'skill'})).code,
     'RULES_ENGINE_NOT_IMPLEMENTED');
+   // Run one *original* gameDraw event only after all private-hand
+   // projections/restore contracts have been checked. This is a destructive
+   // staging probe and cannot be published as a valid play session.
+   const executed=await chrome.probeNativeOriginalGameDraw();
+   assert.equal(executed.realNativeGameDrawExecuted,true);
+   assert.equal(executed.eventName,'gameDraw');
+   assert.equal(executed.gainedExactlyFour,true);
+   assert.deepEqual(executed.before,Array(count).fill(4));
+   assert.deepEqual(executed.after,Array(count).fill(8));
+   assert.equal(executed.nativePhaseLoopExecuted,false);
+   assert.equal(executed.turnResolved,false);
   }finally{
    for(const p of peers)try{p.ws.close()}catch{}
    await broker.close();
