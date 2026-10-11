@@ -389,6 +389,22 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    })).code,'RECONNECT_DENIED');
    assert.equal((await ask(peers[1],'command',{action:'skill'})).code,
     'RULES_ENGINE_NOT_IMPLEMENTED');
+   // No player socket can call internal capture/recover/phase host methods.
+   for(const command of ['captureOpeningCheckpoint','recoverOpeningCheckpoint',
+    'beginNativePhaseAtOpening']){
+    assert.equal((await ask(currentBySeat[1],command)).code,'UNKNOWN_MESSAGE_TYPE');
+   }
+   // Mid-phase host failure must stay UNRECOVERABLE, rather than silently
+   // restoring the earlier valid opening state and discarding actions.
+   await chrome.stop();
+   await until(async()=>(await broker.inspectWorker(roomId)).code==='WORKER_UNAVAILABLE');
+   const refused=await broker.recoverOpeningCheckpoint(roomId);
+   assert.equal(refused.ok,false);
+   assert.equal(refused.code,'OPENING_RECOVERY_DISARMED');
+   assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_UNAVAILABLE');
+   assert.deepEqual(broker.roomView(roomId).roster.map(p=>p.seat),
+    Array.from({length:count},(_,i)=>i));
+
    // Run one *original* gameDraw event only after all private-hand
    // projections/restore contracts have been checked. This is a destructive
    // staging probe and cannot be published as a valid play session.
