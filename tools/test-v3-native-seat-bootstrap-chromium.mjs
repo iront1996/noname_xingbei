@@ -366,7 +366,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(released.firstPlayerId,sessions[0].playerId);
     const action=await until(async()=>{
      const state=await chrome.inspectOriginalActionGate();
-     if(state.failed)throw Error('V3_ORIGINAL_PHASE_CHILD_FAILED_'+state.error);
+     if(state.failed)throw Error('V3_ORIGINAL_PHASE_CHILD_FAILED_'+state.error+'_'+String(state.trace??'').slice(0,220));
      return state.actionGateReached&&state.paused&&state;
     });
     assert.equal(action.actionEventNative,true);
