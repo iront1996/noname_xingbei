@@ -284,7 +284,8 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       const session=seatsModule.prepareV3NativeXingBeiSeats({
        core,bridge:window.__v3AuthorityBridge
       });
-      return {ok:true,pack,session:session.inspect(),roster:session.roster()};
+      return {ok:true,pack,session:session.inspect(),roster:session.roster(),
+       characters:core.game.__v3NativeContentStage.rosterChoices()};
      }catch(e){
       return {ok:false,code:String(e?.code??e?.message??e).slice(0,100),
        trace:String(e?.stack??'').slice(0,300)};
