@@ -510,6 +510,17 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    if(ui.dialogs===undefined)ui.dialogs=[];
    if(!Array.isArray(ui.dialogs))
     throw err('V3_NATIVE_DIALOG_REGISTRY_INVALID');
+   // Full native UI boot also creates the log containers before phaseBegin.
+   // Keep them hidden in the independent server Chromium; do not create
+   // browser-side player UI, spoof real recipients, or send any JS.
+   for(const key of ['sidebar','arenalog','historybar']){
+    if(!ui[key]){
+     const node=document.createElement('div');
+     node.style.display='none';
+     document.body.appendChild(node);
+     ui[key]=node;
+    }
+   }
    const hookIndex=lib.onphase.indexOf(state.hold);
    if(hookIndex<0)throw err('V3_NATIVE_ACTION_GATE_HOOK_MISSING');
    // Original phase step 2 notifies the active human client to play a local
