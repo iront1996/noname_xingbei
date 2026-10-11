@@ -124,3 +124,26 @@ A 的第一輪完全自動測試需證實：
 - 新增檔案尚未接入現有 V3 room broker；現有 `v3resume`、`v3ready`、舊房主權威運作完全不變。
 
 **下一個阻塞點：**現有 `mode/xingBei.js` 的 `checkResult()` 透過 `game.me.side` 決定勝負，非真人主持端沒有陣營。需要移除規則引擎對主持席位的依賴，並讓每位玩家從投影狀態接收對自己正確的勝負結果。還要用真正的 Chromium + WebSocket 完成四名真人座位、角色選擇、攻防與技能事件的端對端驗證，才能稱 A 路線成立。Worker 在伺服器進程崩潰後仍需額外持久化／重播機制，不能因為跑在 VPS 就假定可原局恢復。
+
+
+## 2026-10-11：真正 Chromium 程序的首輪隔離實驗（仍未上線）
+
+新增以下 V3-only 原型，不變更現有 `game/v3-playtest-server.cjs`、8081、V1、V2，也沒有呼叫 `v3ready`：
+
+- `game/v3-chromium-authority-worker.mjs`：Node 22 使用 child process 啟動獨立 Chromium、獨立臨時 profile、127.0.0.1 隨機 DevTools 埠與 CDP 健康探測。標記 `window.isNonameServer=true`；提供顯式 `stop()`，崩潰後 `inspect()` 必須失敗。回傳 `gameRulesLoaded:false`、`statePersisted:false`，不假稱已執行完整星杯。
+- `tools/test-v3-chromium-authority-worker.mjs`：從現有 `noname/game/index.js` 抽取原生 `randomMapOL()` 方法，在真正無頭 Chromium 的 DOM 環境中對 2v2/3v3/4v4 執行，確認非玩家主持端不占任何真人座位，所有真人 ID 綁定到各自座位。這個測試仍採模擬 peer 物件，而非真正 WebSocket 的四人對局。
+- 測試模擬原開房者失聯時，獨立 Chromium PID 仍存活；主程序被強制殺死則 health probe 失敗；專用實驗執行入口受 `V3_ALLOW_SEAT_EXPERIMENT=1` 限制，不得暴露給任何玩家 API。
+- `game/v3-xingbei-authority-outcome.mjs`：純函式化紅藍士氣／星杯勝負判斷，對齊現有 `mode/xingBei.js` 的士氣小於等於 0 與星杯上限邏輯；不讀取 `game.me.side`。同時雙方達成終局、狀態不完整或 getter 等輸入一律拒絕，不任意判勝。尚未接到完整遊戲結算。
+- `.github/workflows/v3-chromium-authority-poc.yml`：新增真 Chromium 執行工作（明確找不到 Chrome 即失敗），與既有 V3 mock 測試分開。一般 V3 workflow 不會把未執行 Chromium 的 skipped 測試冒充 pass。
+
+**本地驗證結果：** 真 Chromium 6/6、獨立勝負驗證 5/5，合計新增 11/11 個案例通過；GitHub 提交的四個程式／測試 blob SHA 均與本地已執行檔案一致。尚未取得 GitHub Actions 執行成功證據；不可稱 CI PASS。
+
+**安全限制：** 目前 Chromium 原型為了在隔離的 root 測試容器啟動，帶有 `--no-sandbox`。**禁止以此設定直接部署承載玩家資料的 VPS 服務**；正式版本應使用非 root、有效 Chromium sandbox、受限制的系統帳號／資源配額與工作程序隔離。Chromium CDP 雖綁定 localhost，也只能由可信任服務端存取，不能公開 port 或接收任意玩家 JavaScript。每房 Chrome 的記憶體／CPU 上限仍待實測。
+
+**下一個核心里程碑（尚未完成）：**
+
+1. 用獨立 V3-authoritative broker 建立認證的 seat/session/connection 對應與伺服器擁有的房間；把 Chromium worker 接到真正 WebSocket relay，所有真人（含建立房間的人）走同一重連驗證路徑。
+2. 讓 worker 載入現有星杯遊戲引擎、配置 2v2/3v3/4v4 並完成選角、抽牌、攻防、技能回應；無法解耦 `game.me` 的功能都要逐項修正並回歸原版。
+3. 定義 worker 權威狀態與只供單一席位的私密資料；證明玩家中斷／刷新不會洩漏其他人手牌與牌堆順序。
+4. 增加事務式持久化、命令去重、事件回放／待決選擇，才可談 VPS 重啟續局；若 Chromium runtime 的閉包／Promise 不可恢復，必須切向可序列化的 server reducer。
+5. 以上端對端自動化覆蓋前，持續不安排真人反覆驗收、不改 VPS、不移除既有 V3。
