@@ -45,6 +45,7 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   const sessions=[first];
   for(let i=1;i<4;i++)sessions.push(await ask(peers[i],'join',{roomId:'V3_REAL_POC'}));
   assert.ok(sessions.every(s=>s.ok));
+  assert.equal(new Set(sessions.map(s=>s.playerId)).size,4);
   const launched=await ask(peers[0],'launch');
   assert.equal(launched.code,'WORKER_PROOF_RUNNING_NOT_PLAYABLE');
   assert.equal(launched.gameRulesLoaded,false);
@@ -52,6 +53,7 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   assert.equal(initialHost.connected,true);
   assert.equal(initialHost.seenRoster,true);
   assert.equal(initialHost.seatCount,4);
+  assert.equal(initialHost.boundPeerCount,4);
   const pid=browser.pid;
   peers[0].ws.close();peers[2].ws.close();
   for(let i=0;i<120;i++){
@@ -65,6 +67,8 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   const c=await open(broker.address);peers.push(c);
   const resumedC=await ask(c,'reconnect',{roomId:'V3_REAL_POC',seat:2,reconnectToken:sessions[2].reconnectToken});
   assert.equal(resumedC.code,'SESSION_RECONNECTED');
+  assert.equal(resumedA.playerId,sessions[0].playerId);
+  assert.equal(resumedC.playerId,sessions[2].playerId);
   assert.notEqual(resumedA.reconnectToken,sessions[0].reconnectToken);
   assert.notEqual(resumedC.reconnectToken,sessions[2].reconnectToken);
   const intruder=await open(broker.address);peers.push(intruder);
@@ -74,6 +78,7 @@ test('four real socket players reconnect across real Chromium room-host lifetime
   assert.equal((await ask(a,'command',{action:'attack'})).code,'RULES_ENGINE_NOT_IMPLEMENTED');
   assert.equal(browser.pid,pid);
   assert.equal((await browser.inspectRoomChannel()).connected,true);
+  assert.equal((await browser.inspectRoomChannel()).boundPeerCount,4);
   assert.equal((await broker.inspectWorker('V3_REAL_POC')).code,'WORKER_PROOF_ALIVE');
   assert.equal(broker.roomView('V3_REAL_POC').roster.every(s=>s.connected),true);
   for(const peer of peers){
