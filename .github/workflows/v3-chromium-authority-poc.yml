@@ -13,6 +13,7 @@ on:
       - 'tools/test-v3-chromium-coordinator-integration.mjs'
       - 'tools/test-v3-authority-websocket-broker.mjs'
       - 'tools/test-v3-real-websocket-chromium-broker.mjs'
+      - 'tools/v3-native-seat-probe.mjs'
       - 'tools/test-v3-authority-runtime-coordinator.mjs'
       - 'noname/game/index.js'
       - '.github/workflows/v3-chromium-authority-poc.yml'
@@ -38,6 +39,7 @@ jobs:
           node --check tools/test-v3-chromium-authority-worker.mjs
           node --check tools/test-v3-chromium-coordinator-integration.mjs
           node --check tools/test-v3-real-websocket-chromium-broker.mjs
+          node --check tools/v3-native-seat-probe.mjs
           node --check game/v3-authority-seat-preflight.mjs
       - name: Install isolated WebSocket test dependency
         run: npm install --no-save --no-package-lock --ignore-scripts ws@8.18.3
