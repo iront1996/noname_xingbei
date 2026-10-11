@@ -202,9 +202,21 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    }
    const first=players[firstSeat];
    const root=new lib.element.GameEvent('v3OpeningBoundary',false);
-   _status.eventManager.rootEvent=root;
-   const draw=game.gameDraw(first,4);
-   game.phaseLoop(first);
+   const manager=_status.eventManager;
+   // game.createEvent attaches child GameEvents to the STARTED event stack,
+   // not the rootEvent slot. Mirror the native scheduler's stack topology.
+   if(manager.eventStack.length!==0)
+    throw err('V3_NATIVE_TURN_EVENT_STACK_NOT_EMPTY');
+   manager.rootEvent=root;
+   manager.eventStack.push(root);
+   let draw;
+   try{
+    draw=game.gameDraw(first,4);
+    game.phaseLoop(first);
+   }finally{
+    if(manager.eventStack.pop()!==root)
+     throw err('V3_NATIVE_TURN_EVENT_STACK_CORRUPTED');
+   }
    const siblings=Array.isArray(root.next)?root.next:[];
    const phase=siblings.find(x=>x.name==='phaseLoop');
    if(!(draw instanceof lib.element.GameEvent)||draw.name!=='gameDraw'||
