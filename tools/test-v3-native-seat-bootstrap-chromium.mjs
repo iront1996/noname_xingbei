@@ -263,17 +263,25 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal(turn.turnResolved,false);
    await assert.rejects(chrome.stageNativeOpeningTurnBoundary({firstSeat:0}),
     /V3_TURN_BOUNDARY_FAILED_V3_NATIVE_TURN_BOUNDARY_NOT_READY/);
-   const firstPhase=await chrome.probeNativeFirstPhaseSetup();
-   assert.equal(firstPhase.realNativeSeatNumbers,true);
-   assert.equal(firstPhase.realNativeMorale,true);
-   assert.equal(firstPhase.nativeScoreboard,true);
+   // Run the ORIGINAL phaseLoop.start() to enter native step 0/1,
+   // and freeze BEFORE the first Player.phase() child can execute.
+   const startedPhase=await chrome.startPausedNativePhaseLoop();
+   assert.equal(startedPhase.realEvent,true);
+   assert.equal(startedPhase.event,'phaseLoop');
+   assert.equal(startedPhase.started,true);
+   const firstPhase=await until(async()=>{
+    const state=await chrome.inspectPausedNativePhaseLoop();
+    if(state.failed)throw Error('V3_NATIVE_PHASE_ORIGINAL_ERROR_'+state.error);
+    return state.pauseTriggered&&state.paused&&state.firstPhaseQueued&&state;
+   });
+   assert.equal(firstPhase.hostOffboard,true);
+   assert.equal(firstPhase.scoreboardCreated,true);
    assert.equal(firstPhase.redMorale,firstPhase.maxMorale);
    assert.equal(firstPhase.blueMorale,firstPhase.maxMorale);
    assert.deepEqual(firstPhase.seatNumbers,Array.from({length:count},(_,i)=>i+1));
-   assert.equal(firstPhase.eventLoopStarted,false);
-   assert.equal(firstPhase.skillsStarted,false);
-   await assert.rejects(chrome.probeNativeFirstPhaseSetup(),
-    /V3_FIRST_PHASE_SETUP_FAILED_V3_FIRST_PHASE_SETUP_NOT_READY/);
+   assert.equal(firstPhase.phaseLoopCompleted,false);
+   await assert.rejects(chrome.startPausedNativePhaseLoop(),
+    /V3_NATIVE_PHASE_START_FAILED_V3_NATIVE_PHASE_PROBE_NOT_READY/);
    const afterDraw=await chrome.inspectNativeXingBeiSeats();
    assert.equal(afterDraw.session.startingCardsDealt,true);
    assert.deepEqual(afterDraw.roster.map(x=>x.handCount),Array(count).fill(4));
