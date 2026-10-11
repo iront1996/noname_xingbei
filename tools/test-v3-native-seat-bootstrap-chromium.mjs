@@ -619,7 +619,7 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     const waiting=await chrome.inspectNativeUseCardPreview();
     assert.equal(waiting.state,'open');
     assert.equal(waiting.samePausedEvent,true);
-    const replacement=await connect(broker.address);
+    let replacement=await connect(broker.address);
     peers.push(replacement);
     currentBySeat[0]=replacement;
     const reconnect=await ask(replacement,'reconnect',{
@@ -669,6 +669,26 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
      assert.deepEqual(targetWindow.options,enemies);
      assert.notEqual(targetWindow.ticket,recovered.ticket);
      assert.equal(targetWindow.state,'open');
+     // The second native ticket is owned by the server too: losing this
+     // socket must not dismiss the target window or let AI choose for us.
+     replacement.ws.close();
+     await until(()=>!broker.roomView(roomId).roster[0].connected);
+     const beforeTargetRecovery=await chrome.inspectNativeUseCardPreview();
+     assert.equal(beforeTargetRecovery.targetPreviewState,'open');
+     assert.equal(beforeTargetRecovery.samePausedEvent,true);
+     replacement=await connect(broker.address);
+     peers.push(replacement);
+     currentBySeat[0]=replacement;
+     const targetReconnect=await ask(replacement,'reconnect',{
+      roomId,seat:0,reconnectToken:reconnectCredentials[0]
+     });
+     assert.equal(targetReconnect.playerId,sessions[0].playerId);
+     reconnectCredentials[0]=targetReconnect.reconnectToken;
+     const restoredTarget=await until(()=>replacement.received.find(x=>
+      x.type==='choice_window'&&x.window?.source==='preview'&&
+      x.window.kind==='target'&&x.window.ticket===targetWindow.ticket
+     )?.window);
+     assert.deepEqual(restoredTarget.options,enemies);
      assert.equal((await ask(replacement,'choice_submit',{
       ticket:recovered.ticket,option:selected.cardId
      })).code,'CHOICE_WINDOW_NOT_FOUND');
