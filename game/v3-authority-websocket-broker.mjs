@@ -30,6 +30,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
  const choices=createV3AuthorityChoiceWindows();
  const privateHands=createV3AuthorityPrivateProjections();
  const stablePlayersByRoom=new Map();
+ const openingRecoveryArmed=new Set(); // Revoked BEFORE native phase starts.
  // Transport round-trip probes are NOT gameplay intents or engine commands.
  const outstandingProbes=new Map();
  const seatsByRoom=new Map(),pendingWorker=new Map(),workersByRoom=new Map(),allSockets=new Set();
@@ -305,6 +306,8 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   // never accepts client-supplied snapshots or worker launch credentials.
   async captureOpeningCheckpoint(roomId){
    if(!enableOpeningRecoveryExperiments)return reply(false,'OPENING_RECOVERY_DISABLED');
+   // A failed re-capture cannot leave a stale, now-unsafe recovery lease.
+   openingRecoveryArmed.delete(roomId);
    const view=coordinator.roomView(roomId);
    const worker=coordinator.internalWorkerForRecovery(roomId);
    if(!view||!worker)return reply(false,'OPENING_CAPTURE_ROOM_NOT_READY');
@@ -322,13 +325,36 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     return reply(false,'OPENING_CAPTURE_ROSTER_MISMATCH');
    try{
     const saved=await openingCheckpointStore.save(snapshot);
+    openingRecoveryArmed.add(roomId);
     return reply(true,'OPENING_CAPTURE_ENCRYPTED',{
      revision:saved.revision,seatCount:count,restorableRunningGame:false
     });
    }catch{return reply(false,'OPENING_CAPTURE_WRITE_FAILED')}
   },
+  async beginNativePhaseAtOpening(roomId){
+   // Disarm any stale opening checkpoint BEFORE the native phase engine runs.
+   // This host method is not a websocket message; clients cannot invoke it.
+   if(!enableOpeningRecoveryExperiments)
+    return reply(false,'OPENING_RECOVERY_DISABLED');
+   if(!openingRecoveryArmed.has(roomId))
+    return reply(false,'OPENING_RECOVERY_DISARMED');
+   const worker=coordinator.internalWorkerForRecovery(roomId);
+   if(!worker||typeof worker.startPausedNativePhaseLoop!=='function')
+    return reply(false,'OPENING_PHASE_WORKER_NOT_READY');
+   openingRecoveryArmed.delete(roomId);
+   try{
+    const started=await worker.startPausedNativePhaseLoop();
+    if(started.started!==true||started.realEvent!==true||
+       started.event!=='phaseLoop')
+     throw Error('NATIVE_PHASE_START_INCONSISTENT');
+    return reply(true,'OPENING_PHASE_STARTED_NO_RECOVERY',{
+     started:true,realEvent:true,event:'phaseLoop'
+    });
+   }catch{return reply(false,'OPENING_PHASE_START_FAILED_RECOVERY_DISARMED')}
+  },
   async recoverOpeningCheckpoint(roomId){
    if(!enableOpeningRecoveryExperiments)return reply(false,'OPENING_RECOVERY_DISABLED');
+   if(!openingRecoveryArmed.has(roomId))return reply(false,'OPENING_RECOVERY_DISARMED');
    const view=coordinator.roomView(roomId);
    if(!view||view.status!=='waiting')
     return reply(false,'OPENING_RECOVERY_ROOM_NOT_WAITING');
@@ -391,6 +417,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    closed=true;
    for(const p of outstandingProbes.values())clearTimeout(p.timer);
    outstandingProbes.clear();
+   openingRecoveryArmed.clear();
    for(const roomId of seatsByRoom.keys()){
     choices.cancelRoom(roomId);
     privateHands.clearRoom(roomId);
