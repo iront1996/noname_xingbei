@@ -466,7 +466,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    }
    if(!Array.isArray(lib.onphase))throw err('V3_NATIVE_PHASE_HOOKS_MISSING');
    const state={phase,pauseTriggered:false,failure:null,finished:false,
-    entryReleased:false,actionGate:false,actionEvent:null,hold:null};
+    entryReleased:false,actionGate:false,actionEvent:null,hold:null,
+    actionEntryReleased:false,selectionGate:false,selectionEvent:null};
    // This hook runs in original content.js phaseLoop step 1, immediately
    // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
    // hook and must never be installed in production V3.
@@ -554,6 +555,57 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    return Object.freeze({
     started:true,firstPlayerId:first.playerid,
     originalPhaseEvent:true,actualActionStepExecuted:false
+   });
+  },
+  releaseOriginalActionToSelectionGate(){
+   // Original native XingBei xingDong content now executes, but its first
+   // card/skill selection child must remain paused before chooseToUse.
+   const state=game.__v3PausedPhaseRuntime;
+   const first=players[game.__v3OpeningTurnBoundary?.firstSeat??-1];
+   if(!state||state.failure||!state.actionGate||state.actionEntryReleased||
+      !_status.paused||!first||
+      state.actionEvent?.player!==first)
+    throw err('V3_NATIVE_SELECTION_GATE_NOT_READY');
+   const Player=lib.element.Player;
+   const original=Player.prototype.gongJiOrFaShu;
+   if(typeof original!=='function')
+    throw err('V3_NATIVE_SELECTION_GATE_METHOD_MISSING');
+   Player.prototype.gongJiOrFaShu=function(...args){
+    if(this!==first||args.length!==0||state.selectionGate)
+     throw err('V3_NATIVE_SELECTION_UNEXPECTED_OWNER');
+    const event=original.call(this);
+    if(!(event instanceof lib.element.GameEvent)||
+       event.name!=='gongJiOrFaShu'||event.player!==first)
+     throw err('V3_NATIVE_SELECTION_EVENT_INVALID');
+    state.selectionEvent=event;
+    state.selectionGate=true;
+    game.pause(); // Original chooseToUse content has NOT executed.
+    return event;
+   };
+   state.actionEntryReleased=true;
+   game.resume();
+   return Object.freeze({started:true,ownerPlayerId:first.playerid,
+    actualSelectionContentExecuted:false});
+  },
+  inspectOriginalSelectionGate(){
+   const state=game.__v3PausedPhaseRuntime;
+   if(!state)throw err('V3_NATIVE_SELECTION_GATE_NOT_STARTED');
+   const first=players[game.__v3OpeningTurnBoundary?.firstSeat??-1];
+   const event=state.selectionEvent;
+   return Object.freeze({
+    actionEntryReleased:state.actionEntryReleased,
+    failed:state.failure!==null,error:state.failure,trace:state.trace??null,
+    selectionGateReached:state.selectionGate===true,
+    originalXingDongEvent:state.actionEvent instanceof lib.element.GameEvent,
+    selectionEventNative:event instanceof lib.element.GameEvent,
+    selectionEventName:event?.name??null,
+    selectionOwnerPlayerId:event?.player?.playerid??null,
+    expectedOwnerPlayerId:first?.playerid??null,
+    phaseNumber:game.phaseNumber,
+    actionCounter:first?.storage?.gongJiOrFaShu??null,
+    paused:_status.paused===true,phaseLoopComplete:state.finished,
+    selectionContentExecuted:false,skillsVerified:false,
+    replaySafe:false
    });
   },
   inspectOriginalActionGate(){
