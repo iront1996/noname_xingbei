@@ -37,6 +37,28 @@ test('original XingBei card deck and character packs import in real offboard Chr
    const assigned=hands.flat(),remaining=pile.inspectIds();
    const uniqueCopies=new Set([...assigned.map(c=>c.instanceId),...remaining]).size===stage.cardCount;
    const oneSeat=hands[0].map(c=>({id:c.instanceId,name:c.name}));
+   // Next milestone: instantiate the ORIGINAL HTMLDivElement subclass and
+   // initialize its character with real XingBei skills (no fake Player).
+   let nativePlayer;
+   try{
+    const p=core.ui.create.player(document.body);
+    p.playerid='player_'+'c'.repeat(32);
+    p.side=true;
+    const host=core.ui.create.player(document.body);
+    core.game.me=host;
+    p.init('youXia',null,null,false);
+    nativePlayer={
+     actualClass:p instanceof core.lib.element.Player,
+     offboard:!core.game.players.includes(core.game.me),
+     character:p.name1,hp:p.hp,maxHp:p.maxHp,
+     skillArray:Array.isArray(p.skills),
+     hasNodes:!!p.node?.identity&&!!p.node?.handcards1,
+     playerId:p.playerid
+    };
+   }catch(e){
+    nativePlayer={error:String(e?.message??e).slice(0,200),
+     details:String(e?.stack??'').slice(0,450)};
+   }
    const separate=hands.every((hand,i)=>i===0||hand.every(c=>!oneSeat.some(own=>own.id===c.instanceId)));
    const exposed=Object.getOwnPropertyDescriptor(window,'game');
    return {stage,usable,definedCards,uniqueCharacters,denied,
@@ -45,7 +67,7 @@ test('original XingBei card deck and character packs import in real offboard Chr
     originalPackIsArray:cards.every(c=>Array.isArray(c)),
     minHandSize:Math.min(...hands.map(x=>x.length)),
     hasPlayableCharacters:characterNames.length>=8,
-    firstSeatHand:oneSeat.map(c=>c.name)};
+    firstSeatHand:oneSeat.map(c=>c.name),nativePlayer};
   }catch(e){return {stageError:String(e?.code??e?.message??e),details:String(e?.cause?.stack??e?.stack??'').slice(0,850)}}
   })()`);
   assert.equal(report.stageError,undefined,JSON.stringify(report));
@@ -67,6 +89,12 @@ test('original XingBei card deck and character packs import in real offboard Chr
   assert.equal(report.minHandSize,4);
   assert.equal(report.hasPlayableCharacters,true);
   assert.equal(report.firstSeatHand.length,4);
+  assert.equal(report.nativePlayer?.error,undefined,JSON.stringify(report.nativePlayer));
+  assert.equal(report.nativePlayer.actualClass,true);
+  assert.equal(report.nativePlayer.character,'youXia');
+  assert.equal(report.nativePlayer.offboard,true);
+  assert.equal(report.nativePlayer.hasNodes,true);
+  assert.ok(Number.isFinite(report.nativePlayer.hp));
   assert.equal((await chrome.inspect()).offboard,true);
  }finally{
   await chrome?.stop();
