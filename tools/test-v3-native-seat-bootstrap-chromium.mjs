@@ -70,6 +70,10 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    for(let i=1;i<count;i++)sessions.push(await ask(peers[i],'join',{roomId}));
    assert.ok(sessions.every(s=>s.ok));
    assert.equal((await ask(peers[0],'launch')).code,'WORKER_PROOF_RUNNING_NOT_PLAYABLE');
+   const previewBridgeApi=await chrome.evaluateSeatExperiment("(()=>({registration:typeof window.__v3AuthorityBridge?.registerNativeSelectionPreviewHooks,request:typeof window.__v3AuthorityBridge?.requestNativeSelectionPreview,choice:typeof window.__v3AuthorityBridge?.registerNativeChoiceHooks,seatBindings:typeof window.__v3AuthorityBridge?.getSeatBindings}))()");
+   assert.deepEqual(previewBridgeApi,{
+    registration:'function',request:'function',choice:'function',seatBindings:'function'
+   });
    const original=await chrome.stageNativeXingBeiSeats();
    assert.equal(original.ok,true);
    assert.equal(original.pack.realSource,true);
