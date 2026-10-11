@@ -16,6 +16,7 @@ on:
       - 'tools/test-v3-real-websocket-chromium-broker.mjs'
       - 'tools/v3-native-module-test-server.mjs'
       - 'tools/test-v3-native-module-chromium.mjs'
+      - 'tools/v3-real-native-result-probe.mjs'
       - 'tools/test-v3-native-xingbei-outcome-adapter.mjs'
       - 'tools/v3-native-seat-probe.mjs'
       - 'tools/test-v3-authority-runtime-coordinator.mjs'
@@ -46,6 +47,7 @@ jobs:
           node --check tools/test-v3-real-websocket-chromium-broker.mjs
           node --check tools/v3-native-module-test-server.mjs
           node --check tools/test-v3-native-module-chromium.mjs
+          node --check tools/v3-real-native-result-probe.mjs
           node --check tools/v3-native-seat-probe.mjs
           node --check game/v3-authority-seat-preflight.mjs
       - name: Install isolated WebSocket test dependency
