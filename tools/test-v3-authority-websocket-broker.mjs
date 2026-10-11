@@ -314,6 +314,49 @@ test('only authenticated worker can renew live native preview, never a human or 
   else process.env.V3_ALLOW_SEAT_EXPERIMENT=previous;
  }
 });
+test('native no-card pass application needs real worker identity and delivered preview receipt',async()=>{
+ const previous=process.env.V3_ALLOW_SEAT_EXPERIMENT;
+ process.env.V3_ALLOW_SEAT_EXPERIMENT='1';
+ let x;
+ try{
+  x=await setup({choiceExperiment:true,ownershipExperiment:true});
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  const w=x.authority;
+  w.clientSend({type:'authority_choice_open',source:'preview',roomId:'TEST',
+   seat:0,playerId:sessions[0].playerId,kind:'card',
+   prompt:'原版行動等待',options:['v3card_123456','pass']});
+  const opened=await waitFor(w,m=>m.type==='authority_choice_open_result'&&m.view?.kind==='card');
+  assert.equal(opened.ok,true);
+  const ticket=opened.view.ticket;
+  assert.equal((await ask(ws[1],{type:'authority_choice_preview_pass_applied',
+   seat:0,playerId:sessions[0].playerId,ticket})).code,'UNKNOWN_MESSAGE_TYPE');
+  w.clientSend({type:'authority_choice_preview_pass_applied',seat:0,
+   roomId:'TEST',playerId:sessions[0].playerId,ticket});
+  assert.equal((await waitFor(w,m=>m.type==='error'&&
+   m.code==='CHOICE_PREVIEW_PASS_APPLY_DENIED')).code,'CHOICE_PREVIEW_PASS_APPLY_DENIED');
+  assert.equal((await ask(ws[0],{type:'choice_submit',ticket,option:'pass'})).code,
+   'CHOICE_SUBMITTED_NOT_APPLIED');
+  await waitFor(ws[0],m=>m.type==='choice_window'&&m.window.ticket===ticket&&
+   m.window.state==='delivered');
+  w.clientSend({type:'authority_choice_preview_pass_applied',roomId:'TEST',
+   seat:0,playerId:sessions[1].playerId,ticket});
+  assert.equal((await waitFor(w,m=>m.type==='error'&&
+   m.code==='NATIVE_PASS_SEAT_DENIED')).code,'NATIVE_PASS_SEAT_DENIED');
+  w.clientSend({type:'authority_choice_preview_pass_applied',roomId:'TEST',
+   seat:0,playerId:sessions[0].playerId,ticket});
+  const applied=await waitFor(w,m=>m.type==='authority_choice_applied_confirmed'&&
+   m.code==='CHOICE_PREVIEW_PASS_APPLIED');
+  assert.equal(applied.ticket,ticket);
+  assert.equal((await ask(ws[0],{type:'choice_query'})).window.state,'applied');
+  assert.equal((await ask(ws[0],{type:'command',action:'playCard'})).code,
+   'RULES_ENGINE_NOT_IMPLEMENTED');
+ }finally{
+  if(x)await x.broker.close();
+  if(previous===undefined)delete process.env.V3_ALLOW_SEAT_EXPERIMENT;
+  else process.env.V3_ALLOW_SEAT_EXPERIMENT=previous;
+ }
+});
 test('choice experiment disabled by default and worker loss cancels all pending choices',async()=>{
  const x=await setup();
  try{
