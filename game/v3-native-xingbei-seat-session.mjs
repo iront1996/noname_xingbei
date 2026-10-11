@@ -541,7 +541,12 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // sound. In server-only Chromium it cannot transmit arbitrary JS. Permit
    // exactly this audiovisual NO-OP; everything else remains fail-closed.
    Player.prototype.send=function(callback,...args){
-    if(this!==first||typeof callback!=='function'||args.length!==0)
+    // Only the ORIGINAL actor's Player.phase step-2 audiovisual notice
+    // is allowed as a NO-OP, including the next seat after an explicit
+    // no-card pass. Never forward or execute any callback in human JS.
+    if(!(this instanceof Player)||!players.includes(this)||
+       _status.event?.name!=='phase'||_status.event.player!==this||
+       typeof callback!=='function'||args.length!==0)
      throw err('V3_NATIVE_REMOTE_CODE_SEND_DENIED');
     const source=Function.prototype.toString.call(callback)
      .replace(/\s+/g,'');
