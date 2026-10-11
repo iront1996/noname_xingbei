@@ -442,7 +442,11 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    if(!view||view.status!=='waiting')
     return reply(false,'OPENING_RECOVERY_ROOM_NOT_WAITING');
    const healthy=await coordinator.inspectWorker(roomId);
-   if(healthy.code==='WORKER_PROOF_ALIVE')
+   // An alive Chrome PID with a lost authenticated authority channel cannot
+   // safely execute room commands. The opening-only recovery lease allows us
+   // to STOP that orphaned process before restoring from the encrypted state.
+   // Never recover a live and connected host, or any in-progress phase.
+   if(healthy.code==='WORKER_PROOF_ALIVE'&&live(workersByRoom.get(roomId)))
     return reply(false,'OPENING_RECOVERY_WORKER_STILL_ALIVE');
    let checkpoint;
    try{checkpoint=await openingCheckpointStore.load(roomId)}
