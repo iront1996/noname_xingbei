@@ -91,7 +91,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
        stablePlayersByRoom.get(roomId)?.get(obj.seat)!==obj.playerId)
      return send(ws,{type:'error',code:'CHOICE_SEAT_INVALID'});
     const opened=choices.open({roomId,seat:obj.seat,playerId:obj.playerId,
-      kind:obj.kind,prompt:obj.prompt,options:obj.options});
+      kind:obj.kind,prompt:obj.prompt,options:obj.options,source:obj.source==='native'?'native':'experiment'});
     send(ws,{type:'authority_choice_open_result',...opened});
     if(opened.ok)sendChoice(roomId,obj.seat);
     return;
@@ -102,6 +102,18 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     const result=choices.deliveryReceipt({...obj,roomId:ws.__v3AuthorityRoom});
     if(!result.ok)return send(ws,{type:'error',code:result.code});
     sendChoice(ws.__v3AuthorityRoom,obj.seat);
+    return;
+   }
+   if(obj.type==='authority_choice_native_applied'){
+    if(!enableChoiceWindowExperiments)
+     return send(ws,{type:'error',code:'CHOICE_EXPERIMENT_DISABLED'});
+    const roomId=ws.__v3AuthorityRoom;
+    const result=choices.nativeApplied({roomId,seat:obj.seat,
+      playerId:obj.playerId,ticket:obj.ticket,option:obj.option});
+    if(!result.ok)return send(ws,{type:'error',code:result.code});
+    send(ws,{type:'authority_choice_applied_confirmed',seat:obj.seat,ticket:obj.ticket,
+      playerId:obj.playerId,code:result.code});
+    sendChoice(roomId,obj.seat);
     return;
    }
    if(obj.type==='authority_probe_ack'){
