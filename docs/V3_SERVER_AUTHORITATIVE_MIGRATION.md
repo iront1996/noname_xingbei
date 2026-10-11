@@ -519,3 +519,35 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 **伺服器主導的完整原生合法出牌**需要先安全執行 `event.filterCard`、`lib.filter.cardEnabled/cardUsable`、技能 `game.checkMod`、`targetInRange`，接著執行原版 `chooseToUse` 的觸發、應戰、傷害、士氣及勝負事件，並實作回合中的 `GameEvent`／牌庫／RNG 持久化。此處兩階段的預覽和已確認的印刷 `filterTarget` **不是**完整合法出牌或攻擊結算，也不能自動完成一局遊戲。現階段不應進行 VPS 部署或要求真人反覆試玩。
 
 僅修改 `game/v3-*.mjs`、`tools/test-v3-*.mjs`、V3 Chromium 專用 CI 和本工程文件；`noname/**`、`mode/xingBei.js`、V1/V2、線上 V3、VPS、Cloudflare、8080／8081 未修改。
+
+
+## 2026-10-12：真原版 chooseToUse 等待、取消出牌、全員重連與連線世代認證
+
+本批功能只在 `feature/host-reconnect-v3-playtest` 及 CI-only `V3_ALLOW_SEAT_EXPERIMENT=1` 隔離。**未修改 V1、V2、共用 Noname／xingBei 原始碼、線上 V3、VPS 或 Cloudflare。** 正式 `command:playCard` 仍然拒絕 `RULES_ENGINE_NOT_IMPLEMENTED`。
+
+### 已完成的原生實驗
+
+1. `game/v3-native-xingbei-seat-session.mjs` 在原版 `gongJiOrFaShu` 已被 `xingDong` 產生而暫停時，能不執行 `game.checkMod` 的情況下保守審核五種原始印刷一目標攻擊卡牌的原始 `enable`、`selectTarget`、`usable`、`range` 等定義。列舉 `getSkills('invisible')` 及全域技能可能的 mod/onChooseToUse hooks，但**不呼叫**回呼。以故意會執行 `game.resume()` 的惡意測試 mod 驗證審核沒有執行該技能。此審核絕不宣稱完整合法出牌。
+2. `game/v3-authority-choice-windows.mjs` 新增僅主持端使用的預覽票券續租。真人掉線不會消除開啟中的原生選牌／選目標視窗；`game/v3-chromium-authority-worker.mjs` 在存活且私有認證 WS 正常時按固定間隔續租。已過期、上一階段、非預覽的票券不允許續租。主持通道死亡仍會撤銷視窗，不能延續原本中途狀態。
+3. `inspectNativeActionInvariant` 捕獲真原生 Player/Hand、牌庫順序、HP、士氣、行動計數及原版 EventStack；驗證所有*只讀*攻擊／選目標預檢前後沒有變更。這是 CI 私有 accessor，不對任何玩家公開其他玩家手牌。
+4. `game/v3-native-event-wait-adapter.mjs` 提供僅對已認證本人的原版 `gongJiOrFaShu` `GameEvent` 生效的**單次** `GameEvent.send` 攔截。經 `releaseOriginalSelectionToNativeWait`，隔離 Chromium 真正執行原版編譯後 `chooseToUse` step 0 及其內部原版前置步驟，直到 native online `event.send()` 才由 V3 攔截：建立真 `Player.wait()` slot、`game.pause()`、本人選牌視窗，而不是執行舊版向客戶端傳送可執行 JS 的途徑。任意額外 `send` 仍拒絕。
+5. 只有通過同一原生 `GameEvent`、`Player ID`、`_status.event`、原始等待 slot 和本人已認證票券的檢查後，才可以在新卡牌視窗提交 `pass`，由受管 `Player.unwait({bool:false})` 把「不出牌」回覆交還原版事件。單純只讀的預檢視窗不顯示 pass，已提交的卡牌意圖也不允許冒充 pass。這不代表可以執行真攻擊卡牌。
+6. 新增 `tools/test-v3-original-choose-to-use-wait-chromium.mjs`，對真 4 人原版角色、原版 `gameDraw`、原版 `phaseLoop`、原版 `xingDong` 與 `chooseToUse` 的 card preview／pass 兩條路徑，驗證**全部 4 名真人一起斷線**時 Chromium 程序和唯一待選視窗存活。全員分別恢復後固定 Player ID 不變、重連 token 及 `connectionId` 重新產生，舊票券不洩漏給其他座位，選擇或取消後仍不消耗手牌。
+
+### 同一座位的連線世代防護
+
+在 `choice_submit` 向私有 Chromium 投遞原生選擇時，broker 額外附上當下 socket 的 96-bit `connectionId`，Chromium 驗證該 `connectionId` 必須匹配最近的 `authority_roster` binding，不能只比對永遠不變的 Player ID。因此同一座位被新 websocket 接管後，舊連線已排隊的延遲回覆不應在新 session 套用。正式遊戲依然沒有收到任意 `command` 出牌權限。
+
+### 已確認測試基線
+
+- [原生 `chooseToUse` 真正進入受控等待：CI 38179729149](https://github.com/iront1996/noname_xingbei/actions/runs/38179729149)：**22/22 PASS**。
+- [原版 `Player.unwait({bool:false})` no-card 回覆：CI 38180057378](https://github.com/iront1996/noname_xingbei/actions/runs/38180057378)：**23/23 PASS**。
+- [全房間真人同時斷線與重連：CI 38180212359](https://github.com/iront1996/noname_xingbei/actions/runs/38180212359)：**23/23 PASS**。
+- [初版連線世代驗證：CI 38180296685](https://github.com/iront1996/noname_xingbei/actions/runs/38180296685)：**SUCCESS**，並有 V3 離線回歸 [38180296659](https://github.com/iront1996/noname_xingbei/actions/runs/38180296659) **SUCCESS**。
+
+### 嚴格未完成的項目
+
+- **尚未完成原版真正合法出牌**、技能修正完整授權、攻擊與防禦應戰、傷害／士氣／勝負原版結算、所有原生多回合角色技能。
+- 真的 `chooseToUse` step 0 會運行原版 `onChooseToUse` 技能回呼，所以 CI 證明的是原版內容能在隔離 Chromium 執行至等待；**不是**技能安全審核、完整 rules engine 或持久化。
+- 玩家全部離線仍可保留**活著的** Chromium 原生事件，但若 Chromium 或 broker 崩潰，中途 EventStack/RNG 等依然沒有可靠持久化與重啟恢復功能。只有開局 checkpoint 可冷重建，不能把它冒充中途續局。
+- 不部署到 VPS，也不要求真人反覆測試。下一段應檢查通過 pass 後原版 `xingDong` 動作計數及自然續行，再決定是否可以安全接下一張卡牌的真正規則驗證。
