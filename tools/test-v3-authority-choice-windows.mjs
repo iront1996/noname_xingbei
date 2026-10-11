@@ -87,3 +87,23 @@ test('experimental choice cannot falsely claim native application',()=>{
  assert.equal(m.nativeApplied(body).code,'CHOICE_NATIVE_APPLY_DENIED');
  assert.equal(m.view('roomA',0,id(1)).state,'delivered');
 });
+
+test('native chooseToUse read-only card preview receives a ticket but never applies GameEvent',()=>{
+ const m=started();
+ const preview=m.open({...defaults,source:'preview',kind:'card',
+  prompt:'原生選牌預覽',options:['v3card_abcdef','v3card_123456']});
+ assert.equal(preview.ok,true);
+ assert.equal(preview.view.source,'preview');
+ assert.equal(preview.view.state,'open');
+ const body={...defaults,ticket:preview.view.ticket,option:'v3card_abcdef'};
+ assert.equal(m.submit({...body,playerId:id(2)}).code,'CHOICE_WINDOW_NOT_FOUND');
+ assert.equal(m.submit({...body,option:'v3card_ffffff'}).code,'CHOICE_OPTION_NOT_ALLOWED');
+ assert.equal(m.submit(body).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+ assert.equal(m.deliveryReceipt(body).code,'CHOICE_DELIVERED_NOT_APPLIED');
+ assert.equal(m.nativeApplied(body).code,'CHOICE_NATIVE_APPLY_DENIED');
+ assert.equal(m.view('roomA',0,id(1)).state,'delivered');
+ assert.equal(m.submit({...body,option:'v3card_123456'}).code,'CHOICE_ALREADY_LOCKED');
+ assert.equal(m.open({...defaults,source:'native'}).code,'CHOICE_WINDOW_ALREADY_OPEN');
+ assert.equal(m.cancelRoom('roomA'),1);
+ assert.equal(m.view('roomA',0,id(1)),null);
+});
