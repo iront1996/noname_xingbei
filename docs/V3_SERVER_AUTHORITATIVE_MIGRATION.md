@@ -261,3 +261,41 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 ## 2026-10-11 後續：原生回應封包的拒絕式邊界
 
 新增 `game/v3-native-response-envelope.mjs` 與 `tools/test-v3-native-response-envelope.mjs`。目前僅驗證 roomId、traceId、seat、固定 Player ID 與活躍 connectionId；任何包含 `script`、`action` 或 `result` 的玩家輸入都拒絕。此函式尚未接入原生 `GameEvent` 或正式 V3 WebSocket 服務，不能視為已完成技能、出牌或斷線原局恢復。下一階段應先建立受控的伺服器 pending event window、單次消耗 nonce、座位重連後的綁定更新與結果校驗，再允許有限的原生選擇回應。
+
+
+## 2026-10-11：伺服器保留待決選擇、斷線續答與 Chromium 沙箱預設（本輪）
+
+**本階段完成的是獨立 V3 實驗的「待決選擇協定」，不是原生星杯 GameEvent、技能或回合已經正式可玩。** V1/V2 及既有線上 V3 的所有服務維持原樣，所有 GitHub 變更只寫入 `feature/host-reconnect-v3-playtest`，沒有修改共用的 `noname/**`、`mode/xingBei.js`、舊 WebSocket Broker 或 VPS。
+
+### 新的伺服器選擇視窗
+
+- `game/v3-authority-choice-windows.mjs` 新增純伺服器記憶體選擇管理器：每個 roomId+seat 最多一個未結束選擇，由經認證的私有主持通道指定合法選項、提示、指定 Player ID，產生 128-bit 隨機 ticket。限制選項型別、數量、格式、不能重複、提示禁止 HTML 特殊字元／控制符；所有視窗有到期時間、總額限制及按房間清理。
+- `game/v3-authority-websocket-broker.mjs` 新增 `enableChoiceWindowExperiments`，**預設 false**。只有明確啟用的本機／CI 測試才可由已認證 Chromium 發出 `authority_choice_open`。Broker 核對 seat 和先前簽發的固定 Player ID，再把 `choice_window` 僅交付給擁有該 seat 的玩家。一般玩家的 roomView/roster 不包含其他人的 ticket 或任何私密 choice。
+- 玩家斷線時，broker 保留選擇視窗，不會因原開房者離線而停止 Chromium；重新連線後，帶上合法輪替 token 與固定 Player ID，就會收到**同一個 ticket**及尚未回答的選項，無須重開遊戲事件。
+- `choice_submit` 只能在目前有效的 socket、正確房間、正確 seat、正確 Player ID、正確 ticket、合法選項下通過；伺服器第一次接收後鎖定選擇。相同選項重送只回狀態，**不再次送入 Chromium**；不同選項改答拒絕。過期 ticket、自定 script、跨房間、跨座位皆拒絕。
+- Chromium 收到 `authority_choice_delivery` 後回覆 `authority_choice_receipt`，Broker 將選擇標示為 `delivered`，但**不是** `resolved`、**不觸發** `GameEvent.unwait()` 或 `game.resume()`、**不宣告成功出牌**。在真正原生 GameEvent 取用回應並完成伺服器驗證前，遊戲指令仍是 `RULES_ENGINE_NOT_IMPLEMENTED`。
+- 主持 WebSocket 失聯時，該房所有實驗視窗作廢並通知現有玩家 `choice_interrupted`，不假冒恢復遊戲。Broker 結束時取消所有視窗。內存模型沒有進行持久化，程式重啟後不能原局續答。
+
+### 真 Chromium + 多人連線的自動化驗證
+
+- `tools/test-v3-authority-choice-windows.mjs`：六項獨立狀態機案例（唯一選擇、相同答案去重、不同答案拒絕、跨座位／跨房間隱私、expiry、容量限制等）。
+- `tools/test-v3-authority-websocket-broker.mjs`：增加 fake WebSocket 的主人與客人選擇重連、非法答案、非當事人不可代答、私人選擇不能廣播、實驗功能預設禁止、主持失聯清理測試。
+- `tools/test-v3-real-choice-window-chromium.mjs`：四位**真實 WebSocket 玩家**、獨立受認證 Chromium 主持通道、真正載入原生 Noname / XingBei ESM 模組，驗證房主離線續答、第二名客人**在離線期間由 Chromium 開出待決選擇**、重連後才收到此私人選擇、兩位合法回覆僅由主持程式確認收到、相同答案去重、非法選項及跨座位被拒、主持 PID 不變、其他座位無法看到 ticket。
+- 注意：本測試的選擇由 CDP 測試專用 `openChoiceExperiment()` 發起，非原生 `GameEvent.send()` 自動產生；Chromium 的 `authority_choice_receipt` 是傳輸確認，不是星杯技能／卡牌解析。
+
+### Chromium sandbox 硬化
+
+- `game/v3-chromium-authority-worker.mjs` 原本為 CI 容器帶有常駐 `--no-sandbox`；本輪改為**預設執行 Chromium sandbox，不自動加入該參數**。若 Node 以 root 執行，預設拒絕啟動。僅 `unsafeTestSandbox:true`、環境 `V3_ALLOW_SEAT_EXPERIMENT=1` **同時** `V3_ALLOW_UNSANDBOXED_TESTS=1`，才允許離線隔離測試刻意關閉沙箱；正式服務不得使用。
+- `tools/test-v3-chromium-sandbox-policy.mjs` 新增回歸，驗證未明確允許時 root 啟動被拒、unsafe 不能默默開啟。GitHub hosted runner 在**預設有沙箱**的模式下已完成所有真 Chrome 測試。
+- 沙箱預設更安全，但每房瀏覽器的非 root 系統帳號、CPU／記憶體限制、程序隔離、CDP 資料安全及持久化架構仍需完成，**仍禁止直接部署到承載玩家資料的 VPS**。
+
+### 驗證證據及下一個阻塞點
+
+以程式提交 `aaa1933e24659329401f75a4e1a2e7f3e701d3b1` 為準：
+
+- [V3 Chromium Authority Worker PoC](https://github.com/iront1996/noname_xingbei/actions/runs/38134356828)：**success，11 tests / 11 passed / 0 failed**。包括真 Chromium 原生 ESM、四人 WebSocket 雙向消息、斷線續答與 Chromium sandbox policy。
+- [V3 Playtest Offline Safety Tests](https://github.com/iront1996/noname_xingbei/actions/runs/38134356827)：**success**。包含純房間狀態、重連、選擇、V3 隔離等所有既有離線回歸。
+
+**下一個必須修正的原生相容性阻塞**：原版 `noname/library/element/client.js` 的 `Client.close()` 在遊戲中離線時會直接呼叫 `player.unwait("ai")`，原版 `Player.wait()` 也可能在倒數時間結束時強制 AI 續接並關閉 socket。這會破壞 V3 希望保留待決選擇的語義。必須為**僅有 V3 主持程序**建立原生 `Client`／`Player`／`GameEvent` 適配層，讓等待中的事件不會由舊客戶端自動判 AI，並加入首個真正原生選擇執行、回合續行、失聯重連及雙重回覆的端對端測試。嚴禁直接修改共用原版程式來達成此目標。
+
+**目前仍不需要用戶部署 VPS 或召集真人反覆測試；保留最後一次集中真人驗收。**
