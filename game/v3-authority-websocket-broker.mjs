@@ -6,6 +6,7 @@
 import {randomBytes} from 'node:crypto';
 import {createV3AuthorityRuntimeCoordinator} from './v3-authority-runtime-coordinator.mjs';
 import {createV3AuthorityChoiceWindows} from './v3-authority-choice-windows.mjs';
+import {createV3AuthorityPrivateProjections} from './v3-authority-private-projections.mjs';
 
 const reply=(ok,code,extra={})=>({ok,code,...extra});
 const idOk=s=>typeof s==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(s);
@@ -14,11 +15,13 @@ const requestOk=s=>s===undefined||(typeof s==='string'&&/^[a-zA-Z0-9_-]{1,40}$/.
 const live=ws=>ws?.readyState===1;
 const send=(ws,obj)=>{if(!live(ws))return;try{ws.send(JSON.stringify(obj))}catch{try{ws.close(1011)}catch{}}};
 
-export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0,enableChoiceWindowExperiments=false}={}){
+export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0,enableChoiceWindowExperiments=false,enablePrivateHandExperiments=false}={}){
  if(typeof WebSocketServer!=='function'||typeof launchWorker!=='function')throw new TypeError('BROKER_DEPENDENCY_MISSING');
  if(host!=='127.0.0.1'||port!==0)throw new Error('EXPERIMENT_LOOPBACK_EPHEMERAL_ONLY');
- if(typeof enableChoiceWindowExperiments!=='boolean')throw new TypeError('EXPERIMENT_CONFIG_INVALID');
+ if(typeof enableChoiceWindowExperiments!=='boolean'||typeof enablePrivateHandExperiments!=='boolean')
+  throw new TypeError('EXPERIMENT_CONFIG_INVALID');
  const choices=createV3AuthorityChoiceWindows();
+ const privateHands=createV3AuthorityPrivateProjections();
  const stablePlayersByRoom=new Map();
  // Transport round-trip probes are NOT gameplay intents or engine commands.
  const outstandingProbes=new Map();
@@ -26,6 +29,13 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
  let closed=false,server;
  const seats=id=>seatsByRoom.get(id);
  const current=(roomId,seat,ws)=>seats(roomId)?.get(seat)?.ws===ws;
+ const sendPrivateHand=(roomId,seat)=>{
+  const entry=seats(roomId)?.get(seat);
+  const playerId=stablePlayersByRoom.get(roomId)?.get(seat);
+  if(!entry||!live(entry.ws)||!playerId)return;
+  const view=privateHands.get(roomId,seat,playerId);
+  if(view)send(entry.ws,{type:'private_hand',view});
+ };
  const sendChoice=(roomId,seat)=>{
   const entry=seats(roomId)?.get(seat);
   const playerId=stablePlayersByRoom.get(roomId)?.get(seat);
@@ -83,6 +93,20 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   if(!obj||typeof obj!=='object'||Array.isArray(obj)||!requestOk(obj.requestId))
    return send(ws,{type:'error',code:'INVALID_MESSAGE'});
   if(ws.__v3AuthorityRoom){
+   if(obj.type==='authority_private_hand'){
+    if(!enablePrivateHandExperiments)
+     return send(ws,{type:'error',code:'PRIVATE_HAND_EXPERIMENT_DISABLED'});
+    const roomId=ws.__v3AuthorityRoom;
+    if(obj.roomId!==roomId||!Number.isInteger(obj.seat)||
+       stablePlayersByRoom.get(roomId)?.get(obj.seat)!==obj.playerId)
+     return send(ws,{type:'error',code:'PRIVATE_HAND_SEAT_DENIED'});
+    const stored=privateHands.publish({...obj,roomId});
+    if(!stored.ok)return send(ws,{type:'error',code:stored.code});
+    send(ws,{type:'authority_private_hand_stored',seat:obj.seat,
+      playerId:obj.playerId,revision:obj.revision,code:stored.code});
+    sendPrivateHand(roomId,obj.seat);
+    return;
+   }
    if(obj.type==='authority_choice_open'){
     if(!enableChoiceWindowExperiments)
      return send(ws,{type:'error',code:'CHOICE_EXPERIMENT_DISABLED'});
@@ -167,11 +191,19 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    }
    sendRoster(obj.roomId);
    sendChoice(obj.roomId,result.seat);
+   sendPrivateHand(obj.roomId,result.seat);
    return;
   }
   const bound=ws.__v3Player;
   if(!bound||!current(bound.roomId,bound.seat,ws))return respond(reply(false,'NOT_AUTHENTICATED'));
   switch(obj.type){
+   case 'private_hand_query':{
+    if(!enablePrivateHandExperiments)
+     return respond(reply(false,'PRIVATE_HAND_EXPERIMENT_DISABLED'));
+    const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
+    const view=privateHands.get(bound.roomId,bound.seat,playerId);
+    return respond(reply(true,'PRIVATE_HAND_STATE',{view}));
+   }
    case 'choice_query':{
     if(!enableChoiceWindowExperiments)return respond(reply(false,'CHOICE_EXPERIMENT_DISABLED'));
     const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
@@ -241,6 +273,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     if(workersByRoom.get(ws.__v3AuthorityRoom)===ws){
      workersByRoom.delete(ws.__v3AuthorityRoom);
      choices.cancelRoom(ws.__v3AuthorityRoom);
+     privateHands.clearRoom(ws.__v3AuthorityRoom);
      for(const entry of seats(ws.__v3AuthorityRoom)?.values()??[])
       send(entry.ws,{type:'choice_interrupted',code:'WORKER_CHANNEL_OFFLINE'});
     }
@@ -266,7 +299,10 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    closed=true;
    for(const p of outstandingProbes.values())clearTimeout(p.timer);
    outstandingProbes.clear();
-   for(const roomId of seatsByRoom.keys())choices.cancelRoom(roomId);
+   for(const roomId of seatsByRoom.keys()){
+    choices.cancelRoom(roomId);
+    privateHands.clearRoom(roomId);
+   }
    for(const ws of allSockets)try{ws.terminate?.()}catch{}
    for(const id of seatsByRoom.keys())await coordinator.stopRoomWorker(id);
    await new Promise(resolve=>server.close(()=>resolve()));
