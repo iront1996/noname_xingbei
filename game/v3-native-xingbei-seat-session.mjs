@@ -236,6 +236,60 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    });
    return result;
   },
+  async probeNativeGameDrawExecution(){
+   // Destructive OFFLINE ONLY. The 4 native opening cards were already staged
+   // for snapshot verification. This separately exercises the ORIGINAL
+   // gameDraw GameEvent on top of that state; never treat resulting 8-card
+   // hands as a playable/recoverable game state.
+   if(!game.__v3OpeningTurnBoundary||game.__v3NativeDrawProbe||
+      !game.__v3NativeDrawPile||draftFailure||!startingCardsDealt||
+      adapter.inspect().pending!==0||_status.eventManager.eventStack.length!==0)
+    throw err('V3_NATIVE_DRAW_PROBE_NOT_READY');
+   const root=_status.eventManager.rootEvent;
+   const draw=root?.next?.find(x=>x.name==='gameDraw');
+   if(!(draw instanceof lib.element.GameEvent)||
+      !players.includes(draw.player)||draw.num!==4)
+    throw err('V3_NATIVE_DRAW_PROBE_EVENT_INVALID');
+   // Physically seed original native Card instances in the original ui pile.
+   if(!ui.cardPile){
+    const holder=document.createElement('div');
+    holder.style.display='none';
+    document.body.appendChild(holder);
+    ui.cardPile=holder;
+   }
+   if(ui.cardPile.hasChildNodes())throw err('V3_NATIVE_DRAW_PILE_DIRTY');
+   const originalCount=players.map(x=>x.getCards('h').length);
+   for(let i=0;i<players.length*4;i++){
+    const card=game.__v3NativeDrawPile.draw();
+    if(!card)throw err('V3_NATIVE_DRAW_PROBE_DECK_EXHAUSTED');
+    const node=ui.create.card(ui.cardPile).init(card.face);
+    if(!(node instanceof lib.element.Card))
+     throw err('V3_NATIVE_DRAW_PROBE_CARD_INVALID');
+    Object.defineProperty(node,'__v3PhysicalId',{value:card.instanceId,
+     configurable:false,enumerable:false});
+   }
+   let finished=false;
+   try{
+    // Native scheduler executes the real content.js gameDraw content.
+    await draw.start();
+    finished=true;
+   }catch(e){
+    throw Object.assign(err('V3_NATIVE_DRAW_PROBE_EXECUTION_FAILED'),{cause:e});
+   }
+   const afterCount=players.map(x=>x.getCards('h').length);
+   const result=Object.freeze({
+    realNativeGameDrawExecuted:finished,
+    eventName:draw.name,firstSeat:players.indexOf(draw.player),
+    before:originalCount,after:afterCount,
+    gainedExactlyFour:afterCount.every((n,i)=>n===originalCount[i]+4),
+    // No phaseLoop.start()/skills were executed by this probe.
+    nativePhaseLoopExecuted:false,turnResolved:false
+   });
+   Object.defineProperty(game,'__v3NativeDrawProbe',{value:result,
+    configurable:false,enumerable:false});
+   if(!result.gainedExactlyFour)throw err('V3_NATIVE_DRAW_PROBE_COUNT_MISMATCH');
+   return result;
+  },
   // Strictly trusted Chromium-side accessor only; broker must authenticate
   // before ever projecting this to a human WebSocket.
   privateSeatView({seat}={}){
