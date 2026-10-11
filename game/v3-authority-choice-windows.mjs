@@ -44,6 +44,8 @@ export function createV3AuthorityChoiceWindows({now=()=>Date.now(),ttlMs=120000,
       !options.every(optionId)||new Set(options).size!==options.length)
     return no('CHOICE_DEFINITION_INVALID');
    const k=key(roomId,seat);
+   // Retire a previously applied native result before a new event starts.
+   if(windows.get(k)?.state==='applied')windows.delete(k);
    if(windows.has(k))return no('CHOICE_WINDOW_ALREADY_OPEN');
    if(windows.size>=maxOpen)return no('CHOICE_CAPACITY_EXCEEDED');
    const e={roomId,seat,playerId:pid,kind,prompt,options:[...options],
