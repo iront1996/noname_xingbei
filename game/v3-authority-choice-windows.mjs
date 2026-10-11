@@ -36,7 +36,8 @@ export function createV3AuthorityChoiceWindows({now=()=>Date.now(),ttlMs=120000,
   open({roomId,seat,playerId:pid,kind,prompt,options,source='experiment'}={}){
    expire();
    if(!id(roomId)||!Number.isInteger(seat)||seat<0||seat>7||
-      !playerId(pid)||!['character','card','skill','control'].includes(kind)||
+      !playerId(pid)||!['character','card','skill','control','target'].includes(kind)||
+      (kind==='target'&&source!=='preview')||
       !['experiment','native','preview'].includes(source)||
       typeof prompt!=='string'||prompt.length<1||prompt.length>120||
       /[<>\u0000-\u001f]/.test(prompt)||
