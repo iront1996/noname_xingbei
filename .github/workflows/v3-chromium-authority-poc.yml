@@ -6,6 +6,7 @@ on:
       - feature/host-reconnect-v3-playtest
     paths:
       - 'game/v3-chromium-authority-worker.mjs'
+      - 'game/v3-native-xingbei-outcome-adapter.mjs'
       - 'game/v3-authority-runtime-coordinator.mjs'
       - 'game/v3-authority-websocket-broker.mjs'
       - 'game/v3-authority-seat-preflight.mjs'
@@ -13,6 +14,9 @@ on:
       - 'tools/test-v3-chromium-coordinator-integration.mjs'
       - 'tools/test-v3-authority-websocket-broker.mjs'
       - 'tools/test-v3-real-websocket-chromium-broker.mjs'
+      - 'tools/v3-native-module-test-server.mjs'
+      - 'tools/test-v3-native-module-chromium.mjs'
+      - 'tools/test-v3-native-xingbei-outcome-adapter.mjs'
       - 'tools/v3-native-seat-probe.mjs'
       - 'tools/test-v3-authority-runtime-coordinator.mjs'
       - 'noname/game/index.js'
@@ -34,11 +38,14 @@ jobs:
       - name: Check Chromium experiment sources
         run: |
           node --check game/v3-chromium-authority-worker.mjs
+          node --check game/v3-native-xingbei-outcome-adapter.mjs
           node --check game/v3-authority-runtime-coordinator.mjs
           node --check game/v3-authority-websocket-broker.mjs
           node --check tools/test-v3-chromium-authority-worker.mjs
           node --check tools/test-v3-chromium-coordinator-integration.mjs
           node --check tools/test-v3-real-websocket-chromium-broker.mjs
+          node --check tools/v3-native-module-test-server.mjs
+          node --check tools/test-v3-native-module-chromium.mjs
           node --check tools/v3-native-seat-probe.mjs
           node --check game/v3-authority-seat-preflight.mjs
       - name: Install isolated WebSocket test dependency
@@ -56,4 +63,4 @@ jobs:
             echo 'FAIL: runner lacks installed Chromium/Chrome; not a skipped PASS.' >&2
             exit 1
           fi
-          V3_CHROMIUM="$browser" node --test tools/test-v3-chromium-authority-worker.mjs tools/test-v3-chromium-coordinator-integration.mjs tools/test-v3-real-websocket-chromium-broker.mjs
+          V3_CHROMIUM="$browser" node --test tools/test-v3-chromium-authority-worker.mjs tools/test-v3-chromium-coordinator-integration.mjs tools/test-v3-real-websocket-chromium-broker.mjs tools/test-v3-native-module-chromium.mjs
