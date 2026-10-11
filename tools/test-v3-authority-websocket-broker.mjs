@@ -326,7 +326,7 @@ test('native attack target reply is bound to original player, trace, target and 
    r.requestId===result.requestId).length,1);
   // A real session takeover replaces socket ownership before the delayed
   // Chromium answer is considered, and the old socket sees no reply.
-  const later=ask(ws[0],{type:'action_target_probe',cardId,targetSeat:3});
+  const later=ask(ws[0],{type:'action_target_probe',cardId,targetSeat:3}).catch(()=>null);
   const second=await waitFor(x.authority,m=>
    m.type==='authority_action_target_probe'&&m.targetSeat===3);
   const replacement=x.connect();
@@ -338,12 +338,15 @@ test('native attack target reply is bound to original player, trace, target and 
    seat:0,playerId:sessions[0].playerId,targetSeat:3,traceId:second.traceId,
    supportedPrintedAttack:true,printedTargetEligible:true
   });
-  assert.equal((await waitFor(x.authority,m=>m.type==='error'&&
-   m.code==='ACTION_TARGET_ACK_INVALID')).code,'ACTION_TARGET_ACK_INVALID');
+  for(let i=0;i<100&&x.authority.outbound.filter(m=>m.type==='error'&&
+   m.code==='ACTION_TARGET_ACK_INVALID').length<3;i++)
+   await new Promise(resolve=>setTimeout(resolve,5));
+  assert.equal(x.authority.outbound.filter(m=>m.type==='error'&&
+   m.code==='ACTION_TARGET_ACK_INVALID').length,3);
   assert.equal((await ask(replacement,{type:'command',action:'playCard'})).code,
    'RULES_ENGINE_NOT_IMPLEMENTED');
-  // The old pending Promise never needs to resolve after session revocation.
-  void later;
+  // The old pending Promise cannot produce a late reply after takeover.
+  assert.equal(await later,null);
  }finally{await x.broker.close()}
 });
 test('native printed attack target preflight defaults to denied and cannot enable gameplay',async()=>{
