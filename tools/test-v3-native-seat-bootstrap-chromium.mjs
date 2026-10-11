@@ -608,6 +608,9 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
    assert.equal((await ask(currentBySeat[0],'action_ownership_probe',{
     cardId:seatViews[0].ownHand[0].cardId
    })).code,'WORKER_CHANNEL_OFFLINE');
+   assert.equal((await ask(currentBySeat[0],'action_target_probe',{
+    cardId:seatViews[0].ownHand[0].cardId,targetSeat:1
+   })).code,'WORKER_CHANNEL_OFFLINE');
    assert.deepEqual(broker.roomView(roomId).roster.map(p=>p.seat),
     Array.from({length:count},(_,i)=>i));
 
