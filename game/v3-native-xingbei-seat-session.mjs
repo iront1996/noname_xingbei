@@ -480,7 +480,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    if(!Array.isArray(lib.onphase))throw err('V3_NATIVE_PHASE_HOOKS_MISSING');
    const state={phase,pauseTriggered:false,failure:null,finished:false,
     entryReleased:false,actionGate:false,actionEvent:null,hold:null,
-    actionEntryReleased:false,selectionGate:false,selectionEvent:null};
+    actionEntryReleased:false,selectionGate:false,selectionEvent:null,
+    nextActionGate:null};
    // This hook runs in original content.js phaseLoop step 1, immediately
    // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
    // hook and must never be installed in production V3.
@@ -561,16 +562,34 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     return false; // Never execute arbitrary JS in a real human browser.
    };
    Player.prototype.xingDong=function(...args){
-    if(this!==first||state.actionGate||args.length!==0)
+    if(args.length!==0||!players.includes(this)||
+       _status.event?.name!=='phase'||_status.event.player!==this)
      throw err('V3_NATIVE_ACTION_UNEXPECTED_OWNER');
-    const event=originalXingDong.call(this);
-    if(!(event instanceof lib.element.GameEvent)||
-       event.name!=='xingDong'||event.player!==first)
-     throw err('V3_NATIVE_ACTION_EVENT_INVALID');
-    state.actionEvent=event;
-    state.actionGate=true;
-    game.pause(); // Before the original xingDong step 0 can run.
-    return event;
+    if(this===first&&!state.actionGate){
+     const event=originalXingDong.call(this);
+     if(!(event instanceof lib.element.GameEvent)||
+        event.name!=='xingDong'||event.player!==first)
+      throw err('V3_NATIVE_ACTION_EVENT_INVALID');
+     state.actionEvent=event;state.actionGate=true;
+     game.pause(); // Before original first xingDong step 0.
+     return event;
+    }
+    // Strict next-seat experimental gate after a verified native no-card
+    // pass. This proves authentic phase-loop turn advancement but does NOT
+    // authorize the second player's actions/skills or let the event run.
+    if(this===first.nextSeat&&state.actionEntryReleased&&
+       state.originalUseWaitReached===true&&
+       adapter.inspect().originalUsePassApplied===1&&
+       state.nextActionGate===null){
+     const event=originalXingDong.call(this);
+     if(!(event instanceof lib.element.GameEvent)||
+        event.name!=='xingDong'||event.player!==this)
+      throw err('V3_NATIVE_NEXT_ACTION_EVENT_INVALID');
+     state.nextActionGate={player:this,event};
+     game.pause(); // Before second actor xingDong step 0.
+     return event;
+    }
+    throw err('V3_NATIVE_ACTION_UNEXPECTED_OWNER');
    };
    lib.onphase.splice(hookIndex,1);
    state.entryReleased=true;
@@ -988,6 +1007,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     firstPlayerId:first?.playerid??null,
     phaseNumber:game.phaseNumber,
     currentPhasePlayerId:_status.currentPhase?.playerid??null,
+    nextActionGateReached:state.nextActionGate!==null,
+    nextActionPlayerId:state.nextActionGate?.player?.playerid??null,
+    nextActionEventNative:state.nextActionGate?.event instanceof lib.element.GameEvent,
     paused:_status.paused===true,loopComplete:state.finished,
     actualActionStepExecuted:false,
     replaySafe:false // Mid-turn event state remains non-persisted.
