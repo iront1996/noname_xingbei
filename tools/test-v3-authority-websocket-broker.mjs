@@ -273,6 +273,25 @@ test('native action ownership preflight is disabled by default and can never bec
    cardId:'v3card_000001'})).code,'RULES_ENGINE_NOT_IMPLEMENTED');
  }finally{await x.broker.close()}
 });
+test('native printed attack target preflight defaults to denied and cannot enable gameplay',async()=>{
+ const x=await setup();
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  assert.equal((await ask(ws[0],{type:'action_target_probe',
+   cardId:'v3card_000001',targetSeat:1})).code,'ACTION_PROBE_DISABLED');
+  assert.equal((await ask(ws[1],{type:'action_target_probe',
+   cardId:'v3card_000001',targetSeat:0})).code,'ACTION_PROBE_DISABLED');
+  x.authority.clientSend({type:'authority_action_target_result',
+   traceId:'f'.repeat(32),roomId:'TEST',seat:0,
+   playerId:sessions[0].playerId,targetSeat:1,
+   supportedPrintedAttack:true,printedTargetEligible:true});
+  assert.equal((await waitFor(x.authority,m=>
+   m.type==='error'&&m.code==='ACTION_PROBE_DISABLED')).code,'ACTION_PROBE_DISABLED');
+  assert.equal((await ask(ws[0],{type:'command',action:'playCard',
+   targetSeat:1})).code,'RULES_ENGINE_NOT_IMPLEMENTED');
+ }finally{await x.broker.close()}
+});
 test('native action ownership probe cannot be enabled without isolated CI flag',async()=>{
  if(process.env.V3_ALLOW_SEAT_EXPERIMENT==='1')return;
  await assert.rejects(
