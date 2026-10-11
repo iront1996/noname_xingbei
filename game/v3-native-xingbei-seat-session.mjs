@@ -179,6 +179,38 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     throw err('V3_OPENING_CHECKPOINT_INCONSISTENT');
    return snapshot;
   },
+  stageOpeningTurnBoundary({firstSeat=0}={}){
+   // Creates the ORIGINAL native GameEvent objects; does not start game.loop().
+   // A later V3-only rules dispatcher must explicitly resolve them, validating
+   // all turn skills and player actions, before a playable room is possible.
+   if(!startingCardsDealt||drafts.size!==0||chosen.size!==players.length||
+      draftFailure||!Number.isInteger(firstSeat)||firstSeat<0||firstSeat>=players.length||
+      game.__v3OpeningTurnBoundary||adapter.inspect().pending!==0)
+    throw err('V3_NATIVE_TURN_BOUNDARY_NOT_READY');
+   const first=players[firstSeat];
+   const root=new lib.element.GameEvent('v3OpeningBoundary',false);
+   _status.eventManager.rootEvent=root;
+   const draw=game.gameDraw(first,4);
+   game.phaseLoop(first);
+   const siblings=Array.isArray(root.next)?root.next:[];
+   const phase=siblings.find(x=>x.name==='phaseLoop');
+   if(!(draw instanceof lib.element.GameEvent)||draw.name!=='gameDraw'||
+      !(phase instanceof lib.element.GameEvent)||phase.player!==first||
+      draw.player!==first||draw.num!==4||phase._isStandardLoop!==true||
+      !siblings.includes(draw))
+    throw err('V3_NATIVE_TURN_EVENT_SHAPE_INVALID');
+   const result=Object.freeze({
+    realNativeEvents:true,firstSeat,playerId:first.playerid,
+    drawEvent:draw.name,phaseEvent:phase.name,drawCount:draw.num,
+    standardPhaseLoop:phase._isStandardLoop===true,
+    eventsQueued:siblings.map(x=>x.name),
+    eventLoopStarted:false,turnResolved:false
+   });
+   Object.defineProperty(game,'__v3OpeningTurnBoundary',{
+    enumerable:false,configurable:false,value:result
+   });
+   return result;
+  },
   // Strictly trusted Chromium-side accessor only; broker must authenticate
   // before ever projecting this to a human WebSocket.
   privateSeatView({seat}={}){
