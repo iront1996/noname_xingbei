@@ -474,3 +474,26 @@ GitHub Actions `V3 Chromium Authority Worker PoC` 曾在提交 `1420defd0a5a478e
 原版 `chooseToUse` 有 `event.filterCard`、`lib.filter.cardEnabled/cardUsable`、可變技能 `game.checkMod`、`targetInRange`、`ui.selected`、角色技能、遠端原生 `GameEvent.send()`、攻擊應戰與 `Player.useResult()`。上述「五種印刷攻擊牌的目標預檢」**不能替代**任何一個，亦不代表完成合法牌行動、傷害／士氣／星杯與勝負結算。下一個工程先在隔離 Chromium 建立完整原生選牌／目標選擇事件的可驗證 waiting contract，再接到受認證 seat、原版執行與私有結果。直到完整操作/技能/終局/持久化續行驗證通過，不切換線上 V3、不更新 VPS、不安排真人反覆測試。
 
 V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 沒有修改或重啟。
+
+
+## 2026-10-12：原生 `chooseToUse` 安全暫停上的伺服器認證選牌預覽（非出牌）
+
+前一階段只建立原生持牌／攻擊卡面目標預檢。本階段在 **2v2／3v3／4v4 真 Chromium** 的原版 `xingDong → gongJiOrFaShu` 已建立、`chooseToUse` 還未執行的安全閘門上，建立可斷線取回的**選牌意圖預覽視窗**。
+
+- `game/v3-native-xingbei-seat-session.mjs` 透過 `beginNativeUseCardPreview` 驗證 `selectionEvent instanceof GameEvent`、行動玩家固定 Player ID、確實仍暫停、事件原本的 `filterCard`、`filterTarget`、`selectCard=[1,1]`、`selectTarget` 和 `position='hs'` 契約，再由原生 `Player.getCards('h')` 產出唯一實體 `v3card_*` 的四張手牌 ID。它只提出待驗證**候選牌意圖**，並**不呼叫**原版 `event.send()` 或 `chooseToUse` 的 step 0。
+- `game/v3-chromium-authority-worker.mjs` 僅透過驗證過的 worker 私有通道送出 `source:'preview'`、`kind:'card'` 選項；`game/v3-authority-websocket-broker.mjs` 只在 `enableNativeOwnershipProbes`、`enableChoiceWindowExperiments` 和 `V3_ALLOW_SEAT_EXPERIMENT=1` 同時成立的離線隔離實驗允許這種視窗，並僅向指定已認證座位送出本人手牌選項／128-bit 隨機票券。
+- 玩家 `choice_submit` 必須持有同房間、同座位、同 Player ID、同票券及提供選項之一。伺服器的原生預覽回呼核對**同一個暫停的原生 GameEvent**及牌的當下實體所有權，只在 Chromium 記下所選 `cardId`；原版 `Player.unwait`、`event.result`、`game.resume`、`Player.useResult`、卡牌移動與傷害**均不觸發**。
+- 預覽結果仍是 `CHOICE_DELIVERED_NOT_APPLIED`（狀態 `delivered`），不能使用 `authority_choice_native_applied` 假裝原版 GameEvent 已套用。改選別的卡牌、持舊票券跨座位作答、其他玩家讀取私人選項均遭拒絕。
+- 開房者在預覽視窗開啟期間斷線，原主持 Chromium 與 pending ticket 仍存活；重新認證同座位後，broker 重發**原本**的 ticket 和私人選項，不要求客戶端保存任何主持狀態。驗證後手牌、action counter 與暫停的原生事件都未改變。
+- 原有「不同 Chromium 程序、精簡合成橋接器重建加密開局資料」不應被新增預覽介面阻擋。因此預覽 hooks 在真實 authority bridge 存在時**可選安裝**；合成冷重建橋接器缺少預覽 hooks 仍能驗證原角色與開局手牌。只有半套預覽 API 才拒絕。
+- 選擇視窗目前存放在 broker 記憶體，現有 TTL 為 120 秒；**尚無逾時後恢復未完成預覽、重啟 broker 後保留 ticket、持久化原生 GameEvent／RNG／回合中途續行**。不能把短時間內的斷線重連案例解釋成永久續局。
+
+### 隔離自動化驗收
+
+- [真 Chromium CI 38176342050](https://github.com/iront1996/noname_xingbei/actions/runs/38176342050)：**SUCCESS，21/21 passed，0 failed，0 skipped**。含原生 4/6/8 人座位／角色選擇／開局冷重建、原生事件停在首張行動牌、同一手牌視窗經玩家斷線重連與票券交付後仍不出牌。
+- V3 離線回歸可獨立驗證 `preview` 來源不得偽裝為 `native` 結算、跨座位／錯誤票券／更換選項拒絕、預設未啟用 preview 功能；參見 [V3 Playtest Offline Safety Tests 38176342116](https://github.com/iront1996/noname_xingbei/actions/runs/38176342116) **SUCCESS**。
+- 為避免 Chromium 整合異常永遠等待，V3 專用工作流程現在設有 240 秒的執行界線，未修改任何 V1/V2、正式 V3 或 VPS 啟動方式。
+
+### 下一項阻塞
+
+要變成**真正玩家出牌**，仍須在完整 `chooseToUse` 的安全沙箱內重現 `lib.filter.cardEnabled/cardUsable`、`event.filterCard`、技能／距離／目標選擇、原版 `Player.useResult()`、敵方應戰、傷害、士氣與終局，並有實際原生多回合 4／6／8 人驗證與回合中途持久化。此階段既未執行 step 0，也不能聲稱技能已核准。V1/V2、`master`、`noname/**`、`mode/xingBei.js`、線上 V3、VPS、Cloudflare／8080／8081 未觸碰。
