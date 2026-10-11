@@ -442,6 +442,22 @@ for(const [mode,count] of [['2v2',4],['3v3',6],['4v4',8]]){
     assert.equal(allowed.ok,true);
     assert.equal(allowed.fullRulesValidated,false);
     assert.equal(allowed.actionExecuted,false);
+    for(const extra of [
+     {seat:1},{playerId:sessions[1].playerId},
+     {traceId:'f'.repeat(32)},{script:'game.reload()'},
+     {target:1},{action:'playCard'}
+    ]){
+     const rejected=await ask(currentBySeat[0],'action_ownership_probe',{
+      cardId:card,...extra
+     });
+     assert.equal(rejected.ok,false);
+     assert.equal(rejected.code,'ACTION_PROBE_UNTRUSTED_FIELDS');
+    }
+    const replayInjection=await ask(currentBySeat[0],
+     'authority_action_ownership_result',{
+      traceId:'f'.repeat(32),owned:true,seat:0,playerId:sessions[0].playerId
+     });
+    assert.equal(replayInjection.code,'UNKNOWN_MESSAGE_TYPE');
     for(const [seat,id] of [
      [0,foreignCard],[1,foreignCard],[1,card],[0,'v3card_ffffff'],
      [0,'<script>']
