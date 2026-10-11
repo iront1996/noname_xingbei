@@ -327,6 +327,45 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    });
    return result;
   },
+  probeNativeFirstPhaseSetup(){
+   // Execute original Player.setSeatNum and XingBei $initZhanJi, which are
+   // called in phaseLoop step 0. Does not run phaseLoop.start()/skills.
+   const turn=game.__v3OpeningTurnBoundary;
+   if(!turn||game.__v3FirstPhaseSetup||adapter.inspect().pending!==0||
+      !nativeOpeningDrawExecuted||!startingCardsDealt||draftFailure)
+    throw err('V3_FIRST_PHASE_SETUP_NOT_READY');
+   const start=players[turn.firstSeat];
+   if(!start||players.some(p=>p.getSeatNum()!==0))
+    throw err('V3_FIRST_PHASE_SEATS_NOT_CLEAN');
+   for(let i=0,p=start;i<players.length;i++,p=p.next)
+    p.setSeatNum(i+1);
+   if(new Set(players.map(p=>p.getSeatNum())).size!==players.length)
+    throw err('V3_FIRST_PHASE_SEAT_DUPLICATE');
+   // The native game UI normally owns ui.window. Here it is a hidden,
+   // independent Chromium-only DOM element with no connection to a human host.
+   if(!ui.window){
+    ui.window=document.createElement('div');
+    ui.window.style.display='none';
+    document.body.appendChild(ui.window);
+   }
+   game.$initZhanJi();
+   if(!ui.shiQiInfo||game.hongShiQi!==game.shiQiMax||
+      game.lanShiQi!==game.shiQiMax||game.me?.side!==undefined)
+    throw err('V3_FIRST_PHASE_MORALE_BOOT_FAILED');
+   const result=Object.freeze({
+    realNativeSeatNumbers:true,
+    realNativeMorale:true,
+    seatNumbers:players.map(p=>p.getSeatNum()),
+    redMorale:game.hongShiQi,blueMorale:game.lanShiQi,
+    maxMorale:game.shiQiMax,
+    nativeScoreboard:true,firstSeat:turn.firstSeat,
+    eventLoopStarted:false,skillsStarted:false
+   });
+   Object.defineProperty(game,'__v3FirstPhaseSetup',{
+    configurable:false,enumerable:false,value:result
+   });
+   return result;
+  },
   async probeNativeGameDrawExecution(){
    // Destructive OFFLINE ONLY. The 4 native opening cards were already staged
    // for snapshot verification. This separately exercises the ORIGINAL
