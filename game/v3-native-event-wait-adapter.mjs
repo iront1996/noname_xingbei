@@ -34,7 +34,8 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
  if(Object.values(original).some(f=>typeof f!=='function'))throw failure('V3_NATIVE_METHOD_MISSING');
  const registered=new Map(),pending=new Map();
  let allowConsume=null,alive=true,consumed=0,interrupted=0;
- let armedOriginalUseWait=null,originalUseWaitReached=0;
+ let armedOriginalUseWait=null,originalUseWaitReached=0,originalUsePassApplied=0;
+ let waitingOriginalUse=null;
  const binding=seat=>bridge.getSeatBindings().find(b=>b.seat===seat);
  const requireActive=()=>{if(!alive)throw failure('V3_NATIVE_ADAPTER_STOPPED')};
  const boundPlayer=p=>goodId(p?.playerid)&&registered.get(p.playerid)?.player===p;
@@ -96,17 +97,20 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
    // Hold the real engine BEFORE step 1/2 can useResult or consume cards.
    player.wait();
    game.pause();
+   const gate=game.__v3PausedPhaseRuntime;
+   gate.originalUseWaitReached=true;
+   waitingOriginalUse={seat:reg.seat,playerId:player.playerid,event:this};
    try{
     const native=game.__v3NativeSeatSession;
     const started=native?.beginNativeUseCardPreview({
-     seat:reg.seat,playerId:player.playerid
+     seat:reg.seat,playerId:player.playerid,allowPass:true
     });
     if(started?.started!==true)
      throw failure('V3_NATIVE_ORIGINAL_USE_PREVIEW_UNAVAILABLE');
-    game.__v3PausedPhaseRuntime.originalUseWaitReached=true;
     originalUseWaitReached++;
     return this;
    }catch(e){
+    waitingOriginalUse=null;gate.originalUseWaitReached=false;
     if(lib.node.torespond?.[player.playerid]==='_noname_waiting')
      delete lib.node.torespond[player.playerid];
     // Never resume this event on any malformed or unsupported condition.
@@ -199,6 +203,25 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
   throw failure('V3_NATIVE_CHOICE_HOOKS_UNAVAILABLE');
  }
  const adapter=Object.freeze({
+  consumeOriginalUsePass({seat,playerId:pid,event}={}){
+   requireActive();
+   const p=registered.get(pid),wait=waitingOriginalUse;
+   if(!wait||!p||p.seat!==seat||wait.seat!==seat||
+      wait.playerId!==pid||wait.event!==event||
+      p.player!==event?.player||!_status.paused||
+      game.__v3PausedPhaseRuntime?.selectionEvent!==event||
+      game.__v3PausedPhaseRuntime?.originalUseWaitReached!==true||
+      lib.node?.torespond?.[pid]!=='_noname_waiting'||
+      binding(seat)?.playerId!==pid||
+      originalUsePassApplied!==0)
+    throw failure('V3_NATIVE_ORIGINAL_PASS_DENIED');
+   waitingOriginalUse=null;originalUsePassApplied++;
+   allowConsume=pid;
+   try{p.player.unwait({bool:false})}
+   finally{allowConsume=null}
+   return Object.freeze({nativePassApplied:true,cardConsumed:false,
+    actionExecuted:false});
+  },
   armOriginalUseWait({seat,playerId:pid,event}={}){
    requireActive();
    const p=registered.get(pid),b=binding(seat);
@@ -233,7 +256,8 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
    return Object.freeze({active:alive,registered:registered.size,pending:pending.size,
     consumed,interrupted,paused:_status.paused===true,
     armedOriginalUseWait:armedOriginalUseWait!==null,
-    originalUseWaitReached,
+    originalUseWaitReached,originalUsePassApplied,
+    waitingOriginalUse:waitingOriginalUse!==null,
     connectedPlayers:Array.from(registered.values()).filter(v=>!v.client.closed).length,
     waitingCount:lib.node?.torespond?Object.keys(lib.node.torespond).length:0});
   }
