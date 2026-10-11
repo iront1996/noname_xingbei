@@ -38,12 +38,14 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   let accept,reject;
   const accepted=new Promise((resolve,rej)=>{accept=resolve;reject=rej});
   accepted.catch(()=>{});
-  const timer=setTimeout(()=>reject(Error('WORKER_HANDSHAKE_TIMEOUT')),5000);
+  let timer=null;
   pendingWorker.set(ctx.roomId,{secret,accept,reject});
   let worker;
   try{
    worker=await launchWorker({...ctx,channelUrl:'ws://127.0.0.1:'+localPort(),channelSecret:secret});
    if(!worker||typeof worker.connectRoomChannel!=='function')throw Error('WORKER_BRIDGE_REQUIRED');
+   // Begin handshake timeout AFTER cold Chromium startup, not before it.
+   timer=setTimeout(()=>reject(Error('WORKER_HANDSHAKE_TIMEOUT')),10000);
    await worker.connectRoomChannel({roomId:ctx.roomId,url:'ws://127.0.0.1:'+localPort(),secret});
    await accepted;
    return worker;
