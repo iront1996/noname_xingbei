@@ -16,6 +16,7 @@ on:
       - 'tools/test-v3-authority-websocket-broker.mjs'
       - 'tools/test-v3-real-websocket-chromium-broker.mjs'
       - 'tools/test-v3-real-choice-window-chromium.mjs'
+      - 'tools/test-v3-chromium-sandbox-policy.mjs'
       - 'tools/test-v3-authority-choice-windows.mjs'
       - 'tools/v3-native-module-test-server.mjs'
       - 'tools/test-v3-native-module-chromium.mjs'
@@ -50,6 +51,7 @@ jobs:
           node --check tools/test-v3-chromium-coordinator-integration.mjs
           node --check tools/test-v3-real-websocket-chromium-broker.mjs
           node --check tools/test-v3-real-choice-window-chromium.mjs
+          node --check tools/test-v3-chromium-sandbox-policy.mjs
           node --check tools/v3-native-module-test-server.mjs
           node --check tools/test-v3-native-module-chromium.mjs
           node --check tools/v3-real-native-result-probe.mjs
@@ -70,4 +72,4 @@ jobs:
             echo 'FAIL: runner lacks installed Chromium/Chrome; not a skipped PASS.' >&2
             exit 1
           fi
-          V3_CHROMIUM="$browser" node --test tools/test-v3-chromium-authority-worker.mjs tools/test-v3-chromium-coordinator-integration.mjs tools/test-v3-real-websocket-chromium-broker.mjs tools/test-v3-native-module-chromium.mjs tools/test-v3-real-choice-window-chromium.mjs
+          V3_CHROMIUM="$browser" node --test tools/test-v3-chromium-authority-worker.mjs tools/test-v3-chromium-coordinator-integration.mjs tools/test-v3-real-websocket-chromium-broker.mjs tools/test-v3-native-module-chromium.mjs tools/test-v3-real-choice-window-chromium.mjs tools/test-v3-chromium-sandbox-policy.mjs
