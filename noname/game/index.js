@@ -1695,6 +1695,10 @@ export class Game extends GameCompatible {
 	}
 	createServer() {
 		// A recreated host must not retain the previous game's timer or sequence.
+		if (lib.node.xingbeiV2HallWatchTimer != null) {
+			clearInterval(lib.node.xingbeiV2HallWatchTimer);
+			lib.node.xingbeiV2HallWatchTimer = null;
+		}
 		lib.node.xingbeiProgressTracker?.dispose();
 		lib.node.xingbeiV2ProgressAudit?.dispose();
 		lib.node.xingbeiV2ProgressAudit = new V2ProgressAudit({
@@ -1747,6 +1751,26 @@ export class Game extends GameCompatible {
 		lib.cardOL = {};
 		lib.vcardOL = {};
 		lib.wsOL = {};
+		// V2-5: let the HALL broker observe the host even when the host's
+		// JavaScript event loop stops running. Never send hidden game state.
+		// Reports are opt-in and ignored by legacy HALLs without the adapter.
+		if (game.onlineroom && lib.configOL?.mode === "xingBei") {
+			lib.node.xingbeiV2HallWatchTimer = setInterval(() => {
+				const socket = game.ws;
+				if (!game.onlineroom || !socket || socket.readyState !== 1) return;
+				const phase = Number.isSafeInteger(game.phaseNumber) &&
+					game.phaseNumber >= 0 ? game.phaseNumber : 0;
+				const sequence = lib.node.xingbeiProgressTracker?.sequence ?? 0;
+				const values = Object.values(lib.node.torespond || {});
+				const pending = values.filter(value => value === "_noname_waiting" ||
+					(typeof value === "function" && value._noname_waiting === true)).length;
+				try {
+					game.send("server", "xbHostProgressV2", 1, sequence, phase,
+						Math.min(pending, 64), _status.paused === true,
+						phase > 0 && _status.over !== true);
+				} catch (_) { /* Never interrupt gameplay due to telemetry. */ }
+			}, 15000);
+		}
 		ui.create.roomInfo();
 		ui.create.chat();
 		if (game.onlineroom) {
