@@ -94,3 +94,75 @@ test("public config ID cannot rebind a different broker socket",()=>{
  assert.equal(f.seat.isAuto,true);
  assert.equal(wrong._xingbeiReinitPending,undefined);
 });
+
+
+test("pending choice survives authenticated reinit without lending its ticket to an old socket",async()=>{
+ const {ChoiceLeaseRegistry}=await import("../noname/util/xingbei-choice-lease.js");
+ const f=setup();
+ const leases=new ChoiceLeaseRegistry({now:()=>1000});
+ f.lib.node.xingbeiChoiceLeases=leases;
+ const issued=leases.open("seat_01",{socket:f.old,timeoutMs:40000});
+ const originalDeadline=issued.deadlineAt;
+ f.seat._xingbeiChoiceRequired=true; // strict C2 mode stays mandatory after takeover
+ let settled=0;
+ f.seat.unwait=(answer)=>{
+  settled++;
+  leases.settle("seat_01");
+ };
+ const first=s.indexOf("\t\t\txbChoiceHello(protocolVersion) {");
+ const last=s.indexOf("\t\t\tstartGame() {",first);
+ assert.ok(first>=0&&last>first);
+ const c2=new Function("lib","return ({"+s.slice(first,last)+"})")(f.lib);
+ // Old transport is bound to the pending choice before reinit.
+ f.reconnect();
+ assert.equal(f.current.inited,false);
+ assert.equal(f.seat.ws,f.current);
+ c2.xbChoiceHello.call(f.current,1);
+ assert.equal(f.sent.filter(x=>x[0]==="xbChoiceLease").length,0,
+  "no choice may be offered before host reinit confirmation");
+ c2.result.call(f.old,{bool:true},issued.wireId);
+ c2.result.call(f.current,{bool:true},issued.wireId);
+ assert.equal(settled,0);
+ f.host.reinited.call(f.current);
+ assert.equal(f.current.inited,true);
+ c2.xbChoiceHello.call(f.current,1);
+ const leasePackets=f.sent.filter(x=>x[0]==="xbChoiceLease");
+ assert.deepEqual(leasePackets,[["xbChoiceLease",issued.wireId]]);
+ assert.equal(issued.deadlineAt,originalDeadline,
+  "reconnecting must not silently extend an existing choice timer");
+ assert.equal(f.seat._xingbeiChoiceRequired,true);
+ assert.equal(f.current._xingbeiChoiceV2,true);
+ // The actual guest ticket handler receives the current original wire ID.
+ const cStart=s.indexOf("\t\t\txbChoiceLease(wireId) {");
+ const cEnd=s.indexOf("\t\t\tlog: function",cStart);
+ assert.ok(cStart>=0&&cEnd>cStart);
+ const guest={_xingbeiChoiceTicket:null};
+ const clientHandlers=new Function("game","return ({"+s.slice(cStart,cEnd)+"})")(guest);
+ clientHandlers.xbChoiceLease(issued.wireId);
+ assert.equal(guest._xingbeiChoiceTicket,issued.wireId);
+ // Missing, forged and replayed/obsolete results remain rejected.
+ c2.result.call(f.current,{bool:true},null);
+ c2.result.call(f.current,{bool:true},"c2:dead");
+ c2.result.call(f.old,{bool:true},issued.wireId);
+ assert.equal(settled,0);
+ c2.result.call(f.current,{bool:true},guest._xingbeiChoiceTicket);
+ assert.equal(settled,1);
+ assert.equal(leases.current("seat_01"),null);
+ c2.result.call(f.current,{bool:true},guest._xingbeiChoiceTicket);
+ assert.equal(settled,1,"a duplicate answer cannot complete a settled lease");
+ clientHandlers.xbChoiceSettled(issued.wireId);
+ assert.equal(guest._xingbeiChoiceTicket,null);
+});
+test("newer choice lease cannot be cleared by old client's settled message",()=>{
+ const start=s.indexOf("\t\t\txbChoiceLease(wireId) {");
+ const end=s.indexOf("\t\t\tlog: function",start);
+ assert.ok(start>=0&&end>start);
+ const guest={_xingbeiChoiceTicket:null};
+ const handlers=new Function("game","return ({"+s.slice(start,end)+"})")(guest);
+ handlers.xbChoiceLease("c2:1");
+ handlers.xbChoiceLease("c2:2");
+ handlers.xbChoiceSettled("c2:1");
+ assert.equal(guest._xingbeiChoiceTicket,"c2:2");
+ handlers.xbChoiceSettled("c2:2");
+ assert.equal(guest._xingbeiChoiceTicket,null);
+});
