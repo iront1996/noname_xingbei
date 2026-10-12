@@ -615,3 +615,9 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 - V3-only broker 現在以單一房間單一監測計時器檢查已認證的獨立 Chromium 主持程序（預設每 3 秒），不需要真人繼續發送訊息；主持程序明確失效時主動關閉私有 WS，沿用既有 `cancelRoom`、清除私人投影與向在線真人廣播 `choice_interrupted` 的安全關閉路徑。
 - 監測避免同一房間重疊健康檢查；啟動握手尚未掛入 coordinator 時的 `WORKER_NOT_STARTED` 不當作死亡。私有通道關閉及 broker 結束時都釋放計時器，且任何異步查詢結果必須再次核對目前 room/WS 與 broker 未關閉。
 - 假 Chromium 測試讓程序健康失效、保持 WS OPEN 且玩家全程不發送任何請求，驗證 watchdog 自動通知 4 個在線座位、清除舊票券且不冒稱原生 GameEvent 可恢復。此 watchdog 不是 Chromium 崩潰中途冷恢復功能；仍只限 V3 分支，未碰 V1/V2/VPS。
+
+
+## 2026-10-12：失效主持通道立即中止，不等待關閉握手
+
+- 健康監控已判斷 Chromium 程序失效時，優先對 Node `ws` 伺服器側使用 `terminate()`，而非等待已死亡／卡住的瀏覽器回應正常 Close 帧。這會立即觸發現有私有通道失聯清理、註銷票券、廣播 `choice_interrupted`；只有傳輸實作不支援 `terminate` 時退回 `close`。
+- 回歸測試蓄意使假私有 WebSocket 的正常 `close` 不做任何事，但允許 `terminate` 確實中止，確認所有四名在線玩家仍能獲得中斷通知。仍不代表 GameEvent 可跨 Chromium 重啟恢復。

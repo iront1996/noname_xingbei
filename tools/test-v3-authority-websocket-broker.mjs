@@ -510,8 +510,12 @@ test('watchdog interrupts every online seat when Chromium dies before private so
   const opened=await waitFor(x.authority,m=>m.type==='authority_choice_open_result');
   assert.equal(opened.ok,true);
   await waitFor(ws[0],m=>m.type==='choice_window'&&m.window.ticket===opened.view.ticket);
+  // A dead/frozen browser will not acknowledge a graceful close request.
+  // The watchdog must TERMINATE, not wait for that WebSocket handshake.
+  const originalClose=x.authority.close.bind(x.authority);
+  x.authority.close=()=>{}; // Simulate an unacknowledged close frame.
+  x.authority.terminate=()=>originalClose();
   // No player request after this point triggers failure recognition.
-  // The watchdog detects OS death while the private channel is still open.
   x.crashWorker();
   for(let seat=0;seat<4;seat++){
    const event=await waitFor(ws[seat],m=>m.type==='choice_interrupted');

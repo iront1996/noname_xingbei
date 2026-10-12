@@ -130,7 +130,13 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     // The authenticated worker may connect before coordinator stores its
     // reference during startup; that brief state is not a crash.
     if(health.code==='WORKER_UNAVAILABLE'){
-     try{ws.close(1011,'chromium_unavailable')}catch{try{ws.terminate?.()}catch{}}
+     // A dead/frozen browser may never acknowledge a close handshake.
+     // Abort its private channel immediately to retire all stale tickets
+     // and broadcast the existing fail-closed choice interruption.
+     try{
+      if(typeof ws.terminate==='function')ws.terminate();
+      else ws.close(1011,'chromium_unavailable');
+     }catch{try{ws.close(1011)}catch{}}
     }
    }finally{pending=false}
   },workerHealthIntervalMs);
