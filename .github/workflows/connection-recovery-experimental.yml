@@ -23,6 +23,8 @@ jobs:
         run: node --test tests/connection-recovery.mjs tests/connection-recovery-b3.mjs tests/connection-recovery-c1.mjs tests/connection-recovery-c2.mjs tests/connection-recovery-c3.mjs tests/connection-recovery-c3b.mjs tests/connection-recovery-c3c.mjs
       - name: V2 patched HALL WebSocket takeover integration
         run: node --test tests/v2-b2-hall-integration.mjs
+      - name: V2 independent HALL liveness and game-progress observer
+        run: node --test tests/v2-hall-progress-watch.mjs
       - name: V2 advisory game-progress and stalled-choice diagnostics
         run: node --test tests/v2-progress-audit.mjs
       - name: V2 host and guest reinit readiness handshake

@@ -56,3 +56,20 @@ This branch was forked from commit `9b4c2a29582e412733014f60e6e70f1f4ec03397`, b
 
 **Boundary:** A blocked host JavaScript thread cannot run this host-local diagnostic. Client-side acknowledgements cannot prove that GameEvent processing continued. Future V2 work should add an independent observer and safe concentrated integration acceptance before any VPS deployment.
 
+
+## V2-5: independent HALL liveness / game-progress observation
+
+- The **uninstalled** B2 backend patch now also requires `xingbei-hall-progress-watch.js` deployed alongside the seat registry if/when B2 is authorized for deployment. The adapter attaches a separate Node.js 15-second interval that continues while the human Chromium host is frozen, provided HALL itself continues running.
+- The browser human host reports a versioned `server.xbHostProgressV2` telemetry packet approximately every 15s when it is hosting `xingBei` through HALL; it contains only an outbound-message sequence, turn phase, count of unresolved choices, host pause boolean, and active-game boolean. No secret credentials, hidden game state, or game events are transmitted.
+- HALL accepts telemetry **only from the current owner socket of the same room**, with fail-closed type and bound checks. The owner connection identity also fences room removal. Legacy HALLs ignore this optional server verb.
+- **`host_socket_closed`** means the broker observed that the actual owner transport closed; the legacy room will be closed and is not recoverable using guest-only B2.
+- **`host_app_report_missing_socket_open`** means the owner WebSocket was still reported open by the broker but valid host telemetry disappeared for 70 seconds. It is **not proof** of a frozen browser; timer throttling, page suspension, packet loss and browser overload can have the same symptom.
+- **`host_progress_quiet_unverified`** means the host reports kept arriving but its phase and outbound message sequence both stayed unchanged for 120 seconds, with no pending human-choice, no deliberate pause and active gameplay. This is diagnostic only.
+- Inactive/finished games clear tracking; old/unupgraded hosts are not automatically accused of being stalled because the observer only begins after an explicit valid report. Repeated identical alerts are deduplicated and a new observation window begins after silence ends.
+- Backend observer logs are separate from the existing **monitor v2.3.0** and do not change its hook, identity, data retention or startup. Alerts never close sockets, replace human choices, initiate AI, overwrite snapshots or send client messages.
+- `tests/v2-hall-progress-watch.mjs` runs a deterministic fake-clock observer and a generated B2 HALL backend with synthetic WebSockets. `tests/v2-b2-hall-integration.mjs` retains the original reclaim behavior using the new optional dependency.
+
+### Remaining deployment and acceptance gates
+- CI patches a synthetic `game/server.js` using inserted A1/monitor markers, **not an exact dump of the currently deployed VPS HALL**. Full source compatibility and observer-hook preservation must be verified offline from the real redacted source before any deployment.
+- A fully blocked HALL Node event loop cannot run its own watchdog. The host-origin telemetry cannot independently prove that asynchronous engine events completed. This phase adds external liveness classification, not an authoritative game server.
+- Continue V2-first, then V1, then V3. All production service changes require explicit permission.

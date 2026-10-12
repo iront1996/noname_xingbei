@@ -1770,6 +1770,8 @@ export class Game extends GameCompatible {
 						phase > 0 && _status.over !== true);
 				} catch (_) { /* Never interrupt gameplay due to telemetry. */ }
 			}, 15000);
+			// Node-based fake hosts must not be kept alive by telemetry.
+			lib.node.xingbeiV2HallWatchTimer?.unref?.();
 		}
 		ui.create.roomInfo();
 		ui.create.chat();

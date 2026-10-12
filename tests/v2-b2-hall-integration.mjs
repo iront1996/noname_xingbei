@@ -70,6 +70,8 @@ function runFakeHall(code){
    if(spec==="ws")return {Server:FakeWSS};
    if(spec==="./xingbei-seat-registry.js")
     return realRequire("../tools/connection-recovery/seat-registry.js");
+   if(spec==="./xingbei-hall-progress-watch.js")
+    return realRequire("../tools/connection-recovery/xingbei-hall-progress-watch.js");
    throw Error("UNEXPECTED_DEPENDENCY:"+spec);
   },
   setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>2,clearInterval:()=>{},
