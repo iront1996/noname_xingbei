@@ -11235,6 +11235,15 @@ export class Library {
 				if (!player || player.ws !== this) return;
 				lib.node.xingbeiProgressTracker?.acknowledge(this.id, this, probeId, sequence, clientPhase);
 			},
+			xbStateCheckpointAck(id, phase, currentSeatId) {
+				// A checkpoint ACK requires the current validated host-side seat.
+				if (this.closed || this.inited !== true || lib.node.observing.includes(this)) return;
+				const player = lib.playerOL?.[this.id];
+				if (!player || player.ws !== this) return;
+				lib.node.xingbeiProgressTracker?.acknowledgeCheckpoint(
+					this.id, this, id, phase, currentSeatId
+				);
+			},
 			xbChoiceHello(protocolVersion) {
 				// Only a fully initialized current socket may opt into C2 validation.
 				if (protocolVersion !== 1 || lib.node.observing.includes(this) ||
