@@ -25,6 +25,7 @@ import { updateURLs } from "./update-urls.js";
 import { defaultHooks } from "./hooks/index.js";
 import { freezeButExtensible } from "../util/index.js";
 import security from "../util/security.js";
+import { saveSeatCredentials, loadSeatCredentials, clearSeatCredentials } from "../util/xingbei-seat-credentials.js";
 import { ErrorManager } from "../util/error.js";
 
 import { defaultSplashs } from "../init/onload/index.js";
@@ -7643,7 +7644,45 @@ export class Library {
 				var message;
 				try {
 					message = JSON.parse(messageevent.data);
-					if (!Array.isArray(message) || typeof lib.message.client[message[0]] !== "function") {
+					if (!Array.isArray(message)) throw "err";
+					// XINGBEI RECOVERY B3: keep the old game UI while reclaiming a seat.
+					if (message[0] === "xbSeatCredentials") {
+						const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
+						saveSeatCredentials(storage, _status.ip, message[1], message[2], message[3]);
+						return;
+					}
+					if (game._xingbeiRecovery?.active) {
+						const recover = game._xingbeiRecovery;
+						if (message[0] === "roomlist") {
+							const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
+							const seat = loadSeatCredentials(storage, _status.ip);
+							if (!seat || seat.roomId !== game.roomId || seat.seatId !== game.onlineID) {
+								recover.reject("missing_seat_credentials");
+								game._xingbeiSuppressRecovery = true;
+								return;
+							}
+							if (!game._xingbeiReclaimRequested) {
+								game._xingbeiReclaimRequested = true;
+								game.send("server", "key", [game.onlineKey, lib.version]);
+								game.send("server", "xbResumeSeat", seat.roomId, seat.seatId, seat.token);
+							}
+							return;
+						}
+						if (message[0] === "xbSeatReclaimed") {
+							if (message[1] === game.roomId && message[2] === game.onlineID) {
+								game._xingbeiSeatReclaimed = true;
+							} else recover.reject("seat_mismatch");
+							return;
+						}
+						if (message[0] === "xbSeatResumeRejected") {
+							recover.reject("seat_rejected");
+							game._xingbeiSuppressRecovery = true;
+							const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
+							clearSeatCredentials(storage, _status.ip);
+							return;
+						}
+					}
+					if (typeof lib.message.client[message[0]] !== "function") {
 						throw "err";
 					}
 					if (game.sandbox) security.enterSandbox(game.sandbox);
@@ -7666,7 +7705,7 @@ export class Library {
 				if (_status.connectCallback) {
 					_status.connectCallback(false);
 					delete _status.connectCallback;
-				} else {
+				} else if (!game._xingbeiRecovery?.active) {
 					alert("连接失败");
 				}
 			},
@@ -7675,6 +7714,23 @@ export class Library {
 				if (_status.connectCallback) {
 					_status.connectCallback(false);
 					delete _status.connectCallback;
+				}
+				// Existing game screen is preserved until the host reinit completes.
+				if (game._xingbeiRecovery?.active) {
+					game._xingbeiReclaimRequested = false;
+					game._xingbeiSeatReclaimed = false;
+					game.online = false;
+					game.ws = null;
+					game.sandbox = null;
+					game._xingbeiRecovery.connectionLost();
+					return;
+				}
+				if (!game._xingbeiSuppressRecovery && !_status.over &&
+					game.online && game.beginXingbeiRecovery?.()) {
+					game.online = false;
+					game.ws = null;
+					game.sandbox = null;
+					return;
 				}
 				if (game.online || game.onlineroom) {
 					if ((game.servermode || game.onlinehall) && _status.over) {
@@ -11435,6 +11491,7 @@ export class Library {
 				}
 			},
 			selfclose: function () {
+				game._xingbeiSuppressRecovery = true;
 				if (game.online || game.onlineroom) {
 					if ((game.servermode || game.onlinehall) && _status.over) {
 						// later
@@ -12140,6 +12197,11 @@ export class Library {
 					}
 					ui.updatehl();
 					ui.create.connecting(true);
+					// A re-opened WebSocket alone is not a recovered game.
+					if (game._xingbeiSeatReclaimed && game._xingbeiRecovery?.active) {
+						game._xingbeiRecovery.synchronized("reinit");
+						game._xingbeiSeatReclaimed = false;
+					}
 				});
 			},
 			exec: function (func) {
@@ -12163,6 +12225,8 @@ export class Library {
 				}
 			},
 			denied: function (reason) {
+				game._xingbeiSuppressRecovery = true;
+				if (game._xingbeiRecovery?.active) game._xingbeiRecovery.reject("denied_" + reason);
 				switch (reason) {
 					case "version":
 						alert("加入失败：版本不匹配，请将游戏更新至最新版");
