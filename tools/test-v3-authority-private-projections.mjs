@@ -61,3 +61,59 @@ test('bounded room storage and explicit worker-stop cleanup',()=>{
  assert.equal(m.size(),0);
  assert.equal(m.publish(state(0,'SECOND')).ok,true);
 });
+
+
+const roomView=(revision=1)=>({
+ roomId:'ROOM',revision,seats:Array.from({length:4},(_,seat)=>({
+  ...state(seat),revision,
+  publicOtherHandCounts:Array.from({length:4},(_,i)=>({seat:i,handCount:4}))
+ }))
+});
+test('whole room private revision is atomic and never reveals other seats',()=>{
+ const model=createV3AuthorityPrivateProjections();
+ const input=roomView();
+ const saved=model.publishRoom(input);
+ assert.deepEqual(saved,{ok:true,code:'PRIVATE_PROJECTION_ROOM_STORED',
+  revision:1,seatCount:4});
+ input.seats[0].ownHand[0].name='tamper';
+ assert.equal(model.size(),4);
+ assert.equal(model.get('ROOM',0,id(1)).ownHand[0].name,'anMie');
+ assert.equal(model.get('ROOM',0,id(2)),null);
+ assert.equal(Object.hasOwn(saved,'seats'),false);
+ assert.equal(JSON.stringify(saved).includes('v3card_'),false);
+ for(let seat=0;seat<4;seat++)
+  assert.equal(model.get('ROOM',seat,id(seat+1)).revision,1);
+});
+test('cross-seat physical card transfer commits simultaneously',()=>{
+ const model=createV3AuthorityPrivateProjections();
+ assert.equal(model.publishRoom(roomView()).ok,true);
+ const next=roomView(2);
+ const transfer=next.seats[0].ownHand.pop();
+ next.seats[1].ownHand.push(transfer);
+ for(const s of next.seats){
+  s.publicOtherHandCounts[0].handCount=3;
+  s.publicOtherHandCounts[1].handCount=5;
+ }
+ assert.equal(model.publishRoom(next).code,'PRIVATE_PROJECTION_ROOM_STORED');
+ assert.deepEqual(model.get('ROOM',0,id(1)).ownHand.map(c=>c.cardId),
+  cards(0).slice(0,3).map(c=>c.cardId));
+ assert.deepEqual(model.get('ROOM',1,id(2)).ownHand.map(c=>c.cardId),
+  [...cards(1).map(c=>c.cardId),transfer.cardId]);
+ assert.equal(model.get('ROOM',1,id(2)).publicOtherHandCounts[0].handCount,3);
+});
+test('invalid or stale whole-room revision leaves every old seat unchanged',()=>{
+ const model=createV3AuthorityPrivateProjections();
+ assert.equal(model.publishRoom(roomView()).ok,true);
+ const before=Array.from({length:4},(_,i)=>model.get('ROOM',i,id(i+1)));
+ const bads=[
+  roomView(1),
+  {...roomView(2),seats:roomView(2).seats.slice(0,3)},
+  (()=>{const x=roomView(2);x.seats[2].playerId=id(1);return x})(),
+  (()=>{const x=roomView(2);x.seats[3].ownHand[0].cardId=x.seats[0].ownHand[0].cardId;return x})(),
+  (()=>{const x=roomView(2);x.seats[0].ownHand.pop();return x})()
+ ];
+ for(const bad of bads){
+  assert.equal(model.publishRoom(bad).ok,false);
+  assert.deepEqual(Array.from({length:4},(_,i)=>model.get('ROOM',i,id(i+1))),before);
+ }
+});

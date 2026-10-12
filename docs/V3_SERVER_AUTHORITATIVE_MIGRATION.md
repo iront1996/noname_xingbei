@@ -712,3 +712,10 @@ Chromium CI 對 `91b7ecf` 的 2v2、3v3、4v4 證實第四人真原生 `Player.u
 在 V3-only 隔離 Chromium 框架新增 worker 專屬 `enableNativeHandAutoSync()`：必須先完成受管 worker 發佈與 broker 全座位最新 revision 的 ACK 收斂，才允許開啟。真正的原版第 5 行動者 `Player.xingDong` 已生成 `GameEvent` 並在 step 0 前 `game.pause()` 時，同一受管 Chromium 呼叫 `autoPublishNativeHandsAtGate` 從原版 Player DOM 讀取當前全部實體手牌，再經原有私有 WS 送至 broker；broker 繼續驗證每座位身份、遞增修訂版及卡牌唯一性。若已啟用時發布失敗，原生閘門拒絕繼續執行。
 
 本次回歸測試涵蓋 2v2 座位循環以及 3v3/4v4 的第五行動者：不允許在第四人 pass 後由 Node 測試手動刷新，第五閘門抵達時 broker 直接取得恰好 +1 的全座位新修訂版，真人只能查詢自身完整手牌，其他人只有公開張數，未認證者拒絕。此為**明確啟用下的單一原生安全閘門同步**，不宣稱已攔截所有裝備、技能、棄牌與結算狀態變動，也不實作中途冷恢復或真出牌。
+
+
+## 2026-10-12：全房間私人手牌快照原子性（資料模型短批次）
+
+新增 V3-only `privateProjections.publishRoom`，一次接收 4／6／8 個座位的完整同修訂版快照，先確認所有 Player ID 不重複、各座位版本單調遞增、完整公開張數對應實際私牌張數、全房實體 Card ID 唯一以及目前固定座位認證身份未被替換，再**一次性替換房間投影**；驗證失敗則不更動任何座位。此操作避免未來玩家間牌張轉移以逐座位寫入造成錯誤的暫時雙重持牌或混合修訂版。只回傳 revision／seatCount，絕不在 ACK 中傳送其他玩家的私牌；所有讀取仍透過現有 owner-check `get`。
+
+本段先新增資料模型及其未授權、移牌、舊版、缺失座位、重複持有／ID、公開數量不符的單元測試；**尚未改動 broker 與 Chromium 的實際逐座位傳送協定**，下批再以可信 worker 專用的全房 snapshot 訊息串接。V1／V2／VPS／master 不變。

@@ -61,6 +61,55 @@ export function createV3AuthorityPrivateProjections({maxRooms=50,maxCards=100}={
    room.set(seat,entry);
    return ok('PRIVATE_PROJECTION_STORED',{view:view(entry)});
   },
+  // Commit one complete native view as an atomic revision. Validates all
+  // seats against one another BEFORE replacing a single cached entry.
+  // Cross-seat transfers may succeed only if the resulting room has
+  // exactly one owner per physical card. No intermediate mixed snapshots.
+  publishRoom({roomId,revision,seats:incoming}={}){
+   if(!roomOk(roomId)||!Number.isSafeInteger(revision)||revision<1||
+      !Array.isArray(incoming)||![4,6,8].includes(incoming.length)||
+      rooms.size>=maxRooms&&!rooms.has(roomId))
+    return no('PRIVATE_PROJECTION_ROOM_INVALID');
+   const prior=rooms.get(roomId);
+   const next=new Map(),allCards=new Set(),allPlayers=new Set();
+   const counts=incoming.map(s=>s?.ownHand?.length);
+   for(let seat=0;seat<incoming.length;seat++){
+    const s=incoming[seat];
+    if(!s||s.seat!==seat||!playerOk(s.playerId)||
+       !cardNameOk(s.character)||allPlayers.has(s.playerId)||
+       !Array.isArray(s.ownHand)||s.ownHand.length>maxCards||
+       !s.ownHand.every(c=>c&&typeof c==='object'&&!Array.isArray(c)&&
+        cardIdOk(c.cardId)&&cardNameOk(c.name))||
+       !Array.isArray(s.publicOtherHandCounts)||
+       s.publicOtherHandCounts.length!==incoming.length||
+       !s.publicOtherHandCounts.every((c,i)=>c&&c.seat===i&&
+        Number.isSafeInteger(c.handCount)&&c.handCount===counts[i]&&
+        c.handCount>=0&&c.handCount<=maxCards))
+     return no('PRIVATE_PROJECTION_ROOM_INVALID');
+    const old=prior?.get(seat);
+    if(old&&(old.playerId!==s.playerId||revision<=old.revision))
+     return no('PRIVATE_PROJECTION_STALE_OR_ID_MISMATCH');
+    allPlayers.add(s.playerId);
+    for(const c of s.ownHand){
+     if(allCards.has(c.cardId))
+      return no('PRIVATE_PROJECTION_CARD_OWNERSHIP_CONFLICT');
+     allCards.add(c.cardId);
+    }
+    next.set(seat,{
+     roomId,seat,playerId:s.playerId,revision,character:s.character,
+     ownHand:s.ownHand.map(c=>({cardId:c.cardId,name:c.name})),
+     publicOtherHandCounts:s.publicOtherHandCounts.map(c=>({
+      seat:c.seat,handCount:c.handCount
+     }))
+    });
+   }
+   if(prior&&Array.from(prior.keys()).some(seat=>!next.has(seat)))
+    return no('PRIVATE_PROJECTION_ROOM_INVALID');
+   rooms.set(roomId,next); // Single synchronous commit after validation.
+   return ok('PRIVATE_PROJECTION_ROOM_STORED',{
+    revision,seatCount:incoming.length
+   }); // Never include other players' private cards in this acknowledgement.
+  },
   get(roomId,seat,playerId){
    if(!roomOk(roomId)||!seatOk(seat)||!playerOk(playerId))return null;
    const entry=rooms.get(roomId)?.get(seat);
