@@ -1640,6 +1640,11 @@ export class Game extends GameCompatible {
 		if (game.observe && arguments[0] != "reinited") return;
 		if (game.ws) {
 			const args = Array.from(arguments);
+			// C2: preserve compatibility with secondary result/tempResult senders.
+			// startOnline explicitly supplies a snapshotted ticket itself.
+			if ((args[0] === "result" || args[0] === "tempResult") && args.length === 2) {
+				args.push(game._xingbeiChoiceTicket || null);
+			}
 			if (typeof args[0] == "function") {
 				args.unshift("exec");
 			}
