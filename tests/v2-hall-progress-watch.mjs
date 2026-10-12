@@ -156,3 +156,55 @@ test("generated HALL only accepts current owner telemetry; independent timer sti
   assert.equal(received.length,2,"room owner close produces one separate diagnosis");
  }finally{rmSync(dir,{recursive:true,force:true})}
 });
+
+
+test("real human-host createServer emits minimal broker telemetry, retires prior timer",async()=>{
+ const {XingbeiProgressTracker}=await import("../noname/util/xingbei-progress-tracker.js");
+ const {V2ProgressAudit}=await import("../noname/util/xingbei-v2-progress-audit.js");
+ const gameSource=readFileSync(join(root,"noname/game/index.js"),"utf8");
+ const start=gameSource.indexOf("\tcreateServer() {");
+ const end=gameSource.indexOf("\t/**",start+1);
+ assert.ok(start>=0&&end>start,"actual createServer anchors");
+ const body=gameSource.slice(start,end);
+ const reports=[],timers=new Map(),cleared=[];
+ let id=0;
+ const lib={node:{},configOL:{mode:"xingBei"},playerOL:{},wsOL:{}};
+ const game={onlineroom:true,onlinehall:true,phaseNumber:8,
+  ws:{readyState:1},send(...args){reports.push(args)}};
+ const _status={over:false,paused:false};
+ const ui={create:{roomInfo(){},chat(){}}};
+ const schedule=(fn,ms)=>{
+  assert.equal(ms,15000);
+  const handle={id:++id,unref(){}};
+  timers.set(handle,fn);
+  return handle;
+ };
+ const cancel=handle=>{cleared.push(handle);timers.delete(handle)};
+ const C=new Function("lib","game","_status","ui","XingbeiProgressTracker",
+  "V2ProgressAudit","console","setInterval","clearInterval",
+  "return class {"+body+"}")(lib,game,_status,ui,
+  XingbeiProgressTracker,V2ProgressAudit,{warn(){}},schedule,cancel);
+ const human=new C();human.createServer();
+ const first=lib.node.xingbeiV2HallWatchTimer;
+ assert.equal(timers.size,1);
+ lib.node.torespond.seatA="_noname_waiting";
+ timers.get(first)();
+ assert.deepEqual(reports[0],["server","xbHostProgressV2",1,0,8,1,false,true]);
+ assert.equal(reports[0].length,8,"wire is strictly minimal, no room token or state");
+ _status.paused=true;
+ lib.node.torespond={};
+ timers.get(first)();
+ assert.deepEqual(reports[1],["server","xbHostProgressV2",1,0,8,0,true,true]);
+ _status.over=true;
+ timers.get(first)();
+ assert.equal(reports[2].at(-1),false,"finished game clears HALL observation");
+ game.ws.readyState=3;timers.get(first)();
+ assert.equal(reports.length,3,"closed socket cannot emit stale telemetry");
+ game.ws.readyState=1;_status.over=false;
+ human.createServer();
+ assert.ok(cleared.includes(first),"old host report interval must be cleared");
+ assert.equal(timers.size,1,"only one telemetry interval can remain");
+ lib.node.xingbeiV2HallWatchTimer&&cancel(lib.node.xingbeiV2HallWatchTimer);
+ lib.node.xingbeiProgressTracker?.dispose();
+ lib.node.xingbeiV2ProgressAudit?.dispose();
+});
