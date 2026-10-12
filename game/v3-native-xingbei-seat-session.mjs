@@ -1027,16 +1027,26 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // the authenticated active native Player physically holds this card.
    // Full target legality, costs, skills, and effect resolution are pending.
    const gate=game.__v3PausedPhaseRuntime;
-   const second=gate?.nextSelectionContentReleased===true;
-   const actorSeat=second?players.indexOf(gate.nextActionGate?.player):
+   // An actor that has already passed must never retain a usable
+   // ownership preflight after the scheduler advances to another seat.
+   // Resolve from the MOST RECENT authentic native action boundary.
+   const third=gate?.thirdActionGate!==null&&gate?.thirdActionGate!==undefined;
+   const second=!third&&gate?.nextActionGate!==null&&gate?.nextActionGate!==undefined;
+   const actorSeat=third?players.indexOf(gate.thirdActionGate.player):
+    second?players.indexOf(gate.nextActionGate.player):
     game.__v3OpeningTurnBoundary?.firstSeat;
    const actor=players[actorSeat];
-   const selection=second?gate.nextSelectionEvent:gate?.selectionEvent;
-   const action=second?gate.nextActionGate?.event:gate?.actionEvent;
-   if(!gate||gate.failure||
-      !(second?gate.nextSelectionGate:gate.selectionGate)||
-      !selection||selection.name!=='gongJiOrFaShu'||
-      !action||action.name!=='xingDong'||
+   const selection=third?gate.thirdSelectionEvent:
+    second?gate.nextSelectionEvent:gate?.selectionEvent;
+   const action=third?gate.thirdActionGate.event:
+    second?gate.nextActionGate.event:gate?.actionEvent;
+   const selectionReached=third?gate.thirdSelectionGate:
+    second?gate.nextSelectionGate:gate?.selectionGate;
+   if(!gate||gate.failure||!selectionReached||
+      !(selection instanceof lib.element.GameEvent)||
+      selection.name!=='gongJiOrFaShu'||
+      !(action instanceof lib.element.GameEvent)||
+      action.name!=='xingDong'||
       !_status.paused||selection.player!==actor||
       !Number.isInteger(seat)||seat!==actorSeat||
       typeof playerId!=='string'||actor?.playerid!==playerId||

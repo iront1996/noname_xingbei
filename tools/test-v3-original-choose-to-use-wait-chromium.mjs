@@ -445,6 +445,20 @@ for(const {answer,seatCount} of [
    assert.equal(finalPeers.some(peer=>peer.received.some(m=>
     m.type==='choice_window'&&m.window?.seat===2&&
     m.window?.source==='preview')),false);
+   // Read-only physical hand preflight now belongs ONLY to the latest
+   // native actor; a completed second player's old event is stale.
+   const thirdHand=await chrome.inspectNativePrivateHand({seat:2});
+   const ownThird=await ask(finalPeers[2],'action_ownership_probe',{
+    cardId:thirdHand.ownHand[0].cardId
+   });
+   assert.equal(ownThird.code,'ACTION_CARD_OWNERSHIP_PRECHECK_PASSED');
+   assert.equal(ownThird.actionExecuted,false);
+   const oldSecondHand=await chrome.inspectNativePrivateHand({seat:1});
+   const obsolete=await ask(finalSecond,'action_ownership_probe',{
+    cardId:oldSecondHand.ownHand[0].cardId
+   });
+   assert.equal(obsolete.code,'ACTION_CARD_OWNERSHIP_DENIED');
+   assert.equal(obsolete.actionExecuted,false);
    const finalNative=await chrome.evaluateSeatExperiment(`(()=>{
     const {game,ui}=window.__v3NativeXingBeiTest.core;
     return {hands:game.players.map(p=>p.getCards('h').map(c=>c.__v3PhysicalId)),
