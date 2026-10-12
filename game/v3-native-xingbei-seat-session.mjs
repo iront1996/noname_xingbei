@@ -1437,14 +1437,30 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   privateSeatView({seat}={}){
    if(!Number.isInteger(seat)||seat<0||seat>=players.length)
     throw err('V3_NATIVE_PRIVATE_SEAT_INVALID');
+   // The original opening map is immutable staging evidence, NOT a live
+   // hand. After native phase draws, the real Card/Player DOM is the only
+   // authoritative source of current private card identifiers.
+   const hands=players.map(p=>p.getCards('h'));
+   const ids=new Set();
+   for(const cards of hands){
+    if(!Array.isArray(cards))throw err('V3_NATIVE_LIVE_HAND_INVALID');
+    for(const card of cards){
+     const physical=card?.__v3PhysicalId;
+     if(!(card instanceof lib.element.Card)||
+        typeof physical!=='string'||!/^v3card_[a-f0-9]{6}$/.test(physical)||
+        ids.has(physical))
+      throw err('V3_NATIVE_LIVE_HAND_INVALID');
+     ids.add(physical);
+    }
+   }
    return Object.freeze({
     playerId:players[seat].playerid,seat,
     character:players[seat].name1??null,
-    ownHand:(physicalCardsBySeat.get(seat)??[]).map(card=>Object.freeze({
+    ownHand:hands[seat].map(card=>Object.freeze({
      cardId:card.__v3PhysicalId,name:card.name
     })),
-    publicOtherHandCounts:players.map((_,i)=>({
-     seat:i,handCount:physicalCardsBySeat.get(i)?.length??0
+    publicOtherHandCounts:hands.map((cards,i)=>({
+     seat:i,handCount:cards.length
     }))
    });
   },
