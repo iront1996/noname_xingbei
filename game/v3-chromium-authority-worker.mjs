@@ -164,7 +164,7 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       let nativeSelectionPreviewHooks=null;
       const previewLeases=new Map();
       const privateHandAcks=new Map();
-      let privateHandsRevision=0;
+      let privateHandsRevision=0,autoNativeHandSync=false;
       ws.addEventListener('open',()=>ws.send(JSON.stringify({
        type:'authority_hello',roomId:opts.roomId,secret:opts.secret
       })));
@@ -340,6 +340,22 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          boundPeerCount:bindings.filter(b=>b.connectionId!==null).length}),
          // Used by trusted V3-only native engine bootstrap, never by human clients.
          getSeatBindings:()=>bindings.map(b=>({...b})),
+         // This is an explicit trusted-worker opt-in; clients cannot turn
+         // it on. Require the initial manual projection to be ACKed first.
+         enableNativeHandAutoSync:()=>{
+          if(!connected||!seenRoster||privateHandsRevision<1||
+             bindings.length!==seatCount||
+             privateHandAcks.size!==seatCount||
+             Array.from(privateHandAcks.values()).some(r=>r!==privateHandsRevision))
+           return false;
+          autoNativeHandSync=true;
+          return true;
+         },
+         autoPublishNativeHandsAtGate:()=>{
+          if(!autoNativeHandSync)return true;
+          // Fail closed if trusted Chromium can no longer publish.
+          return window.__v3AuthorityBridge.publishNativeLiveHands()!==false;
+         },
          // Re-read every physical hand from authoritative native Players.
          // Only Chromium may publish these private per-seat projections.
          // Never accept a human-provided card list or public card IDs.
@@ -617,6 +633,17 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      await sleep(40);
     }
     throw fail('V3_NATIVE_LIVE_HAND_PUBLISH_TIMEOUT');
+   },
+   async enableNativeHandAutoSync(){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const result=await session.send('Runtime.evaluate',{
+     expression:'window.__v3AuthorityBridge?.enableNativeHandAutoSync()??false',
+     returnByValue:true});
+    if(result.exceptionDetails||result.result?.value!==true)
+     throw fail('V3_NATIVE_HAND_AUTO_SYNC_DENIED');
+    return Object.freeze({enabled:true,scope:'original_xingDong_gate_only'});
    },
    async dealNativeOpeningCardsByOriginalEvent(){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')

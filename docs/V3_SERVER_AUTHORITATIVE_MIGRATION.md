@@ -705,3 +705,10 @@ Chromium CI `20fac4e` 與 `efad4e1` 揭露第四座位原版階段抽牌後，`p
 ## 2026-10-12：第四人 no-card 至第五 xingDong 並不保證額外摸牌
 
 Chromium CI 對 `91b7ecf` 的 2v2、3v3、4v4 證實第四人真原生 `Player.unwait({bool:false})` 已進入第五行動者閘門，但第 5 個玩家在其原生 `xingDong` step 0 尚未摸到任何新卡。先前假定此處一定再摸 1 張，造成同一行斷言 3 組皆失敗。此次維持更嚴格的 **全部原生實體手牌、牌庫順序、HP 完全不變** 檢查，禁止將猜測的摸牌規則包裝為成功；保留第三／第四／第五玩家真實事件歸屬、舊票券拒絕與修訂版重發驗證。是否通過仍依新的 GitHub Actions 結果。
+
+
+## 2026-10-12：可信原生 xingDong 安全閘門自動刷新私人投影
+
+在 V3-only 隔離 Chromium 框架新增 worker 專屬 `enableNativeHandAutoSync()`：必須先完成受管 worker 發佈與 broker 全座位最新 revision 的 ACK 收斂，才允許開啟。真正的原版第 5 行動者 `Player.xingDong` 已生成 `GameEvent` 並在 step 0 前 `game.pause()` 時，同一受管 Chromium 呼叫 `autoPublishNativeHandsAtGate` 從原版 Player DOM 讀取當前全部實體手牌，再經原有私有 WS 送至 broker；broker 繼續驗證每座位身份、遞增修訂版及卡牌唯一性。若已啟用時發布失敗，原生閘門拒絕繼續執行。
+
+本次回歸測試涵蓋 2v2 座位循環以及 3v3/4v4 的第五行動者：不允許在第四人 pass 後由 Node 測試手動刷新，第五閘門抵達時 broker 直接取得恰好 +1 的全座位新修訂版，真人只能查詢自身完整手牌，其他人只有公開張數，未認證者拒絕。此為**明確啟用下的單一原生安全閘門同步**，不宣稱已攔截所有裝備、技能、棄牌與結算狀態變動，也不實作中途冷恢復或真出牌。

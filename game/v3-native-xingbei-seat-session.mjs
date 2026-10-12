@@ -635,7 +635,12 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
         event.name!=='xingDong'||event.player!==this)
       throw err('V3_NATIVE_FIFTH_ACTION_EVENT_INVALID');
      state.fifthActionGate={player:this,event};
-     game.pause();return event;
+     game.pause();
+     // An original game-owned safe gate triggers a revisioned private
+     // hand publication. No human sends a snapshot or initiates this.
+     if(bridge.autoPublishNativeHandsAtGate?.()===false)
+      throw err('V3_NATIVE_AUTO_HAND_SYNC_FAILED');
+     return event;
     }
     throw err('V3_NATIVE_ACTION_UNEXPECTED_OWNER');
    };

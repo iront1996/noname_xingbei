@@ -686,6 +686,9 @@ for(const {answer,seatCount} of [
    assert.equal(projection.stored,true);
    assert.equal(projection.seatCount,seatCount);
    assert.ok(projection.revision>=1);
+   const nativeAuto=await chrome.enableNativeHandAutoSync();
+   assert.equal(nativeAuto.enabled,true);
+   assert.equal(nativeAuto.scope,'original_xingDong_gate_only');
    const privateFourth=await ask(returnedFourth,'private_hand_query');
    assert.equal(privateFourth.code,'PRIVATE_HAND_STATE');
    assert.equal(privateFourth.view.revision,projection.revision);
@@ -770,15 +773,27 @@ for(const {answer,seatCount} of [
    assert.equal((await ask(returnedFourth,'choice_submit',{
     ticket:fourthWindow.ticket,option:'pass'
    })).code,'CHOICE_ALREADY_APPLIED');
-   // Repeat the trusted snapshot after a real phase boundary to verify
-   // strictly monotonic broker revisions and native fifth-seat cards.
-   const nextProjection=await chrome.publishNativeLiveHands();
-   assert.equal(nextProjection.revision,projection.revision+1);
-   const fifthProjected=await ask(fifthPeer,'private_hand_query');
-   assert.equal(fifthProjected.view.revision,nextProjection.revision);
+   // The NEXT native xingDong gate must trigger publication itself.
+   // No Node-side manual publishNativeLiveHands call is allowed here.
+   const fifthProjected=await until(async()=>{
+    const snapshot=await ask(fifthPeer,'private_hand_query');
+    return snapshot.view?.revision===projection.revision+1&&snapshot;
+   });
+   assert.equal(fifthProjected.view.revision,projection.revision+1);
    assert.deepEqual(fifthProjected.view.ownHand.map(c=>c.cardId),newFifth);
    assert.deepEqual(fifthProjected.view.publicOtherHandCounts.map(c=>c.handCount),
     afterFourthPass.hands.map(c=>c.length));
+   for(let seat=0;seat<seatCount;seat++){
+    const owner=seat===3?returnedFourth:finalPeers[seat];
+    const snapshot=await ask(owner,'private_hand_query');
+    assert.equal(snapshot.view.revision,projection.revision+1);
+    assert.deepEqual(snapshot.view.ownHand.map(c=>c.cardId),
+     afterFourthPass.hands[seat]);
+    assert.deepEqual(snapshot.view.publicOtherHandCounts.map(c=>c.handCount),
+     afterFourthPass.hands.map(c=>c.length));
+   }
+   assert.equal((await ask(staleFourth,'private_hand_query')).code,
+    'NOT_AUTHENTICATED');
    assert.equal((await ask(finalSecond,'command',{action:'playCard'})).code,
     'RULES_ENGINE_NOT_IMPLEMENTED');
   }
