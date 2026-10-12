@@ -131,6 +131,8 @@ test("generated HALL only accepts current owner telemetry; independent timer sti
            received.push(entry);options.onAdvisory?.(entry);
           }});
       }};
+    if(spec==="./server-room-lifecycle.js")
+      return require("../game/server-room-lifecycle.js");
     throw Error("unknown require "+spec);
    },
    setTimeout:()=>1,clearTimeout:()=>{},
