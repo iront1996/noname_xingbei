@@ -1335,15 +1335,30 @@ export class Game extends GameCompatible {
 		if (game.getState) {
 			state = game.getState();
 		}
+		// C3b: capture the authoritative turn fields from the same host state
+		// which the regular syncState broadcast will apply to the browser.
+		const current = _status.currentPhase;
+		const number = game.phaseNumber;
+		const checkpoint = lib.node?.xingbeiProgressTracker?.issueCheckpoint(
+			number, typeof current?.playerid === "string" ? current.playerid : null
+		) || null;
 		game.broadcast(
-			function (state, current, number) {
+			function (state, current, number, checkpoint) {
 				if (game.updateState && state) game.updateState(state);
 				_status.currentPhase = current;
 				game.phaseNumber = number;
+				// The ACK happens only after the existing state update callback ran.
+				// It does not certify that unrelated asynchronous events finished.
+				if (checkpoint && game.online) {
+					const currentSeatId = typeof _status.currentPhase?.playerid === "string"
+						? _status.currentPhase.playerid : null;
+					game.send("xbStateCheckpointAck", checkpoint.id, game.phaseNumber, currentSeatId);
+				}
 			},
 			state,
-			_status.currentPhase,
-			game.phaseNumber
+			current,
+			number,
+			checkpoint
 		);
 	}
 	updateWaiting() {
