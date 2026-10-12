@@ -11100,8 +11100,15 @@ export class Library {
 					this.send("denied", "banned");
 					lib.node.clients.remove(this);
 					this.closed = true;
-				} else if (config.id && lib.playerOL && lib.playerOL[config.id]) {
+				} else if (config.id && config.id === this.id && lib.playerOL && lib.playerOL[config.id]) {
+					// Only the broker-bound socket identity can reclaim an existing role.
+					// A public ID supplied in an unauthenticated init message is insufficient.
 					var player = lib.playerOL[config.id];
+					if (player.ws && player.ws !== this) {
+						player.ws.closed = true;
+						lib.node.clients.remove(player.ws);
+						lib.node.observing.remove(player.ws);
+					}
 					player.setNickname();
 					player.ws = this;
 					player.isAuto = false;
