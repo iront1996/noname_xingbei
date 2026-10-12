@@ -12,7 +12,7 @@ export class XingbeiProgressTracker {
     if(!Number.isSafeInteger(staleMs)||staleMs<=intervalMs)throw new Error("bad stale timeout");
     this.now=now;this.schedule=setIntervalFn;this.unschedule=clearIntervalFn;
     this.intervalMs=intervalMs;this.staleMs=staleMs;this.minPending=minPending;
-    this.onSuspect=onSuspect;this.phaseNow=phaseNow;this.sequence=0;this.clients=new Map();
+    this.onSuspect=onSuspect;this.phaseNow=phaseNow;this.sequence=0;this.probeSerial=0;this.clients=new Map();
     this.timer=null;
   }
   broadcastAdvanced() {
@@ -27,7 +27,7 @@ export class XingbeiProgressTracker {
     this.clients.set(seatId,{
       client,send,startedAt:this.now(),lastAckAt:this.now(),
       lastAckSeq:this.sequence,lastSentSeq:this.sequence,
-      lastProbeAt:0,phase,clientPhase:null,phaseLagStreak:0,
+      lastProbeAt:0,lastProbeId:0,lastAckProbeId:0,phase,clientPhase:null,phaseLagStreak:0,
       suspect:false,phaseSuspect:false
     });
     if(this.timer===null)this.timer=this.schedule(()=>this.probe(),this.intervalMs);
@@ -58,15 +58,20 @@ export class XingbeiProgressTracker {
         rec.lastSentSeq=this.sequence;
         rec.lastProbeAt=time;
         rec.phase=Number.isSafeInteger(phase)&&phase>=0?phase:null;
-        rec.send(this.sequence,rec.phase);
+        rec.lastProbeId=++this.probeSerial;
+        rec.send(rec.lastProbeId,this.sequence,rec.phase);
       } catch(_){/* transport close handler owns reconnection */}
     }
   }
-  acknowledge(seatId,client,sequence,clientPhase=null) {
+  acknowledge(seatId,client,probeId,sequence,clientPhase=null) {
     const rec=this.clients.get(seatId);
     if(!rec||rec.client!==client||rec.client.closed||rec.client.inited!==true)return false;
-    if(!Number.isSafeInteger(sequence)||sequence<rec.lastAckSeq||
-       sequence>rec.lastSentSeq)return false;
+    // Probe ID prevents replayed ACKs from refreshing a stale connection.
+    if(!Number.isSafeInteger(probeId)||probeId<=rec.lastAckProbeId ||
+       probeId!==rec.lastProbeId)return false;
+    if(!Number.isSafeInteger(sequence)||sequence!==rec.lastSentSeq ||
+       sequence<rec.lastAckSeq)return false;
+    rec.lastAckProbeId=probeId;
     rec.lastAckSeq=sequence;
     rec.lastAckAt=this.now();
     rec.suspect=false;
@@ -90,6 +95,6 @@ export class XingbeiProgressTracker {
   }
   dispose(){
     if(this.timer!==null)this.unschedule(this.timer);
-    this.timer=null;this.clients.clear();this.sequence=0;
+    this.timer=null;this.clients.clear();this.sequence=0;this.probeSerial=0;
   }
 }
