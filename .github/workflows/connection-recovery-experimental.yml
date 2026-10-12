@@ -5,6 +5,9 @@ on:
     branches:
       - feature/connection-health-recovery
       - feature/v2-connection-stability
+  pull_request:
+    branches:
+      - feature/v2-connection-stability
   workflow_dispatch:
 
 permissions:
@@ -39,5 +42,7 @@ jobs:
         run: node --test tests/v2-host-reinit-handshake.mjs
       - name: V2 seat reclaim and reinit safety gates
         run: node --test tests/v2-recovery-gate.mjs
+      - name: V2 server-owned room lifecycle foundation
+        run: node --test tests/v2-server-room-lifecycle.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js
