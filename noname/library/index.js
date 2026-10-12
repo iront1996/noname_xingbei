@@ -7697,6 +7697,13 @@ export class Library {
 					game._xingbeiRecovery.connectionLost();
 					return;
 				}
+				// A rejected/exhausted recovery must never silently reload into a lobby.
+				if (game._xingbeiRecovery && ["REJECTED", "EXHAUSTED"].includes(game._xingbeiRecovery.phase)) {
+					game.online = false;
+					game.ws = null;
+					game.sandbox = null;
+					return;
+				}
 				if (!game._xingbeiSuppressRecovery && !_status.over &&
 					game.online && game.beginXingbeiRecovery?.()) {
 					game.online = false;
