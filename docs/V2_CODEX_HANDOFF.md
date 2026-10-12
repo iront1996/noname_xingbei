@@ -43,6 +43,13 @@ M2 batch 4:
 - Only `engine_ready` may submit ordered authoritative results. Real Chromium currently stops at Browser Ready by design; only the simulated engine fixture reaches Engine Ready.
 - Status remains: Browser Ready **proven**; Engine Ready **gate implemented but real engine not proven**; Game Ready **not implemented**; Playable **not implemented**; M2+M3 four-player integration **not implemented**.
 
+M2 batch 5:
+
+- The parent launcher now tracks an authenticated Chromium process-group/profile registration and performs cleanup even when the Node supervisor is forcibly killed.
+- Real-browser tests cover normal shutdown, startup failure, supervisor kill, Chromium kill, resource residue and cross-room isolation. Sandbox restrictions are unchanged.
+- Local full regression passed 81/81 plus B2 seat-registry and left no `v2-managed-host-*` profile behind.
+- Completion status is unchanged above Browser Ready; no real engine initialization or gameplay claim is made.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

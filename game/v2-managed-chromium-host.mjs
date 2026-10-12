@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -42,6 +43,7 @@ async function boot(message) {
 	if (typeof process.getuid === "function" && process.getuid() === 0) {
 		throw new Error("CHROMIUM_ROOT_SANDBOX_REQUIRED");
 	}
+	await access(executable, fsConstants.X_OK);
 	identity = {
 		kind: "managed_host",
 		type: "host_browser_ready",
@@ -51,6 +53,7 @@ async function boot(message) {
 		secret: message.secret,
 	};
 	profile = await mkdtemp(path.join(tmpdir(), "v2-managed-host-"));
+	let spawnError = null;
 	chromium = spawn(executable, [
 		"--headless=new",
 		"--no-first-run",
@@ -62,10 +65,19 @@ async function boot(message) {
 		"--remote-debugging-port=0",
 		`--user-data-dir=${profile}`,
 		"about:blank",
-	], { stdio: "ignore", windowsHide: true });
-
-	let spawnError = null;
+	], { stdio: "ignore", windowsHide: true, detached: process.platform !== "win32" });
 	chromium.once("error", () => { spawnError = new Error("CHROMIUM_SPAWN_FAILED"); });
+	if (!Number.isSafeInteger(chromium.pid) || chromium.pid <= 0) {
+		throw new Error("CHROMIUM_SPAWN_FAILED");
+	}
+	process.send?.({
+		...identity,
+		type: "host_resource",
+		pid: chromium.pid,
+		processGroupId: chromium.pid,
+		profile,
+	});
+
 	chromium.once("exit", () => {
 		if (!stopping) {
 			stopping = true;

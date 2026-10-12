@@ -144,6 +144,14 @@ Read-only V3 research findings:
 - The real Chromium supervisor intentionally emits only `host_browser_ready`. The simulated engine fixture emits both phases so the authority-result path remains testable without falsely treating CDP liveness as engine initialization.
 - Completion vocabulary is fixed for later batches: **Browser Ready** = Chromium/CDP alive; **Engine Ready** = required native engine APIs initialized and verified; **Game Ready** = room configuration/roster and authoritative initial state committed; **Playable** = event loop, choices, deadlines, rules and results execute server-side. These are independent of the later M2+M3 four-ordinary-player continuity acceptance.
 
+### M2 batch 5 — Chromium process-tree and resource cleanup
+
+- Chromium runs in its own process group on Linux. The authenticated supervisor registers its Chromium PID/process-group ID and isolated profile with the parent launcher over private IPC; unauthenticated resource messages cannot select cleanup targets.
+- The launcher retains cleanup responsibility after supervisor death. It terminates the registered group, escalates to forced termination after a bounded wait, and removes only a validated `v2-managed-host-*` directory under the system temporary root.
+- Tests use real Chromium/Edge processes to verify normal stop, invalid-executable startup failure, forced supervisor termination, Chromium abnormal exit, PID disappearance, profile removal and two-room fault isolation. Startup executable access is validated before profile creation.
+- Sandbox policy remains unchanged: no automatic `--no-sandbox`, and root launch fails closed.
+- Local full regression passed 81/81 plus B2 seat-registry, with no remaining managed-host temp profiles. This is resource-supervision evidence, not Engine Ready or Game Ready evidence.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

@@ -2,6 +2,8 @@
 
 const { spawn } = require("node:child_process");
 const { EventEmitter } = require("node:events");
+const { rm } = require("node:fs/promises");
+const { tmpdir } = require("node:os");
 const path = require("node:path");
 
 function createManagedHostProcessLauncher({
@@ -27,17 +29,63 @@ function createManagedHostProcessLauncher({
 		let exited = false;
 		let started = false;
 		let exitInfo = null;
+		let cleanupPromise = Promise.resolve();
+		const resources = new Map();
 		const exitWaiters = [];
+		const profilePrefix = path.resolve(tmpdir(), "v2-managed-host-");
+
+		function authenticatedResource(message) {
+			return message?.type === "host_resource" && message.kind === "managed_host" &&
+				message.protocol === bootstrap.protocol && message.roomId === bootstrap.roomId &&
+				message.sessionId === bootstrap.sessionId && message.secret === bootstrap.secret &&
+				Number.isSafeInteger(message.pid) && message.pid > 0 &&
+				message.processGroupId === message.pid && typeof message.profile === "string" &&
+				path.resolve(message.profile).startsWith(profilePrefix);
+		}
+
+		async function cleanupResources() {
+			for (const resource of resources.values()) {
+				try {
+					if (process.platform === "win32") process.kill(resource.pid, "SIGTERM");
+					else process.kill(-resource.processGroupId, "SIGTERM");
+				} catch (error) {
+					if (error.code !== "ESRCH") throw error;
+				}
+				await new Promise(resolve => setTimeout(resolve, 100));
+				try {
+					if (process.platform === "win32") process.kill(resource.pid, "SIGKILL");
+					else process.kill(-resource.processGroupId, "SIGKILL");
+				} catch (error) {
+					if (error.code !== "ESRCH") throw error;
+				}
+				const resolvedProfile = path.resolve(resource.profile);
+				if (resolvedProfile.startsWith(profilePrefix)) {
+					await rm(resolvedProfile, { recursive: true, force: true, maxRetries: 30, retryDelay: 100 });
+				}
+			}
+			resources.clear();
+		}
 
 		function finish(code, signal) {
 			if (exited) return;
 			exited = true;
 			exitInfo = { code, signal };
+			cleanupPromise = cleanupResources().catch(() => {});
 			handle.emit("exit", code, signal);
 			for (const resolve of exitWaiters.splice(0)) resolve(exitInfo);
 		}
 
-		child.on("message", message => handle.emit("message", message));
+		child.on("message", message => {
+			if (authenticatedResource(message)) {
+				resources.set(message.pid, Object.freeze({
+					pid: message.pid,
+					processGroupId: message.processGroupId,
+					profile: path.resolve(message.profile),
+				}));
+				return;
+			}
+			handle.emit("message", message);
+		});
 		child.once("exit", finish);
 		child.once("error", () => finish(null, "spawn_error"));
 		handle.pid = child.pid;
@@ -49,7 +97,10 @@ function createManagedHostProcessLauncher({
 			});
 		};
 		handle.stop = async reason => {
-			if (exited) return exitInfo;
+			if (exited) {
+				await cleanupPromise;
+				return exitInfo;
+			}
 			const exitedPromise = new Promise(resolve => exitWaiters.push(resolve));
 			try {
 				if (child.connected) child.send({ type: "host_stop", reason: String(reason).slice(0, 64) });
@@ -62,11 +113,15 @@ function createManagedHostProcessLauncher({
 			}, stopTimeoutMs);
 			if (timer.unref) timer.unref();
 			try {
-				return await exitedPromise;
+				const info = await exitedPromise;
+				await cleanupPromise;
+				return info;
 			} finally {
 				clearTimeout(timer);
 			}
 		};
+		handle.resources = () => Object.freeze([...resources.values()].map(resource => Object.freeze({ ...resource })));
+		handle.waitForCleanup = () => cleanupPromise;
 		return handle;
 	};
 }
