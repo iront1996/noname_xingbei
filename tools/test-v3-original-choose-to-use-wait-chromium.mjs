@@ -173,7 +173,7 @@ for(const {answer,seatCount} of [
   await sleep(25);
   assert.equal(await chrome.evaluateSeatExperiment(
    'window.__v3AuthorityBridge.testRenewPreviewLeases()'),true);
-  const replacements=[];
+  const replacements=[],currentTokens=[];
   for(let seat=0;seat<seatCount;seat++){
    const peer=await connect(broker.address);peers.push(peer);
    replacements.push(peer);
@@ -182,6 +182,7 @@ for(const {answer,seatCount} of [
    });
    assert.equal(resumed.playerId,sessions[seat].playerId);
    assert.notEqual(resumed.reconnectToken,sessions[seat].reconnectToken);
+   currentTokens[seat]=resumed.reconnectToken;
   }
   const next=replacements[0];
   const reopened=await until(()=>next.received.find(x=>
@@ -291,6 +292,40 @@ for(const {answer,seatCount} of [
    assert.deepEqual(invariant.hp,beforeNative.hp);
    assert.equal(invariant.paused,true);
    assert.equal(invariant.nextEvent,'gongJiOrFaShu');
+   // The second actor can lose the socket at an authentic native event
+   // boundary; no human client owns the Chromium process or can close it.
+   const originalSecond=replacements[1];
+   const beforeSecondGeneration=boundAfterReconnect[1].connectionId;
+   originalSecond.ws.close();
+   await until(()=>broker.roomView(roomId).roster[1].connected===false);
+   const missingSecond=await chrome.inspectOriginalSelectionGate();
+   assert.equal(missingSecond.nextSelectionGateReached,true);
+   assert.equal(missingSecond.nextSelectionOwnerPlayerId,sessions[1].playerId);
+   assert.equal(missingSecond.paused,true);
+   assert.equal(chrome.pid,pid);
+   const newSecond=await connect(broker.address);
+   peers.push(newSecond);
+   const secondResumed=await ask(newSecond,'reconnect',{
+    roomId,seat:1,reconnectToken:currentTokens[1]
+   });
+   assert.equal(secondResumed.ok,true);
+   assert.equal(secondResumed.playerId,sessions[1].playerId);
+   assert.notEqual(secondResumed.reconnectToken,currentTokens[1]);
+   assert.equal((await ask(newSecond,'reconnect',{
+    roomId,seat:1,reconnectToken:currentTokens[1]
+   })).ok,false);
+   const freshBindings=await until(async()=>{
+    const list=await chrome.evaluateSeatExperiment(
+     'window.__v3AuthorityBridge.getSeatBindings()');
+    return list[1]?.connectionId!==beforeSecondGeneration&&list;
+   });
+   assert.equal(freshBindings[1].playerId,sessions[1].playerId);
+   assert.match(freshBindings[1].connectionId,/^[a-f0-9]{24}$/);
+   assert.equal((await chrome.inspectOriginalSelectionGate()).paused,true);
+   assert.equal((await chrome.inspectOriginalSelectionGate()).nextSelectionContentExecuted,false);
+   assert.equal((await ask(newSecond,'command',{action:'playCard'})).code,
+    'RULES_ENGINE_NOT_IMPLEMENTED');
+   assert.equal(chrome.pid,pid);
    await assert.rejects(chrome.releaseNextOriginalActionToSelectionGate(),
     /V3_NATIVE_NEXT_SELECTION_RELEASE_DENIED/);
    assert.equal((await ask(replacements[1],'command',{action:'playCard'})).code,

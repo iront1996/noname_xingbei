@@ -564,3 +564,8 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 ## 2026-10-12：原版取消出牌 → 下一玩家安全選牌的 4／6／8 人矩陣
 
 原先只對 2v2 運行的 `tools/test-v3-original-choose-to-use-wait-chromium.mjs` 擴展為 2v2 的選牌／取消兩路徑，以及 3v3、4v4 的取消路徑；全用真人座位 WebSocket 模擬、多席同時離線後重新認證，並通過原版 `gongJiOrFaShu`／`xingDong` 證明第二玩家選牌子事件仍暫停、手牌與牌庫不變。每個人數均採相同伺服器程序所有權，不開放正式出牌權。CI 結果須對應**本次提交**，不能套用以前通過的紀錄。
+
+
+## 2026-10-12：第二座位真原生等待前斷線／恢復（隔離驗證）
+
+在原本 2v2／3v3／4v4 的連續座位測試中，第二座位的真原版 `gongJiOrFaShu` 已建立但尚未進入 `chooseToUse` 前，再主動關閉**第二座位本人** WebSocket 並重新認證。檢查原生暫停事件、穩定 Player ID、未改動 Chromium PID、重新輪替 connectionId 與 token，舊 token 不得再次使用。第二座位仍不可跳過選牌閘門直接 `command:playCard`。本項只驗證**跨斷線持續存在的原生事件安全邊界**，不是第二座位技能結算或伺服器崩潰恢復。僅限 V3-only CI 與實驗分支。
