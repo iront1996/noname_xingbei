@@ -802,6 +802,14 @@ test('worker-only whole-room private snapshot commits atomically and does not le
    assert.equal(own.view.ownHand.length,seat===0?3:seat===1?5:4);
    assert.deepEqual(own.view.publicOtherHandCounts.map(x=>x.handCount),[3,5,4,4]);
   }
+  // Delayed legacy frames must not create a half-updated revision.
+  const delayedLegacy=transferred.seats[1];
+  x.authority.clientSend({type:'authority_private_hand',
+   roomId:'TEST',revision:3,...delayedLegacy});
+  await waitFor(x.authority,m=>m.type==='error'&&
+   m.code==='PRIVATE_PROJECTION_ROOM_BATCH_REQUIRED');
+  for(let seat=0;seat<4;seat++)
+   assert.equal((await ask(ws[seat],{type:'private_hand_query'})).view.revision,2);
   const corrupted=next(3);
   corrupted.seats[1].playerId=sessions[0].playerId;
   x.authority.clientSend(corrupted);

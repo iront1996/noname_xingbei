@@ -726,3 +726,8 @@ Chromium CI 對 `91b7ecf` 的 2v2、3v3、4v4 證實第四人真原生 `Player.u
 將受管 Chromium `publishNativeLiveHands()` 改為單一 `authority_private_hands_batch` 私有 WS 消息：每次快照均帶同一修訂版與全部 4／6／8 座位實體手牌。broker 只接受當前**已認證的受管 worker 私有通道**且所有玩家 Player ID／座位均與既有穩定名冊相符的訊息；再使用 `publishRoom` 先驗證、後原子交換快照，成功之後才向各真人 socket 發出**該座位自己的**完整手牌。ACK 只包含 seatCount、revision 及狀態碼，無任何其他座位的卡片。受管 Chromium 僅接受匹配 `pendingBatchRevision` 的全房 ACK，避免舊 ACK 錯判新快照完成；其他工作中快照一律拒絕重入。開局單座位 API 維持相容，不影響既有隔離重連測試。
 
 另新增假 WebSocket worker 測試：真人企圖冒充 worker 批次訊息須拒絕；可信 worker 原子提交、跨座位移牌、私人資料隔離、身份竄改與回放舊 revision 必須完整拒絕且所有座位上一版資料不變。本批未做真卡牌使用／技能結算或 VPS 部署。
+
+
+## 2026-10-12：防止原子私人快照遭舊逐座位封包破壞
+
+在 V3-only `privateProjections` 加入每房間一次性的原子模式鎖：只有開局尚未完成全房原子提交前，才保留舊的 `authority_private_hand` 逐座位模式。首次 `publishRoom` 成功後，即使受管 worker 的過期單座位 WS 幀宣稱更高版本，也必須拒絕 `PRIVATE_PROJECTION_ROOM_BATCH_REQUIRED`，確保**每個座位維持同一 revision**且所有卡牌唯一。房間被清除（包括受管 Chromium 崩潰／broker 結束）時同步清除模式鎖。加入單元及假 worker 整合測試：舊模式可建立開局手牌、新模式接受全房快照、之後舊模式不能修改任何座位、完整新版本仍可用、清理後其他房間不受影響。此修改不會解決中途 Chromium 重啟的 GameEvent 還原問題。

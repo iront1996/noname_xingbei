@@ -23,7 +23,7 @@ export function createV3AuthorityPrivateProjections({maxRooms=50,maxCards=100}={
  if(!Number.isSafeInteger(maxRooms)||maxRooms<1||maxRooms>500||
     !Number.isSafeInteger(maxCards)||maxCards<4||maxCards>500)
   throw new TypeError('PRIVATE_PROJECTION_CONFIG_INVALID');
- const rooms=new Map();
+ const rooms=new Map(),batchCommittedRooms=new Set();
  return Object.freeze({
   publish({roomId,seat,playerId,revision,character,ownHand,publicOtherHandCounts}={}){
    if(!roomOk(roomId)||!seatOk(seat)||!playerOk(playerId)||
@@ -40,6 +40,11 @@ export function createV3AuthorityPrivateProjections({maxRooms=50,maxCards=100}={
       seat>=publicOtherHandCounts.length||
       publicOtherHandCounts[seat].handCount!==ownHand.length)
     return no('PRIVATE_PROJECTION_INVALID');
+   // Opening legacy per-seat publications are permitted only before
+   // the first atomic revision. Never allow a late legacy frame to
+   // create a mixed-room version after adopting whole-room snapshots.
+   if(batchCommittedRooms.has(roomId))
+    return no('PRIVATE_PROJECTION_ROOM_BATCH_REQUIRED');
    let room=rooms.get(roomId);
    if(!room){
     if(rooms.size>=maxRooms)return no('PRIVATE_PROJECTION_ROOM_LIMIT');
@@ -106,6 +111,7 @@ export function createV3AuthorityPrivateProjections({maxRooms=50,maxCards=100}={
    if(prior&&Array.from(prior.keys()).some(seat=>!next.has(seat)))
     return no('PRIVATE_PROJECTION_ROOM_INVALID');
    rooms.set(roomId,next); // Single synchronous commit after validation.
+   batchCommittedRooms.add(roomId);
    return ok('PRIVATE_PROJECTION_ROOM_STORED',{
     revision,seatCount:incoming.length
    }); // Never include other players' private cards in this acknowledgement.
@@ -115,7 +121,10 @@ export function createV3AuthorityPrivateProjections({maxRooms=50,maxCards=100}={
    const entry=rooms.get(roomId)?.get(seat);
    return entry?.playerId===playerId?view(entry):null;
   },
-  clearRoom(roomId){return rooms.delete(roomId)},
+  clearRoom(roomId){
+   batchCommittedRooms.delete(roomId);
+   return rooms.delete(roomId);
+  },
   size(){return Array.from(rooms.values()).reduce((n,m)=>n+m.size,0)}
  });
 }

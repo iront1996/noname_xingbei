@@ -117,3 +117,21 @@ test('invalid or stale whole-room revision leaves every old seat unchanged',()=>
   assert.deepEqual(Array.from({length:4},(_,i)=>model.get('ROOM',i,id(i+1))),before);
  }
 });
+
+
+test('atomic room mode forbids legacy per-seat writes until room is cleared',()=>{
+ const model=createV3AuthorityPrivateProjections();
+ for(let seat=0;seat<4;seat++)
+  assert.equal(model.publish(state(seat)).ok,true);
+ assert.equal(model.publishRoom(roomView(2)).ok,true);
+ const v=model.get('ROOM',0,id(1));
+ assert.equal(model.publish({...state(0),revision:3}).code,
+  'PRIVATE_PROJECTION_ROOM_BATCH_REQUIRED');
+ for(let seat=0;seat<4;seat++)
+  assert.equal(model.get('ROOM',seat,id(seat+1)).revision,2);
+ assert.deepEqual(model.get('ROOM',0,id(1)),v);
+ assert.equal(model.publishRoom(roomView(3)).ok,true);
+ assert.equal(model.clearRoom('ROOM'),true);
+ assert.equal(model.publish(state(0)).ok,true);
+ assert.equal(model.get('ROOM',0,id(1)).revision,1);
+});
