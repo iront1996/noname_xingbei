@@ -551,6 +551,45 @@ for(const {answer,seatCount} of [
    assert.deepEqual(finalNative.hp,beforeNative.hp);
    assert.equal(finalNative.secondCounter,0);
    assert.equal(finalNative.thirdCounter,0);
+   const fourthRelease=await chrome.releaseFourthOriginalActionToSelectionGate();
+   assert.equal(fourthRelease.started,true);
+   assert.equal(fourthRelease.ownerPlayerId,sessions[3].playerId);
+   assert.equal(fourthRelease.actionExecuted,false);
+   const fourthSelection=await until(async()=>{
+    const state=await chrome.inspectOriginalSelectionGate();
+    if(state.failed)throw Error('FOURTH_SELECTION_FAILED_'+state.error+
+     '_'+String(state.trace??'').slice(0,240));
+    return state.fourthSelectionGateReached&&state.paused&&state;
+   });
+   assert.equal(fourthSelection.fourthSelectionEventNative,true);
+   assert.equal(fourthSelection.fourthSelectionEventName,'gongJiOrFaShu');
+   assert.equal(fourthSelection.fourthSelectionOwnerPlayerId,sessions[3].playerId);
+   assert.equal(fourthSelection.fourthSelectionContentExecuted,false);
+   const fourthHand=await chrome.inspectNativePrivateHand({seat:3});
+   const ownFourth=await ask(finalPeers[3],'action_ownership_probe',{
+    cardId:fourthHand.ownHand[0].cardId
+   });
+   assert.equal(ownFourth.code,'ACTION_CARD_OWNERSHIP_PRECHECK_PASSED');
+   assert.equal(ownFourth.actionExecuted,false);
+   assert.equal((await ask(finalPeers[2],'action_ownership_probe',{
+    cardId:thirdHand.ownHand[0].cardId
+   })).code,'ACTION_CARD_OWNERSHIP_DENIED');
+   assert.equal(finalPeers.some(peer=>peer.received.some(m=>
+    m.type==='choice_window'&&m.window?.source==='preview'&&
+    m.window?.seat===3)),false);
+   const fourthSafe=await chrome.evaluateSeatExperiment(`(()=>{
+    const {game,ui,_status}=window.__v3NativeXingBeiTest.core;
+    return {paused:_status.paused===true,
+     hands:game.players.map(p=>p.getCards('h').map(c=>c.__v3PhysicalId)),
+     deck:Array.from(ui.cardPile?.childNodes??[]).map(c=>c.__v3PhysicalId),
+     hp:game.players.map(p=>p.hp??null)};
+   })()`);
+   assert.equal(fourthSafe.paused,true);
+   assert.deepEqual(fourthSafe.hands,finalNative.hands);
+   assert.deepEqual(fourthSafe.deck,finalNative.deck);
+   assert.deepEqual(fourthSafe.hp,finalNative.hp);
+   await assert.rejects(chrome.releaseFourthOriginalActionToSelectionGate(),
+    /V3_NATIVE_FOURTH_SELECTION_RELEASE_DENIED/);
    await assert.rejects(chrome.releaseNextOriginalSelectionToNativeWait(),
     /V3_NATIVE_NEXT_ORIGINAL_USE_RELEASE_DENIED/);
    assert.equal((await ask(finalSecond,'command',{action:'playCard'})).code,

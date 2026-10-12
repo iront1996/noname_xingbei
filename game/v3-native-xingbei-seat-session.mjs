@@ -487,7 +487,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     thirdActionGate:null,thirdActionEntryReleased:false,
     thirdSelectionGate:false,thirdSelectionEvent:null,
     thirdSelectionContentReleased:false,thirdOriginalUseWaitReached:false,
-    fourthActionGate:null};
+    fourthActionGate:null,fourthActionEntryReleased:false,
+    fourthSelectionGate:false,fourthSelectionEvent:null};
    // This hook runs in original content.js phaseLoop step 1, immediately
    // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
    // hook and must never be installed in production V3.
@@ -655,7 +656,12 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
      state.thirdActionGate?.event instanceof lib.element.GameEvent&&
      _status.event?.name==='xingDong'&&_status.event.player===this&&
      adapter.inspect().originalUsePassApplied===2;
-    if(args.length!==0||(!firstActor&&!secondActor&&!thirdActor))
+    const fourthActor=this===state.fourthActionGate?.player&&
+     state.fourthActionEntryReleased&&!state.fourthSelectionGate&&
+     state.fourthActionGate.event instanceof lib.element.GameEvent&&
+     _status.event?.name==='xingDong'&&_status.event.player===this&&
+     adapter.inspect().originalUsePassApplied===3;
+    if(args.length!==0||(!firstActor&&!secondActor&&!thirdActor&&!fourthActor))
      throw err('V3_NATIVE_SELECTION_UNEXPECTED_OWNER');
     const event=original.call(this);
     if(!(event instanceof lib.element.GameEvent)||
@@ -665,8 +671,10 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
      state.selectionEvent=event;state.selectionGate=true;
     }else if(secondActor){
      state.nextSelectionEvent=event;state.nextSelectionGate=true;
-    }else{
+    }else if(thirdActor){
      state.thirdSelectionEvent=event;state.thirdSelectionGate=true;
+    }else{
+     state.fourthSelectionEvent=event;state.fourthSelectionGate=true;
     }
     game.pause(); // Never run this actor's chooseToUse without an explicit gate.
     return event;
@@ -724,6 +732,32 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    return Object.freeze({
     started:true,ownerPlayerId:third.player.playerid,
     originalThirdXingDong:true,actualSelectionContentExecuted:false,
+    actionExecuted:false,cardConsumed:false,fullRulesValidated:false
+   });
+  },
+  releaseFourthOriginalActionToSelectionGate(){
+   // Authentic fourth actor advances through original xingDong step zero,
+   // but its own gongJiOrFaShu child is captured BEFORE use/skill logic.
+   // This does not authorize card use or continuation to a fifth player.
+   const gate=game.__v3PausedPhaseRuntime;
+   const first=players[game.__v3OpeningTurnBoundary?.firstSeat??-1];
+   const fourth=gate?.fourthActionGate;
+   if(!gate||gate.failure||!first||!fourth||
+      fourth.player!==first.nextSeat?.nextSeat?.nextSeat||
+      !(fourth.event instanceof lib.element.GameEvent)||
+      fourth.event.name!=='xingDong'||fourth.event.player!==fourth.player||
+      !gate.thirdActionEntryReleased||!gate.thirdSelectionContentReleased||
+      !gate.thirdOriginalUseWaitReached||
+      adapter.inspect().originalUsePassApplied!==3||
+      useCardPreview?.state!=='passed'||!_status.paused||
+      gate.fourthActionEntryReleased||gate.fourthSelectionGate||
+      adapter.inspect().pending!==0)
+    throw err('V3_NATIVE_FOURTH_SELECTION_RELEASE_DENIED');
+   gate.fourthActionEntryReleased=true;
+   game.resume();
+   return Object.freeze({
+    started:true,ownerPlayerId:fourth.player.playerid,
+    originalFourthXingDong:true,selectionContentExecuted:false,
     actionExecuted:false,cardConsumed:false,fullRulesValidated:false
    });
   },
@@ -815,6 +849,10 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // chooseToUse step 0 is unsafe until skill callbacks are isolated.
    // Offer physical, PRIVATE hand identifiers only to its authenticated owner.
    const gate=game.__v3PausedPhaseRuntime;
+   // There is no authorized fourth original chooseToUse bridge yet.
+   // The third actor's old event must not be reused after seat four starts.
+   if(gate?.fourthActionGate)
+    throw err('V3_NATIVE_USE_PREVIEW_NOT_READY');
    const third=gate?.thirdSelectionContentReleased===true;
    const second=!third&&gate?.nextSelectionContentReleased===true;
    const event=third?gate.thirdSelectionEvent:
@@ -998,7 +1036,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // Static printed-rule evidence must be bound to the SAME native
    // selection GameEvent as the caller's current (read-only) ownership
    // check. A former actor's filter is never proof for a later seat.
-   const activeSelection=gate?.thirdActionGate?
+   const activeSelection=gate?.fourthActionGate?
+    gate.fourthSelectionEvent:gate?.thirdActionGate?
     gate.thirdSelectionEvent:gate?.nextActionGate?
     gate.nextSelectionEvent:gate?.selectionEvent;
    const activeEventOwned=activeSelection instanceof lib.element.GameEvent&&
@@ -1085,17 +1124,22 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // An actor that has already passed must never retain a usable
    // ownership preflight after the scheduler advances to another seat.
    // Resolve from the MOST RECENT authentic native action boundary.
-   const third=gate?.thirdActionGate!==null&&gate?.thirdActionGate!==undefined;
-   const second=!third&&gate?.nextActionGate!==null&&gate?.nextActionGate!==undefined;
-   const actorSeat=third?players.indexOf(gate.thirdActionGate.player):
+   const fourth=Boolean(gate?.fourthActionGate);
+   const third=!fourth&&Boolean(gate?.thirdActionGate);
+   const second=!fourth&&!third&&Boolean(gate?.nextActionGate);
+   const actorSeat=fourth?players.indexOf(gate.fourthActionGate.player):
+    third?players.indexOf(gate.thirdActionGate.player):
     second?players.indexOf(gate.nextActionGate.player):
     game.__v3OpeningTurnBoundary?.firstSeat;
    const actor=players[actorSeat];
-   const selection=third?gate.thirdSelectionEvent:
+   const selection=fourth?gate.fourthSelectionEvent:
+    third?gate.thirdSelectionEvent:
     second?gate.nextSelectionEvent:gate?.selectionEvent;
-   const action=third?gate.thirdActionGate.event:
+   const action=fourth?gate.fourthActionGate.event:
+    third?gate.thirdActionGate.event:
     second?gate.nextActionGate.event:gate?.actionEvent;
-   const selectionReached=third?gate.thirdSelectionGate:
+   const selectionReached=fourth?gate.fourthSelectionGate:
+    third?gate.thirdSelectionGate:
     second?gate.nextSelectionGate:gate?.selectionGate;
    if(!gate||gate.failure||!selectionReached||
       !(selection instanceof lib.element.GameEvent)||
@@ -1181,6 +1225,11 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     thirdSelectionContentExecuted:state.thirdOriginalUseWaitReached===true,
     thirdSelectionContentReleased:state.thirdSelectionContentReleased===true,
     thirdOriginalOnlineWaitReached:state.thirdOriginalUseWaitReached===true,
+    fourthSelectionGateReached:state.fourthSelectionGate===true,
+    fourthSelectionEventNative:state.fourthSelectionEvent instanceof lib.element.GameEvent,
+    fourthSelectionEventName:state.fourthSelectionEvent?.name??null,
+    fourthSelectionOwnerPlayerId:state.fourthSelectionEvent?.player?.playerid??null,
+    fourthSelectionContentExecuted:false,
     originalXingDongEvent:state.actionEvent instanceof lib.element.GameEvent,
     selectionEventNative:event instanceof lib.element.GameEvent,
     selectionEventName:event?.name??null,
@@ -1219,6 +1268,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     fourthActionGateReached:state.fourthActionGate!==null,
     fourthActionPlayerId:state.fourthActionGate?.player?.playerid??null,
     fourthActionEventNative:state.fourthActionGate?.event instanceof lib.element.GameEvent,
+    fourthActionEntryReleased:state.fourthActionEntryReleased===true,
     nextActionEntryReleased:state.nextActionEntryReleased===true,
     nextActionPlayerId:state.nextActionGate?.player?.playerid??null,
     nextActionEventNative:state.nextActionGate?.event instanceof lib.element.GameEvent,
