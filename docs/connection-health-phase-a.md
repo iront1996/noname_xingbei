@@ -25,3 +25,23 @@ Transport health does not prove that asynchronous gameplay events advanced. Phas
 **IMPORTANT: The recovery state machine is intentionally not yet wired into the production WebSocket close handler.** The existing HALL backend sends an initial `roomlist` on each connection and can refuse `enter` after a room starts; treating a new TCP/WebSocket connection as a rejoined game is unsafe. The next batch must introduce authenticated seat reclamation and bypass/descope destructive lobby initialization during in-game rejoin. The host and independent V3 runtime paths also need separate validation.
 
 Do not deploy B1 directly to production. A1 backend remains deployed. Monitor v2.3.0 is unchanged.
+
+
+## Phase B3 – guest browser reconnect integration (development only)
+
+- `noname/util/xingbei-seat-credentials.js` persists room-bound 256-bit guest secrets in tab-local sessionStorage, keyed by server endpoint. Network packets, logs and telemetry must not contain these secrets except the direct broker reclaim request.
+- `noname/util/xingbei-recovery-protocol.js` intercepts the first `roomlist` during recovery so it cannot clear the previous game screen; sends `server.key` then `server.xbResumeSeat` in-order; handles `xbSeatReclaimed` / `xbSeatResumeRejected`.
+- `noname/game/index.js` invokes the B1 retry manager for credentialed guests, displays user-facing reconnect/sync states and ignores late `onopen` / `onerror` messages from superseded sockets.
+- `noname/library/index.js` distinguishes transport reconnection from host-driven `reinit`. Async snapshot completion is bound to its WebSocket identity. It blocks arbitrary public player-ID rebinds unless the broker's socket ID matches and evicts the old host-side client after a real takeover.
+- `tests/connection-recovery-b3.mjs` tests credential scoping, rejection, first `roomlist` suppression, duplicate claim prevention and the gameplay sync gate.
+
+Verified locally against HALL/V3 *redacted reference* backend adapters: valid guest credential can reclaim its existing broker seat, and a bare WebSocket Upgrade / roomlist is never considered gameplay recovery. This is a simulator, not VPS validation.
+
+### Not ready to deploy
+- The latest V3 independent Chromium-host architecture is NOT confirmed compatible with B2's legacy room relay.
+- The host's asynchronous `reinit` confirms client snapshot application but does not yet verify gameplay-event sequence / reaction-choice correctness.
+- Owner reconnect is not supported by this guest-only credential flow.
+- The game-engine AI/choose timeout (`player.wait`) must still be fenced from concurrently expiring during reconnect; this is the next C-phase task.
+- The backend B2 code must be deployed together with B3 client changes **only after** preflight/testing. Publishing the client first would fall back to legacy reload because no credential has been issued.
+
+A1 VPS heartbeat remains the only deployed part; this branch is not production.
