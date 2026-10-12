@@ -95,7 +95,9 @@ export class LibInit {
 			// C2: correlation ticket is separate from the game result payload.
 			// Legacy hosts ignore the extra argument. New hosts validate it only
 			// when the client opted into xbChoiceHello/xbChoiceLease.
-			game.send("result", result, game._xingbeiChoiceTicket || null);
+			const choiceTicket = game._xingbeiChoiceTicket || null;
+			game._xingbeiChoiceTicket = null;
+			game.send("result", result, choiceTicket);
 		}
 		event.goto(0);
 	}
