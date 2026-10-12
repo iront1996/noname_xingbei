@@ -21,6 +21,7 @@ import { isClass, userAgentLowerCase, Uninstantable, GeneratorFunction, AsyncFun
 import { DynamicStyle } from "./dynamic-style/index.js";
 import { ConnectionHealth } from "../util/xingbei-connection-health.js";
 import { XingbeiProgressTracker } from "../util/xingbei-progress-tracker.js";
+import { fingerprintXingbeiPublicState } from "../util/xingbei-public-checkpoint.js";
 import { ConnectionRecovery } from "../util/xingbei-connection-recovery.js";
 import { loadSeatCredentials } from "../util/xingbei-seat-credentials.js";
 import { GamePromises } from "./promises.js";
@@ -1330,6 +1331,10 @@ export class Game extends GameCompatible {
 			func.apply(this, args);
 		}
 	}
+	xingbeiPublicCheckpointDigest() {
+		// Do not sample another mode's private or unsynchronized state.
+		return lib.config.mode === "xingBei" ? fingerprintXingbeiPublicState(game) : null;
+	}
 	syncState() {
 		let state = null;
 		if (game.getState) {
@@ -1339,8 +1344,11 @@ export class Game extends GameCompatible {
 		// which the regular syncState broadcast will apply to the browser.
 		const current = _status.currentPhase;
 		const number = game.phaseNumber;
+		const publicDigest = typeof game.xingbeiPublicCheckpointDigest === "function"
+			? game.xingbeiPublicCheckpointDigest() : null;
 		const checkpoint = lib.node?.xingbeiProgressTracker?.issueCheckpoint(
-			number, typeof current?.playerid === "string" ? current.playerid : null
+			number, typeof current?.playerid === "string" ? current.playerid : null,
+			publicDigest
 		) || null;
 		game.broadcast(
 			function (state, current, number, checkpoint) {
@@ -1352,7 +1360,14 @@ export class Game extends GameCompatible {
 				if (checkpoint && game.online) {
 					const currentSeatId = typeof _status.currentPhase?.playerid === "string"
 						? _status.currentPhase.playerid : null;
-					game.send("xbStateCheckpointAck", checkpoint.id, game.phaseNumber, currentSeatId);
+					// C3c measures the live public state AFTER the state callback.
+					// It is advisory; async events can legitimately diverge.
+					if (checkpoint.publicDigest && typeof game.xingbeiPublicCheckpointDigest === "function") {
+						game.send("xbStateCheckpointAck", checkpoint.id, game.phaseNumber,
+							currentSeatId, game.xingbeiPublicCheckpointDigest());
+					} else {
+						game.send("xbStateCheckpointAck", checkpoint.id, game.phaseNumber, currentSeatId);
+					}
 				}
 			},
 			state,

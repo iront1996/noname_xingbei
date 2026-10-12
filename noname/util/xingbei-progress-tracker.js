@@ -29,7 +29,8 @@ export class XingbeiProgressTracker {
       lastAckSeq:this.sequence,lastSentSeq:this.sequence,
       lastProbeAt:0,lastProbeId:0,lastAckProbeId:0,phase,clientPhase:null,phaseLagStreak:0,
       suspect:false,phaseSuspect:false,
-      checkpoint:null,checkpointFirstUnackedAt:null,checkpointSuspect:false,checkpointMismatchCount:0
+      checkpoint:null,checkpointFirstUnackedAt:null,checkpointSuspect:false,checkpointMismatchCount:0,
+      fingerprintMismatchCount:0,lastPublicFingerprintVerified:false
     });
     if(this.timer===null)this.timer=this.schedule(()=>this.probe(),this.intervalMs);
     return true;
@@ -99,10 +100,13 @@ export class XingbeiProgressTracker {
    * fields that its existing syncState broadcast will apply to each client.
    * This is a semantic checkpoint, not proof every asynchronous choice ended.
    */
-  issueCheckpoint(phase,currentSeatId=null) {
+  issueCheckpoint(phase,currentSeatId=null,publicDigest=null) {
     if(!Number.isSafeInteger(phase)||phase<0)return null;
     if(currentSeatId!==null && (typeof currentSeatId!=="string" || !currentSeatId))return null;
     const data={id:++this.checkpointSerial,phase,currentSeatId};
+    // Optional C3c diagnostic; older C3b clients can ignore this field.
+    if(typeof publicDigest==="string" && /^xb-public-v1:[0-9a-f]{16}$/.test(publicDigest))
+      data.publicDigest=publicDigest;
     for(const [,rec] of this.clients) {
       if(rec.client.closed||rec.client.inited!==true)continue;
       rec.checkpoint=data;
@@ -110,7 +114,7 @@ export class XingbeiProgressTracker {
     }
     return data;
   }
-  acknowledgeCheckpoint(seatId,client,checkpointId,appliedPhase,appliedSeatId=null) {
+  acknowledgeCheckpoint(seatId,client,checkpointId,appliedPhase,appliedSeatId=null,publicDigest=null) {
     const rec=this.clients.get(seatId);
     if(!rec||rec.client!==client||rec.client.closed||rec.client.inited!==true ||
        !rec.checkpoint||rec.checkpoint.id!==checkpointId)return false;
@@ -124,6 +128,18 @@ export class XingbeiProgressTracker {
         expectedSeatId:expected.currentSeatId,appliedSeatId});}catch(_){}
       return false;
     }
+    // A legacy ACK has no digest: accept its phase/seat check, but never
+    // report it as verified. C3c must not break existing C3b clients.
+    if(expected.publicDigest && publicDigest!==null &&
+       publicDigest!==expected.publicDigest){
+      rec.fingerprintMismatchCount++;
+      rec.lastPublicFingerprintVerified=false;
+      try{this.onSuspect({seatId,kind:"state_public_digest_mismatch",checkpointId,
+        expectedDigest:expected.publicDigest,appliedDigest:publicDigest});}catch(_){}
+      return false;
+    }
+    rec.lastPublicFingerprintVerified=Boolean(expected.publicDigest &&
+      publicDigest===expected.publicDigest);
     rec.checkpoint=null;
     rec.checkpointFirstUnackedAt=null;
     rec.checkpointSuspect=false;
@@ -135,7 +151,9 @@ export class XingbeiProgressTracker {
     return {acknowledgedSequence:r.lastAckSeq,hostSequence:this.sequence,
       lastAckAgeMs:this.now()-r.lastAckAt,suspect:r.suspect,phaseSuspect:r.phaseSuspect,
       pendingCheckpointId:r.checkpoint?.id??null,checkpointSuspect:r.checkpointSuspect,
-      checkpointMismatchCount:r.checkpointMismatchCount};
+      checkpointMismatchCount:r.checkpointMismatchCount,
+      fingerprintMismatchCount:r.fingerprintMismatchCount,
+      lastPublicFingerprintVerified:r.lastPublicFingerprintVerified};
   }
   dispose(){
     if(this.timer!==null)this.unschedule(this.timer);

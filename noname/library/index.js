@@ -11241,7 +11241,7 @@ export class Library {
 				const player = lib.playerOL?.[this.id];
 				if (!player || player.ws !== this) return;
 				lib.node.xingbeiProgressTracker?.acknowledgeCheckpoint(
-					this.id, this, id, phase, currentSeatId
+					this.id, this, id, phase, currentSeatId, arguments.length >= 4 ? arguments[3] : null
 				);
 			},
 			xbChoiceHello(protocolVersion) {

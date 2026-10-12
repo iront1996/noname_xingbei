@@ -114,3 +114,14 @@ Deployment remains A1 server heartbeat only. This branch is not deployed to HALL
 
 ### Next integration gate
 Extend deterministic public-state fingerprints and explicit recovery snapshots per game mode, bind remaining custom result paths to their originating event, then test the whole HALL/V3 flow (including V3's latest independent host runtime) before one concentrated deployment and real-player validation.
+
+
+## Phase C3c – advisory public-state fingerprint (development only)
+
+- `noname/util/xingbei-public-checkpoint.js` captures a deterministic allowlist of **public** Xingbei values: red/blue morale, grail totals, public result counts, active/dead seat IDs, HP, max HP, armor, and boolean team side. It deliberately excludes deck order, hand contents, skill storage, character secrets, pending choices and hidden information. Invalid/missing seat data causes an unavailable fingerprint rather than a false match.
+- `game.syncState()` can now attach an optional `xb-public-v1` fingerprint to the existing C3b checkpoint when Xingbei's public game state can be sampled. The client sends a post-`updateState` local fingerprint in `xbStateCheckpointAck`; the validated hosting seat checks it after C3b phase/seat fencing. Different fingerprints emit `state_public_digest_mismatch` **diagnostic only** and leave the checkpoint outstanding.
+- The fingerprint uses deterministic, non-cryptographic FNV-1a/64 over an allowlisted canonical representation. **It is not a tamper-proof digest, game-state proof, or safe basis for player kick/reload.** A malicious client can forge its ACK. Async game transitions may cause legitimate temporary differences.
+- Older C3b clients can send their original three-field ACK. Such ACKs still pass the phase/seat checkpoint but are explicitly marked **not fingerprint-verified**. There is no silent assurance that legacy clients performed C3c verification.
+- `tests/connection-recovery-c3c.mjs` tests private-field exclusion, deterministic seating order, changes in public resources/HP, actual syncState callback ACK, stale transport/replay, mismatched digest, and legacy compatibility.
+
+**Blockers:** Xingbei mode lacks a complete reversible `getState` / `updateState` snapshot contract. This fingerprint observes a public subset only and cannot restore hands, resolve pending card/skill prompts, or establish a full game replay cut. The authoritative V3 Chromium runtime still needs end-to-end integration tests. Never auto-reconnect or overwrite game state on fingerprint diagnosis. This work is isolated to the experiment branch; A1 is the only deployed change, and production V1/V2, V3 live and monitor v2.3.0 remain untouched.
