@@ -109,12 +109,17 @@ function createHostSessionManager({
 				secret,
 			}));
 			if (!handle || !Number.isSafeInteger(handle.pid) || handle.pid <= 0 ||
-				typeof handle.once !== "function" || typeof handle.stop !== "function") {
+				typeof handle.once !== "function" || typeof handle.on !== "function" ||
+				typeof handle.stop !== "function") {
 				throw new Error("HOST_HANDLE_INVALID");
 			}
 			record.handle = handle;
 			record.pid = handle.pid;
 			handle.once("exit", () => finish(record, "HOST_EXITED"));
+			handle.on("message", message => {
+				if (message?.type === "host_ready") markReady(message);
+				else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
+			});
 			record.readyTimer = setTimeout(() => {
 				if (record.state !== "starting") return;
 				record.state = "failed";
@@ -122,8 +127,11 @@ function createHostSessionManager({
 				Promise.resolve(handle.stop("ready_timeout")).catch(() => {});
 			}, readyTimeoutMs);
 			if (record.readyTimer.unref) record.readyTimer.unref();
+			if (typeof handle.start === "function") await handle.start();
+			if (record.state === "failed") return failure(record.failureCode);
 			return Object.freeze({ ok: true, session: publicView(record) });
 		} catch (_) {
+			if (record.handle) Promise.resolve(record.handle.stop("launch_failed")).catch(() => {});
 			record.state = "failed";
 			record.failureCode = "HOST_LAUNCH_FAILED";
 			return failure("HOST_LAUNCH_FAILED");
@@ -132,7 +140,7 @@ function createHostSessionManager({
 
 	function markReady(message) {
 		const record = sessions.get(message?.roomId);
-		if (!authenticate(record, message) || record.state !== "starting") {
+		if (message?.type !== "host_ready" || !authenticate(record, message) || record.state !== "starting") {
 			return failure("HOST_READY_REJECTED");
 		}
 		clearReadyTimer(record);

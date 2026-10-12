@@ -37,6 +37,7 @@ function fixture(options = {}) {
 function hostMessage(bootstrap, extra = {}) {
 	return {
 		kind: "managed_host",
+		type: "host_ready",
 		protocol: bootstrap.protocol,
 		roomId: bootstrap.roomId,
 		sessionId: bootstrap.sessionId,
