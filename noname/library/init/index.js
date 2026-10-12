@@ -95,8 +95,14 @@ export class LibInit {
 			// C2: correlation ticket is separate from the game result payload.
 			// Legacy hosts ignore the extra argument. New hosts validate it only
 			// when the client opted into xbChoiceHello/xbChoiceLease.
-			const choiceTicket = game._xingbeiChoiceTicket || null;
-			game._xingbeiChoiceTicket = null;
+			// The originating event is authoritative when a GameEvent supplied
+			// its own operation ticket. A late callback cannot borrow the newer
+			// global ticket. Custom legacy send paths still use the C2 fallback.
+			const originTicket = typeof result === "object" &&
+				/^c2:[0-9a-z]+$/.test(result._xingbeiChoiceWireId || "")
+				? result._xingbeiChoiceWireId : null;
+			const choiceTicket = originTicket || game._xingbeiChoiceTicket || null;
+			if (choiceTicket === game._xingbeiChoiceTicket) game._xingbeiChoiceTicket = null;
 			game.send("result", result, choiceTicket);
 		}
 		event.goto(0);
