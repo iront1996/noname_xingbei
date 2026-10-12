@@ -20,6 +20,8 @@ import { isClass, userAgentLowerCase, Uninstantable, GeneratorFunction, AsyncFun
 
 import { DynamicStyle } from "./dynamic-style/index.js";
 import { ConnectionHealth } from "../util/xingbei-connection-health.js";
+import { ConnectionRecovery } from "../util/xingbei-connection-recovery.js";
+import { loadSeatCredentials } from "../util/xingbei-seat-credentials.js";
 import { GamePromises } from "./promises.js";
 import { Check } from "./check.js";
 
@@ -1497,6 +1499,62 @@ export class Game extends GameCompatible {
 	 * @param { string } ip
 	 * @param { (result: boolean) => any } callback
 	 */
+	// XINGBEI RECOVERY B3: rejoin only an existing, credentialed guest seat.
+	// The room owner/host and V3 independent-host runtime need distinct adapters.
+	beginXingbeiRecovery() {
+		if (_status.over || this._xingbeiSuppressRecovery || !this.onlineID ||
+			typeof this.roomId !== "string" || !this.roomId ||
+			typeof _status.ip !== "string") return false;
+		const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
+		const seat = loadSeatCredentials(storage, _status.ip);
+		if (!seat || seat.roomId !== this.roomId || seat.seatId !== this.onlineID) return false;
+		if (this._xingbeiRecovery?.active) return true;
+		this._xingbeiSeatReclaimed = false;
+		this._xingbeiReclaimRequested = false;
+		const gameRef = this;
+		this._xingbeiRecovery = new ConnectionRecovery({
+			connect(endpoint, report) {
+				gameRef._xingbeiReclaimRequested = false;
+				gameRef._xingbeiSeatReclaimed = false;
+				gameRef.online = false;
+				gameRef.connect(endpoint, success => {
+					if (success) gameRef.requireSandboxOn(endpoint);
+					report(Boolean(success));
+				});
+			},
+			onState(phase, details) {
+				gameRef.showXingbeiRecoveryState(phase, details);
+			},
+			onExhausted() {
+				console.warn("[Xingbei] Game rejoin attempts exhausted");
+			}
+		});
+		return this._xingbeiRecovery.start(_status.ip, {wasInGame: true});
+	}
+	showXingbeiRecoveryState(phase, details = {}) {
+		if (typeof document === "undefined") return;
+		let notice = this._xingbeiRecoveryNotice;
+		if (!notice) {
+			notice = document.createElement("div");
+			notice.id = "xingbei-connection-recovery-status";
+			notice.style.cssText = "position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:100000;max-width:90vw;padding:12px 18px;border-radius:8px;background:rgba(15,23,42,.96);color:#fff;font:16px/1.5 sans-serif;text-align:center;pointer-events:none;";
+			document.body.appendChild(notice);
+			this._xingbeiRecoveryNotice = notice;
+		}
+		if (phase === "RECOVERED") {
+			notice.remove();
+			this._xingbeiRecoveryNotice = null;
+			return;
+		}
+		const labels = {
+			RECONNECTING: "連線中斷，正在準備重新連線…",
+			CONNECTING: "正在重新連接伺服器…",
+			SYNCING: "已重新連線，正在恢復原局…",
+			REJECTED: "無法安全恢復原房間，請重新載入遊戲。",
+			EXHAUSTED: "自動重連暫時失敗，請檢查網路後重新載入遊戲。"
+		};
+		notice.textContent = labels[phase] || "正在檢查遊戲連線…";
+	}
 	connect(ip, callback) {
 		if (game.online) return;
 		let withport = false;
