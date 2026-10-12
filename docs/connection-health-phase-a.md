@@ -74,3 +74,23 @@ A1 VPS heartbeat remains the only deployed part; this branch is not production.
 A submitted **network packet carrying a stale choice ID** is rejected by an upgraded host. C2 does not *fully* protect a stale client-side callback that fires after the client has already received a new choice ID: the legacy client event engine may stamp that callback with the newest global ID. C3 must bind the ID to the originating UI/game event when the action is created, and add an authoritative gameplay progress/version check. Do not claim that the same-socket delayed-callback problem is fully solved.
 
 Legacy clients that do not send `xbChoiceHello(1)` retain the pre-C2 behavior for compatibility; strict-ID protections apply only after opt-in. Opt-in is sticky per seat to prevent downgrade during recovery. UI/browser runtime testing and current V3 independent Chromium-host compatibility remain unverified. No production deployment: A1 heartbeat only; monitor v2.3.0 unchanged.
+
+
+## Phase C3a – detecting false-online gameplay message processing (development only)
+
+- `noname/util/xingbei-progress-tracker.js`: host-only monotonic broadcast sequence, a 15-second sampled `xbProgressProbe(probeId,seq,hostPhase)`, strict matching acknowledgements, per-socket tracking, a 90-second unanswered threshold with >=3 newer host broadcasts, and an advisory phase-lag signal after three consecutive observations.
+- `noname/game/index.js`: increments the probe sequence at `game.broadcast` without altering the original gameplay messages. Creates/disposes a separate tracker with the hosted game's lifecycle. **No kick/disconnect on a suspicion.**
+- `noname/library/index.js`: upgraded clients opt in after normal `inited`, recovery `reinited`, and game start. `xbProgressAck` is accepted only from the current initialized player socket, and the client sends an ACK only after its JavaScript WebSocket handler reaches the probe.
+- `noname/library/element/client.js`: removes the old socket's tracker state only if it is still the current bound socket.
+- `tests/connection-recovery-c3.mjs`: exercises host broadcasts, real browser/host message handler methods, probe/replay rejection, healthy idle periods, a simulated 5-second stall threshold, phase divergence, and old-socket takeover. CI includes C3.
+
+**Important interpretation:** A probe ACK proves *ordered message dispatch reached the probe*, not that every asynchronous game event, animation, choice, card or skill resolution succeeded. Host/client `phaseNumber` comparison is diagnostic; some phases legitimately update asynchronously. The current progression signal monitors `game.broadcast` traffic, not every unicast or server-authoritative state transition. Therefore, C3a is **detection-only**: it deliberately does not forcibly close a socket, auto-reload the game, or declare a snapshot synchronized.
+
+### Next C3b/C4 work before deployment
+
+1. Bind C2 choice tokens to the *originating UI/game event*, rather than reading a mutable global ticket at send time; regression test delayed callbacks across overlapping choices.
+2. Add an explicit authoritative state/version snapshot and digest or event checkpoint, gated on the actual host's game application flow (including V3 Chromium host).
+3. Validate initial handshake + B2 authenticated seat reclaim + C1/C2 timeouts under real HALL/V3 source; do not substitute mock-probe success for an end-to-end game recovery acceptance test.
+4. Choose a conservative escalation policy (warning -> resync -> reconnect) only after the state checkpoint can distinguish expected async work from a true stale client.
+
+Deployment remains A1 server heartbeat only. This branch is not deployed to HALL/V3 websites. No changes to V1/V2 production game flow, V3 live runtime, or monitor v2.3.0.
