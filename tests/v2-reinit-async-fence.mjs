@@ -6,7 +6,7 @@ import {validateXingbeiSeatSnapshot} from "../noname/util/xingbei-reinit-snapsho
 import {normalizeXingbeiReinitCoverage} from "../noname/util/xingbei-reinit-coverage.js";
 
 const code=readFileSync(new URL("../noname/library/index.js",import.meta.url),"utf8");
-const start=code.indexOf("\t\t\treinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect, xbCoverage) {");
+const start=code.indexOf("\t\t\treinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect, xbCoverage, xbOwnPoison) {");
 const end=code.indexOf("\t\t\texec: function (func) {",start);
 assert.ok(start>=0&&end>start,"real reinit function anchors");
 const method=code.slice(start,end);

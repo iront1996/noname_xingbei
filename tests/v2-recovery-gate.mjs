@@ -77,7 +77,7 @@ test("valid broker denial rejects and clears credentials; wrong seat rejects",()
 });
 test("actual V2 game reinit cannot clear arena before broker claim and SYNCING",()=>{
  const source=readFileSync(new URL("../noname/library/index.js",import.meta.url),"utf8");
- const begin="\t\t\treinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect, xbCoverage) {";
+ const begin="\t\t\treinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect, xbCoverage, xbOwnPoison) {";
  const end="\t\t\texec: function (func) {";
  const first=source.indexOf(begin),last=source.indexOf(end,first+begin.length);
  assert.ok(first>=0&&last>first);

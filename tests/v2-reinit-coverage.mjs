@@ -74,7 +74,7 @@ test("real host reinit sends only non-secret coverage metadata as final optional
  assert.match(hostBody,/const xbArenaSnapshot = get\.arenaState\(\)/);
  assert.match(hostBody,/const xbModeSnapshot = game\.getState/);
  assert.match(hostBody,/assessXingbeiReinitCoverage\(xbArenaSnapshot, xbModeSnapshot/);
- assert.match(hostBody,/_status\.postReconnect, xbCoverage\)/);
+ assert.match(hostBody,/_status\.postReconnect, xbCoverage, xbOwnPoison\)/);
  const reinitStart=hostFile.indexOf("\t\t\treinit: function (config, state");
  const reinitEnd=hostFile.indexOf("\t\t\texec: function",reinitStart);
  const clientBody=hostFile.slice(reinitStart,reinitEnd);
