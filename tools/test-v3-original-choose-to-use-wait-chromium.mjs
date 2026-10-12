@@ -588,9 +588,17 @@ for(const {answer,seatCount} of [
    assert.equal(fourthResumed.ok,true);
    assert.equal(fourthResumed.playerId,sessions[3].playerId);
    assert.notEqual(fourthResumed.reconnectToken,finalTokens[3]);
-   assert.equal((await ask(returnedFourth,'reconnect',{
+   // Testing a token on the already-bound new socket proves nothing:
+   // the broker would reject that socket even with a valid token.
+   // Replay the stale credential from a brand-new unauthenticated peer.
+   const staleFourth=await connect(broker.address);
+   peers.push(staleFourth);
+   const staleReplay=await ask(staleFourth,'reconnect',{
     roomId,seat:3,reconnectToken:finalTokens[3]
-   })).ok,false);
+   });
+   assert.equal(staleReplay.ok,false);
+   assert.equal(staleReplay.code,'RECONNECT_DENIED');
+   assert.equal((await ask(staleFourth,'choice_query')).code,'NOT_AUTHENTICATED');
    const fourthRebinding=await until(async()=>{
     const now=await chrome.evaluateSeatExperiment(
      'window.__v3AuthorityBridge.getSeatBindings()'

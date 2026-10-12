@@ -664,3 +664,8 @@ CI 測試核對第三人的 event provenance、與第二人的 GameEvent 物件�
 ## 2026-10-12：第四玩家原生選牌前斷線／重連的程序所有權回歸
 
 於 2v2／3v3／4v4 經三次真原版 no-card 回覆後，第四玩家原版 `xingDong` 已建立並產生真 `gongJiOrFaShu` 子 `GameEvent`，且選牌內容尚未執行。在此狀態主動斷開第四真人 socket，驗證其原生事件仍暫停、Chromium PID 未變、房間持續存在。第四人使用最新一次認證 token 重新連線，確認新 token 和新的 `connectionId` 均輪替、固定 Player ID 不變、舊 token 不可重用，且不會自動出現未授權的選牌票券。第四人自己的唯讀手牌持有權仍可查，第三人已完成回合的持有權不能冒充目前行動權。沒有修改原生規則或增加真人測試要求；只更新 V3 的真 Chromium 自動化測試及文件。
+
+
+## 2026-10-12：第四座位重連憑證廢止採全新 socket 驗證
+
+強化第四座位原生斷線重連回歸：不再對已認證的新座位 socket 再呼叫 `reconnect`（那只會撞到 `CONNECTION_ALREADY_BOUND`，無法證明舊 token 真的失效）；改由另一條全新、未綁定的真人 WebSocket 使用舊 `reconnectToken` 嘗試認證，必須得到 `RECONNECT_DENIED`，並持續 `NOT_AUTHENTICATED`，確保舊權杖不能趁原生第四玩家等待時奪回座位。此次只有測試與文件變更，絕無執行真出牌。
