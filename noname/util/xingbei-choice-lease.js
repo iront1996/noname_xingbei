@@ -14,6 +14,7 @@ export class ChoiceLeaseRegistry {
     if (old) old.state = "SUPERSEDED";
     const lease = {
       id: ++this.sequence,
+      wireId: "c2:" + this.sequence.toString(36),
       seatId,
       socket,
       startedAt: this.now(),
@@ -25,6 +26,11 @@ export class ChoiceLeaseRegistry {
   }
   current(seatId) {
     return this.currentLeases.get(seatId) || null;
+  }
+  matchesWireId(seatId, candidate) {
+    const lease = this.current(seatId);
+    return !!lease && lease.state === "WAITING" &&
+      typeof candidate === "string" && lease.wireId === candidate;
   }
   isCurrent(seatId, lease) {
     return !!lease && lease.state === "WAITING" && this.currentLeases.get(seatId) === lease;
