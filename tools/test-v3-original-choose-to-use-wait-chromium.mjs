@@ -748,21 +748,14 @@ for(const {answer,seatCount} of [
      hp:game.players.map(p=>p.hp??null)};
    })()`);
    assert.equal(afterFourthPass.paused,true);
+   // This authentic next xingDong gate was reached without a new draw.
+   // Prove no physical cards changed hands, deck order was preserved and
+   // no hidden skill/HP effect executed during fourth native no-card.
+   assert.deepEqual(afterFourthPass.hands,postFourthWait.hands);
+   assert.deepEqual(afterFourthPass.deck,postFourthWait.deck);
    assert.deepEqual(afterFourthPass.hp,postFourthWait.hp);
-   for(let seat=0;seat<seatCount;seat++){
-    if(seat!==fifthSeat)
-     assert.deepEqual(afterFourthPass.hands[seat],postFourthWait.hands[seat]);
-   }
-   const oldFifth=postFourthWait.hands[fifthSeat];
    const newFifth=afterFourthPass.hands[fifthSeat];
-   assert.equal(newFifth.length,oldFifth.length+1);
-   const newlyDrawn=newFifth.filter(id=>!oldFifth.includes(id));
-   assert.equal(newlyDrawn.length,1);
-   assert.match(newlyDrawn[0],/^v3card_[a-f0-9]{6}$/);
-   assert.deepEqual(newFifth.filter(id=>id!==newlyDrawn[0]),oldFifth);
-   assert.equal(postFourthWait.deck.filter(id=>id===newlyDrawn[0]).length,1);
-   assert.deepEqual(afterFourthPass.deck,
-    postFourthWait.deck.filter(id=>id!==newlyDrawn[0]));
+   assert.equal(newFifth.length,postFourthWait.hands[fifthSeat].length);
    assert.deepEqual(
     [...afterFourthPass.hands.flat(),...afterFourthPass.deck].sort(),
     [...postFourthWait.hands.flat(),...postFourthWait.deck].sort());
