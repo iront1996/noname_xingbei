@@ -578,3 +578,9 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 - 原生 `Player.unwait({bool:false})` 只能在對應真 `GameEvent`、原始 `Player.wait` slot、`_status.event`、當前座位與 Player ID 全數相符後發生。第二玩家拒絕出牌後，由原版事件自然推進至第三玩家 `xingDong`，仍於該玩家 step 0 前暫停，不讓技能或攻擊結算偷跑。
 - 2v2／3v3／4v4 CI 驗證第二玩家於原版選牌前斷線重連、新 session 身分與票券綁定、跨座位禁止提交、連續兩位玩家取消出牌後 HP、所有私人手牌與牌庫不變、第三玩家原版行動事件為 native 實例。
 - 這是**原版取消出牌的離線連續事件通道**，仍然沒有實作真正合法出牌、動態技能、攻防回應、星杯勝負或回合中途崩潰恢復。只能在 `V3_ALLOW_SEAT_EXPERIMENT=1` 的隔離 Chromium 裡測試；V1/V2、master、共享 Noname、正式 V3、VPS 不變。是否成功應以新提交 CI 原始紀錄驗證。
+
+
+## 2026-10-12：原版第二玩家已開啟的真選擇視窗再次斷線復原
+
+- 在 2v2／3v3／4v4 的**第二玩家原生 chooseToUse 已進入 `GameEvent.send` 並獲得選牌票券**後，再關閉該座位 WebSocket；確認受管 Chromium PID、原版 EventStack 等待與本人票券不消失。用第二輪新憑證再連線，必須重發**同一筆**私人票券至本人新 socket，其他座位不接收。
+- 新 socket 本人以同一票券提交原生無牌回覆，原版行動繼續至第三玩家 `xingDong`；手牌、牌庫與 HP 應不變。這是實際原版等待中的連續多次斷線壓力測試，但仍不是中途 Chromium/Node 進程崩潰冷恢復、合法攻擊或勝負結算。

@@ -352,8 +352,33 @@ for(const {answer,seatCount} of [
    assert.equal((await ask(replacements[0],'choice_submit',{
     ticket:secondWindow.ticket,option:'pass'
    })).code,'CHOICE_WINDOW_NOT_FOUND');
-   assert.equal((await ask(newSecond,'choice_submit',{
-    ticket:secondWindow.ticket,option:'pass'
+   // Disconnect AGAIN, this time after the second original chooseToUse
+   // has reached its genuine waiting slot with a private ticket open.
+   newSecond.ws.close();
+   await until(()=>broker.roomView(roomId).roster[1].connected===false);
+   const offlineWait=await chrome.inspectNativeUseCardPreview();
+   assert.equal(offlineWait.state,'open');
+   assert.equal(offlineWait.samePausedEvent,true);
+   assert.equal(offlineWait.playerId,sessions[1].playerId);
+   assert.equal(chrome.pid,pid);
+   const finalSecond=await connect(broker.address);
+   peers.push(finalSecond);
+   const finalSecondResume=await ask(finalSecond,'reconnect',{
+    roomId,seat:1,reconnectToken:secondResumed.reconnectToken
+   });
+   assert.equal(finalSecondResume.ok,true);
+   assert.equal(finalSecondResume.playerId,sessions[1].playerId);
+   assert.notEqual(finalSecondResume.reconnectToken,secondResumed.reconnectToken);
+   const restoredTicket=await until(()=>finalSecond.received.find(m=>
+    m.type==='choice_window'&&m.window?.source==='preview'&&
+    m.window?.ticket===secondWindow.ticket
+   )?.window);
+   assert.deepEqual(restoredTicket.options,secondWindow.options);
+   assert.equal(restoredTicket.playerId,sessions[1].playerId);
+   assert.equal(replacements.some((peer,i)=>i!==1&&peer.received.some(m=>
+    m.type==='choice_window'&&m.window?.ticket===secondWindow.ticket)),false);
+   assert.equal((await ask(finalSecond,'choice_submit',{
+    ticket:restoredTicket.ticket,option:'pass'
    })).code,'CHOICE_SUBMITTED_NOT_APPLIED');
    await until(async()=>(await chrome.evaluateSeatExperiment(
     'window.__v3NativeXingBeiTest.core.game.__v3NativeWaitAdapter.inspect()'
@@ -379,7 +404,7 @@ for(const {answer,seatCount} of [
    assert.equal(finalNative.secondCounter,0);
    await assert.rejects(chrome.releaseNextOriginalSelectionToNativeWait(),
     /V3_NATIVE_NEXT_ORIGINAL_USE_RELEASE_DENIED/);
-   assert.equal((await ask(newSecond,'command',{action:'playCard'})).code,
+   assert.equal((await ask(finalSecond,'command',{action:'playCard'})).code,
     'RULES_ENGINE_NOT_IMPLEMENTED');
   }
   const after=await chrome.inspectNativePrivateHand({seat:0});
