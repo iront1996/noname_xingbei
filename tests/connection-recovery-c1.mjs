@@ -94,4 +94,31 @@ const library=readFileSync(new URL("../noname/library/index.js",import.meta.url)
 assert.match(library,/player && player\.ws === this && !this\.closed && this\.inited === true/);
 const client=readFileSync(new URL("../noname/library/element/client.js",import.meta.url),"utf8");
 assert.match(client,/active && timer != null/);
-console.log("PASS C1: choice lease, stale timer, takeover, duplicate AI and pending callback");
+// Execute the actual Client.close method: when a player disconnects during a
+// pending choice, AI must not fire before the original deadline.
+const clientSourceForVm=readFileSync(new URL("../noname/library/element/client.js",import.meta.url),"utf8");
+const closeStart=clientSourceForVm.indexOf("\tclose() {");
+const closeEnd=clientSourceForVm.lastIndexOf("\n}");
+assert.ok(closeStart>=0 && closeEnd>closeStart,"actual Client.close found");
+lib.node.clients={remove(){}};
+lib.node.observing={remove(){},length:0};
+lib.playerOL={"seat":player};
+game.broadcast=()=>{};
+const currentClient={id:"seat",closed:false,nickname:"player",ws:ws2.ws};
+player.ws=currentClient;
+player.nickname="player";
+player.setNickname=()=>{};
+status.waitingForPlayer=false;
+const closeMethod=runInNewContext("({"+clientSourceForVm.slice(closeStart,closeEnd)+"})",
+ {lib,game,_status:status,ui:{},window:{isNonameServer:false}}).close;
+player.wait();
+const timeoutAfterDisconnect=[...timers.values()][0];
+assert.ok(timeoutAfterDisconnect);
+closeMethod.call(currentClient);
+assert.equal(currentClient.closed,true);
+assert.equal(lib.node.torespond.seat,"_noname_waiting","disconnect must not consume live choice");
+assert.equal(resumed,4,"disconnect must not immediately trigger AI");
+timeoutAfterDisconnect.fn();
+assert.equal(resumed,5,"the original deadline eventually resolves the choice");
+
+console.log("PASS C1: choice lease, stale timer, takeover, deferred AI and duplicate settlement");
