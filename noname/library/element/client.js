@@ -71,7 +71,9 @@ export class Client {
 				game.onlinezhu = null;
 			}
 			game.updateWaiting();
-		} else if (lib.playerOL[this.id]) {
+		} else if (lib.playerOL[this.id] && lib.playerOL[this.id].ws === this) {
+			// Rebound seats belong to the newest connection. A late close from a
+			// superseded socket must not force AI or mark the player offline.
 			var player = lib.playerOL[this.id];
 			player.setNickname(player.nickname + " - 离线");
 			// @ts-ignore
