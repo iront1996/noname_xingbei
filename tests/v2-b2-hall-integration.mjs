@@ -99,7 +99,7 @@ test("generated B2 HALL and B3 browser reclaim prevent old-socket false-online",
  assert.ok(result.code.includes("// XINGBEI-RECOVERY B2"));
  const srv=runFakeHall(result.code);
  const owner=srv.connect();
- send(owner,"key",[publicKey,"version"]);
+ send(owner,"key",[roomKey,"version"]);
  send(owner,"create",roomKey,"Host","avatar");
  send(owner,"config",{gameStarted:false,observe:false});
  const guest=srv.connect();
