@@ -30,6 +30,13 @@ M2 batch 2:
 - Linux CI run 38308392018 passed. Portable local regression passed 77/77 plus the B2 seat-registry suite.
 - This remains simulated-host evidence, not Chromium or game-engine authority evidence.
 
+M2 batch 3:
+
+- Commit `cc5adca` adds the V2-owned real Chromium supervisor and an opt-in real-browser test. It uses an isolated profile, loopback-only ephemeral CDP, startup validation, sandbox fail-closed policy and cleanup on stop.
+- Linux CI run 38308610888 passed the dedicated real-Chromium step. Local Chrome regression brought the portable total to 78/78 plus B2 seat-registry.
+- Chromium readiness currently proves only browser/CDP liveness. Noname/Xingbei modules, engine initialization, HALL routing and authoritative gameplay are not connected.
+- M2+M3 four-player disconnect/continuation acceptance remains entirely unproven and must be tracked separately from these infrastructure passes.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

@@ -128,6 +128,14 @@ Read-only V3 research findings:
 - Evidence: implementation commit `79de3fb`; Linux CI run 38308392018 passed the combined host-session/process step. Local portable regression passed 77/77 Node tests plus the B2 seat-registry suite.
 - This is process-supervision evidence only. The child is a simulated host and does not load Chromium or the Xingbei engine.
 
+### M2 batch 3 — real Chromium off-board lifecycle proof
+
+- `game/v2-managed-chromium-host.mjs` is a V2-owned supervisor executable launched through the same private-IPC hostSession adapter. No V3 module is imported or changed.
+- It starts a real headless Chromium with a unique temporary profile, extensions/background networking disabled, an ephemeral loopback-only CDP endpoint and no automatic sandbox bypass. Root execution fails closed rather than silently adding `--no-sandbox`.
+- The supervisor reports `host_ready` only after it discovers the protected `DevToolsActivePort`, queries the loopback CDP endpoint and verifies an `about:blank` page target. Requested stop terminates Chromium and removes the profile.
+- Local Windows testing used installed Chrome and passed; Linux CI locates its runner Chromium/Chrome explicitly. Evidence: commit `cc5adca`; Linux CI run 38308610888 passed both the host-session/process tests and the dedicated real-Chromium step. Portable local regression passed 78/78 plus B2 seat-registry.
+- Readiness in this batch means only “isolated browser and CDP are alive”. No Noname/Xingbei module is loaded, no game loop runs, no player is routed, and no authoritative result is produced. M2 and SA-A01–SA-A10 remain incomplete.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
@@ -185,6 +193,7 @@ These are specification tests to add incrementally during M2–M4. They are not 
 - Generated B2+M1 Linux CI: run 38306224205 passed the dedicated same-process takeover/lifecycle scenario.
 - Final PR HEAD before this architecture-only batch: `c0968c4`; Linux CI run 38306324498 succeeded. Portable local regression passed 70/70 Node tests plus the standalone B2 seat-registry test.
 - M2 hostSession foundation: commit `d110829`; Linux CI run 38308126401 succeeded, including its dedicated lifecycle/authority-boundary step.
+- M2 simulated process and real Chromium foundations: commits `79de3fb` and `cc5adca`; Linux CI runs 38308392018 and 38308610888 succeeded. The latter includes a dedicated real-Chromium off-board lifecycle proof.
 - Syntax checks: `game/server.js` and `game/server-room-lifecycle.js` passed `node --check`.
 - Production/VPS compatibility: not verified.
 - Real browser/player acceptance: not verified.
