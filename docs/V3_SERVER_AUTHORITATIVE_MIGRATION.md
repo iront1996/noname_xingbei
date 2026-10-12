@@ -569,3 +569,12 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 ## 2026-10-12：第二座位真原生等待前斷線／恢復（隔離驗證）
 
 在原本 2v2／3v3／4v4 的連續座位測試中，第二座位的真原版 `gongJiOrFaShu` 已建立但尚未進入 `chooseToUse` 前，再主動關閉**第二座位本人** WebSocket 並重新認證。檢查原生暫停事件、穩定 Player ID、未改動 Chromium PID、重新輪替 connectionId 與 token，舊 token 不得再次使用。第二座位仍不可跳過選牌閘門直接 `command:playCard`。本項只驗證**跨斷線持續存在的原生事件安全邊界**，不是第二座位技能結算或伺服器崩潰恢復。僅限 V3-only CI 與實驗分支。
+
+
+## 2026-10-12：第二玩家連續原生等待／不出牌 → 第三玩家事件安全閘門
+
+- 之前「第二玩家斷線重連」測試提交 `ac2d8d1` 的真 Chromium CI 失敗，是測試在已關閉的舊 WebSocket 呼叫 `ask()` 而等待逾時；沒有把失敗宣稱為通過。新測試只對新認證 socket 提交訊息。
+- 原版第一玩家 `Player.unwait({bool:false})` 後，第二玩家的原生 `xingDong → gongJiOrFaShu` 可按嚴格單次允許進入原版 `chooseToUse` step 0；`GameEvent.send()` 仍攔截可執行 JavaScript 遠端發送，交由受伺服器認證的 WebSocket 本人座位取得新的私密卡牌／pass 票券。
+- 原生 `Player.unwait({bool:false})` 只能在對應真 `GameEvent`、原始 `Player.wait` slot、`_status.event`、當前座位與 Player ID 全數相符後發生。第二玩家拒絕出牌後，由原版事件自然推進至第三玩家 `xingDong`，仍於該玩家 step 0 前暫停，不讓技能或攻擊結算偷跑。
+- 2v2／3v3／4v4 CI 驗證第二玩家於原版選牌前斷線重連、新 session 身分與票券綁定、跨座位禁止提交、連續兩位玩家取消出牌後 HP、所有私人手牌與牌庫不變、第三玩家原版行動事件為 native 實例。
+- 這是**原版取消出牌的離線連續事件通道**，仍然沒有實作真正合法出牌、動態技能、攻防回應、星杯勝負或回合中途崩潰恢復。只能在 `V3_ALLOW_SEAT_EXPERIMENT=1` 的隔離 Chromium 裡測試；V1/V2、master、共享 Noname、正式 V3、VPS 不變。是否成功應以新提交 CI 原始紀錄驗證。

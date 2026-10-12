@@ -482,7 +482,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     entryReleased:false,actionGate:false,actionEvent:null,hold:null,
     actionEntryReleased:false,selectionGate:false,selectionEvent:null,
     nextActionGate:null,nextActionEntryReleased:false,
-    nextSelectionGate:false,nextSelectionEvent:null};
+    nextSelectionGate:false,nextSelectionEvent:null,
+    nextSelectionContentReleased:false,nextOriginalUseWaitReached:false,
+    thirdActionGate:null};
    // This hook runs in original content.js phaseLoop step 1, immediately
    // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
    // hook and must never be installed in production V3.
@@ -590,6 +592,19 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
      game.pause(); // Before second actor xingDong step 0.
      return event;
     }
+    // A second authentic pass advances the native scheduler but still
+    // stops the third player BEFORE original xingDong step 0.
+    if(this===first.nextSeat?.nextSeat&&
+       state.nextSelectionContentReleased&&state.nextOriginalUseWaitReached&&
+       adapter.inspect().originalUsePassApplied===2&&
+       state.thirdActionGate===null){
+     const event=originalXingDong.call(this);
+     if(!(event instanceof lib.element.GameEvent)||
+        event.name!=='xingDong'||event.player!==this)
+      throw err('V3_NATIVE_THIRD_ACTION_EVENT_INVALID');
+     state.thirdActionGate={player:this,event};
+     game.pause();return event;
+    }
     throw err('V3_NATIVE_ACTION_UNEXPECTED_OWNER');
    };
    lib.onphase.splice(hookIndex,1);
@@ -665,6 +680,35 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     originalNextXingDong:true,actualSelectionContentExecuted:false,
     actualCardPlayed:false,fullRulesValidated:false});
   },
+  releaseNextOriginalSelectionToNativeWait(){
+   const gate=game.__v3PausedPhaseRuntime;
+   const actor=gate?.nextActionGate?.player;
+   const seat=players.indexOf(actor);
+   const event=gate?.nextSelectionEvent;
+   if(!previewHooksAvailable||!gate||gate.failure||
+      !gate.nextActionEntryReleased||!gate.nextSelectionGate||
+      !(event instanceof lib.element.GameEvent)||
+      event.name!=='gongJiOrFaShu'||event.player!==actor||
+      actor!==players[game.__v3OpeningTurnBoundary?.firstSeat]?.nextSeat||
+      seat<0||gate.nextSelectionContentReleased||
+      gate.nextOriginalUseWaitReached||!_status.paused||
+      useCardPreview?.state!=='passed'||
+      adapter.inspect().originalUsePassApplied!==1||
+      adapter.inspect().pending!==0)
+    throw err('V3_NATIVE_NEXT_ORIGINAL_USE_RELEASE_DENIED');
+   gate.nextSelectionContentReleased=true;
+   try{
+    adapter.armOriginalUseWait({seat,playerId:actor.playerid,event});
+   }catch(e){
+    gate.nextSelectionContentReleased=false;
+    throw e;
+   }
+   useCardPreview=null; // First ticket is already finalized.
+   game.resume();
+   return Object.freeze({started:true,nativeChooseToUse:true,
+    ownerPlayerId:actor.playerid,originalNextPlayer:true,
+    actionExecuted:false,cardConsumed:false,fullRulesValidated:false});
+  },
   releaseOriginalSelectionToNativeWait(){
    // The only deliberate CI path allowed to execute the original
    // chooseToUse step 0. Arm a ONE-SHOT GameEvent.send interception,
@@ -699,15 +743,17 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // chooseToUse step 0 is unsafe until skill callbacks are isolated.
    // Offer physical, PRIVATE hand identifiers only to its authenticated owner.
    const gate=game.__v3PausedPhaseRuntime;
-   if(!previewHooksAvailable||useCardPreview||!gate||gate.failure||!gate.selectionGate||
-      !gate.selectionEvent||gate.selectionEvent.name!=='gongJiOrFaShu'||
-      !(gate.selectionEvent instanceof lib.element.GameEvent)||
-      gate.selectionEvent.player!==players[seat]||
-      !_status.paused||
-      seat!==game.__v3OpeningTurnBoundary?.firstSeat||
+   const second=gate?.nextSelectionContentReleased===true;
+   const event=second?gate.nextSelectionEvent:gate?.selectionEvent;
+   const actorSeat=second?players.indexOf(gate.nextActionGate?.player):
+    game.__v3OpeningTurnBoundary?.firstSeat;
+   if(!previewHooksAvailable||useCardPreview||!gate||gate.failure||
+      !(second?gate.nextSelectionGate:gate.selectionGate)||
+      !(event instanceof lib.element.GameEvent)||
+      event.name!=='gongJiOrFaShu'||event.player!==players[seat]||
+      !_status.paused||seat!==actorSeat||
       typeof playerId!=='string'||players[seat]?.playerid!==playerId)
     throw err('V3_NATIVE_USE_PREVIEW_NOT_READY');
-   const event=gate.selectionEvent;
    if(event.filterCard!==lib.filter.filterCard||
       event.filterTarget!==lib.filter.filterTarget||
       event.selectTarget!==lib.filter.selectTarget||
@@ -728,7 +774,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // 'pass' exists ONLY after the original chooseToUse step 0 has
    // reached the verified server waiting boundary; manual CI-only
    // read-only card previews never have the privilege to unwind an event.
-   if(allowPass&&game.__v3PausedPhaseRuntime?.originalUseWaitReached!==true)
+   if(allowPass&&(second?gate.nextOriginalUseWaitReached!==true:
+       gate.originalUseWaitReached!==true))
     throw err('V3_NATIVE_USE_PASS_NOT_AUTHORIZED');
    const options=allowPass?[...handIds,'pass']:handIds;
    useCardPreview={event,seat,playerId,options:[...options],
@@ -748,7 +795,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    const p=useCardPreview,gate=game.__v3PausedPhaseRuntime;
    if(!previewHooksAvailable||!p||p.state!=='recorded'||p.targetStage||
       p.seat!==seat||p.playerId!==playerId||
-      p.ticket!==previousTicket||gate?.selectionEvent!==p.event||
+      p.ticket!==previousTicket||
+      (gate?.nextSelectionContentReleased?
+       gate.nextSelectionEvent:gate?.selectionEvent)!==p.event||
       !_status.paused)
     throw err('V3_NATIVE_USE_TARGET_PREVIEW_DENIED');
    this.preflightNativeActionCardOwnership({
@@ -934,7 +983,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     staticRuleAudit:p.targetStage?.staticRuleAudit??null,
     nativeGameEvent:p.event instanceof lib.element.GameEvent,
     originalEvent:p.event.name,
-    samePausedEvent:gate?.selectionEvent===p.event&&_status.paused===true,
+    samePausedEvent:(gate?.nextSelectionContentReleased?
+     gate.nextSelectionEvent:gate?.selectionEvent)===p.event&&_status.paused===true,
     fullRulesValidated:false,actionExecuted:false,cardConsumed:false,
     nativeUnwaitInvoked:false});
   },
@@ -943,12 +993,17 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // the authenticated active native Player physically holds this card.
    // Full target legality, costs, skills, and effect resolution are pending.
    const gate=game.__v3PausedPhaseRuntime;
-   const actorSeat=game.__v3OpeningTurnBoundary?.firstSeat;
+   const second=gate?.nextSelectionContentReleased===true;
+   const actorSeat=second?players.indexOf(gate.nextActionGate?.player):
+    game.__v3OpeningTurnBoundary?.firstSeat;
    const actor=players[actorSeat];
-   if(!gate||gate.failure||!gate.selectionGate||
-      !gate.selectionEvent||gate.selectionEvent.name!=='gongJiOrFaShu'||
-      !gate.actionEvent||gate.actionEvent.name!=='xingDong'||
-      !_status.paused||gate.selectionEvent.player!==actor||
+   const selection=second?gate.nextSelectionEvent:gate?.selectionEvent;
+   const action=second?gate.nextActionGate?.event:gate?.actionEvent;
+   if(!gate||gate.failure||
+      !(second?gate.nextSelectionGate:gate.selectionGate)||
+      !selection||selection.name!=='gongJiOrFaShu'||
+      !action||action.name!=='xingDong'||
+      !_status.paused||selection.player!==actor||
       !Number.isInteger(seat)||seat!==actorSeat||
       typeof playerId!=='string'||actor?.playerid!==playerId||
       typeof cardId!=='string'||!/^v3card_[a-f0-9]{6}$/.test(cardId))
@@ -1017,7 +1072,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     nextSelectionEventNative:state.nextSelectionEvent instanceof lib.element.GameEvent,
     nextSelectionEventName:state.nextSelectionEvent?.name??null,
     nextSelectionOwnerPlayerId:state.nextSelectionEvent?.player?.playerid??null,
-    nextSelectionContentExecuted:false,
+    nextSelectionContentExecuted:state.nextOriginalUseWaitReached===true,
+    nextOriginalOnlineWaitReached:state.nextOriginalUseWaitReached===true,
+    nextSelectionContentReleased:state.nextSelectionContentReleased===true,
     originalXingDongEvent:state.actionEvent instanceof lib.element.GameEvent,
     selectionEventNative:event instanceof lib.element.GameEvent,
     selectionEventName:event?.name??null,
@@ -1049,6 +1106,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     phaseNumber:game.phaseNumber,
     currentPhasePlayerId:_status.currentPhase?.playerid??null,
     nextActionGateReached:state.nextActionGate!==null,
+    thirdActionGateReached:state.thirdActionGate!==null,
+    thirdActionPlayerId:state.thirdActionGate?.player?.playerid??null,
+    thirdActionEventNative:state.thirdActionGate?.event instanceof lib.element.GameEvent,
     nextActionEntryReleased:state.nextActionEntryReleased===true,
     nextActionPlayerId:state.nextActionGate?.player?.playerid??null,
     nextActionEventNative:state.nextActionGate?.event instanceof lib.element.GameEvent,
@@ -1261,7 +1321,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   },
   delivered(message){
    const p=useCardPreview,gate=game.__v3PausedPhaseRuntime;
-   if(!p||gate?.selectionEvent!==p.event||!_status.paused||
+   if(!p||(gate?.nextSelectionContentReleased?
+       gate.nextSelectionEvent:gate?.selectionEvent)!==p.event||!_status.paused||
       message?.seat!==p.seat||message.playerId!==p.playerId)
     return false;
    if(p.state==='open'&&p.ticket===message.ticket&&

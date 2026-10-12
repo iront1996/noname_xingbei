@@ -328,7 +328,58 @@ for(const {answer,seatCount} of [
    assert.equal(chrome.pid,pid);
    await assert.rejects(chrome.releaseNextOriginalActionToSelectionGate(),
     /V3_NATIVE_NEXT_SELECTION_RELEASE_DENIED/);
-   assert.equal((await ask(replacements[1],'command',{action:'playCard'})).code,
+   // A reconnected second actor enters its OWN genuine native online
+   // wait, receives a fresh private pass ticket, and is allowed only to
+   // decline the card: never authorize an actual card/skill action.
+   const secondWait=await chrome.releaseNextOriginalSelectionToNativeWait();
+   assert.equal(secondWait.started,true);
+   assert.equal(secondWait.ownerPlayerId,sessions[1].playerId);
+   const waited=await until(async()=>{
+    const state=await chrome.inspectOriginalSelectionGate();
+    if(state.failed)throw Error('NEXT_ORIGINAL_WAIT_FAILED_'+state.error+
+     '_'+String(state.trace??'').slice(0,230));
+    return state.nextOriginalOnlineWaitReached&&state.paused&&state;
+   });
+   assert.equal(waited.nextSelectionContentReleased,true);
+   const secondWindow=await until(()=>newSecond.received.find(m=>
+    m.type==='choice_window'&&m.window?.source==='preview'&&
+    m.window?.kind==='card'&&m.window?.options.includes('pass')
+   )?.window);
+   assert.equal(secondWindow.seat,1);
+   assert.equal(secondWindow.playerId,sessions[1].playerId);
+   assert.deepEqual(secondWindow.options.slice(0,-1).sort(),
+    (await chrome.inspectNativePrivateHand({seat:1})).ownHand.map(c=>c.cardId).sort());
+   assert.equal((await ask(replacements[0],'choice_submit',{
+    ticket:secondWindow.ticket,option:'pass'
+   })).code,'CHOICE_WINDOW_NOT_FOUND');
+   assert.equal((await ask(newSecond,'choice_submit',{
+    ticket:secondWindow.ticket,option:'pass'
+   })).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+   await until(async()=>(await chrome.evaluateSeatExperiment(
+    'window.__v3NativeXingBeiTest.core.game.__v3NativeWaitAdapter.inspect()'
+   )).originalUsePassApplied===2);
+   const thirdActor=await until(async()=>{
+    const state=await chrome.inspectOriginalActionGate();
+    if(state.failed)throw Error('THIRD_NATIVE_ACTOR_FAILED_'+state.error+
+     '_'+String(state.trace??'').slice(0,230));
+    return state.thirdActionGateReached&&state.paused&&state;
+   });
+   assert.equal(thirdActor.thirdActionPlayerId,sessions[2].playerId);
+   assert.equal(thirdActor.thirdActionEventNative,true);
+   const finalNative=await chrome.evaluateSeatExperiment(`(()=>{
+    const {game,ui}=window.__v3NativeXingBeiTest.core;
+    return {hands:game.players.map(p=>p.getCards('h').map(c=>c.__v3PhysicalId)),
+     deck:Array.from(ui.cardPile?.childNodes??[]).map(c=>c.__v3PhysicalId),
+     hp:game.players.map(p=>p.hp??null),
+     secondCounter:game.players[1].storage.gongJiOrFaShu};
+   })()`);
+   assert.deepEqual(finalNative.hands,beforeNative.hands);
+   assert.deepEqual(finalNative.deck,beforeNative.deck);
+   assert.deepEqual(finalNative.hp,beforeNative.hp);
+   assert.equal(finalNative.secondCounter,0);
+   await assert.rejects(chrome.releaseNextOriginalSelectionToNativeWait(),
+    /V3_NATIVE_NEXT_ORIGINAL_USE_RELEASE_DENIED/);
+   assert.equal((await ask(newSecond,'command',{action:'playCard'})).code,
     'RULES_ENGINE_NOT_IMPLEMENTED');
   }
   const after=await chrome.inspectNativePrivateHand({seat:0});
