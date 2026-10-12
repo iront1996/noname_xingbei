@@ -45,3 +45,16 @@ Verified locally against HALL/V3 *redacted reference* backend adapters: valid gu
 - The backend B2 code must be deployed together with B3 client changes **only after** preflight/testing. Publishing the client first would fall back to legacy reload because no credential has been issued.
 
 A1 VPS heartbeat remains the only deployed part; this branch is not production.
+
+
+## Phase C1 – AI choice timeout / reconnect race fencing (development only)
+
+- `noname/util/xingbei-choice-lease.js` gives each host-side pending choice a unique generation and deadline, so an old timer callback cannot resolve a superseding action.
+- `noname/library/element/player.js` validates the exact pending generation before invoking `unwait("ai")`. If the socket was replaced during the same deadline, it never closes the replacement; a valid choice is settled at most once. A synchronous callback starting another wait no longer has its marker overwritten.
+- `noname/library/element/client.js` defers disconnect-triggered AI fallback while an existing choice timer is alive, without resetting that deadline.
+- `noname/library/index.js` accepts `result` and `tempResult` only from the current initialized host-side client bound to that seat (not an old or reinitializing socket).
+- `tests/connection-recovery-c1.mjs` extracts the *actual* `Player.wait/unwait` methods and runs them under a fake clock/timer and minimal game host; covers superseded callbacks, duplicate results, replaced sockets, unchanged-socket AI timeout, and a reentrant choice callback.
+
+**Limits:** C1 prevents stale-socket actions and stale *host timers*. The existing legacy client wire protocol does not yet send a per-choice `actionId`; delayed results from the **same** still-current socket after a new choice starts remain indistinguishable. C2 must add opt-in request/response action IDs with backward compatibility and explicit acknowledgements. Game-state/event-sequence verification is still pending. C1 does not solve a JavaScript main-thread freeze.
+
+**Deployment:** A1 heartbeat is on VPS. B1/B2/B3/C1 are GitHub experiment branch only, not deployed. Do not merge or deploy before paired frontend/backend tests and real V3 Chromium host verification. Monitor v2.3.0 remains unchanged.
