@@ -52,8 +52,8 @@ test("repeated responsive host reports but zero progress produce advisory, no ac
  assert.equal(f.alerts[0].quietMs,60000);
  f.step(15000);f.report();f.watch.check();assert.equal(f.alerts.length,1);
  f.step(15000);f.report({sequence:2});f.watch.check();
- f.step(60000);f.report({sequence:2});f.watch.check();
- assert.equal(f.alerts.length,2,"new broadcast gives a fresh window");
+ for(let i=0;i<4;i++){f.step(15000);f.report({sequence:2});f.watch.check()}
+ assert.equal(f.alerts.length,2,"new broadcast gives a fresh window with live reports");
 });
 test("host owner close, stale credentials and guest injection are distinct",()=>{
  const f=clockFixture();f.report();
