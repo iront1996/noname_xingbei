@@ -185,6 +185,7 @@ for(const {answer,seatCount} of [
    currentTokens[seat]=resumed.reconnectToken;
   }
   const next=replacements[0];
+  let finalSeatZero=next;
   const reopened=await until(()=>next.received.find(x=>
    x.type==='choice_window'&&x.window?.source==='preview'&&
    x.window.ticket===window.ticket
@@ -352,31 +353,41 @@ for(const {answer,seatCount} of [
    assert.equal((await ask(replacements[0],'choice_submit',{
     ticket:secondWindow.ticket,option:'pass'
    })).code,'CHOICE_WINDOW_NOT_FOUND');
-   // Disconnect AGAIN, this time after the second original chooseToUse
-   // has reached its genuine waiting slot with a private ticket open.
+   // Disconnect the ENTIRE human roster again while actor #2 waits
+   // inside the original chooseToUse event. Chromium must still own it.
+   for(const peer of replacements)peer.ws.close();
    newSecond.ws.close();
-   await until(()=>broker.roomView(roomId).roster[1].connected===false);
+   await until(()=>broker.roomView(roomId).roster.every(x=>!x.connected));
+   await until(async()=> (await chrome.inspectRoomChannel()).boundPeerCount===0);
    const offlineWait=await chrome.inspectNativeUseCardPreview();
    assert.equal(offlineWait.state,'open');
    assert.equal(offlineWait.samePausedEvent,true);
    assert.equal(offlineWait.playerId,sessions[1].playerId);
    assert.equal(chrome.pid,pid);
-   const finalSecond=await connect(broker.address);
-   peers.push(finalSecond);
-   const finalSecondResume=await ask(finalSecond,'reconnect',{
-    roomId,seat:1,reconnectToken:secondResumed.reconnectToken
-   });
-   assert.equal(finalSecondResume.ok,true);
-   assert.equal(finalSecondResume.playerId,sessions[1].playerId);
-   assert.notEqual(finalSecondResume.reconnectToken,secondResumed.reconnectToken);
+   const finalPeers=[];
+   for(let seat=0;seat<seatCount;seat++){
+    const peer=await connect(broker.address);peers.push(peer);
+    finalPeers.push(peer);
+    const oldToken=seat===1?secondResumed.reconnectToken:currentTokens[seat];
+    const resumed=await ask(peer,'reconnect',{
+     roomId,seat,reconnectToken:oldToken
+    });
+    assert.equal(resumed.ok,true);
+    assert.equal(resumed.playerId,sessions[seat].playerId);
+    assert.notEqual(resumed.reconnectToken,oldToken);
+   }
+   finalSeatZero=finalPeers[0];
+   const finalSecond=finalPeers[1];
    const restoredTicket=await until(()=>finalSecond.received.find(m=>
     m.type==='choice_window'&&m.window?.source==='preview'&&
     m.window?.ticket===secondWindow.ticket
    )?.window);
    assert.deepEqual(restoredTicket.options,secondWindow.options);
    assert.equal(restoredTicket.playerId,sessions[1].playerId);
-   assert.equal(replacements.some((peer,i)=>i!==1&&peer.received.some(m=>
+   assert.equal(finalPeers.some((peer,i)=>i!==1&&peer.received.some(m=>
     m.type==='choice_window'&&m.window?.ticket===secondWindow.ticket)),false);
+   assert.equal((await chrome.inspectRoomChannel()).boundPeerCount,seatCount);
+   assert.equal(chrome.pid,pid);
    assert.equal((await ask(finalSecond,'choice_submit',{
     ticket:restoredTicket.ticket,option:'pass'
    })).code,'CHOICE_SUBMITTED_NOT_APPLIED');
@@ -409,7 +420,7 @@ for(const {answer,seatCount} of [
   }
   const after=await chrome.inspectNativePrivateHand({seat:0});
   assert.deepEqual(after.ownHand,before.ownHand);
-  assert.equal((await ask(next,'command',{action:'playCard'})).code,
+  assert.equal((await ask(finalSeatZero,'command',{action:'playCard'})).code,
    'RULES_ENGINE_NOT_IMPLEMENTED');
   assert.equal(chrome.pid,pid);
   // A card preview is still paused in original step zero. Native pass
