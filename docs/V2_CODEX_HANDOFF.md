@@ -14,6 +14,15 @@ Current classification at PR #1 HEAD `c0968c40ae22d808f283cec7cca53613e7b7e9d5`:
 
 The normative requirements, minimal-difference M2/M3 sequence and automatable acceptance IDs `SA-A01` through `SA-A10` live in `docs/V2_SERVER_AUTHORITY_PLAN.md`. No M2 implementation was started by this specification-correction batch.
 
+## M2 batch 1 handoff
+
+- Commit `d110829` adds `game/server-host-session-manager.js` plus deterministic simulated-process tests. It establishes an internal host-only bootstrap/attestation secret, lifecycle and result sequence boundary without changing the legacy HALL path. Linux CI run 38308126401 passed its dedicated host-session step.
+- Player and administrator credential kinds cannot attest readiness or commit an authoritative result. Old sessions, duplicate results and out-of-order sequences are rejected.
+- Startup, ready, requested stop, launch failure, ready timeout and abnormal exit are covered. Local portable regression passed 75/75 Node tests plus the standalone B2 seat-registry suite.
+- V3 Chromium worker/coordinator code was inspected read-only. Its isolated profile, loopback CDP, sandbox gate, timeout, process inspection and cleanup patterns are candidates for a later V2 launcher adapter; no V3 file was changed or imported into production V2.
+- **Completed only:** M2 hostSession identity/lifecycle simulation foundation.
+- **Not completed:** HALL integration, real Chromium launch, Xingbei engine initialization, player/admin protocol, four-player continuity, pending-choice policy, authoritative state progression, M3 uniform recovery, M4 persistence or real-browser acceptance.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

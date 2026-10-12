@@ -100,7 +100,24 @@ Known M1 limitations and disposition:
 
 ## M2 — managed server authority and administrator separation
 
-Status: not started.
+Status: first infrastructure batch implemented; not connected to HALL or Chromium; M2 gameplay authority remains incomplete.
+
+### M2 batch 1 — isolated hostSession foundation
+
+- `game/server-host-session-manager.js` defines an internal protocol-v1 `hostSession` with cryptographically independent session ID and secret. The secret is passed only to the trusted launcher bootstrap and is absent from every public session view.
+- Lifecycle states cover `starting`, authenticated `ready`, `stopping`, `stopped`, and `failed`. Launch failure, readiness timeout, unexpected exit and stop failure retain distinct failure codes; a later exit cannot overwrite the first diagnosed failure.
+- Only a `managed_host` attestation matching protocol, room, current session ID and timing-safe secret may mark readiness or submit an authoritative result. Player-seat and room-administrator credential kinds are rejected even if their token text is maliciously chosen to match the host secret.
+- Authoritative results require the current ready session and exact monotonically increasing sequence. Duplicate, out-of-order and stale-session results fail closed.
+- The launcher is dependency-injected. Batch 1 uses a simulated process handle to test lifecycle and security before attaching any real Chromium implementation.
+- This component is intentionally not imported by `game/server.js` yet. It does not alter M1 routing, create players/admins, load rules, advance turns or prove SA-A01–SA-A10.
+- Evidence: implementation commit `d110829`; Linux CI run 38308126401 passed the dedicated `V2 M2 managed host-session lifecycle and authority boundary` step. Local portable regression passed 75/75 Node tests plus the standalone B2 seat-registry suite.
+
+Read-only V3 research findings:
+
+- `game/v3-chromium-authority-worker.mjs` provides useful process mechanics: server-owned child process, unique temporary profile, loopback-only ephemeral CDP, strict CDP method allowlist, startup deadline, sandbox opt-in guard, early-exit detection, explicit inspection and cleanup.
+- V3 tests explicitly distinguish “worker alive/offboard” from “rules loaded/playable/state persisted”. V2 must preserve the same evidence discipline.
+- V3 authority bridge and coordinator experiments demonstrate authenticated room channels and creator-independent worker lifetime, but remain V3-only and are not imported or modified by this batch.
+- The future V2 Chromium adapter should implement the batch-1 launcher contract rather than weakening or bypassing the hostSession identity boundary.
 
 Minimal-difference sequence:
 
@@ -158,6 +175,7 @@ These are specification tests to add incrementally during M2–M4. They are not 
 - Owner-recovery Linux CI: run 38305127613 succeeded, including the isolated `ws@8.18.3` real-process test dependency and the actual HALL entry point.
 - Generated B2+M1 Linux CI: run 38306224205 passed the dedicated same-process takeover/lifecycle scenario.
 - Final PR HEAD before this architecture-only batch: `c0968c4`; Linux CI run 38306324498 succeeded. Portable local regression passed 70/70 Node tests plus the standalone B2 seat-registry test.
+- M2 hostSession foundation: commit `d110829`; Linux CI run 38308126401 succeeded, including its dedicated lifecycle/authority-boundary step.
 - Syntax checks: `game/server.js` and `game/server-room-lifecycle.js` passed `node --check`.
 - Production/VPS compatibility: not verified.
 - Real browser/player acceptance: not verified.
