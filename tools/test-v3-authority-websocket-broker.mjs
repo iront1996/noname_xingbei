@@ -32,7 +32,7 @@ async function ask(ws,obj){
 }
 const config={mode:'xingBei',seatMode:'2v2'};
 async function setup({latency=0,choiceExperiment=false,ownershipExperiment=false}={}){
- let started=0,stopped=0,authority,crashWorker;
+ let started=0,stopped=0,authority,crashWorker,nextInspectGate;
  const broker=await createV3AuthorityWebSocketBroker({
   WebSocketServer:FakeWebSocketServer,
   enableChoiceWindowExperiments:choiceExperiment,
@@ -59,12 +59,29 @@ async function setup({latency=0,choiceExperiment=false,ownershipExperiment=false
      };
      authority.clientSend({type:'authority_hello',roomId,secret});
     },
-    async inspect(){if(!alive)throw Error('crashed');return {alive:true,offboard:true,pid:123,gameRulesLoaded:false,statePersisted:false}},
+    async inspect(){
+     const gate=nextInspectGate;
+     if(gate){nextInspectGate=null;gate.enter();await gate.wait}
+     if(!alive)throw Error('crashed');
+     return {alive:true,offboard:true,pid:123,gameRulesLoaded:false,statePersisted:false}
+    },
     async stop(){alive=false;stopped++}
    };
   }
  });
- return {broker,connect:()=>FakeWebSocketServer.instance.connect(),crashWorker:()=>crashWorker?.(),get started(){return started},get stopped(){return stopped},get authority(){return authority}};
+ return {
+  broker,connect:()=>FakeWebSocketServer.instance.connect(),
+  crashWorker:()=>crashWorker?.(),
+  pauseNextInspect(){
+   if(nextInspectGate)throw Error('INSPECT_ALREADY_PAUSED');
+   let enter,release;
+   const entered=new Promise(r=>{enter=r});
+   const wait=new Promise(r=>{release=r});
+   nextInspectGate={enter,wait};
+   return {entered,release};
+  },
+  get started(){return started},get stopped(){return stopped},get authority(){return authority}
+ };
 }
 async function fill(runtime){
  const ws=Array.from({length:4},()=>runtime.connect());
@@ -482,6 +499,71 @@ test('dead Chromium with still-open worker channel cannot reveal or submit stale
   assert.equal((await ask(replacement,{type:'choice_query'})).window,null);
  }finally{await x.broker.close()}
 });
+test('all probe classes reject a dead Chromium even while its WebSocket is still open',async()=>{
+ const previous=process.env.V3_ALLOW_SEAT_EXPERIMENT;
+ process.env.V3_ALLOW_SEAT_EXPERIMENT='1';
+ let x;
+ try{
+  x=await setup({ownershipExperiment:true});
+  const {ws}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  x.crashWorker();
+  assert.equal(x.authority.readyState,1);
+  for(const request of [
+   {type:'transport_probe'},
+   {type:'action_ownership_probe',cardId:'v3card_123456'},
+   {type:'action_target_probe',cardId:'v3card_123456',targetSeat:1}
+  ]){
+   const answer=await ask(ws[0],request);
+   assert.equal(answer.code,'WORKER_UNAVAILABLE');
+   assert.equal(answer.ok,false);
+  }
+  assert.equal(x.authority.outbound.some(m=>
+   ['authority_transport_probe','authority_action_ownership_probe',
+    'authority_action_target_probe'].includes(m.type)),false);
+ }finally{
+  if(x)await x.broker.close();
+  if(previous===undefined)delete process.env.V3_ALLOW_SEAT_EXPERIMENT;
+  else process.env.V3_ALLOW_SEAT_EXPERIMENT=previous;
+ }
+});
+
+test('socket replacement while Chromium health check is pending cannot submit previous generation ticket',async()=>{
+ const x=await setup({choiceExperiment:true});
+ let gate;
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  x.authority.clientSend({type:'authority_choice_open',roomId:'TEST',seat:0,
+   playerId:sessions[0].playerId,kind:'control',prompt:'Select',options:['yes','no']});
+  const opened=await waitFor(x.authority,m=>m.type==='authority_choice_open_result');
+  const ticket=opened.view.ticket;
+  await waitFor(ws[0],m=>m.type==='choice_window'&&m.window.ticket===ticket);
+  gate=x.pauseNextInspect();
+  ws[0].clientSend({type:'choice_submit',requestId:'stale_submit',ticket,option:'yes'});
+  await gate.entered;
+  const replacement=x.connect();
+  const resumed=await ask(replacement,{type:'reconnect',roomId:'TEST',seat:0,
+   reconnectToken:sessions[0].reconnectToken});
+  assert.equal(resumed.ok,true);
+  assert.equal(resumed.playerId,sessions[0].playerId);
+  await waitFor(replacement,m=>m.type==='choice_window'&&m.window.ticket===ticket);
+  gate.release();
+  const view=await ask(replacement,{type:'choice_query'});
+  assert.equal(view.window.state,'open');
+  assert.equal(x.authority.outbound.some(m=>m.type==='authority_choice_delivery'),false);
+  assert.equal((await ask(replacement,{type:'choice_submit',ticket,option:'yes'})).code,
+   'CHOICE_SUBMITTED_NOT_APPLIED');
+  await waitFor(replacement,m=>m.type==='choice_window'&&m.window.state==='delivered');
+  const delivery=x.authority.outbound.filter(m=>m.type==='authority_choice_delivery');
+  assert.equal(delivery.length,1);
+  assert.equal(delivery[0].playerId,sessions[0].playerId);
+ }finally{
+  gate?.release();
+  await x.broker.close();
+ }
+});
+
 test('worker loss fails outstanding transport immediately and ignores stale host acks',async()=>{
  const x=await setup();
  try{

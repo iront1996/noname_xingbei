@@ -58,7 +58,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
  // Checking a live socket is not sufficient: Chromium may have exited
  // before the private WebSocket close event is delivered. Never authorize
  // a new human ticket response solely on the channel readyState.
- const choiceAuthorityStatus=async roomId=>{
+ const workerAuthorityStatus=async roomId=>{
   const channel=workersByRoom.get(roomId);
   if(!live(channel))return 'WORKER_CHANNEL_OFFLINE';
   const health=await coordinator.inspectWorker(roomId);
@@ -304,7 +304,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    // During a crash/socket-close race, a new session must not receive
    // the dead Chromium's cached original GameEvent ticket.
    if(choices.view(obj.roomId,result.seat,playerId)){
-    const error=await choiceAuthorityStatus(obj.roomId);
+    const error=await workerAuthorityStatus(obj.roomId);
     if(!current(obj.roomId,result.seat,ws))return;
     if(error)send(ws,{type:'choice_interrupted',code:error});
     else sendChoice(obj.roomId,result.seat);
@@ -327,7 +327,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
     const window=choices.view(bound.roomId,bound.seat,playerId);
     if(window){
-     const error=await choiceAuthorityStatus(bound.roomId);
+     const error=await workerAuthorityStatus(bound.roomId);
      if(!current(bound.roomId,bound.seat,ws))
       return respond(reply(false,'NOT_AUTHENTICATED'));
      if(error)return respond(reply(false,error));
@@ -337,7 +337,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    case 'choice_submit':{
     if(!enableChoiceWindowExperiments)return respond(reply(false,'CHOICE_EXPERIMENT_DISABLED'));
     const worker=workersByRoom.get(bound.roomId);
-    const error=await choiceAuthorityStatus(bound.roomId);
+    const error=await workerAuthorityStatus(bound.roomId);
     // Inspecting Chromium yields to the event loop. A socket takeover
     // during that await must NOT submit with the old seat generation.
     if(!current(bound.roomId,bound.seat,ws))
@@ -367,7 +367,12 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
        obj.targetSeat>=coordinator.roomView(bound.roomId)?.roster?.length)
      return respond(reply(false,'ACTION_TARGET_PRECHECK_DENIED'));
     const worker=workersByRoom.get(bound.roomId);
-    if(!live(worker))return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
+    const error=await workerAuthorityStatus(bound.roomId);
+    if(!current(bound.roomId,bound.seat,ws))
+     return respond(reply(false,'NOT_AUTHENTICATED'));
+    if(error)return respond(reply(false,error));
+    if(workersByRoom.get(bound.roomId)!==worker)
+     return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
     if(outstandingCardProbes.size>=64)
      return respond(reply(false,'ACTION_PROBE_CAPACITY_EXCEEDED'));
     const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
@@ -401,7 +406,12 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
        !/^v3card_[a-f0-9]{6}$/.test(obj.cardId))
      return respond(reply(false,'ACTION_CARD_OWNERSHIP_DENIED'));
     const worker=workersByRoom.get(bound.roomId);
-    if(!live(worker))return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
+    const error=await workerAuthorityStatus(bound.roomId);
+    if(!current(bound.roomId,bound.seat,ws))
+     return respond(reply(false,'NOT_AUTHENTICATED'));
+    if(error)return respond(reply(false,error));
+    if(workersByRoom.get(bound.roomId)!==worker)
+     return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
     if(outstandingCardProbes.size>=64)
      return respond(reply(false,'ACTION_PROBE_CAPACITY_EXCEEDED'));
     const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
@@ -424,7 +434,12 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    case 'transport_probe':{
     if(!obj.requestId)return respond(reply(false,'REQUEST_ID_REQUIRED'));
     const worker=workersByRoom.get(bound.roomId);
-    if(!live(worker))return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
+    const error=await workerAuthorityStatus(bound.roomId);
+    if(!current(bound.roomId,bound.seat,ws))
+     return respond(reply(false,'NOT_AUTHENTICATED'));
+    if(error)return respond(reply(false,error));
+    if(workersByRoom.get(bound.roomId)!==worker)
+     return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
     if(outstandingProbes.size>=64)return respond(reply(false,'PROBE_CAPACITY_EXCEEDED'));
     const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
     if(!playerId)return respond(reply(false,'PLAYER_ID_NOT_READY'));

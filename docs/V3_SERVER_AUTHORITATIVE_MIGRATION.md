@@ -601,3 +601,10 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 - 在 V3-only broker 的真人 `choice_query`、`choice_submit` 前，驗證受管 Chromium 本身仍能完成私有 CDP 健康檢查，而不僅以 WebSocket `readyState` 認定主持端存活；檢查失敗回 `WORKER_UNAVAILABLE` 且不露出快取票券、不變更選擇狀態、不投遞原生選擇。
 - 新憑證重連若遇到尚未關閉的死亡主持通道，只回傳 `choice_interrupted` 而不重發失效的原生票券。健康檢查期間若同一座位被新 socket 接管，舊 socket 不得在 await 後提交。
 - 假 Chromium 單元測試刻意只使程序健康失效、保留私有 WebSocket 為 OPEN，核對查詢、提交、重新認證及通道最終關閉的拒絕語意。真 Chromium 中途 GameEvent/RNG 崩潰冷恢復仍未完成；此修改僅限 V3 實驗分支，不部署或變更 V1/V2/VPS。
+
+
+## 2026-10-12：健康驗證延伸至所有唯讀探測，並覆蓋健康檢查中的座位接管
+
+- 將 Chromium 程序及其當前私有 WebSocket 的雙重健康驗證，延伸至 `transport_probe`、`action_ownership_probe`、`action_target_probe`。受管程序已死亡但私有 WS 暫時未斷時，立即拒絕 `WORKER_UNAVAILABLE`，不建立假待處理探測，也不等待四秒逾時；這些探測仍不授權真出牌。
+- 上述探測與 `choice_submit` 一樣，在異步 CDP 健康檢查結束後重新核對「目前 socket 是否仍為本座位 session」和原主持通道，阻止舊座位連線世代的競態提交。
+- 新增假 Chromium 單元案例：(1) 程序已死但私有 WS OPEN，三種探測皆拒絕；(2) 特意暫停健康檢查時接管同一座位，舊 socket 不可提交票券，只有新 socket 有效。本批僅限 V3 實驗分支、未部署線上服務或影響 V1/V2。
