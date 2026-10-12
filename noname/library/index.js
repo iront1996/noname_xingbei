@@ -11454,6 +11454,16 @@ export class Library {
 			},
 		},
 		client: {
+			xbChoiceLease(wireId) {
+				// C2: this ID correlates a reply with one host-side pending choice.
+				if (typeof wireId === "string" && /^c2:[0-9a-z]+$/.test(wireId)) {
+					game._xingbeiChoiceTicket = wireId;
+				}
+			},
+			xbChoiceSettled(wireId) {
+				// Late clears must not overwrite a newer choice ticket.
+				if (game._xingbeiChoiceTicket === wireId) game._xingbeiChoiceTicket = null;
+			},
 			log: function (arr) {
 				if (Array.isArray(arr)) {
 					for (var i = 0; i < arr.length; i++) {
@@ -11863,6 +11873,7 @@ export class Library {
 						game.createEvent("game", false).setContent(lib.init.startOnline);
 						game.loop();
 						game.send("inited");
+						game.send("xbChoiceHello", 1);
 						ui.create.connecting(true);
 					});
 				};
@@ -12191,6 +12202,8 @@ export class Library {
 					}
 					game.loop();
 					game.send("reinited");
+					game._xingbeiChoiceTicket = null;
+					game.send("xbChoiceHello", 1);
 					game.showHistory();
 					_status.gameStarted = true;
 					if (lib.config.show_cardpile) {
