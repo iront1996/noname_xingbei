@@ -52,3 +52,5 @@ M1 continuation on the same PR:
 - Browser owner recovery now stores a protocol-v1 rotating secret in session storage, but automatic resubmission additionally requires a same-page in-memory marker. This prevents a hard reload from pretending the human game engine survived.
 - The HALL validates owner-recovery protocol version before token processing. A successful reclaim remains gated in `waiting_host_process` until the browser resends configuration.
 - `tests/v2-hall-process-integration.mjs` launches the real HALL entry point on an isolated loopback port with actual WebSocket clients. No VPS or live service is involved.
+- `5d4130d` implements the versioned browser owner-resume path and spawned HALL process test. Linux CI run 38305127613 passed all workflow steps.
+- M1 is not yet declared complete: real-browser concentrated acceptance, exact deployed-source offline compatibility, and a combined generated-B2 seat-registry plus owner-lifecycle real-process scenario remain outstanding.

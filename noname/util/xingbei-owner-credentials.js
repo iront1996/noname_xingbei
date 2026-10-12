@@ -54,4 +54,3 @@ export function clearOwnerCredentials(storage, endpoint) {
 		storage?.removeItem(key);
 	} catch (_) {}
 }
-

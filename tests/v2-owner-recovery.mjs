@@ -157,4 +157,3 @@ test("real browser path invokes owner control before guest reclaim and keeps rel
 	assert.match(game, /this\._xingbeiOwnerResumeReady\?\.roomId !== this\.roomId/);
 	assert.match(game, /loadOwnerCredentials\(storage, _status\.ip\)/);
 });
-

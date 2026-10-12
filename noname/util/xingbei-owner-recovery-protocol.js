@@ -85,4 +85,3 @@ export function handleOwnerRecoveryControl(message, context) {
 
 	return false;
 }
-

@@ -149,4 +149,3 @@ test("real HALL process preserves, authenticates and resumes a human-hosted room
 	await guest.next("roomresumed");
 	assert.ok(replacement.packets.some(packet => Array.isArray(packet) && packet[0] === "onconnection"));
 });
-

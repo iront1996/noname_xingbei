@@ -77,6 +77,7 @@ Persist lifecycle, authenticated seat bindings, confirmed engine checkpoints and
 - PR Linux CI: run 38304099421 `node-recovery-tests` succeeded for M1 implementation plus generated-HALL harness compatibility commits.
 - Review-hardening Linux CI: run 38304735974 succeeded for paused admission and server-mode cleanup.
 - Current local M1 continuation: 66/66 portable Node tests plus the standalone seat-registry suite passed, including a spawned real HALL process with real loopback WebSockets.
+- Owner-recovery Linux CI: run 38305127613 succeeded, including the isolated `ws@8.18.3` real-process test dependency and the actual HALL entry point.
 - Syntax checks: `game/server.js` and `game/server-room-lifecycle.js` passed `node --check`.
 - Production/VPS compatibility: not verified.
 - Real browser/player acceptance: not verified.
