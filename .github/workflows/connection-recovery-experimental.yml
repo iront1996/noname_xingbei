@@ -56,5 +56,7 @@ jobs:
         env:
           NODE_PATH: ${{ runner.temp }}/xingbei-ws/node_modules
         run: node --test tests/v2-b2-m1-process-integration.mjs
+      - name: V2 M2 managed host-session lifecycle and authority boundary
+        run: node --test tests/v2-host-session-manager.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js
