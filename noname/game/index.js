@@ -21,6 +21,7 @@ import { isClass, userAgentLowerCase, Uninstantable, GeneratorFunction, AsyncFun
 import { DynamicStyle } from "./dynamic-style/index.js";
 import { ConnectionHealth } from "../util/xingbei-connection-health.js";
 import { XingbeiProgressTracker } from "../util/xingbei-progress-tracker.js";
+import { V2ProgressAudit } from "../util/xingbei-v2-progress-audit.js";
 import { fingerprintXingbeiPublicState } from "../util/xingbei-public-checkpoint.js";
 import { ConnectionRecovery } from "../util/xingbei-connection-recovery.js";
 import { loadSeatCredentials } from "../util/xingbei-seat-credentials.js";
@@ -1695,8 +1696,42 @@ export class Game extends GameCompatible {
 	createServer() {
 		// A recreated host must not retain the previous game's timer or sequence.
 		lib.node.xingbeiProgressTracker?.dispose();
+		lib.node.xingbeiV2ProgressAudit?.dispose();
+		lib.node.xingbeiV2ProgressAudit = new V2ProgressAudit({
+			onSignal: diagnosis => {
+				// These are observations, NOT connection failures or AI triggers.
+				console.warn("[Xingbei][V2] Progress advisory", diagnosis.kind,
+					"seat:", diagnosis.seatId ?? "room",
+					"ageMs:", diagnosis.overdueMs ?? diagnosis.quietMs ?? 0,
+					"transportAckFresh:", diagnosis.transportAckFresh);
+			}
+		});
 		lib.node.xingbeiProgressTracker = new XingbeiProgressTracker({
 			phaseNow: () => Number.isSafeInteger(game.phaseNumber) ? game.phaseNumber : null,
+			onSample: sample => {
+				// C3 ACKs are transport-dispatch evidence only. Correlate host
+				// phase/outbound silence with the *real* pending-choice registry.
+				if (lib.configOL?.mode !== "xingBei" || _status.over ||
+					!lib.playerOL?.[sample.seatId] ||
+					lib.playerOL[sample.seatId].ws !== sample.client) return;
+				const responses = lib.node.torespond;
+				const count = responses && typeof responses === "object"
+					? Object.values(responses).filter(value =>
+						value === "_noname_waiting" ||
+						(typeof value === "function" && value._noname_waiting === true)).length
+					: null;
+				const pending = responses?.[sample.seatId];
+				const waiting = pending === "_noname_waiting" ||
+					(typeof pending === "function" && pending._noname_waiting === true);
+				lib.node.xingbeiV2ProgressAudit?.observe({
+					...sample,
+					gameStarted: Number.isSafeInteger(game.phaseNumber) && game.phaseNumber > 0,
+					hostPaused: _status.paused === true,
+					pendingChoiceCount: count,
+					waitingChoice: waiting,
+					choiceLease: lib.node.xingbeiChoiceLeases?.current(sample.seatId)
+				});
+			},
 			onSuspect: info => {
 				// Detection-only: C3 must not kick a player based on a probe.
 				console.warn("[Xingbei] Gameplay progress suspect", info.kind,

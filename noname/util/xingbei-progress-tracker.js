@@ -7,12 +7,13 @@
  */
 export class XingbeiProgressTracker {
   constructor({now=Date.now,setIntervalFn=setInterval,clearIntervalFn=clearInterval,
-    intervalMs=15000,staleMs=90000,minPending=3,phaseNow=()=>null,onSuspect=()=>{}}={}) {
+    intervalMs=15000,staleMs=90000,minPending=3,phaseNow=()=>null,onSuspect=()=>{},
+    onSample=()=>{}}={}) {
     if(!Number.isSafeInteger(intervalMs)||intervalMs<1000)throw new Error("bad interval");
     if(!Number.isSafeInteger(staleMs)||staleMs<=intervalMs)throw new Error("bad stale timeout");
     this.now=now;this.schedule=setIntervalFn;this.unschedule=clearIntervalFn;
     this.intervalMs=intervalMs;this.staleMs=staleMs;this.minPending=minPending;
-    this.onSuspect=onSuspect;this.phaseNow=phaseNow;this.sequence=0;this.probeSerial=0;this.checkpointSerial=0;this.clients=new Map();
+    this.onSuspect=onSuspect;this.onSample=onSample;this.phaseNow=phaseNow;this.sequence=0;this.probeSerial=0;this.checkpointSerial=0;this.clients=new Map();
     this.timer=null;
   }
   broadcastAdvanced() {
@@ -69,6 +70,10 @@ export class XingbeiProgressTracker {
         rec.lastProbeId=++this.probeSerial;
         rec.send(rec.lastProbeId,this.sequence,rec.phase);
       } catch(_){/* transport close handler owns reconnection */}
+      // Optional V2 observer. ACK age measures dispatch, never GameEvent progress.
+      // Sampling failure must not affect heartbeat probes or the normal game.
+      try{this.onSample({seatId,client:rec.client,hostSequence:this.sequence,
+        phase:rec.phase,lastAckAgeMs:time-rec.lastAckAt});}catch(_){}
     }
   }
   acknowledge(seatId,client,probeId,sequence,clientPhase=null) {

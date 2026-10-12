@@ -44,3 +44,15 @@ This branch was forked from commit `9b4c2a29582e412733014f60e6e70f1f4ec03397`, b
 - Existing `xbProgressHello` remains unavailable while the replacement is pending; initial-lobby `inited` and the approved observer path remain available. The new V2 host handshake test executes the real engine handlers, not a duplicate implementation.
 - **Limit:** a client-side `reinited` message is not proof of fully replayable GameEvent, pending skills, or hidden state. It does not justify automatic overwrite or forced reconnect. No deployment.
 
+
+## V2-4: distinguish heartbeat from game execution
+
+- `noname/util/xingbei-v2-progress-audit.js`: room-scoped, detection-only observer which correlates host broadcast sequence, turn phase, host pause, currently pending player choices, actual C2 lease deadlines and recent C3 WebSocket ACK age. It emits **advisories**, never declares a socket dead, forces AI, resets game state, or broadcasts diagnostics to players.
+- `XingbeiProgressTracker` gains optional `onSample` callback from its existing 15-second probe, preserving the existing probe wire protocol and exception isolation. The V2 human host `game.createServer()` wires this callback only for its current initialized real `xingBei` guest seat.
+- **Choice deadline overrun:** if a verified pending choice remains after its C2 lease deadline + 12s grace, emits a single advisory for that choice generation, even when the network ACK is still fresh. The existing choice timeout continues to own actual AI/choice completion.
+- **Quiet host activity:** if a started game exhibits **neither** outbound host broadcast advancement **nor** phase change for 120 seconds, and **no** pending choice, deliberate host pause or unknown waiting state is present, emits one room-level `host_progress_quiet_unverified` advisory. This can be a legitimate animation or untracked host-side choice, not proof of a frozen game.
+- Observations intentionally contain no session token, private hand, card contents, raw choice result or WebSocket. The audit holds no timers, game-state snapshots or transport refs. It resets when a new host starts.
+- `tests/v2-progress-audit.mjs` covers responsive-but-overdue choice, normal waits, idle suppression, phase or host activity resetting the quiet window, one-shot advisory and session replacement, and verifies the real `createServer` integration.
+
+**Boundary:** A blocked host JavaScript thread cannot run this host-local diagnostic. Client-side acknowledgements cannot prove that GameEvent processing continued. Future V2 work should add an independent observer and safe concentrated integration acceptance before any VPS deployment.
+
