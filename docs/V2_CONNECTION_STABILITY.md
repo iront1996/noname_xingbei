@@ -92,3 +92,13 @@ This branch was forked from commit `9b4c2a29582e412733014f60e6e70f1f4ec03397`, b
 - `tests/v2-reinit-async-fence.mjs` executes the actual guest reinit handler with delayed mode-loader callbacks, models same-socket supersession, phase change, socket takeover, callback duplication, malformed roster and normal reinit compatibility.
 
 **No live V2, VPS, V1, V3, or monitor changes.** The production-source HALL preflight and concentrated browser/real-player acceptance are still pending.
+
+## V2-8: snapshot coverage inventory (diagnostics, not full skill restore)
+
+- Inspected the *actual* `get.arenaState()`, `Player.getState()`, browser `reinit` and `mode/xingBei.js` contracts. Arena snapshots include existing handcards, equipments, judges, special/expansion zones and many player-facing fields, but the generic per-player `storage`, hidden/temporary skill state and GameEvent execution stack are **not explicitly serialized by Player.getState**. The Xingbei mode has no declared `getState/updateState` pair. Full ability/event replay is therefore **not verified**.
+- In the genuine host reconnect branch, capture arena/mode snapshots **once each**. Attach an optional protocol-v1 `xbCoverage` metadata argument containing ONLY Boolean card-zone presence and fixed limitation codes (skill state, GameEvent stack, mode update availability, empty mode snapshot, pending choice UI). The already existing snapshot wire payload is unchanged; this additional metadata contains no cards, skill storage, player IDs or secrets.
+- The browser stores an allowlisted/sanitized coverage advisory only after reaching the current authenticated async reinit callback; it logs that the snapshot was applied with unverified fields. It still sends the existing `reinited` and C2/C3 acknowledgements and does **not** invent restored skills or replace GameEvents.
+- `tests/v2-reinit-coverage.mjs` checks the real source's serialized fields, the lack of generic skill/event stack serialization, limitation classification, no leaked card contents, protocol handling and actual host/client integration anchors.
+- This is observability and contract testing, not a fix for missing skill/event serialization. Do not claim a random interrupted skill chain has been faithfully restored on V2. Solving that requires explicit privacy-safe mode-specific state and event checkpoint design.
+
+No VPS/production deployments; V1/V3 and monitor v2.3.0 remain untouched.

@@ -27,6 +27,7 @@ import { freezeButExtensible } from "../util/index.js";
 import security from "../util/security.js";
 import { handleSeatRecoveryControl } from "../util/xingbei-recovery-protocol.js";
 import { validateXingbeiSeatSnapshot } from "../util/xingbei-reinit-snapshot.js";
+import { assessXingbeiReinitCoverage, normalizeXingbeiReinitCoverage } from "../util/xingbei-reinit-coverage.js";
 import { ErrorManager } from "../util/error.js";
 
 import { defaultSplashs } from "../init/onload/index.js";
@@ -11125,7 +11126,24 @@ export class Library {
 					this.id = config.id;
 					this.inited = false;
 					this._xingbeiReinitPending = {seatId: config.id};
-					this.send("reinit", lib.configOL, get.arenaState(), game.getState ? game.getState() : {}, game.ip, null, _status.onreconnect, _status.cardtag, _status.postReconnect);
+					const xbArenaSnapshot = get.arenaState();
+					const xbModeSnapshot = game.getState ? game.getState() : {};
+					const xbPendingChoice = lib.node.xingbeiChoiceLeases?.current(player.playerid);
+					// V2-8: report missing recovery coverage, never the skill/card
+					// contents. Existing owner remains game-event authority.
+					const xbCoverage = lib.configOL?.mode === "xingBei"
+						? assessXingbeiReinitCoverage(xbArenaSnapshot, xbModeSnapshot, {
+							canApplyModeState: typeof game.updateState === "function",
+							pendingChoice: Boolean(xbPendingChoice)
+						}) : null;
+					this._xingbeiReinitCoverage = xbCoverage;
+					if (xbCoverage?.limitations.length) {
+						console.warn("[Xingbei][V2] Reinit does not prove full game state:",
+							xbCoverage.limitations.join(","));
+					}
+					this.send("reinit", lib.configOL, xbArenaSnapshot, xbModeSnapshot,
+						game.ip, null, _status.onreconnect, _status.cardtag,
+						_status.postReconnect, xbCoverage);
 				} else if (version != lib.versionOL) {
 					this.send("denied", "version");
 					lib.node.clients.remove(this);
@@ -11940,7 +11958,7 @@ export class Library {
 					}
 				}
 			},
-			reinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect) {
+			reinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect, xbCoverage) {
 				// Capture the socket: async mode loading must not complete a newer recovery.
 				const xbReinitSocket = game.ws;
 				// V2 B3 recovery: never clear the current arena/roster on an
@@ -12282,6 +12300,15 @@ export class Library {
 					// Never send a false completion to that newer transport.
 					if (!xbReinitCurrent()) return;
 					game.loop();
+					// Coverage evidence is a conservative status, not private
+					// skill data nor proof the interrupted GameEvent was replayed.
+					if (xbRecovery && xbReinitCurrent()) {
+						game._xingbeiReinitCoverage = normalizeXingbeiReinitCoverage(xbCoverage);
+						if (game._xingbeiReinitCoverage?.limitations.length) {
+							console.warn("[Xingbei][V2] Snapshot applied with unverified state:",
+								game._xingbeiReinitCoverage.limitations.join(","));
+						}
+					}
 					game.send("reinited");
 					game._xingbeiChoiceTicket = null;
 					game.send("xbChoiceHello", 1);

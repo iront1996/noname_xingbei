@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
+import {assessXingbeiReinitCoverage} from "../noname/util/xingbei-reinit-coverage.js";
 const s=readFileSync(new URL("../noname/library/index.js",import.meta.url),"utf8");
 const start=s.indexOf("\t\t\tinit(version, config, banned_info) {");
 const end=s.indexOf("\t\t\txbChoiceHello(protocolVersion) {",start);
@@ -25,7 +26,8 @@ function setup(){
  const get={arenaState(){return {players:{seat_01:{hp:3}}}},config(){return false}};
  const _status={waitingForPlayer:false,onreconnect:null,cardtag:null,postReconnect:null};
  const window={isNonameServer:false};
- const host=new Function("lib","game","get","_status","window","return ({"+src+"})")(lib,game,get,_status,window);
+ const host=new Function("lib","game","get","_status","window","assessXingbeiReinitCoverage",
+  "return ({"+src+"})")(lib,game,get,_status,window,assessXingbeiReinitCoverage);
  const current={id:"seat_01",inited:false,closed:false,send(...args){sent.push(args)}};
  const cfg={id:"seat_01",onlineKey:"PUBLIC_KEY"};
  return {host,lib,game,_status,current,old,seat,cfg,sent,broadcasts,diagnostics,marks,
