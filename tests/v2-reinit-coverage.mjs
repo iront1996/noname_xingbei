@@ -58,12 +58,12 @@ test("client receives only fixed allowlisted coverage flags",()=>{
  for(const malicious of [
   {protocol:1,cardZonesIncluded:true,limitations:["storage={privateSkill:true}"]},
   {protocol:1,cardZonesIncluded:true,limitations:["skill_state_unverified","skill_state_unverified"]},
+  {protocol:1,cardZonesIncluded:true,limitations:[],privateHands:["secret"]},
   {protocol:2,cardZonesIncluded:true,limitations:[]},
   
   {protocol:1,cardZonesIncluded:true,limitations:"skill_state_unverified"},
   null
  ]) {
-  if(malicious && malicious.privateHands) continue; // explicit shape extension tested separately
   assert.equal(normalizeXingbeiReinitCoverage(malicious),null);
  }
 });

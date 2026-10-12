@@ -39,7 +39,9 @@ export function assessXingbeiReinitCoverage(arena, modeState, {
 
 export function normalizeXingbeiReinitCoverage(report) {
   if (!report || typeof report !== "object" || Array.isArray(report) ||
-      report.protocol !== 1 || typeof report.cardZonesIncluded !== "boolean" ||
+      report.protocol !== 1 || Object.keys(report).length !== 3 ||
+      Object.keys(report).some(key => !["protocol","cardZonesIncluded","limitations"].includes(key)) ||
+      typeof report.cardZonesIncluded !== "boolean" ||
       !Array.isArray(report.limitations) || report.limitations.length > LIMITATIONS.length ||
       new Set(report.limitations).size !== report.limitations.length ||
       report.limitations.some(flag => typeof flag !== "string" || !KNOWN.has(flag))) return null;

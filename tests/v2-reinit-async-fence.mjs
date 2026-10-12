@@ -3,9 +3,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {validateXingbeiSeatSnapshot} from "../noname/util/xingbei-reinit-snapshot.js";
+import {normalizeXingbeiReinitCoverage} from "../noname/util/xingbei-reinit-coverage.js";
 
 const code=readFileSync(new URL("../noname/library/index.js",import.meta.url),"utf8");
-const start=code.indexOf("\t\t\treinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect) {");
+const start=code.indexOf("\t\t\treinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect, xbCoverage) {");
 const end=code.indexOf("\t\t\texec: function (func) {",start);
 assert.ok(start>=0&&end>start,"real reinit function anchors");
 const method=code.slice(start,end);
@@ -35,8 +36,10 @@ function setup(){
  const get={parsedResult(x){return x}};
  const ai={};
  const handler=new Function("game","lib","ui","_status","get","ai","clearTimeout",
-  "validateXingbeiSeatSnapshot","return ({"+method+"})")(
-  game,lib,ui,_status,get,ai,()=>{},validateXingbeiSeatSnapshot).reinit;
+  "validateXingbeiSeatSnapshot","normalizeXingbeiReinitCoverage",
+  "return ({"+method+"})")(
+  game,lib,ui,_status,get,ai,()=>{},validateXingbeiSeatSnapshot,
+  normalizeXingbeiReinitCoverage).reinit;
  function invoke(snap=snapshot()){return handler({mode:"xingBei"},snap,{},"ws://host",null,null,null,null)}
  function mode(){return {
   ai:{recoveredAbility:"mode-restored"},get:{},translate:{},
