@@ -164,6 +164,7 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       let nativeSelectionPreviewHooks=null;
       const previewLeases=new Map();
       const privateHandAcks=new Map();
+      let privateHandsRevision=0;
       ws.addEventListener('open',()=>ws.send(JSON.stringify({
        type:'authority_hello',roomId:opts.roomId,secret:opts.secret
       })));
@@ -339,6 +340,38 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          boundPeerCount:bindings.filter(b=>b.connectionId!==null).length}),
          // Used by trusted V3-only native engine bootstrap, never by human clients.
          getSeatBindings:()=>bindings.map(b=>({...b})),
+         // Re-read every physical hand from authoritative native Players.
+         // Only Chromium may publish these private per-seat projections.
+         // Never accept a human-provided card list or public card IDs.
+         publishNativeLiveHands:()=>{
+          if(!connected||!seenRoster||bindings.length!==seatCount)return false;
+          const native=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
+          if(!native||native.inspect().startingCardsDealt!==true||
+             native.inspect().characterCount!==bindings.length)return false;
+          const revision=privateHandsRevision+1;
+          if(!Number.isSafeInteger(revision))return false;
+          let views;
+          try{views=bindings.map(b=>native.privateSeatView({seat:b.seat}))}
+          catch{return false}
+          if(views.some((view,seat)=>view?.playerId!==bindings[seat].playerId||
+             view.seat!==seat||view.publicOtherHandCounts?.length!==seatCount))
+           return false;
+          const counts=views[0].publicOtherHandCounts;
+          if(views.some(view=>view.publicOtherHandCounts.some((v,seat)=>
+             v.seat!==seat||v.handCount!==views[seat].ownHand.length))||
+             counts.some((v,seat)=>v.handCount!==views[seat].ownHand.length))
+           return false;
+          privateHandAcks.clear();
+          privateHandsRevision=revision;
+          for(const b of bindings){
+           const own=views[b.seat];
+           ws.send(JSON.stringify({type:'authority_private_hand',
+            roomId:opts.roomId,seat:b.seat,playerId:b.playerId,
+            revision,character:own.character,ownHand:own.ownHand,
+            publicOtherHandCounts:own.publicOtherHandCounts}));
+          }
+          return revision;
+         },
          publishNativeOpeningHands:()=>{
           if(!connected||!seenRoster)return false;
           const game=window.__v3NativeXingBeiTest?.core?.game;
@@ -346,6 +379,8 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
           if(!native||native.inspect().startingCardsDealt!==true||
              native.inspect().characterCount!==bindings.length)return false;
           privateHandAcks.clear();
+          if(privateHandsRevision!==0)return false;
+          privateHandsRevision=1;
           for(const b of bindings){
            const own=native.privateSeatView({seat:b.seat});
            if(own.playerId!==b.playerId)return false;
@@ -360,7 +395,8 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          },
          inspectPrivateHandAcks:()=>({
           count:privateHandAcks.size,
-          seats:Array.from(privateHandAcks.keys()).sort((a,b)=>a-b)
+          seats:Array.from(privateHandAcks.keys()).sort((a,b)=>a-b),
+          revisions:Array.from(privateHandAcks.values())
          }),
          registerNativeChoiceHooks:hooks=>{
           if(nativeChoiceHooks||!hooks||typeof hooks.opened!=='function'||
@@ -555,6 +591,32 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      await sleep(40);
     }
     throw fail('V3_PRIVATE_NATIVE_HAND_PUBLISH_TIMEOUT');
+   },
+   async publishNativeLiveHands(){
+    // Test-only trusted Chromium→broker projection refresh. Neither
+    // human WebSockets nor arbitrary client-supplied state can invoke it.
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const sent=await session.send('Runtime.evaluate',{
+     expression:'window.__v3AuthorityBridge?.publishNativeLiveHands()??false',
+     returnByValue:true});
+    const revision=sent.result?.value;
+    if(sent.exceptionDetails||!Number.isSafeInteger(revision)||revision<1)
+     throw fail('V3_NATIVE_LIVE_HAND_PUBLISH_DENIED');
+    for(let attempt=0;attempt<120;attempt++){
+     const result=await session.send('Runtime.evaluate',{
+      expression:'window.__v3AuthorityBridge.inspectPrivateHandAcks()',
+      returnByValue:true});
+     const stats=result.result?.value;
+     const count=(await this.inspectNativeXingBeiSeats()).session.seatCount;
+     if(stats?.count===count&&
+        stats.revisions?.length===count&&
+        stats.revisions.every(r=>r===revision))
+      return Object.freeze({revision,seatCount:count,stored:true});
+     await sleep(40);
+    }
+    throw fail('V3_NATIVE_LIVE_HAND_PUBLISH_TIMEOUT');
    },
    async dealNativeOpeningCardsByOriginalEvent(){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')

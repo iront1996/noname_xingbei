@@ -688,3 +688,10 @@ CI 測試核對第三人的 event provenance、與第二人的 GameEvent 物件�
 Chromium CI `20fac4e` 與 `efad4e1` 揭露第四座位原版階段抽牌後，`privateSeatView()` 仍以 `physicalCardsBySeat` 的開局陣列呈現舊四張，而真實 `Player.getCards('h')` 及選擇票券已有第五張。`efad4e1` 的稽核因錯認摸牌時點而失敗。本次修正 V3-only `privateSeatView`：每次從**真實 Chromium Player 手中目前的 Card DOM**讀取實體卡 ID／名稱及其他座位的公開手牌張數，拒絕無實體 ID、重複 ID 或非原生 Card。嚴格比較第四玩家進入 `chooseToUse` 前後的全員手牌、牌庫順序及 HP，要求此時不再抽額外牌；私人視圖和票券必須與原生手牌一致。
 
 這只修正 V3 Chromium 中的視圖讀取，不表示 broker 的連續私人狀態廣播已完成；後續仍需明確的修訂版本與每座位安全投影更新。沒有新增玩家出牌權限，也沒有操作 VPS、V1、V2 或 master。
+
+
+## 2026-10-12：V3 受管 Chromium 主動刷新 broker 私人投影（手動可信入口）
+
+新增僅受管 Chromium 的私有橋接介面 `publishNativeLiveHands` 與 Node CI-only 封裝：在原生 Player 狀態可讀取時，同步取得所有座位實體手牌與彼此一致的公開手牌張數，使用**遞增的 per-room 修訂版**送至 broker 的 `authority_private_hand`，每份資料仍由既有 broker 驗證穩定 Player ID、每座位所有權與卡牌唯一性，並只向自己的已認證 socket 發出完整手牌。另有 private projection ACK 收斂及修訂版檢查，不能把舊 ACK 誤當新快照完成。
+
+隔離 Chromium 測試在第四玩家已額外摸過一張牌的原生 `chooseToUse` 等待點，由受管 worker 主動刷新所有座位 private projections：第四玩家取得最新完整實體手牌，其他座位只能取得自己的實體牌與全員手牌張數，未認證者不得查詢。此批**不讓人類任意發布快照**，也尚未實作自動在每個原生階段變化後發布、跨玩家牌張交換的原子交易與中途冷恢復。

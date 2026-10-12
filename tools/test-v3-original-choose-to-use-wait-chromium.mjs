@@ -52,6 +52,7 @@ for(const {answer,seatCount} of [
  let chrome;
  const broker=await createV3AuthorityWebSocketBroker({
   WebSocketServer,enableChoiceWindowExperiments:true,
+  enablePrivateHandExperiments:true,
   enableNativeOwnershipProbes:true,
   launchWorker:async()=>{
    chrome=await launchV3ChromiumAuthorityWorker({executable});
@@ -679,6 +680,33 @@ for(const {answer,seatCount} of [
     postFourthWait.hands.map(x=>x.length));
    assert.deepEqual(fourthWindow.options.slice(0,-1).sort(),
     [...postFourthWait.hands[3]].sort());
+   // The trusted worker now refreshes the broker's per-seat projections.
+   // The broker, not any human browser, validates revision/ownership.
+   const projection=await chrome.publishNativeLiveHands();
+   assert.equal(projection.stored,true);
+   assert.equal(projection.seatCount,seatCount);
+   assert.ok(projection.revision>=1);
+   const privateFourth=await ask(returnedFourth,'private_hand_query');
+   assert.equal(privateFourth.code,'PRIVATE_HAND_STATE');
+   assert.equal(privateFourth.view.revision,projection.revision);
+   assert.deepEqual(privateFourth.view.ownHand.map(c=>c.cardId),
+    postFourthWait.hands[3]);
+   assert.deepEqual(privateFourth.view.publicOtherHandCounts.map(x=>x.handCount),
+    postFourthWait.hands.map(x=>x.length));
+   for(let seat=0;seat<3;seat++){
+    const own=await ask(finalPeers[seat],'private_hand_query');
+    assert.equal(own.code,'PRIVATE_HAND_STATE');
+    assert.equal(own.view.seat,seat);
+    assert.equal(own.view.revision,projection.revision);
+    assert.deepEqual(own.view.ownHand.map(c=>c.cardId),
+     postFourthWait.hands[seat]);
+    assert.deepEqual(own.view.publicOtherHandCounts.map(x=>x.handCount),
+     postFourthWait.hands.map(x=>x.length));
+    assert.equal(own.view.ownHand.some(c=>
+     postFourthWait.hands[3].includes(c.cardId)),false);
+   }
+   assert.equal((await ask(staleFourth,'private_hand_query')).code,
+    'NOT_AUTHENTICATED');
    const fourthPreview=await chrome.inspectNativeUseCardPreview();
    assert.equal(fourthPreview.state,'open');
    assert.equal(fourthPreview.samePausedEvent,true);
