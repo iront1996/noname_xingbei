@@ -23,6 +23,13 @@ The normative requirements, minimal-difference M2/M3 sequence and automatable ac
 - **Completed only:** M2 hostSession identity/lifecycle simulation foundation.
 - **Not completed:** HALL integration, real Chromium launch, Xingbei engine initialization, player/admin protocol, four-player continuity, pending-choice policy, authoritative state progression, M3 uniform recovery, M4 persistence or real-browser acceptance.
 
+M2 batch 2:
+
+- Commit `79de3fb` adds a real child-process launcher and simulated managed-host executable. Bootstrap secrets travel over IPC only and are verified absent from child argv/environment.
+- The manager consumes child readiness/results through the same authentication boundary; normal stop and room-isolated abnormal exit are tested.
+- Linux CI run 38308392018 passed. Portable local regression passed 77/77 plus the B2 seat-registry suite.
+- This remains simulated-host evidence, not Chromium or game-engine authority evidence.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

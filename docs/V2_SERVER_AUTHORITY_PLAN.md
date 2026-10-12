@@ -119,6 +119,15 @@ Read-only V3 research findings:
 - V3 authority bridge and coordinator experiments demonstrate authenticated room channels and creator-independent worker lifetime, but remain V3-only and are not imported or modified by this batch.
 - The future V2 Chromium adapter should implement the batch-1 launcher contract rather than weakening or bypassing the hostSession identity boundary.
 
+### M2 batch 2 — supervised simulated host process
+
+- `game/server-managed-host-launcher.js` starts one isolated child process per hostSession with an IPC channel and a bounded graceful-stop timeout followed by forced termination.
+- The host bootstrap, including its secret, is delivered only over IPC after manager listeners are installed. It is not placed in command-line arguments or environment variables; the real-child integration test verifies both properties inside the child.
+- Child `host_ready` and `authoritative_result` messages are routed through the same hostSession attestation and sequence checks as the direct unit tests. The child cannot bypass the authority gate merely because it was spawned by the server.
+- A real Node child fixture proves launch, ready, one accepted result, requested stop and abnormal exit. Failure of one room's child does not change another room's ready session.
+- Evidence: implementation commit `79de3fb`; Linux CI run 38308392018 passed the combined host-session/process step. Local portable regression passed 77/77 Node tests plus the B2 seat-registry suite.
+- This is process-supervision evidence only. The child is a simulated host and does not load Chromium or the Xingbei engine.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
