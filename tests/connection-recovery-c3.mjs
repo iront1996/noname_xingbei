@@ -77,7 +77,7 @@ tracker.probe();
 const secondProbe=second.sent.at(-1);
 hostHandlers.xbProgressAck.call(first,secondProbe[1],secondProbe[2],5);
 assert.equal(tracker.get("seat1").acknowledgedSequence,3);
-hostHandlers.xbProgressAck.call(second,...secondProbe.slice(1),0);
+hostHandlers.xbProgressAck.call(second,secondProbe[1],secondProbe[2],0);
 for(let i=0;i<2;i++){
   tracker.probe();
   const p=second.sent.at(-1);
@@ -87,7 +87,7 @@ assert.equal(issues.filter(x=>x.kind==="game_phase_behind").length,1);
 gameForClient.phaseNumber=phase;
 tracker.probe();
 const recoveredPhaseProbe=second.sent.at(-1);
-hostHandlers.xbProgressAck.call(second,...recoveredPhaseProbe.slice(1),5);
+hostHandlers.xbProgressAck.call(second,recoveredPhaseProbe[1],recoveredPhaseProbe[2],5);
 assert.equal(tracker.get("seat1").phaseSuspect,false);
 
 // A non-inited socket / unrelated room observer must not be able to register.
