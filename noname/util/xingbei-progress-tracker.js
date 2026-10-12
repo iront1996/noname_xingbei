@@ -7,12 +7,12 @@
  */
 export class XingbeiProgressTracker {
   constructor({now=Date.now,setIntervalFn=setInterval,clearIntervalFn=clearInterval,
-    intervalMs=15000,staleMs=90000,minPending=3,onSuspect=()=>{}}={}) {
+    intervalMs=15000,staleMs=90000,minPending=3,phaseNow=()=>null,onSuspect=()=>{}}={}) {
     if(!Number.isSafeInteger(intervalMs)||intervalMs<1000)throw new Error("bad interval");
     if(!Number.isSafeInteger(staleMs)||staleMs<=intervalMs)throw new Error("bad stale timeout");
     this.now=now;this.schedule=setIntervalFn;this.unschedule=clearIntervalFn;
     this.intervalMs=intervalMs;this.staleMs=staleMs;this.minPending=minPending;
-    this.onSuspect=onSuspect;this.sequence=0;this.clients=new Map();
+    this.onSuspect=onSuspect;this.phaseNow=phaseNow;this.sequence=0;this.clients=new Map();
     this.timer=null;
   }
   broadcastAdvanced() {
@@ -40,8 +40,9 @@ export class XingbeiProgressTracker {
     if(!this.clients.size && this.timer!==null){this.unschedule(this.timer);this.timer=null;}
     return true;
   }
-  probe({phase=null}={}) {
+  probe() {
     const time=this.now();
+    const phase=this.phaseNow();
     for(const [seatId,rec] of this.clients) {
       if(rec.client.closed||rec.client.inited!==true){
         this.forget(seatId,rec.client);continue;
