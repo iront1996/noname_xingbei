@@ -94,3 +94,23 @@ Legacy clients that do not send `xbChoiceHello(1)` retain the pre-C2 behavior fo
 4. Choose a conservative escalation policy (warning -> resync -> reconnect) only after the state checkpoint can distinguish expected async work from a true stale client.
 
 Deployment remains A1 server heartbeat only. This branch is not deployed to HALL/V3 websites. No changes to V1/V2 production game flow, V3 live runtime, or monitor v2.3.0.
+
+
+## C3b – semantic checkpoint and originating choice context (development only)
+
+### Implemented
+- `noname/util/xingbei-progress-tracker.js`: host-issued `issueCheckpoint(phase,currentSeatId)` with per-current-socket outstanding checkpoint; accepts `acknowledgeCheckpoint` only from the same current initialized transport, matching checkpoint ID and authoritative phase/seat values. Records `state_checkpoint_mismatch` and `state_checkpoint_unconfirmed` as **diagnostics only**.
+- `noname/game/index.js`: the existing `game.syncState()` emits a checkpoint captured alongside the same host state and appends an ACK *inside the existing client-side state-update callback*, **after** `game.updateState`, `_status.currentPhase` and `game.phaseNumber` have been applied.
+- `noname/library/index.js`: the host `xbStateCheckpointAck` handler fences outdated/observer/uninitialized sockets and forwards acknowledgements to the current tracker's validation. No new game close or automatic overwrite is performed.
+- `noname/library/element/gameEvent.js`: the standard `GameEvent.send()` now establishes the waiting choice and sends its `xbChoiceLease` **before** the choice instruction. The originating ticket is passed to the client event and propagated with the result.
+- `noname/util/xingbei-choice-context.js`: marks the originating client-side result with *non-enumerable* ticket metadata. `lib.init.startOnline()` prefers this original ticket to the newer global C2 ticket; a late result therefore cannot borrow the next event's ID on the supported GameEvent path.
+- `tests/connection-recovery-c3b.mjs` checks the actual syncState and GameEvent.send/startOnline method bodies, matching/late/replayed state ACKs, retransmission fencing and origin-ticket ordering. Added to experimental CI.
+
+### Deliberate limits
+- The semantic checkpoint currently validates the authoritative **phase number and current player's seat identity**, not an exhaustive hash of cards, skills, prompts, hand contents or other game state. It confirms *execution of the existing syncState callback* but cannot prove every deferred animation or async skill completed.
+- Only the standard `GameEvent.send` path now carries immutable originating-event metadata. Custom direct `player.send` + `player.wait` call sites still use the old C2 fallback and need per-call-site binding, or a new UI event resolver. Stale async callbacks from such sites remain possible.
+- A missing checkpoint or mismatched ACK only raises a diagnostic; never auto-disconnect or force a reload based on C3b alone.
+- Current independent V3 Chromium-host source, end-to-end browser game and GitHub CI success are not yet confirmed. No deployment of B1–C3b. Live VPS runs only A1 heartbeat, and monitor v2.3.0 remains unchanged.
+
+### Next integration gate
+Extend deterministic public-state fingerprints and explicit recovery snapshots per game mode, bind remaining custom result paths to their originating event, then test the whole HALL/V3 flow (including V3's latest independent host runtime) before one concentrated deployment and real-player validation.
