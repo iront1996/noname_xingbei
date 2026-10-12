@@ -481,7 +481,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    const state={phase,pauseTriggered:false,failure:null,finished:false,
     entryReleased:false,actionGate:false,actionEvent:null,hold:null,
     actionEntryReleased:false,selectionGate:false,selectionEvent:null,
-    nextActionGate:null};
+    nextActionGate:null,nextActionEntryReleased:false,
+    nextSelectionGate:false,nextSelectionEvent:null};
    // This hook runs in original content.js phaseLoop step 1, immediately
    // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
    // hook and must never be installed in production V3.
@@ -613,21 +614,56 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    if(typeof original!=='function')
     throw err('V3_NATIVE_SELECTION_GATE_METHOD_MISSING');
    Player.prototype.gongJiOrFaShu=function(...args){
-    if(this!==first||args.length!==0||state.selectionGate)
+    const firstActor=this===first&&!state.selectionGate&&
+     !state.nextActionEntryReleased;
+    const secondActor=this===state.nextActionGate?.player&&
+     state.nextActionEntryReleased&&!state.nextSelectionGate&&
+     state.nextActionGate?.event instanceof lib.element.GameEvent&&
+     _status.event?.name==='xingDong'&&_status.event.player===this&&
+     adapter.inspect().originalUsePassApplied===1;
+    if(args.length!==0||(!firstActor&&!secondActor))
      throw err('V3_NATIVE_SELECTION_UNEXPECTED_OWNER');
     const event=original.call(this);
     if(!(event instanceof lib.element.GameEvent)||
-       event.name!=='gongJiOrFaShu'||event.player!==first)
+       event.name!=='gongJiOrFaShu'||event.player!==this)
      throw err('V3_NATIVE_SELECTION_EVENT_INVALID');
-    state.selectionEvent=event;
-    state.selectionGate=true;
-    game.pause(); // Original chooseToUse content has NOT executed.
+    if(firstActor){
+     state.selectionEvent=event;state.selectionGate=true;
+    }else{
+     state.nextSelectionEvent=event;state.nextSelectionGate=true;
+    }
+    game.pause(); // Never run this actor's chooseToUse without an explicit gate.
     return event;
    };
    state.actionEntryReleased=true;
    game.resume();
    return Object.freeze({started:true,ownerPlayerId:first.playerid,
     actualSelectionContentExecuted:false});
+  },
+  releaseNextOriginalActionToSelectionGate(){
+   // The first actor has genuinely passed and the original phaseLoop has
+   // reached the second seat. Permit only its native xingDong step zero,
+   // then hold the new gongJiOrFaShu BEFORE any chooseToUse content runs.
+   // This is an offline test gate, never a general gameplay permission.
+   const state=game.__v3PausedPhaseRuntime;
+   const first=players[game.__v3OpeningTurnBoundary?.firstSeat??-1];
+   const next=state?.nextActionGate;
+   if(!state||state.failure||!first||!next||
+      next.player!==first.nextSeat||
+      !(next.event instanceof lib.element.GameEvent)||
+      next.event.name!=='xingDong'||next.event.player!==next.player||
+      !state.actionEntryReleased||!state.selectionContentReleased||
+      !state.originalUseWaitReached||
+      adapter.inspect().originalUsePassApplied!==1||
+      useCardPreview?.state!=='passed'||!_status.paused||
+      state.nextActionEntryReleased||state.nextSelectionGate||
+      adapter.inspect().pending!==0)
+    throw err('V3_NATIVE_NEXT_SELECTION_RELEASE_DENIED');
+   state.nextActionEntryReleased=true;
+   game.resume();
+   return Object.freeze({started:true,ownerPlayerId:next.player.playerid,
+    originalNextXingDong:true,actualSelectionContentExecuted:false,
+    actualCardPlayed:false,fullRulesValidated:false});
   },
   releaseOriginalSelectionToNativeWait(){
    // The only deliberate CI path allowed to execute the original
@@ -977,6 +1013,11 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     actionEntryReleased:state.actionEntryReleased,
     failed:state.failure!==null,error:state.failure,trace:state.trace??null,
     selectionGateReached:state.selectionGate===true,
+    nextSelectionGateReached:state.nextSelectionGate===true,
+    nextSelectionEventNative:state.nextSelectionEvent instanceof lib.element.GameEvent,
+    nextSelectionEventName:state.nextSelectionEvent?.name??null,
+    nextSelectionOwnerPlayerId:state.nextSelectionEvent?.player?.playerid??null,
+    nextSelectionContentExecuted:false,
     originalXingDongEvent:state.actionEvent instanceof lib.element.GameEvent,
     selectionEventNative:event instanceof lib.element.GameEvent,
     selectionEventName:event?.name??null,
@@ -1008,6 +1049,7 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     phaseNumber:game.phaseNumber,
     currentPhasePlayerId:_status.currentPhase?.playerid??null,
     nextActionGateReached:state.nextActionGate!==null,
+    nextActionEntryReleased:state.nextActionEntryReleased===true,
     nextActionPlayerId:state.nextActionGate?.player?.playerid??null,
     nextActionEventNative:state.nextActionGate?.event instanceof lib.element.GameEvent,
     paused:_status.paused===true,loopComplete:state.finished,

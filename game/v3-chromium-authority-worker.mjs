@@ -622,6 +622,16 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
      throw fail('V3_NATIVE_SELECTION_RELEASE_FAILED_'+String(r.result?.value?.code??'CDP'));
     return r.result.value.result;
    },
+   async releaseNextOriginalActionToSelectionGate(){
+    if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
+     throw fail('WORKER_EXPERIMENT_DISABLED');
+    if(closed)throw fail('WORKER_UNAVAILABLE');
+    const expression='(()=>{try{const n=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;return n?{ok:true,result:n.releaseNextOriginalActionToSelectionGate()}:{ok:false,code:"V3_NATIVE_SEAT_SESSION_MISSING"}}catch(e){return {ok:false,code:String(e?.code??e?.message??e).slice(0,100)}}})()';
+    const r=await session.send('Runtime.evaluate',{expression,returnByValue:true});
+    if(r.exceptionDetails||r.result?.value?.ok!==true)
+     throw fail('V3_NATIVE_NEXT_SELECTION_RELEASE_FAILED_'+String(r.result?.value?.code??'CDP'));
+    return r.result.value.result;
+   },
    async releaseOriginalSelectionToNativeWait(){
     if(process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1')
      throw fail('WORKER_EXPERIMENT_DISABLED');

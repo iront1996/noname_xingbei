@@ -252,6 +252,43 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
    assert.equal(nextActor.nextActionEventNative,true);
    assert.equal(nextActor.loopComplete,false);
    assert.equal(nextActor.actualActionStepExecuted,false);
+   // The first player's genuine no-card result must NOT grant the
+   // next seat implicit use-card authority. Release only the original
+   // second xingDong to its still-paused gongJiOrFaShu child.
+   const release=await chrome.releaseNextOriginalActionToSelectionGate();
+   assert.equal(release.started,true);
+   assert.equal(release.ownerPlayerId,sessions[1].playerId);
+   assert.equal(release.actualCardPlayed,false);
+   const secondSelection=await until(async()=>{
+    const state=await chrome.inspectOriginalSelectionGate();
+    if(state.failed)throw Error('SECOND_NATIVE_SELECTION_FAILED_'+
+     state.error+'_'+String(state.trace??'').slice(0,230));
+    return state.nextSelectionGateReached&&state.paused&&state;
+   });
+   assert.equal(secondSelection.nextSelectionEventNative,true);
+   assert.equal(secondSelection.nextSelectionEventName,'gongJiOrFaShu');
+   assert.equal(secondSelection.nextSelectionOwnerPlayerId,sessions[1].playerId);
+   assert.equal(secondSelection.nextSelectionContentExecuted,false);
+   const invariant=await chrome.evaluateSeatExperiment(`(()=>{
+    const {game,ui,_status}=window.__v3NativeXingBeiTest.core;
+    return {
+     hands:game.players.map(p=>p.getCards('h').map(c=>c.__v3PhysicalId)),
+     deck:Array.from(ui.cardPile?.childNodes??[]).map(c=>c.__v3PhysicalId),
+     hp:game.players.map(p=>p.hp??null),
+     actor:_status.event?.player?.playerid??null,
+     paused:_status.paused===true,
+     nextEvent:game.__v3PausedPhaseRuntime.nextSelectionEvent?.name
+    };
+   })()`);
+   assert.deepEqual(invariant.hands,beforeNative.hands);
+   assert.deepEqual(invariant.deck,beforeNative.deck);
+   assert.deepEqual(invariant.hp,beforeNative.hp);
+   assert.equal(invariant.paused,true);
+   assert.equal(invariant.nextEvent,'gongJiOrFaShu');
+   await assert.rejects(chrome.releaseNextOriginalActionToSelectionGate(),
+    /V3_NATIVE_NEXT_SELECTION_RELEASE_DENIED/);
+   assert.equal((await ask(replacements[1],'command',{action:'playCard'})).code,
+    'RULES_ENGINE_NOT_IMPLEMENTED');
   }
   const after=await chrome.inspectNativePrivateHand({seat:0});
   assert.deepEqual(after.ownHand,before.ownHand);

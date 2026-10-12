@@ -551,3 +551,11 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 - 真的 `chooseToUse` step 0 會運行原版 `onChooseToUse` 技能回呼，所以 CI 證明的是原版內容能在隔離 Chromium 執行至等待；**不是**技能安全審核、完整 rules engine 或持久化。
 - 玩家全部離線仍可保留**活著的** Chromium 原生事件，但若 Chromium 或 broker 崩潰，中途 EventStack/RNG 等依然沒有可靠持久化與重啟恢復功能。只有開局 checkpoint 可冷重建，不能把它冒充中途續局。
 - 不部署到 VPS，也不要求真人反覆測試。下一段應檢查通過 pass 後原版 `xingDong` 動作計數及自然續行，再決定是否可以安全接下一張卡牌的真正規則驗證。
+
+
+## 2026-10-12：第二玩家原版 xingDong → gongJiOrFaShu 安全閘門
+
+- 在上一段已驗證的第一玩家 `Player.unwait({bool:false})`，原版 `xingDong` 正確扣除行動次數並自然抵達第二玩家 `xingDong` 後，新增隔離 `releaseNextOriginalActionToSelectionGate`。只允許同一份 V3 Chromium 記憶體內的**第二玩家**原版 `xingDong` 開始，並在其真正 `gongJiOrFaShu` 子事件建立之後、`chooseToUse` 尚未執行以前立即暫停。
+- 驗證前置條件包含第一玩家確實完成原生 pass、第一次預覽標記 passed、第二玩家的 native `GameEvent` 及固定 Player ID、有效暫停點、不可重複釋放。禁止第一玩家重複選牌、跳座位與直接呼叫出牌 API。
+- 真 Chromium 原生測試新增第二玩家事件歸屬、靜止中的四名玩家實體手牌、牌庫與 HP 不被這次控制閘門改動，以及重複釋放、未實作 `command:playCard` 拒絕的斷言。此階段**沒有**執行第二玩家 `chooseToUse`、沒產生第二張選牌票券、沒有技能／傷害／終局完整驗證。
+- 修改僅限 `game/v3-native-xingbei-seat-session.mjs`、`game/v3-chromium-authority-worker.mjs`、`tools/test-v3-original-choose-to-use-wait-chromium.mjs` 與本文件，仍只由 `V3_ALLOW_SEAT_EXPERIMENT=1` 允許、未部署 VPS、V1/V2/master 未變更。執行結果必須以本次 CI 原始 log 確認，不沿用前一輪 PASS。
