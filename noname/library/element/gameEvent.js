@@ -1,5 +1,6 @@
 import { _status, game, get, lib, ui } from "../../../noname.js";
 import security from "../../util/security.js";
+import { bindOriginChoice } from "../../util/xingbei-choice-context.js";
 import ContentCompiler from "./GameEvent/compilers/ContentCompiler.js";
 import GameEventManager from "./GameEvent/GameEventManager.js";
 export { GameEventManager, ContentCompiler };
@@ -1199,16 +1200,8 @@ export class GameEvent {
 				const next = this.next[0];
 				await next.start();
 				if (next.result) {
-					// Propagate the origin ticket through the game-event result, not
-					// through a mutable global "current choice" variable.
-					if (next._xingbeiChoiceWireId && typeof next.result === "object") {
-						try {
-							Object.defineProperty(next.result, "_xingbeiChoiceWireId", {
-								value: next._xingbeiChoiceWireId, enumerable: false, configurable: true
-							});
-						} catch (_) { /* sealed legacy result; strict host may reject it */ }
-					}
-					result = next.result;
+					// Propagate the originating event ticket, never a mutable latest ID.
+					result = bindOriginChoice(next.result, next._xingbeiChoiceWireId);
 				}
 				this.next.shift();
 			}
