@@ -39,6 +39,13 @@ Known M1 limitations and next batches:
 - Add client credential storage/reclaim negotiation, explicit protocol version handling, rate limiting/audit telemetry, and a real HALL WebSocket process test before declaring M1 complete.
 - Verify compatibility against the exact redacted VPS HALL source offline before any deployment request.
 
+### M1 browser owner recovery and real-process test
+
+- The browser stores protocol-v1 owner credentials in tab-scoped session storage and resubmits them only from the same live page that originally received the credential. A hard reload does not possess the in-memory readiness marker and therefore cannot pretend the human-host engine survived.
+- Owner recovery sends the normal HALL key binding first, then `resumeowner` with explicit protocol version 1. The HALL rejects unsupported versions before token processing.
+- A valid reclaim rotates the secret, leaves the room in `waiting_host_process`, and requires the surviving browser host to resend its configuration before guest routing resumes.
+- A spawned-process integration test starts the actual `game/server.js` on an isolated loopback port and uses real `ws` clients to verify create, guest join, owner pause, paused-room admission rejection, protocol rejection, authenticated owner resume, token rotation and guest rerouting.
+
 ### M1 review hardening
 
 - Paused rooms now reject fresh `enter` attempts with `room_paused` before assigning any room or owner reference. Existing associated guests remain attached and can wait for recovery.
@@ -68,6 +75,8 @@ Persist lifecycle, authenticated seat bindings, confirmed engine checkpoints and
 - Base GitHub CI: run 38301778625 succeeded at `2baf366`.
 - M1 plus locally portable V2 regressions: 58/58 Node tests passed; the standalone B2 seat-registry suite also passed.
 - PR Linux CI: run 38304099421 `node-recovery-tests` succeeded for M1 implementation plus generated-HALL harness compatibility commits.
+- Review-hardening Linux CI: run 38304735974 succeeded for paused admission and server-mode cleanup.
+- Current local M1 continuation: 66/66 portable Node tests plus the standalone seat-registry suite passed, including a spawned real HALL process with real loopback WebSockets.
 - Syntax checks: `game/server.js` and `game/server-room-lifecycle.js` passed `node --check`.
 - Production/VPS compatibility: not verified.
 - Real browser/player acceptance: not verified.

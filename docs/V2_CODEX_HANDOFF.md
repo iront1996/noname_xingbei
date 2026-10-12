@@ -45,3 +45,10 @@ M1 batch 1 adds a server-owned lifecycle record around the still-human-hosted en
 - HALL harness compatibility commit: `dbe61ee` (`test(v2): load M1 lifecycle in HALL harnesses`)
 - Review PR: `#1`, targeting `feature/v2-connection-stability`; left open and unmerged.
 - Linux CI run 38304099421: `node-recovery-tests` succeeded after the generated HALL harnesses were taught to load the new local lifecycle dependency. Cloudflare Pages also succeeded, but is not lifecycle acceptance evidence.
+
+M1 continuation on the same PR:
+
+- `e2b0931` fixes paused-room admission and server-mode shutdown cleanup. New visitors are rejected before acquiring a room reference; existing guests remain attached. Server-mode shutdown sends the legacy close signal and clears guest room/owner references. Linux CI run 38304735974 passed.
+- Browser owner recovery now stores a protocol-v1 rotating secret in session storage, but automatic resubmission additionally requires a same-page in-memory marker. This prevents a hard reload from pretending the human game engine survived.
+- The HALL validates owner-recovery protocol version before token processing. A successful reclaim remains gated in `waiting_host_process` until the browser resends configuration.
+- `tests/v2-hall-process-integration.mjs` launches the real HALL entry point on an isolated loopback port with actual WebSocket clients. No VPS or live service is involved.

@@ -241,8 +241,8 @@ test("expired paused room is cleaned up and only then closes remaining guests", 
 
 test("real HALL source integrates lifecycle pause, reclaim and cleanup paths", () => {
 	const source = fs.readFileSync(new URL("../game/server.js", import.meta.url), "utf8");
-	assert.match(source, /createRoomLifecycle\(\{ rooms: rooms \}\)/);
-	assert.match(source, /resumeowner: function \(key, token, nickname, avatar\)/);
+	assert.match(source, /createRoomLifecycle\(\{[\s\S]*?rooms: rooms,[\s\S]*?\}\)/);
+	assert.match(source, /resumeowner: function \(protocolVersion, key, token, nickname, avatar\)/);
 	assert.match(source, /roomLifecycle\.pauseForOwnerDisconnect\(room, this\)/);
 	assert.match(source, /roomLifecycle\.sweepExpired\(\)/);
 	assert.match(source, /"roompaused",\s*"awaiting_host"/);

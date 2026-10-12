@@ -3,7 +3,11 @@
 	var roomLifecycleModule = require("./server-room-lifecycle.js");
 	var createRoomLifecycle = roomLifecycleModule.createRoomLifecycle;
 	var releaseRoomClients = roomLifecycleModule.releaseRoomClients;
-	var wss = new WebSocketServer({ port: 8080 });
+	var configuredPort = typeof process == "object" ? Number(process.env.XINGBEI_HALL_PORT) : NaN;
+	var hallPort = Number.isSafeInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65535 ? configuredPort : 8080;
+	var configuredReconnectMs = typeof process == "object" ? Number(process.env.XINGBEI_OWNER_RECONNECT_MS) : NaN;
+	var ownerReconnectMs = Number.isSafeInteger(configuredReconnectMs) && configuredReconnectMs >= 1000 ? configuredReconnectMs : undefined;
+	var wss = new WebSocketServer({ port: hallPort });
 	var bannedKeys = [];
 	var bannedIps = [];
 
@@ -11,7 +15,10 @@
 	var events = [];
 	var clients = {};
 	var bannedKeyWords = [];
-	var roomLifecycle = createRoomLifecycle({ rooms: rooms });
+	var roomLifecycle = createRoomLifecycle({
+		rooms: rooms,
+		ownerReconnectMs: ownerReconnectMs,
+	});
 	var roomCleanupTimer = setInterval(function () {
 		var expiredRooms = roomLifecycle.sweepExpired();
 		for (var room of expiredRooms) {
@@ -81,7 +88,11 @@
 				util.updaterooms();
 			}
 		},
-		resumeowner: function (key, token, nickname, avatar) {
+		resumeowner: function (protocolVersion, key, token, nickname, avatar) {
+			if (protocolVersion !== 1) {
+				this.sendl("resumeownerfailed", "protocol");
+				return;
+			}
 			var room = roomLifecycle.findRoom(key);
 			var nextToken = roomLifecycle.resumeOwner(room, this, token);
 			if (!nextToken) {
@@ -221,6 +232,7 @@
 				}
 				room.config = config;
 				if (roomLifecycle.activateOwner(room, this)) {
+					this.sendl("roomresumed", { protocol: 1, roomId: room.key });
 					for (var id in clients) {
 						if (clients[id].room == room && clients[id] != this) {
 							clients[id].owner = this;

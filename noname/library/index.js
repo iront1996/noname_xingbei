@@ -26,6 +26,7 @@ import { defaultHooks } from "./hooks/index.js";
 import { freezeButExtensible } from "../util/index.js";
 import security from "../util/security.js";
 import { handleSeatRecoveryControl } from "../util/xingbei-recovery-protocol.js";
+import { handleOwnerRecoveryControl } from "../util/xingbei-owner-recovery-protocol.js";
 import { validateXingbeiSeatSnapshot } from "../util/xingbei-reinit-snapshot.js";
 import { assessXingbeiReinitCoverage, normalizeXingbeiReinitCoverage } from "../util/xingbei-reinit-coverage.js";
 import { captureXingbeiOwnPoisonSources, applyXingbeiOwnPoisonSources } from "../util/xingbei-v2-skill-resume.js";
@@ -7648,6 +7649,17 @@ export class Library {
 				try {
 					message = JSON.parse(messageevent.data);
 					if (!Array.isArray(message)) throw "err";
+					if (handleOwnerRecoveryControl(message, {
+						state: game,
+						storage: typeof sessionStorage === "undefined" ? null : sessionStorage,
+						endpoint: _status.ip,
+						onlineKey: game.onlineKey,
+						version: lib.version,
+						nickname: get.connectNickname(),
+						avatar: lib.config.connect_avatar,
+						config: lib.configOL,
+						send: (...args) => game.send(...args),
+					})) return;
 					// No lobby reinitialization until authenticated guest seat takeover.
 					if (handleSeatRecoveryControl(message, {
 						state: game,
@@ -7705,6 +7717,13 @@ export class Library {
 				}
 				// A rejected/exhausted recovery must never silently reload into a lobby.
 				if (game._xingbeiRecovery && ["REJECTED", "EXHAUSTED"].includes(game._xingbeiRecovery.phase)) {
+					game.online = false;
+					game.ws = null;
+					game.sandbox = null;
+					return;
+				}
+				if (!game._xingbeiSuppressRecovery && !_status.over &&
+					game.online && game.beginXingbeiOwnerRecovery?.()) {
 					game.online = false;
 					game.ws = null;
 					game.sandbox = null;
@@ -11515,6 +11534,12 @@ export class Library {
 			},
 		},
 		client: {
+			roompaused: function (state) {
+				game._xingbeiRoomLifecycleState = state;
+			},
+			roomresumed: function () {
+				game._xingbeiRoomLifecycleState = "active";
+			},
 			xbProgressProbe(probeId, sequence, hostPhase) {
 				// Probe is placed after prior broadcast messages on this WebSocket.
 				// Ack proves message dispatch reached this point, not event completion.

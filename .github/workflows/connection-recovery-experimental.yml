@@ -44,5 +44,13 @@ jobs:
         run: node --test tests/v2-recovery-gate.mjs
       - name: V2 server-owned room lifecycle foundation
         run: node --test tests/v2-server-room-lifecycle.mjs
+      - name: V2 owner browser recovery protocol
+        run: node --test tests/v2-owner-recovery.mjs
+      - name: Install isolated WebSocket test dependency
+        run: npm install --prefix "$RUNNER_TEMP/xingbei-ws" --ignore-scripts --no-save ws@8.18.3
+      - name: V2 real HALL WebSocket process lifecycle
+        env:
+          NODE_PATH: ${{ runner.temp }}/xingbei-ws/node_modules
+        run: node --test tests/v2-hall-process-integration.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js
