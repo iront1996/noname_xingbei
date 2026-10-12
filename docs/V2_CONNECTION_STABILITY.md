@@ -102,3 +102,14 @@ This branch was forked from commit `9b4c2a29582e412733014f60e6e70f1f4ec03397`, b
 - This is observability and contract testing, not a fix for missing skill/event serialization. Do not claim a random interrupted skill chain has been faithfully restored on V2. Solving that requires explicit privacy-safe mode-specific state and event checkpoint design.
 
 No VPS/production deployments; V1/V3 and monitor v2.3.0 remain untouched.
+
+## V2-9: narrow own-seat poison source restoration
+
+- Inspected card/xingBei.js: zhongDu stores source Player references in target.storage.zhongDu. Generic Player.getState() omits this field, potentially leaving the reconnecting client without the effect's source identity even when the related expansion cards are present.
+- A new V2-only skill-resume module captures ONLY the authenticated reconnecting guest's own poison source player IDs, capped at 32, from actual room-player object references. It never clones Player.storage, hidden skills, other players' skill data, cards or event stacks.
+- Reinit sends an optional, final protocol-v1 object containing the seat ID and poison source seat IDs. The client rejects unknown keys, wrong seat, malformed ID, unknown seat or oversized lists; after rebuilding all room players, it reconstructs local Player references by direct assignment without calling card, skill, AI, mark, or GameEvent methods.
+- When source state is absent or cannot be verified, the sidecar is absent and the original recovery runs unchanged. This field-level status is stored as game._xingbeiOwnPoisonRestored; it is NOT proof of full skill-state or game-event restoration.
+- V2-8 warnings remain correct. Live room logic, seat eligibility, choice deadlines and timers are not changed. Older browser versions ignore the optional trailing sidecar.
+- Tests cover actual poison-card source contract, self-only scope, reference identity, privacy, invalid/unknown IDs, duplicates, oversized payload rejection, side effect safety, and real host/client reinit integration anchors.
+
+No VPS, V1, live V2, V3 or monitor v2.3.0 modifications. Concentrated human verification remains deferred.

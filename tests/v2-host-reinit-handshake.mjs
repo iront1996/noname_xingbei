@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {assessXingbeiReinitCoverage} from "../noname/util/xingbei-reinit-coverage.js";
+import {captureXingbeiOwnPoisonSources} from "../noname/util/xingbei-v2-skill-resume.js";
 const s=readFileSync(new URL("../noname/library/index.js",import.meta.url),"utf8");
 const start=s.indexOf("\t\t\tinit(version, config, banned_info) {");
 const end=s.indexOf("\t\t\txbChoiceHello(protocolVersion) {",start);
@@ -27,7 +28,8 @@ function setup(){
  const _status={waitingForPlayer:false,onreconnect:null,cardtag:null,postReconnect:null};
  const window={isNonameServer:false};
  const host=new Function("lib","game","get","_status","window","assessXingbeiReinitCoverage",
-  "return ({"+src+"})")(lib,game,get,_status,window,assessXingbeiReinitCoverage);
+  "captureXingbeiOwnPoisonSources","return ({"+src+"})")(lib,game,get,_status,
+  window,assessXingbeiReinitCoverage,captureXingbeiOwnPoisonSources);
  const current={id:"seat_01",inited:false,closed:false,send(...args){sent.push(args)}};
  const cfg={id:"seat_01",onlineKey:"PUBLIC_KEY"};
  return {host,lib,game,_status,current,old,seat,cfg,sent,broadcasts,diagnostics,marks,

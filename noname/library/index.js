@@ -28,6 +28,7 @@ import security from "../util/security.js";
 import { handleSeatRecoveryControl } from "../util/xingbei-recovery-protocol.js";
 import { validateXingbeiSeatSnapshot } from "../util/xingbei-reinit-snapshot.js";
 import { assessXingbeiReinitCoverage, normalizeXingbeiReinitCoverage } from "../util/xingbei-reinit-coverage.js";
+import { captureXingbeiOwnPoisonSources, applyXingbeiOwnPoisonSources } from "../util/xingbei-v2-skill-resume.js";
 import { ErrorManager } from "../util/error.js";
 
 import { defaultSplashs } from "../init/onload/index.js";
@@ -11136,6 +11137,8 @@ export class Library {
 							canApplyModeState: typeof game.updateState === "function",
 							pendingChoice: Boolean(xbPendingChoice)
 						}) : null;
+					const xbOwnPoison = lib.configOL?.mode === "xingBei"
+						? captureXingbeiOwnPoisonSources(this.id, player, lib.playerOL) : null;
 					this._xingbeiReinitCoverage = xbCoverage;
 					if (xbCoverage?.limitations.length) {
 						console.warn("[Xingbei][V2] Reinit does not prove full game state:",
@@ -11143,7 +11146,7 @@ export class Library {
 					}
 					this.send("reinit", lib.configOL, xbArenaSnapshot, xbModeSnapshot,
 						game.ip, null, _status.onreconnect, _status.cardtag,
-						_status.postReconnect, xbCoverage);
+						_status.postReconnect, xbCoverage, xbOwnPoison);
 				} else if (version != lib.versionOL) {
 					this.send("denied", "version");
 					lib.node.clients.remove(this);
@@ -11958,7 +11961,7 @@ export class Library {
 					}
 				}
 			},
-			reinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect, xbCoverage) {
+			reinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect, xbCoverage, xbOwnPoison) {
 				// Capture the socket: async mode loading must not complete a newer recovery.
 				const xbReinitSocket = game.ws;
 				// V2 B3 recovery: never clear the current arena/roster on an
@@ -12273,6 +12276,14 @@ export class Library {
 						}
 					}
 					game.arrangePlayers();
+					// V2-9: only own poison-source references, after roster.
+					// Do not execute cards, skills or GameEvents on reinit.
+					if (xbRecovery && xbReinitCurrent() &&
+						lib.configOL?.mode === "xingBei") {
+						game._xingbeiOwnPoisonRestored =
+							applyXingbeiOwnPoisonSources(xbOwnPoison,
+								game.onlineID, lib.playerOL);
+					}
 					//xingBei更新战绩区
 					ui.create.zhanJi();
                     ui.updateShiQiInfo();
