@@ -14,7 +14,7 @@ const endpoint="wss://hall.example:8080";
 const seat={roomId:"roomA",seatId:"guest1",token:"ab".repeat(32)};
 const sent=[];
 let rejected=null;
-const recovery={active:true,reject(reason){rejected=reason;this.active=false;},connectionLost(){}};
+const recovery={active:true,phase:"SYNCING",reject(reason){rejected=reason;this.active=false;},connectionLost(){}};
 const state={roomId:seat.roomId,onlineID:seat.seatId,_xingbeiRecovery:recovery};
 const args={state,storage,endpoint,onlineKey:"public-key",version:"v",send:(...packet)=>sent.push(packet)};
 assert.equal(handleSeatRecoveryControl(["xbSeatCredentials",seat.roomId,seat.seatId,seat.token],args),true);

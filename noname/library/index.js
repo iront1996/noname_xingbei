@@ -11930,6 +11930,13 @@ export class Library {
 			reinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect) {
 				// Capture the socket: async mode loading must not complete a newer recovery.
 				const xbReinitSocket = game.ws;
+				// V2 B3 recovery: never clear the current arena/roster on an
+				// unsolicited host reinit. Only a broker-confirmed seat takeover
+				// from the current SYNCING attempt may rebuild a guest's state.
+				// Normal initial joins and non-recovery reinit remain unchanged.
+				if (game._xingbeiRecovery?.active &&
+					(!xbReinitSocket || game._xingbeiRecovery.phase !== "SYNCING" ||
+					 game._xingbeiSeatReclaimed !== true)) return;
 				ui.auto.show();
 				ui.pause.show();
 				game.clearConnect();

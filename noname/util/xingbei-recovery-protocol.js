@@ -31,6 +31,10 @@ export function handleSeatRecoveryControl(message,{state,storage,endpoint,online
     return true;
   }
   if(message[0]==="xbSeatReclaimed"){
+    // The broker's acknowledgement must correspond to this socket's
+    // outbound reclaim request, in the current connection's SYNCING phase.
+    // A late/unsolicited packet cannot unlock a host game-state rebuild.
+    if(!state._xingbeiReclaimRequested || recovery.phase!=="SYNCING")return true;
     if(message[1]===state.roomId && message[2]===state.onlineID){
       state._xingbeiSeatReclaimed=true;
     }else{
@@ -40,6 +44,8 @@ export function handleSeatRecoveryControl(message,{state,storage,endpoint,online
     return true;
   }
   if(message[0]==="xbSeatResumeRejected"){
+    // Do not invalidate credentials on an unsolicited/stale rejection.
+    if(!state._xingbeiReclaimRequested || recovery.phase!=="SYNCING")return true;
     recovery.reject("seat_rejected");
     state._xingbeiSuppressRecovery=true;
     clearSeatCredentials(storage,endpoint);

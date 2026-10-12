@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/connection-health-recovery
+      - feature/v2-connection-stability
   workflow_dispatch:
 
 permissions:
@@ -20,5 +21,7 @@ jobs:
           node-version: '22'
       - name: Client recovery and host choice tests
         run: node --test tests/connection-recovery.mjs tests/connection-recovery-b3.mjs tests/connection-recovery-c1.mjs tests/connection-recovery-c2.mjs tests/connection-recovery-c3.mjs tests/connection-recovery-c3b.mjs tests/connection-recovery-c3c.mjs
+      - name: V2 seat reclaim and reinit safety gates
+        run: node --test tests/v2-recovery-gate.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js
