@@ -20,6 +20,7 @@ import { isClass, userAgentLowerCase, Uninstantable, GeneratorFunction, AsyncFun
 
 import { DynamicStyle } from "./dynamic-style/index.js";
 import { ConnectionHealth } from "../util/xingbei-connection-health.js";
+import { XingbeiProgressTracker } from "../util/xingbei-progress-tracker.js";
 import { ConnectionRecovery } from "../util/xingbei-connection-recovery.js";
 import { loadSeatCredentials } from "../util/xingbei-seat-credentials.js";
 import { GamePromises } from "./promises.js";
@@ -1301,6 +1302,9 @@ export class Game extends GameCompatible {
 				lib.node.clients[i].send.apply(lib.node.clients[i], arguments);
 			}
 		}
+		// C3: sample progress without changing existing card/skill wire messages.
+		// Probes will be sent separately at bounded intervals.
+		lib.node.xingbeiProgressTracker?.broadcastAdvanced();
 	}
 	/**
 	 * @template { keyof typeof lib.message.client } T
@@ -1659,6 +1663,16 @@ export class Game extends GameCompatible {
 		return new lib.element.Client(new lib.element.NodeWS(id), true).send(message);
 	}
 	createServer() {
+		// A recreated host must not retain the previous game's timer or sequence.
+		lib.node.xingbeiProgressTracker?.dispose();
+		lib.node.xingbeiProgressTracker = new XingbeiProgressTracker({
+			phaseNow: () => Number.isSafeInteger(game.phaseNumber) ? game.phaseNumber : null,
+			onSuspect: info => {
+				// Detection-only: C3 must not kick a player based on a probe.
+				console.warn("[Xingbei] Gameplay progress suspect", info.kind,
+					"seat:", info.seatId, "pending:", info.pending ?? "n/a");
+			}
+		});
 		lib.node.clients = [];
 		lib.node.banned = [];
 		lib.node.observing = [];
