@@ -55,6 +55,18 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   const window=choices.view(roomId,seat,playerId);
   if(window)send(entry.ws,{type:'choice_window',window});
  };
+ // Checking a live socket is not sufficient: Chromium may have exited
+ // before the private WebSocket close event is delivered. Never authorize
+ // a new human ticket response solely on the channel readyState.
+ const choiceAuthorityStatus=async roomId=>{
+  const channel=workersByRoom.get(roomId);
+  if(!live(channel))return 'WORKER_CHANNEL_OFFLINE';
+  const health=await coordinator.inspectWorker(roomId);
+  if(health.code!=='WORKER_PROOF_ALIVE')return 'WORKER_UNAVAILABLE';
+  if(workersByRoom.get(roomId)!==channel||!live(channel))
+   return 'WORKER_CHANNEL_OFFLINE';
+  return null;
+ };
  const sendRoster=id=>{
   const view=coordinator.roomView(id);
   if(!view)return;
@@ -289,7 +301,14 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     try{previous.ws.close(4001,'seat_replaced')}catch{}
    }
    sendRoster(obj.roomId);
-   sendChoice(obj.roomId,result.seat);
+   // During a crash/socket-close race, a new session must not receive
+   // the dead Chromium's cached original GameEvent ticket.
+   if(choices.view(obj.roomId,result.seat,playerId)){
+    const error=await choiceAuthorityStatus(obj.roomId);
+    if(!current(obj.roomId,result.seat,ws))return;
+    if(error)send(ws,{type:'choice_interrupted',code:error});
+    else sendChoice(obj.roomId,result.seat);
+   }
    sendPrivateHand(obj.roomId,result.seat);
    return;
   }
@@ -307,12 +326,25 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
     if(!enableChoiceWindowExperiments)return respond(reply(false,'CHOICE_EXPERIMENT_DISABLED'));
     const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
     const window=choices.view(bound.roomId,bound.seat,playerId);
+    if(window){
+     const error=await choiceAuthorityStatus(bound.roomId);
+     if(!current(bound.roomId,bound.seat,ws))
+      return respond(reply(false,'NOT_AUTHENTICATED'));
+     if(error)return respond(reply(false,error));
+    }
     return respond(reply(true,'CHOICE_WINDOW_STATE',{window}));
    }
    case 'choice_submit':{
     if(!enableChoiceWindowExperiments)return respond(reply(false,'CHOICE_EXPERIMENT_DISABLED'));
     const worker=workersByRoom.get(bound.roomId);
-    if(!live(worker))return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
+    const error=await choiceAuthorityStatus(bound.roomId);
+    // Inspecting Chromium yields to the event loop. A socket takeover
+    // during that await must NOT submit with the old seat generation.
+    if(!current(bound.roomId,bound.seat,ws))
+     return respond(reply(false,'NOT_AUTHENTICATED'));
+    if(error)return respond(reply(false,error));
+    if(workersByRoom.get(bound.roomId)!==worker)
+     return respond(reply(false,'WORKER_CHANNEL_OFFLINE'));
     const playerId=stablePlayersByRoom.get(bound.roomId)?.get(bound.seat);
     const result=choices.submit({roomId:bound.roomId,seat:bound.seat,playerId,
       ticket:obj.ticket,option:obj.option});

@@ -594,3 +594,10 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 ## 2026-10-12：原生中途等待的 Chromium 崩潰必須安全拒絕
 
 新增真 2v2 故障注入測試：全部座位在第二個真原版 `chooseToUse` 等待票券開啟時離線、重新認證；然後主動終止受管 Chromium，確認 broker 健康立即判定 `WORKER_UNAVAILABLE`，原票券不能再宣稱 `CHOICE_SUBMITTED_NOT_APPLIED` 成功（應回 `WORKER_CHANNEL_OFFLINE`），但仍存在的真人房間座位不因此被假裝成功恢復。由於本隔離測試沒有啟用開局快照復原，`recoverOpeningCheckpoint` 須返回 `OPENING_RECOVERY_DISABLED`。本項只證明故障後 fail-closed，**中途 GameEvent／Promise／RNG／技能真正冷恢復仍未實作**。
+
+
+## 2026-10-12：Chromium 已死亡但私有 WebSocket 尚未關閉的票券競態防護
+
+- 在 V3-only broker 的真人 `choice_query`、`choice_submit` 前，驗證受管 Chromium 本身仍能完成私有 CDP 健康檢查，而不僅以 WebSocket `readyState` 認定主持端存活；檢查失敗回 `WORKER_UNAVAILABLE` 且不露出快取票券、不變更選擇狀態、不投遞原生選擇。
+- 新憑證重連若遇到尚未關閉的死亡主持通道，只回傳 `choice_interrupted` 而不重發失效的原生票券。健康檢查期間若同一座位被新 socket 接管，舊 socket 不得在 await 後提交。
+- 假 Chromium 單元測試刻意只使程序健康失效、保留私有 WebSocket 為 OPEN，核對查詢、提交、重新認證及通道最終關閉的拒絕語意。真 Chromium 中途 GameEvent/RNG 崩潰冷恢復仍未完成；此修改僅限 V3 實驗分支，不部署或變更 V1/V2/VPS。

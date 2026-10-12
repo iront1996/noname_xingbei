@@ -32,13 +32,14 @@ async function ask(ws,obj){
 }
 const config={mode:'xingBei',seatMode:'2v2'};
 async function setup({latency=0,choiceExperiment=false,ownershipExperiment=false}={}){
- let started=0,stopped=0,authority;
+ let started=0,stopped=0,authority,crashWorker;
  const broker=await createV3AuthorityWebSocketBroker({
   WebSocketServer:FakeWebSocketServer,
   enableChoiceWindowExperiments:choiceExperiment,
   enableNativeOwnershipProbes:ownershipExperiment,
   launchWorker:async()=>{
    started++;let alive=true;
+   crashWorker=()=>{alive=false};
    return {
     async connectRoomChannel({roomId,secret}){
      if(latency)await new Promise(r=>setTimeout(r,latency));
@@ -63,7 +64,7 @@ async function setup({latency=0,choiceExperiment=false,ownershipExperiment=false
    };
   }
  });
- return {broker,connect:()=>FakeWebSocketServer.instance.connect(),get started(){return started},get stopped(){return stopped},get authority(){return authority}};
+ return {broker,connect:()=>FakeWebSocketServer.instance.connect(),crashWorker:()=>crashWorker?.(),get started(){return started},get stopped(){return stopped},get authority(){return authority}};
 }
 async function fill(runtime){
  const ws=Array.from({length:4},()=>runtime.connect());
@@ -443,6 +444,44 @@ test('choice experiment disabled by default and worker loss cancels all pending 
 });
 
 
+test('dead Chromium with still-open worker channel cannot reveal or submit stale choice tickets',async()=>{
+ const x=await setup({choiceExperiment:true});
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  x.authority.clientSend({type:'authority_choice_open',roomId:'TEST',seat:0,
+   playerId:sessions[0].playerId,kind:'control',prompt:'Select',options:['yes','no']});
+  const opened=await waitFor(x.authority,m=>m.type==='authority_choice_open_result');
+  assert.equal(opened.ok,true);
+  const ticket=opened.view.ticket;
+  await waitFor(ws[0],m=>m.type==='choice_window'&&m.window.ticket===ticket);
+  x.crashWorker(); // Intentionally keep the authenticated worker socket OPEN.
+  assert.equal(x.authority.readyState,1);
+  assert.equal((await x.broker.inspectWorker('TEST')).code,'WORKER_UNAVAILABLE');
+  const stale=await ask(ws[0],{type:'choice_query'});
+  assert.equal(stale.ok,false);
+  assert.equal(stale.code,'WORKER_UNAVAILABLE');
+  assert.equal(Object.hasOwn(stale,'window'),false);
+  assert.equal((await ask(ws[0],{type:'choice_submit',ticket,option:'yes'})).code,
+   'WORKER_UNAVAILABLE');
+  assert.equal(x.authority.outbound.some(m=>m.type==='authority_choice_delivery'),false);
+  const replacement=x.connect();
+  const resumed=await ask(replacement,{type:'reconnect',roomId:'TEST',seat:0,
+   reconnectToken:sessions[0].reconnectToken});
+  assert.equal(resumed.ok,true);
+  assert.equal(resumed.playerId,sessions[0].playerId);
+  assert.equal((await waitFor(replacement,m=>m.type==='choice_interrupted')).code,
+   'WORKER_UNAVAILABLE');
+  assert.equal(replacement.outbound.some(m=>
+   m.type==='choice_window'&&m.window.ticket===ticket),false);
+  assert.equal((await ask(replacement,{type:'choice_submit',ticket,option:'yes'})).code,
+   'WORKER_UNAVAILABLE');
+  x.authority.close();
+  await waitFor(replacement,m=>m.type==='choice_interrupted'&&
+   m.code==='WORKER_CHANNEL_OFFLINE');
+  assert.equal((await ask(replacement,{type:'choice_query'})).window,null);
+ }finally{await x.broker.close()}
+});
 test('worker loss fails outstanding transport immediately and ignores stale host acks',async()=>{
  const x=await setup();
  try{
