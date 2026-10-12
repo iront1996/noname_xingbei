@@ -36,3 +36,11 @@ This branch was forked from commit `9b4c2a29582e412733014f60e6e70f1f4ec03397`, b
 - GitHub CI runs this separately from the current V2-1 safety-gate tests. No server, VPS, V1, V3 or monitor deployment/change.
 
 **Next:** use a redacted copy of the exact A1+v2.3 HALL production source to check patcher anchor compatibility and monitor observer retention, then add browser-host `init` → `reinit` and C3 false-online diagnostic acceptance, finally plan one concentrated manual playtest. No claim of fully authoritative/replayable V2 engine state.
+
+## V2-3: host-side reinit readiness fence
+
+- The existing human-host `init` rebinds a B2 broker-authenticated reconnecting seat but does **not** change its `isAuto`, nickname or initialized status before the client `reinited` response.
+- `inited` cannot bypass a pending reinit. `reinited` now requires an actually issued, current-socket pending reinit, and rejects duplicates, old/closed sockets, wrong seat identities and unregistered observers.
+- Existing `xbProgressHello` remains unavailable while the replacement is pending; initial-lobby `inited` and the approved observer path remain available. The new V2 host handshake test executes the real engine handlers, not a duplicate implementation.
+- **Limit:** a client-side `reinited` message is not proof of fully replayable GameEvent, pending skills, or hidden state. It does not justify automatic overwrite or forced reconnect. No deployment.
+

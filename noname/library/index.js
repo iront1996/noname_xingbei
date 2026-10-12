@@ -11119,13 +11119,11 @@ export class Library {
 						lib.node.clients.remove(player.ws);
 						lib.node.observing.remove(player.ws);
 					}
-					player.setNickname();
+					// V2: bound broker seat != synchronized gameplay.
 					player.ws = this;
-					player.isAuto = false;
 					this.id = config.id;
-					game.broadcast(function (player) {
-						player.setNickname();
-					}, player);
+					this.inited = false;
+					this._xingbeiReinitPending = {seatId: config.id};
 					this.send("reinit", lib.configOL, get.arenaState(), game.getState ? game.getState() : {}, game.ip, null, _status.onreconnect, _status.cardtag, _status.postReconnect);
 				} else if (version != lib.versionOL) {
 					this.send("denied", "version");
@@ -11148,6 +11146,8 @@ export class Library {
 						this.closed = true;
 					} else if (game.phaseNumber && lib.configOL.observe) {
 						lib.node.observing.push(this);
+						this.inited = false;
+						this._xingbeiReinitPending = {seatId: null};
 						this.send("reinit", lib.configOL, get.arenaState(), game.getState ? game.getState() : {}, game.ip, game.players[0].playerid, null, _status.cardtag, _status.postReconnect);
 						// 没有系统提示的接口喵？
 						game.log("玩家 ", `#y${get.plainText(config.nickname)}`, " 进入房间观战");
@@ -11200,21 +11200,33 @@ export class Library {
 			 * @this {import("./element/client.js").Client}
 			 */
 			inited() {
+				// An initial lobby ACK must not skip an in-flight reinit.
+				if (this.closed || this._xingbeiReinitPending) return;
 				this.inited = true;
-				if (_status.waitingForPlayer) {
-					game.updateWaiting();
-				}
+				if (_status.waitingForPlayer) game.updateWaiting();
 			},
 			/**
 			 * @this {import("./element/client.js").Client}
 			 */
 			reinited() {
+				const pending = this._xingbeiReinitPending;
+				if (!pending || this.closed) return;
+				if (pending.seatId !== null) {
+					const seat = lib.playerOL?.[pending.seatId];
+					if (!seat || this.id !== pending.seatId || seat.ws !== this) return;
+					seat.isAuto = false;
+					seat.setNickname();
+					game.broadcast(function (player) {
+						player.setNickname();
+					}, seat);
+				} else if (!lib.node.observing.includes(this)) {
+					return;
+				}
+				this._xingbeiReinitPending = null;
 				this.inited = true;
-				//重连时使标记显示
-				for(var player of game.players){
-					for(var mark in player.marks){
-						player.markSkill(mark);
-					}
+				// Callback completion, not proof of all async game-event work.
+				for (var player of game.players) {
+					for (var skill in player.marks) player.markSkill(skill);
 				}
 			},
 			/**
