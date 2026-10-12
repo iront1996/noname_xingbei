@@ -642,3 +642,8 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 原本 `auditNativePrintedAttackStaticRules` 的印刷定義檢查硬綁第一座位 `selectionEvent`。現改為從伺服器 Chromium 已建立的最新 `xingDong` 原生事件及其所屬 `gongJiOrFaShu` 子事件取出 `filterCard`／`filterTarget` 合約，並確認 `selection.player` 就是此回合的受認證實體 Player。讀取結果額外標明 `activeOriginalEventPlayerId`，避免將第一人的舊 `GameEvent` 誤用於第三人的審核證據。
 
 CI 測試核對第三人的 event provenance、與第二人的 GameEvent 物件分離、未執行第三次選牌 step。這仍只是靜態印刷規則的唯讀證據，不執行完整 `filterCard`、技能修正、效果結算或真出牌。
+
+
+## 2026-10-12：第三玩家原生等待與第四玩家安全閘門
+
+在前兩位玩家真原版 `Player.unwait({bool:false})` 之後，第三玩家的原版 `gongJiOrFaShu` 可由 CI-only `releaseThirdOriginalSelectionToNativeWait` 進入編譯後 `chooseToUse`，只向已認證本人提供私人票券；等待使用真實 `GameEvent.send` 與 `Player.wait`，禁止遠端執行任意 JS。第三玩家唯一被授權的回覆仍為 `pass`，用真原生 `Player.unwait({bool:false})` 推進至第四玩家真原版 `xingDong`，立即於 step 0 暫停。2v2／3v3／4v4 測試覆蓋第三座位票券不洩漏、回合歸屬、重複釋放拒絕、HP／手牌／牌庫不變。完整技能、實際合法出牌、攻防、勝負、RNG/EventStack 冷恢復仍未實作；只修改 V3 實驗分支，不碰 VPS、V1/V2。

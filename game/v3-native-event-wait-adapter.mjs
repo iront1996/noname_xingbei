@@ -83,8 +83,10 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
    armedOriginalUseWait=null; // A one-shot privilege, never reusable.
    const player=this.player,reg=registered.get(player?.playerid);
    const gate=game.__v3PausedPhaseRuntime;
-   const second=gate?.nextSelectionContentReleased===true;
-   const expected=second?gate.nextSelectionEvent:gate?.selectionEvent;
+   const third=gate?.thirdSelectionContentReleased===true;
+   const second=!third&&gate?.nextSelectionContentReleased===true;
+   const expected=third?gate.thirdSelectionEvent:
+    second?gate.nextSelectionEvent:gate?.selectionEvent;
    if(this.name!=='gongJiOrFaShu'||!boundPlayer(player)||
       this.content?.compiled!==true||
       this.content?.original!=='chooseToUse'&&
@@ -100,7 +102,8 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
    // Hold the real engine BEFORE step 1/2 can useResult or consume cards.
    player.wait();
    game.pause();
-   if(second)gate.nextOriginalUseWaitReached=true;
+   if(third)gate.thirdOriginalUseWaitReached=true;
+   else if(second)gate.nextOriginalUseWaitReached=true;
    else gate.originalUseWaitReached=true;
    waitingOriginalUse={seat:reg.seat,playerId:player.playerid,event:this};
    try{
@@ -114,7 +117,8 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
     return this;
    }catch(e){
     waitingOriginalUse=null;
-    if(second)gate.nextOriginalUseWaitReached=false;
+    if(third)gate.thirdOriginalUseWaitReached=false;
+    else if(second)gate.nextOriginalUseWaitReached=false;
     else gate.originalUseWaitReached=false;
     if(lib.node.torespond?.[player.playerid]==='_noname_waiting')
      delete lib.node.torespond[player.playerid];
@@ -212,18 +216,21 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
    requireActive();
    const p=registered.get(pid),wait=waitingOriginalUse;
    const gate=game.__v3PausedPhaseRuntime;
-   const second=gate?.nextSelectionContentReleased===true;
+   const third=gate?.thirdSelectionContentReleased===true;
+   const second=!third&&gate?.nextSelectionContentReleased===true;
    if(!wait||!p||p.seat!==seat||wait.seat!==seat||
       wait.playerId!==pid||wait.event!==event||
       p.player!==event?.player||!_status.paused||
       _status.event!==event||event.forced===true||
       event.content?.compiled!==true||
-      (second?gate.nextSelectionEvent:gate?.selectionEvent)!==event||
-      (second?gate.nextOriginalUseWaitReached:
+      (third?gate.thirdSelectionEvent:
+       second?gate.nextSelectionEvent:gate?.selectionEvent)!==event||
+      (third?gate.thirdOriginalUseWaitReached:
+       second?gate.nextOriginalUseWaitReached:
        gate?.originalUseWaitReached)!==true||
       lib.node?.torespond?.[pid]!=='_noname_waiting'||
       binding(seat)?.playerId!==pid||
-      originalUsePassApplied!==(second?1:0))
+      originalUsePassApplied!==(third?2:second?1:0))
     throw failure('V3_NATIVE_ORIGINAL_PASS_DENIED');
    waitingOriginalUse=null;originalUsePassApplied++;
    allowConsume=pid;
@@ -236,7 +243,8 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
    requireActive();
    const p=registered.get(pid),b=binding(seat);
    const gate=game.__v3PausedPhaseRuntime;
-   const second=gate?.nextSelectionContentReleased===true;
+   const third=gate?.thirdSelectionContentReleased===true;
+   const second=!third&&gate?.nextSelectionContentReleased===true;
    if(!Number.isInteger(seat)||!goodId(pid)||!p||
       p.seat!==seat||p.player?.playerid!==pid||
       b?.playerId!==pid||b.connectionId===null||
@@ -245,8 +253,9 @@ export function installV3NativeEventWaitAdapter({core,bridge}={}){
       !(event.content.original==='chooseToUse'||
         event.content.original===lib.element.content.chooseToUse)||
       !_status.paused||armedOriginalUseWait!==null||
-      (second?gate.nextSelectionEvent:gate?.selectionEvent)!==event||
-      (second?originalUsePassApplied!==1:originalUsePassApplied!==0)||
+      (third?gate.thirdSelectionEvent:
+       second?gate.nextSelectionEvent:gate?.selectionEvent)!==event||
+      originalUsePassApplied!==(third?2:second?1:0)||
       pending.size!==0)
     throw failure('V3_NATIVE_ORIGINAL_USE_ARM_DENIED');
    armedOriginalUseWait={seat,playerId:pid,event};

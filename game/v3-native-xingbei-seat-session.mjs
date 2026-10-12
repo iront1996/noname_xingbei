@@ -485,7 +485,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     nextSelectionGate:false,nextSelectionEvent:null,
     nextSelectionContentReleased:false,nextOriginalUseWaitReached:false,
     thirdActionGate:null,thirdActionEntryReleased:false,
-    thirdSelectionGate:false,thirdSelectionEvent:null};
+    thirdSelectionGate:false,thirdSelectionEvent:null,
+    thirdSelectionContentReleased:false,thirdOriginalUseWaitReached:false,
+    fourthActionGate:null};
    // This hook runs in original content.js phaseLoop step 1, immediately
    // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
    // hook and must never be installed in production V3.
@@ -606,6 +608,17 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
      state.thirdActionGate={player:this,event};
      game.pause();return event;
     }
+    if(this===first.nextSeat?.nextSeat?.nextSeat&&
+       state.thirdSelectionContentReleased&&state.thirdOriginalUseWaitReached&&
+       adapter.inspect().originalUsePassApplied===3&&
+       state.fourthActionGate===null){
+     const event=originalXingDong.call(this);
+     if(!(event instanceof lib.element.GameEvent)||
+        event.name!=='xingDong'||event.player!==this)
+      throw err('V3_NATIVE_FOURTH_ACTION_EVENT_INVALID');
+     state.fourthActionGate={player:this,event};
+     game.pause();return event;
+    }
     throw err('V3_NATIVE_ACTION_UNEXPECTED_OWNER');
    };
    lib.onphase.splice(hookIndex,1);
@@ -714,6 +727,31 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     actionExecuted:false,cardConsumed:false,fullRulesValidated:false
    });
   },
+  releaseThirdOriginalSelectionToNativeWait(){
+   const gate=game.__v3PausedPhaseRuntime;
+   const actor=gate?.thirdActionGate?.player;
+   const seat=players.indexOf(actor),event=gate?.thirdSelectionEvent;
+   const first=players[game.__v3OpeningTurnBoundary?.firstSeat??-1];
+   if(!previewHooksAvailable||!gate||gate.failure||
+      !gate.thirdActionEntryReleased||!gate.thirdSelectionGate||
+      !(event instanceof lib.element.GameEvent)||
+      event.name!=='gongJiOrFaShu'||event.player!==actor||
+      actor!==first?.nextSeat?.nextSeat||seat<0||
+      gate.thirdSelectionContentReleased||
+      gate.thirdOriginalUseWaitReached||!_status.paused||
+      useCardPreview?.state!=='passed'||
+      adapter.inspect().originalUsePassApplied!==2||
+      adapter.inspect().pending!==0)
+    throw err('V3_NATIVE_THIRD_ORIGINAL_USE_RELEASE_DENIED');
+   gate.thirdSelectionContentReleased=true;
+   try{adapter.armOriginalUseWait({seat,playerId:actor.playerid,event})}
+   catch(e){gate.thirdSelectionContentReleased=false;throw e}
+   useCardPreview=null;
+   game.resume();
+   return Object.freeze({started:true,nativeChooseToUse:true,
+    ownerPlayerId:actor.playerid,originalThirdPlayer:true,
+    actionExecuted:false,cardConsumed:false,fullRulesValidated:false});
+  },
   releaseNextOriginalSelectionToNativeWait(){
    const gate=game.__v3PausedPhaseRuntime;
    const actor=gate?.nextActionGate?.player;
@@ -777,12 +815,16 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // chooseToUse step 0 is unsafe until skill callbacks are isolated.
    // Offer physical, PRIVATE hand identifiers only to its authenticated owner.
    const gate=game.__v3PausedPhaseRuntime;
-   const second=gate?.nextSelectionContentReleased===true;
-   const event=second?gate.nextSelectionEvent:gate?.selectionEvent;
-   const actorSeat=second?players.indexOf(gate.nextActionGate?.player):
+   const third=gate?.thirdSelectionContentReleased===true;
+   const second=!third&&gate?.nextSelectionContentReleased===true;
+   const event=third?gate.thirdSelectionEvent:
+    second?gate.nextSelectionEvent:gate?.selectionEvent;
+   const actorSeat=third?players.indexOf(gate.thirdActionGate?.player):
+    second?players.indexOf(gate.nextActionGate?.player):
     game.__v3OpeningTurnBoundary?.firstSeat;
    if(!previewHooksAvailable||useCardPreview||!gate||gate.failure||
-      !(second?gate.nextSelectionGate:gate.selectionGate)||
+      !(third?gate.thirdSelectionGate:
+       second?gate.nextSelectionGate:gate.selectionGate)||
       !(event instanceof lib.element.GameEvent)||
       event.name!=='gongJiOrFaShu'||event.player!==players[seat]||
       !_status.paused||seat!==actorSeat||
@@ -808,7 +850,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // 'pass' exists ONLY after the original chooseToUse step 0 has
    // reached the verified server waiting boundary; manual CI-only
    // read-only card previews never have the privilege to unwind an event.
-   if(allowPass&&(second?gate.nextOriginalUseWaitReached!==true:
+   if(allowPass&&(third?gate.thirdOriginalUseWaitReached!==true:
+       second?gate.nextOriginalUseWaitReached!==true:
        gate.originalUseWaitReached!==true))
     throw err('V3_NATIVE_USE_PASS_NOT_AUTHORIZED');
    const options=allowPass?[...handIds,'pass']:handIds;
@@ -830,7 +873,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    if(!previewHooksAvailable||!p||p.state!=='recorded'||p.targetStage||
       p.seat!==seat||p.playerId!==playerId||
       p.ticket!==previousTicket||
-      (gate?.nextSelectionContentReleased?
+      (gate?.thirdSelectionContentReleased?
+       gate.thirdSelectionEvent:gate?.nextSelectionContentReleased?
        gate.nextSelectionEvent:gate?.selectionEvent)!==p.event||
       !_status.paused)
     throw err('V3_NATIVE_USE_TARGET_PREVIEW_DENIED');
@@ -1027,7 +1071,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     staticRuleAudit:p.targetStage?.staticRuleAudit??null,
     nativeGameEvent:p.event instanceof lib.element.GameEvent,
     originalEvent:p.event.name,
-    samePausedEvent:(gate?.nextSelectionContentReleased?
+    samePausedEvent:(gate?.thirdSelectionContentReleased?
+     gate.thirdSelectionEvent:gate?.nextSelectionContentReleased?
      gate.nextSelectionEvent:gate?.selectionEvent)===p.event&&_status.paused===true,
     fullRulesValidated:false,actionExecuted:false,cardConsumed:false,
     nativeUnwaitInvoked:false});
@@ -1133,7 +1178,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     thirdSelectionEventNative:state.thirdSelectionEvent instanceof lib.element.GameEvent,
     thirdSelectionEventName:state.thirdSelectionEvent?.name??null,
     thirdSelectionOwnerPlayerId:state.thirdSelectionEvent?.player?.playerid??null,
-    thirdSelectionContentExecuted:false,
+    thirdSelectionContentExecuted:state.thirdOriginalUseWaitReached===true,
+    thirdSelectionContentReleased:state.thirdSelectionContentReleased===true,
+    thirdOriginalOnlineWaitReached:state.thirdOriginalUseWaitReached===true,
     originalXingDongEvent:state.actionEvent instanceof lib.element.GameEvent,
     selectionEventNative:event instanceof lib.element.GameEvent,
     selectionEventName:event?.name??null,
@@ -1169,6 +1216,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     thirdActionPlayerId:state.thirdActionGate?.player?.playerid??null,
     thirdActionEventNative:state.thirdActionGate?.event instanceof lib.element.GameEvent,
     thirdActionEntryReleased:state.thirdActionEntryReleased===true,
+    fourthActionGateReached:state.fourthActionGate!==null,
+    fourthActionPlayerId:state.fourthActionGate?.player?.playerid??null,
+    fourthActionEventNative:state.fourthActionGate?.event instanceof lib.element.GameEvent,
     nextActionEntryReleased:state.nextActionEntryReleased===true,
     nextActionPlayerId:state.nextActionGate?.player?.playerid??null,
     nextActionEventNative:state.nextActionGate?.event instanceof lib.element.GameEvent,
@@ -1381,7 +1431,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   },
   delivered(message){
    const p=useCardPreview,gate=game.__v3PausedPhaseRuntime;
-   if(!p||(gate?.nextSelectionContentReleased?
+   if(!p||(gate?.thirdSelectionContentReleased?
+       gate.thirdSelectionEvent:gate?.nextSelectionContentReleased?
        gate.nextSelectionEvent:gate?.selectionEvent)!==p.event||!_status.paused||
       message?.seat!==p.seat||message.playerId!==p.playerId)
     return false;
