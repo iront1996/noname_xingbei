@@ -7528,6 +7528,11 @@ export class Player extends HTMLDivElement {
 		const expiryMs = time + 5000;
 		const pendingMarker = lib.node.torespond[seatId];
 		const lease = leases.open(seatId, {socket: originalSocket, timeoutMs: expiryMs});
+		// C2: opt-in operation ID. Send it before the choice command, preserving
+		// WebSocket ordering with existing player.send(...) callers.
+		if (originalSocket && originalSocket._xingbeiChoiceV2 && !originalSocket.closed) {
+			originalSocket.send("xbChoiceLease", lease.wireId);
+		}
 		if (originalSocket && !originalSocket.closed) {
 			const player = this;
 			if (_status.event._global_timer || _status.event.getParent().skillHidden) {
@@ -7556,7 +7561,13 @@ export class Player extends HTMLDivElement {
 		if (!pendingChoice) return false;
 		const leases = lib.node.xingbeiChoiceLeases;
 		if (expectedLease && !leases?.isCurrent(seatId, expectedLease)) return false;
+		const settlingLease = leases?.current(seatId);
 		if (leases && !leases.settle(seatId, expectedLease)) return false;
+		// Clear only the previous ticket. The client will ignore a late clear
+		// if a new choice ticket was already received on the same socket.
+		if (settlingLease?.wireId && this.ws?._xingbeiChoiceV2 && !this.ws.closed) {
+			this.ws.send("xbChoiceSettled", settlingLease.wireId);
+		}
 		// Settle before running callbacks: a callback can synchronously open the next wait.
 		lib.node.torespond[seatId] = result;
 		if (this._hide_all_timer) {
