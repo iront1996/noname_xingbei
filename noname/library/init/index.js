@@ -92,7 +92,10 @@ export class LibInit {
 			if (event._resultid) {
 				result.id = event._resultid;
 			}
-			game.send("result", result);
+			// C2: correlation ticket is separate from the game result payload.
+			// Legacy hosts ignore the extra argument. New hosts validate it only
+			// when the client opted into xbChoiceHello/xbChoiceLease.
+			game.send("result", result, game._xingbeiChoiceTicket || null);
 		}
 		event.goto(0);
 	}
