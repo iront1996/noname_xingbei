@@ -1593,8 +1593,18 @@ export class Game extends GameCompatible {
 		const healthSocket = game.ws;
 		let closeProcessed = false;
 		let staleFallback = null;
+		const originalOnOpen = healthSocket.onopen;
+		const originalOnError = healthSocket.onerror;
 		const originalOnMessage = healthSocket.onmessage;
 		const originalOnClose = healthSocket.onclose;
+		healthSocket.onopen = function (event) {
+			if (game.ws !== healthSocket) return;
+			return originalOnOpen.call(this, event);
+		};
+		healthSocket.onerror = function (event) {
+			if (game.ws !== healthSocket) return;
+			return originalOnError.call(this, event);
+		};
 		const connectionHealth = new ConnectionHealth({
 			onStale: socket => {
 				if (game.ws !== socket || closeProcessed) return;
