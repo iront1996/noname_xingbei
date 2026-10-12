@@ -695,3 +695,8 @@ Chromium CI `20fac4e` 與 `efad4e1` 揭露第四座位原版階段抽牌後，`p
 新增僅受管 Chromium 的私有橋接介面 `publishNativeLiveHands` 與 Node CI-only 封裝：在原生 Player 狀態可讀取時，同步取得所有座位實體手牌與彼此一致的公開手牌張數，使用**遞增的 per-room 修訂版**送至 broker 的 `authority_private_hand`，每份資料仍由既有 broker 驗證穩定 Player ID、每座位所有權與卡牌唯一性，並只向自己的已認證 socket 發出完整手牌。另有 private projection ACK 收斂及修訂版檢查，不能把舊 ACK 誤當新快照完成。
 
 隔離 Chromium 測試在第四玩家已額外摸過一張牌的原生 `chooseToUse` 等待點，由受管 worker 主動刷新所有座位 private projections：第四玩家取得最新完整實體手牌，其他座位只能取得自己的實體牌與全員手牌張數，未認證者不得查詢。此批**不讓人類任意發布快照**，也尚未實作自動在每個原生階段變化後發布、跨玩家牌張交換的原子交易與中途冷恢復。
+
+
+## 2026-10-12：第四人真原版 pass 接到第五行動者／2v2 回第一座位
+
+隔離 Chromium `chooseToUse` 的第四玩家私人票券已由 broker 驗證後允許唯一的 `pass` 答覆，實際使用原生 `Player.unwait({bool:false})`。新增原版 `xingDong` 第五行動者單次安全閘門（2v2 回第 0 座位，3v3／4v4 第 4 座位），只捕獲真 `GameEvent` 並於 step 0 前立即暫停，任何舊玩家包括循環到首座位都不能沿用已消耗票券／前一輪選牌事件預檢。新增 2v2／3v3／4v4 原生測試，核對恰有一張唯一存在於前牌庫的卡轉移到下一位玩家、其他手牌與 HP 不變、全部物理卡 ID 守恆、第五角色身分正確；再次由 Chromium 發布實體手牌，驗證 broker 私人視圖修訂版恰遞增 1 且與原生手牌一致。**尚未**授權任何真實出牌、攻防或技能執行；中途崩潰冷恢復仍未完成。

@@ -723,6 +723,69 @@ for(const {answer,seatCount} of [
    await assert.rejects(chrome.releaseFourthOriginalSelectionToNativeWait(),
     /V3_NATIVE_FOURTH_ORIGINAL_USE_RELEASE_DENIED/);
    assert.equal(chrome.pid,fourthPid);
+   // Consume the FOURTH real native no-card reply; the original phase
+   // scheduler must reach the next xingDong, never execute a fifth card.
+   assert.equal((await ask(returnedFourth,'choice_submit',{
+    ticket:fourthWindow.ticket,option:'pass'
+   })).code,'CHOICE_SUBMITTED_NOT_APPLIED');
+   await until(async()=>(await chrome.evaluateSeatExperiment(
+    'window.__v3NativeXingBeiTest.core.game.__v3NativeWaitAdapter.inspect()'
+   )).originalUsePassApplied===4);
+   const fifth=await until(async()=>{
+    const state=await chrome.inspectOriginalActionGate();
+    if(state.failed)throw Error('FIFTH_ACTOR_FAILED_'+state.error+
+     '_'+String(state.trace??'').slice(0,230));
+    return state.fifthActionGateReached&&state.paused&&state;
+   });
+   const fifthSeat=4%seatCount;
+   assert.equal(fifth.fifthActionPlayerId,sessions[fifthSeat].playerId);
+   assert.equal(fifth.fifthActionEventNative,true);
+   const afterFourthPass=await chrome.evaluateSeatExperiment(`(()=>{
+    const {game,ui,_status}=window.__v3NativeXingBeiTest.core;
+    return {paused:_status.paused===true,
+     hands:game.players.map(p=>p.getCards('h').map(c=>c.__v3PhysicalId)),
+     deck:Array.from(ui.cardPile?.childNodes??[]).map(c=>c.__v3PhysicalId),
+     hp:game.players.map(p=>p.hp??null)};
+   })()`);
+   assert.equal(afterFourthPass.paused,true);
+   assert.deepEqual(afterFourthPass.hp,postFourthWait.hp);
+   for(let seat=0;seat<seatCount;seat++){
+    if(seat!==fifthSeat)
+     assert.deepEqual(afterFourthPass.hands[seat],postFourthWait.hands[seat]);
+   }
+   const oldFifth=postFourthWait.hands[fifthSeat];
+   const newFifth=afterFourthPass.hands[fifthSeat];
+   assert.equal(newFifth.length,oldFifth.length+1);
+   const newlyDrawn=newFifth.filter(id=>!oldFifth.includes(id));
+   assert.equal(newlyDrawn.length,1);
+   assert.match(newlyDrawn[0],/^v3card_[a-f0-9]{6}$/);
+   assert.deepEqual(newFifth.filter(id=>id!==newlyDrawn[0]),oldFifth);
+   assert.equal(postFourthWait.deck.filter(id=>id===newlyDrawn[0]).length,1);
+   assert.deepEqual(afterFourthPass.deck,
+    postFourthWait.deck.filter(id=>id!==newlyDrawn[0]));
+   assert.deepEqual(
+    [...afterFourthPass.hands.flat(),...afterFourthPass.deck].sort(),
+    [...postFourthWait.hands.flat(),...postFourthWait.deck].sort());
+   // Old fourth ticket and all earlier actors cannot authorize new cards.
+   assert.equal((await ask(returnedFourth,'action_ownership_probe',{
+    cardId:postFourthWait.hands[3][0]
+   })).code,'ACTION_CARD_OWNERSHIP_DENIED');
+   const fifthPeer=fifthSeat===0?finalPeers[0]:finalPeers[fifthSeat];
+   assert.equal((await ask(fifthPeer,'action_ownership_probe',{
+    cardId:newFifth[0]
+   })).code,'ACTION_CARD_OWNERSHIP_DENIED');
+   assert.equal((await ask(returnedFourth,'choice_submit',{
+    ticket:fourthWindow.ticket,option:'pass'
+   })).code,'CHOICE_ALREADY_APPLIED');
+   // Repeat the trusted snapshot after a real phase boundary to verify
+   // strictly monotonic broker revisions and native fifth-seat cards.
+   const nextProjection=await chrome.publishNativeLiveHands();
+   assert.equal(nextProjection.revision,projection.revision+1);
+   const fifthProjected=await ask(fifthPeer,'private_hand_query');
+   assert.equal(fifthProjected.view.revision,nextProjection.revision);
+   assert.deepEqual(fifthProjected.view.ownHand.map(c=>c.cardId),newFifth);
+   assert.deepEqual(fifthProjected.view.publicOtherHandCounts.map(c=>c.handCount),
+    afterFourthPass.hands.map(c=>c.length));
    assert.equal((await ask(finalSecond,'command',{action:'playCard'})).code,
     'RULES_ENGINE_NOT_IMPLEMENTED');
   }

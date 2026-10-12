@@ -489,7 +489,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     thirdSelectionContentReleased:false,thirdOriginalUseWaitReached:false,
     fourthActionGate:null,fourthActionEntryReleased:false,
     fourthSelectionGate:false,fourthSelectionEvent:null,
-    fourthSelectionContentReleased:false,fourthOriginalUseWaitReached:false};
+    fourthSelectionContentReleased:false,fourthOriginalUseWaitReached:false,
+    fifthActionGate:null};
    // This hook runs in original content.js phaseLoop step 1, immediately
    // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
    // hook and must never be installed in production V3.
@@ -619,6 +620,21 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
         event.name!=='xingDong'||event.player!==this)
       throw err('V3_NATIVE_FOURTH_ACTION_EVENT_INVALID');
      state.fourthActionGate={player:this,event};
+     game.pause();return event;
+    }
+    // After FOUR genuine native no-card replies the engine schedules the
+    // next actor. In 2v2 this wraps to the original seat; never reuse
+    // the old first-actor xingDong or chooseToUse authorization.
+    if(this===first.nextSeat?.nextSeat?.nextSeat?.nextSeat&&
+       state.fourthSelectionContentReleased&&
+       state.fourthOriginalUseWaitReached&&
+       adapter.inspect().originalUsePassApplied===4&&
+       state.fifthActionGate===null){
+     const event=originalXingDong.call(this);
+     if(!(event instanceof lib.element.GameEvent)||
+        event.name!=='xingDong'||event.player!==this)
+      throw err('V3_NATIVE_FIFTH_ACTION_EVENT_INVALID');
+     state.fifthActionGate={player:this,event};
      game.pause();return event;
     }
     throw err('V3_NATIVE_ACTION_UNEXPECTED_OWNER');
@@ -879,7 +895,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    const gate=game.__v3PausedPhaseRuntime;
    // A fourth player cannot inherit the third player's old event.
    // Only an explicitly released fourth native wait may open a ticket.
-   if(gate?.fourthActionGate&&!gate.fourthSelectionContentReleased)
+   if(gate?.fifthActionGate||
+      gate?.fourthActionGate&&!gate.fourthSelectionContentReleased)
     throw err('V3_NATIVE_USE_PREVIEW_NOT_READY');
    const fourth=gate?.fourthSelectionContentReleased===true;
    const third=!fourth&&gate?.thirdSelectionContentReleased===true;
@@ -1156,6 +1173,11 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // the authenticated active native Player physically holds this card.
    // Full target legality, costs, skills, and effect resolution are pending.
    const gate=game.__v3PausedPhaseRuntime;
+   // The fifth actor is deliberately paused BEFORE its original
+   // gongJiOrFaShu exists. No previous seat (including wraparound
+   // first seat) may preflight an old native selection GameEvent.
+   if(gate?.fifthActionGate)
+    throw err('V3_NATIVE_CARD_OWNERSHIP_DENIED');
    // An actor that has already passed must never retain a usable
    // ownership preflight after the scheduler advances to another seat.
    // Resolve from the MOST RECENT authentic native action boundary.
@@ -1306,6 +1328,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     fourthActionPlayerId:state.fourthActionGate?.player?.playerid??null,
     fourthActionEventNative:state.fourthActionGate?.event instanceof lib.element.GameEvent,
     fourthActionEntryReleased:state.fourthActionEntryReleased===true,
+    fifthActionGateReached:state.fifthActionGate!==null,
+    fifthActionPlayerId:state.fifthActionGate?.player?.playerid??null,
+    fifthActionEventNative:state.fifthActionGate?.event instanceof lib.element.GameEvent,
     nextActionEntryReleased:state.nextActionEntryReleased===true,
     nextActionPlayerId:state.nextActionGate?.player?.playerid??null,
     nextActionEventNative:state.nextActionGate?.event instanceof lib.element.GameEvent,
