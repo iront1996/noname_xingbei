@@ -11217,23 +11217,37 @@ export class Library {
 			/**
 			 * @this {import("./element/client.js").Client}
 			 */
-			result(result) {
+			xbChoiceHello(protocolVersion) {
+				// Only a fully initialized current socket may opt into C2 validation.
+				if (protocolVersion !== 1 || lib.node.observing.includes(this) ||
+					this.closed || this.inited !== true) return;
+				const player = lib.playerOL[this.id];
+				if (!player || player.ws !== this) return;
+				this._xingbeiChoiceV2 = true;
+				player._xingbeiChoiceRequired = true;
+				const lease = lib.node.xingbeiChoiceLeases?.current(player.playerid);
+				if (lease) this.send("xbChoiceLease", lease.wireId);
+			},
+			result(result, wireId) {
 				if (lib.node.observing.includes(this)) return;
-				var player = lib.playerOL[this.id];
+				const player = lib.playerOL[this.id];
 				// C1: a superseded/initializing connection must never consume a choice.
-				if (player && player.ws === this && !this.closed && this.inited === true) {
-					player.unwait(result);
-				}
+				if (!player || player.ws !== this || this.closed || this.inited !== true) return;
+				// C2: once a player opted in, a legacy reply cannot downgrade this seat.
+				if (player._xingbeiChoiceRequired && (!this._xingbeiChoiceV2 ||
+					!lib.node.xingbeiChoiceLeases?.matchesWireId(player.playerid, wireId))) return;
+				player.unwait(result);
 			},
 			/**
 			 * @this {import("./element/client.js").Client}
 			 */
-			tempResult(result) {
+			tempResult(result, wireId) {
 				if (lib.node.observing.includes(this)) return;
-				var player = lib.playerOL[this.id];
-				if (player && player.ws === this && !this.closed && this.inited === true) {
-					player.tempUnwait(result);
-				}
+				const player = lib.playerOL[this.id];
+				if (!player || player.ws !== this || this.closed || this.inited !== true) return;
+				if (player._xingbeiChoiceRequired && (!this._xingbeiChoiceV2 ||
+					!lib.node.xingbeiChoiceLeases?.matchesWireId(player.playerid, wireId))) return;
+				player.tempUnwait(result);
 			},
 			/**
 			 * @this {import("./element/client.js").Client}
