@@ -110,7 +110,13 @@ test("valid owner acknowledgement rotates secret, reconfigures, then completes r
 	);
 	assert.deepEqual(f.sent.at(-1), ["server", "config", { gameStarted: true }]);
 	assert.equal(loadOwnerCredentials(f.store, f.context.endpoint).token, nextToken);
-	assert.equal(handleOwnerRecoveryControl(["roomresumed", { protocol: 1 }], f.context), true);
+	assert.equal(
+		handleOwnerRecoveryControl(
+			["roomresumed", { protocol: 1, roomId: "owner-key" }],
+			f.context
+		),
+		true
+	);
 	assert.deepEqual(f.phases, [["recovered", "owner_resume"]]);
 });
 

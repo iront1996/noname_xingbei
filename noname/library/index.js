@@ -7723,7 +7723,7 @@ export class Library {
 					return;
 				}
 				if (!game._xingbeiSuppressRecovery && !_status.over &&
-					game.online && game.beginXingbeiOwnerRecovery?.()) {
+					(game.online || game.onlineroom) && game.beginXingbeiOwnerRecovery?.()) {
 					game.online = false;
 					game.ws = null;
 					game.sandbox = null;
@@ -11534,11 +11534,21 @@ export class Library {
 			},
 		},
 		client: {
-			roompaused: function (state) {
+			roompaused: function (state, remainingMs) {
+				if (!game.onlinehall || game.onlineroom || !game.online ||
+					!['awaiting_host', 'waiting_host_process'].includes(state) ||
+					!Number.isSafeInteger(remainingMs) || remainingMs < 0 || remainingMs > 3600000) return;
 				game._xingbeiRoomLifecycleState = state;
+				game._xingbeiRoomPaused = true;
+				game._xingbeiChoiceTicket = null;
+				game._xingbeiProgressServerSeq = null;
 			},
-			roomresumed: function () {
+			roomresumed: function (info) {
+				if (!game.onlinehall || game.onlineroom || !game.online ||
+					game._xingbeiRoomPaused !== true || info?.protocol !== 1 ||
+					info.roomId !== game.roomId) return;
 				game._xingbeiRoomLifecycleState = "active";
+				game._xingbeiRoomPaused = false;
 			},
 			xbProgressProbe(probeId, sequence, hostPhase) {
 				// Probe is placed after prior broadcast messages on this WebSocket.

@@ -237,7 +237,10 @@
 						if (clients[id].room == room && clients[id] != this) {
 							clients[id].owner = this;
 							this.sendl("onconnection", clients[id].wsid);
-							clients[id].sendl("roomresumed");
+							clients[id].sendl("roomresumed", {
+								protocol: 1,
+								roomId: room.key,
+							});
 						}
 					}
 				}

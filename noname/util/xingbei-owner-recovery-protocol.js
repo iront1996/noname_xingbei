@@ -75,6 +75,11 @@ export function handleOwnerRecoveryControl(message, context) {
 	}
 
 	if (message[0] === "roomresumed" && state?._xingbeiOwnerReclaimed) {
+		if (message[1]?.protocol !== 1 || message[1]?.roomId !== state.roomId) {
+			recovery?.reject("invalid_owner_resume_ready");
+			state._xingbeiSuppressRecovery = true;
+			return true;
+		}
 		if (recovery?.active && recovery.phase === "SYNCING") {
 			recovery.synchronized("owner_resume");
 		}

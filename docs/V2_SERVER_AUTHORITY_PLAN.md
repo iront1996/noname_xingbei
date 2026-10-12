@@ -46,6 +46,12 @@ Known M1 limitations and next batches:
 - A valid reclaim rotates the secret, leaves the room in `waiting_host_process`, and requires the surviving browser host to resend its configuration before guest routing resumes.
 - A spawned-process integration test starts the actual `game/server.js` on an isolated loopback port and uses real `ws` clients to verify create, guest join, owner pause, paused-room admission rejection, protocol rejection, authenticated owner resume, token rotation and guest rerouting.
 
+### M1 client state-transition correction
+
+- The actual `createroom` handler intentionally changes a human host from `online=true` to `online=false, onlineroom=true`. Owner recovery therefore keys off either live online state, not guest-only `game.online`.
+- Actual handler execution tests run `createroom` followed by the real WebSocket `onclose` body and prove the owner recovery entry point is reached.
+- Guest `roompaused` accepts only bounded deadlines and known states for an online, non-owner HALL client; it clears stale choice/progress identifiers. `roomresumed` requires protocol 1 plus the current room ID before reopening the guest lifecycle state.
+
 ### M1 review hardening
 
 - Paused rooms now reject fresh `enter` attempts with `room_paused` before assigning any room or owner reference. Existing associated guests remain attached and can wait for recovery.

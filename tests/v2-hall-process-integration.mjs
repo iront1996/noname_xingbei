@@ -146,6 +146,7 @@ test("real HALL process preserves, authenticates and resumes a human-hosted room
 	assert.notEqual(resumed[2].ownerResumeToken, created[2].ownerResumeToken);
 	replacement.send("config", { gameStarted: true, observe: true, observeReady: true });
 	await replacement.next("roomresumed");
-	await guest.next("roomresumed");
+	const guestResumed = await guest.next("roomresumed");
+	assert.deepEqual(guestResumed[1], { protocol: 1, roomId: "room-key" });
 	assert.ok(replacement.packets.some(packet => Array.isArray(packet) && packet[0] === "onconnection"));
 });
