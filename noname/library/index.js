@@ -11877,6 +11877,8 @@ export class Library {
 				}
 			},
 			reinit: function (config, state, state2, ip, observe, onreconnect, cardtag, postReconnect) {
+				// Capture the socket: async mode loading must not complete a newer recovery.
+				const xbReinitSocket = game.ws;
 				ui.auto.show();
 				ui.pause.show();
 				game.clearConnect();
@@ -11908,6 +11910,7 @@ export class Library {
 				lib.vcardOL = {};
 
 				game.loadModeAsync(config.mode, function (mode) {
+					if (game.ws !== xbReinitSocket) return; // superseded socket snapshot
 					for (var i in mode.ai) {
 						if (typeof mode.ai[i] == "object") {
 							if (ai[i] == undefined) ai[i] = {};
@@ -12198,7 +12201,7 @@ export class Library {
 					ui.updatehl();
 					ui.create.connecting(true);
 					// A re-opened WebSocket alone is not a recovered game.
-					if (game._xingbeiSeatReclaimed && game._xingbeiRecovery?.active) {
+					if (xbReinitSocket === game.ws && game._xingbeiSeatReclaimed && game._xingbeiRecovery?.active) {
 						game._xingbeiRecovery.synchronized("reinit");
 						game._xingbeiSeatReclaimed = false;
 					}
