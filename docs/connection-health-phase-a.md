@@ -125,3 +125,17 @@ Extend deterministic public-state fingerprints and explicit recovery snapshots p
 - `tests/connection-recovery-c3c.mjs` tests private-field exclusion, deterministic seating order, changes in public resources/HP, actual syncState callback ACK, stale transport/replay, mismatched digest, and legacy compatibility.
 
 **Blockers:** Xingbei mode lacks a complete reversible `getState` / `updateState` snapshot contract. This fingerprint observes a public subset only and cannot restore hands, resolve pending card/skill prompts, or establish a full game replay cut. The authoritative V3 Chromium runtime still needs end-to-end integration tests. Never auto-reconnect or overwrite game state on fingerprint diagnosis. This work is isolated to the experiment branch; A1 is the only deployed change, and production V1/V2, V3 live and monitor v2.3.0 remain untouched.
+
+
+## Phase C3d-1 – V3 in-memory read-only recovery candidate (development only)
+
+- \`game/v3-authority-recovery-candidate.mjs\` is a separate, **unwired** V3 sidecar. It builds on the real V3 \`createV3AuthorityPrivateProjections\` whole-room revision, rather than the legacy host's \`getState()\` (XingBei has no complete reversible state contract).
+- A publication requires: live worker identity from the trusted coordinator; monotonic room revision; 4/6/8 unique verified player seats; a well-formed C3c public digest; valid phase/current seat; the same private-hand revision for **every** seat; and no outstanding tracked choice windows. It stores only public metadata, not cards.
+- A read-only per-seat projection additionally requires a trusted broker-supplied authenticated room/seat/player/connection binding and an exact revision match; cards are retrieved from the already validated private projection store and strictly allowlisted to the owning seat. Replaced connections, stale authority workers, pending choices and mismatched revisions fail closed. Output is cloned/frozen and does not contain passwords, private hands of other seats, deck order, choice ticket or skill storage.
+- \`tests/connection-recovery-c3d.mjs\` integrates the **actual** existing V3 private projection and choice-window modules. It tests cross-seat leakage, outdated socket, worker takeover, in-flight choice, stale/partial revisions, read-only immutability and metadata validation. Experimental CI is responsible for running it.
+
+**Critical limitations:** This is a **read-only candidate**, not a durable checkpoint, executable \`GameEvent\` continuation, runtime state patch, snapshot resynchronization, or playable recovery. V3 worker exports do not yet provide an atomic full game-state + scheduler cut. Absence of a tracked choice window cannot prove the entire game engine is quiescent. The C3c digest covers only a public subset and is not cryptographic authentication. Caller must never take player/connection identity from raw WebSocket packets. There is **no broker route or deployment** for this sidecar; restore and automatic reconnection stay disabled. V1/V2/V3 live and monitor v2.3.0 remain unchanged.
+
+### C3d-2 prerequisite
+
+Audit a genuine Chromium cut for authoritative \`GameEvent\`/skill pending state, draw/discard/card zones, turn/phase state, RNG and choice resolution, and define an unambiguous server-owned state version. Only after proving the cut can be captured and applied losslessly should an authenticated server-initiated, seat-scoped resynchronization protocol be considered.
