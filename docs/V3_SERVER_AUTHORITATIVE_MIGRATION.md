@@ -608,3 +608,10 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 - 將 Chromium 程序及其當前私有 WebSocket 的雙重健康驗證，延伸至 `transport_probe`、`action_ownership_probe`、`action_target_probe`。受管程序已死亡但私有 WS 暫時未斷時，立即拒絕 `WORKER_UNAVAILABLE`，不建立假待處理探測，也不等待四秒逾時；這些探測仍不授權真出牌。
 - 上述探測與 `choice_submit` 一樣，在異步 CDP 健康檢查結束後重新核對「目前 socket 是否仍為本座位 session」和原主持通道，阻止舊座位連線世代的競態提交。
 - 新增假 Chromium 單元案例：(1) 程序已死但私有 WS OPEN，三種探測皆拒絕；(2) 特意暫停健康檢查時接管同一座位，舊 socket 不可提交票券，只有新 socket 有效。本批僅限 V3 實驗分支、未部署線上服務或影響 V1/V2。
+
+
+## 2026-10-12：伺服器主動偵測受管 Chromium 程序死亡
+
+- V3-only broker 現在以單一房間單一監測計時器檢查已認證的獨立 Chromium 主持程序（預設每 3 秒），不需要真人繼續發送訊息；主持程序明確失效時主動關閉私有 WS，沿用既有 `cancelRoom`、清除私人投影與向在線真人廣播 `choice_interrupted` 的安全關閉路徑。
+- 監測避免同一房間重疊健康檢查；啟動握手尚未掛入 coordinator 時的 `WORKER_NOT_STARTED` 不當作死亡。私有通道關閉及 broker 結束時都釋放計時器，且任何異步查詢結果必須再次核對目前 room/WS 與 broker 未關閉。
+- 假 Chromium 測試讓程序健康失效、保持 WS OPEN 且玩家全程不發送任何請求，驗證 watchdog 自動通知 4 個在線座位、清除舊票券且不冒稱原生 GameEvent 可恢復。此 watchdog 不是 Chromium 崩潰中途冷恢復功能；仍只限 V3 分支，未碰 V1/V2/VPS。

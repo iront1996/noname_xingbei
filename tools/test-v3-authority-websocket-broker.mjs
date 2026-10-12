@@ -31,12 +31,13 @@ async function ask(ws,obj){
  return waitFor(ws,r=>r.type==='reply'&&r.requestId===requestId);
 }
 const config={mode:'xingBei',seatMode:'2v2'};
-async function setup({latency=0,choiceExperiment=false,ownershipExperiment=false}={}){
+async function setup({latency=0,choiceExperiment=false,ownershipExperiment=false,workerHealthIntervalMs=3000}={}){
  let started=0,stopped=0,authority,crashWorker,nextInspectGate;
  const broker=await createV3AuthorityWebSocketBroker({
   WebSocketServer:FakeWebSocketServer,
   enableChoiceWindowExperiments:choiceExperiment,
   enableNativeOwnershipProbes:ownershipExperiment,
+  workerHealthIntervalMs,
   launchWorker:async()=>{
    started++;let alive=true;
    crashWorker=()=>{alive=false};
@@ -499,6 +500,32 @@ test('dead Chromium with still-open worker channel cannot reveal or submit stale
   assert.equal((await ask(replacement,{type:'choice_query'})).window,null);
  }finally{await x.broker.close()}
 });
+test('watchdog interrupts every online seat when Chromium dies before private socket close',async()=>{
+ const x=await setup({choiceExperiment:true,workerHealthIntervalMs:100});
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  x.authority.clientSend({type:'authority_choice_open',roomId:'TEST',seat:0,
+   playerId:sessions[0].playerId,kind:'control',prompt:'Select',options:['yes','no']});
+  const opened=await waitFor(x.authority,m=>m.type==='authority_choice_open_result');
+  assert.equal(opened.ok,true);
+  await waitFor(ws[0],m=>m.type==='choice_window'&&m.window.ticket===opened.view.ticket);
+  // No player request after this point triggers failure recognition.
+  // The watchdog detects OS death while the private channel is still open.
+  x.crashWorker();
+  for(let seat=0;seat<4;seat++){
+   const event=await waitFor(ws[seat],m=>m.type==='choice_interrupted');
+   assert.equal(event.code,'WORKER_CHANNEL_OFFLINE');
+  }
+  assert.equal(x.authority.readyState,3);
+  assert.equal((await ask(ws[0],{type:'choice_query'})).window,null);
+  assert.equal((await ask(ws[0],{type:'choice_submit',
+   ticket:opened.view.ticket,option:'yes'})).code,'WORKER_CHANNEL_OFFLINE');
+  assert.equal(x.broker.roomView('TEST').roster.every(s=>s.connected),true);
+  assert.equal((await x.broker.inspectWorker('TEST')).code,'WORKER_UNAVAILABLE');
+ }finally{await x.broker.close()}
+});
+
 test('all probe classes reject a dead Chromium even while its WebSocket is still open',async()=>{
  const previous=process.env.V3_ALLOW_SEAT_EXPERIMENT;
  process.env.V3_ALLOW_SEAT_EXPERIMENT='1';

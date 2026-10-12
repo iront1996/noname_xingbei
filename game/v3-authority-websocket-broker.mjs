@@ -16,13 +16,16 @@ const requestOk=s=>s===undefined||(typeof s==='string'&&/^[a-zA-Z0-9_-]{1,40}$/.
 const live=ws=>ws?.readyState===1;
 const send=(ws,obj)=>{if(!live(ws))return;try{ws.send(JSON.stringify(obj))}catch{try{ws.close(1011)}catch{}}};
 
-export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0,enableChoiceWindowExperiments=false,enablePrivateHandExperiments=false,enableOpeningRecoveryExperiments=false,openingCheckpointStore=null,enableNativeOwnershipProbes=false}={}){
+export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWorker,host='127.0.0.1',port=0,enableChoiceWindowExperiments=false,enablePrivateHandExperiments=false,enableOpeningRecoveryExperiments=false,openingCheckpointStore=null,enableNativeOwnershipProbes=false,workerHealthIntervalMs=3000}={}){
  if(typeof WebSocketServer!=='function'||typeof launchWorker!=='function')throw new TypeError('BROKER_DEPENDENCY_MISSING');
  if(host!=='127.0.0.1'||port!==0)throw new Error('EXPERIMENT_LOOPBACK_EPHEMERAL_ONLY');
  if(typeof enableChoiceWindowExperiments!=='boolean'||typeof enablePrivateHandExperiments!=='boolean'||
     typeof enableOpeningRecoveryExperiments!=='boolean'||
     typeof enableNativeOwnershipProbes!=='boolean')
   throw new TypeError('EXPERIMENT_CONFIG_INVALID');
+ if(!Number.isSafeInteger(workerHealthIntervalMs)||
+    workerHealthIntervalMs<100||workerHealthIntervalMs>60000)
+  throw new TypeError('WORKER_HEALTH_WATCH_INTERVAL_INVALID');
  if(enableOpeningRecoveryExperiments&&
     (process.env.V3_ALLOW_SEAT_EXPERIMENT!=='1'||
      typeof openingCheckpointStore?.load!=='function'||
@@ -38,6 +41,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
  const outstandingProbes=new Map();
  const outstandingCardProbes=new Map();
  const seatsByRoom=new Map(),pendingWorker=new Map(),workersByRoom=new Map(),allSockets=new Set();
+ const workerWatches=new Map();
  let closed=false,server;
  const seats=id=>seatsByRoom.get(id);
  const current=(roomId,seat,ws)=>seats(roomId)?.get(seat)?.ws===ws;
@@ -109,6 +113,30 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    throw err;
   }finally{clearTimeout(timer);pendingWorker.delete(ctx.roomId)}
  }});
+ // A Chromium process can exit without immediately delivering a private
+ // WebSocket close event. A loopback-only worker watchdog revokes that
+ // channel and runs the SAME cleanup/choice_interrupted path as socket loss.
+ // Never claim to restore the unfinished native GameEvent.
+ const startWorkerWatch=(roomId,ws)=>{
+  let pending=false;
+  const timer=setInterval(async()=>{
+   if(pending||closed||workersByRoom.get(roomId)!==ws||!live(ws))return;
+   pending=true;
+   try{
+    let health;
+    try{health=await coordinator.inspectWorker(roomId)}
+    catch{health={code:'WORKER_UNAVAILABLE'}}
+    if(closed||workersByRoom.get(roomId)!==ws||!live(ws))return;
+    // The authenticated worker may connect before coordinator stores its
+    // reference during startup; that brief state is not a crash.
+    if(health.code==='WORKER_UNAVAILABLE'){
+     try{ws.close(1011,'chromium_unavailable')}catch{try{ws.terminate?.()}catch{}}
+    }
+   }finally{pending=false}
+  },workerHealthIntervalMs);
+  timer.unref?.();
+  workerWatches.set(roomId,{socket:ws,timer});
+ };
  const handle=async(ws,raw,isBinary)=>{
   if(closed||isBinary)return send(ws,{type:'error',code:'INVALID_FRAME'});
   const value=typeof raw==='string'?raw:Buffer.isBuffer(raw)?raw.toString('utf8'):null;
@@ -273,6 +301,7 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    }
    ws.__v3AuthorityRoom=obj.roomId;
    workersByRoom.set(obj.roomId,ws);
+   startWorkerWatch(obj.roomId,ws);
    pending.accept();
    sendRoster(obj.roomId);
    return send(ws,{type:'authority_accepted',roomId:obj.roomId});
@@ -488,6 +517,11 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    }
    if(ws.__v3AuthorityRoom){
     if(workersByRoom.get(ws.__v3AuthorityRoom)===ws){
+     const watch=workerWatches.get(ws.__v3AuthorityRoom);
+     if(watch?.socket===ws){
+      clearInterval(watch.timer);
+      workerWatches.delete(ws.__v3AuthorityRoom);
+     }
      workersByRoom.delete(ws.__v3AuthorityRoom);
      choices.cancelRoom(ws.__v3AuthorityRoom);
      privateHands.clearRoom(ws.__v3AuthorityRoom);
@@ -653,6 +687,8 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
   async close(){
    if(closed)return;
    closed=true;
+   for(const watch of workerWatches.values())clearInterval(watch.timer);
+   workerWatches.clear();
    for(const p of outstandingProbes.values())clearTimeout(p.timer);
    outstandingProbes.clear();
    for(const p of outstandingCardProbes.values())clearTimeout(p.timer);
