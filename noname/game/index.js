@@ -19,6 +19,7 @@ import { gnc } from "../gnc/index.js";
 import { isClass, userAgentLowerCase, Uninstantable, GeneratorFunction, AsyncFunction, delay, nonameInitialized } from "../util/index.js";
 
 import { DynamicStyle } from "./dynamic-style/index.js";
+import { ConnectionHealth } from "../util/xingbei-connection-health.js";
 import { GamePromises } from "./promises.js";
 import { Check } from "./check.js";
 
@@ -1528,6 +1529,43 @@ export class Game extends GameCompatible {
 		game.ws.onmessage = lib.element.ws.onmessage;
 		game.ws.onerror = lib.element.ws.onerror;
 		game.ws.onclose = lib.element.ws.onclose;
+		// XINGBEI CONNECTION HEALTH A1: detect a half-open socket even without onclose.
+		// This layer only triggers the existing recovery path; game state remains
+		// the responsibility of the host/server's reinit protocol.
+		const healthSocket = game.ws;
+		let closeProcessed = false;
+		let staleFallback = null;
+		const originalOnMessage = healthSocket.onmessage;
+		const originalOnClose = healthSocket.onclose;
+		const connectionHealth = new ConnectionHealth({
+			onStale: socket => {
+				if (game.ws !== socket || closeProcessed) return;
+				console.warn("[Xingbei] Server heartbeat/inbound messages have stalled");
+				try { socket.close(); } catch (_) {}
+				// A half-open socket may never complete the close handshake.
+				// Force the existing, one-shot recovery path after a grace period.
+				staleFallback = setTimeout(() => {
+					if (game.ws === socket && !closeProcessed) {
+						healthSocket.onclose.call(socket, { code: 1006, reason: "health_watchdog" });
+					}
+				}, 8000);
+			}
+		});
+		healthSocket.onmessage = function (event) {
+			if (game.ws !== healthSocket) return;
+			const result = originalOnMessage.call(this, event);
+			connectionHealth.incoming(healthSocket);
+			return result;
+		};
+		healthSocket.onclose = function (event) {
+			if (closeProcessed) return;
+			closeProcessed = true;
+			if (staleFallback !== null) clearTimeout(staleFallback);
+			connectionHealth.dispose();
+			if (game.ws !== healthSocket) return;
+			return originalOnClose.call(this, event);
+		};
+		connectionHealth.bind(healthSocket);
 		_status.ip = ip;
 	}
 	send() {
