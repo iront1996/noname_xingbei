@@ -80,7 +80,11 @@ export class Client {
 			game.broadcast(function (player) {
 				player.setNickname(player.nickname + " - 离线");
 			}, player);
-			player.unwait("ai");
+			// C1: a recoverable disconnect does not immediately override an
+			// already pending choice. Its original deadline still triggers AI.
+			const active = lib.node.xingbeiChoiceLeases?.current(player.playerid);
+			const timer = lib.node.torespondtimeout[player.playerid];
+			if (!(active && timer != null)) player.unwait("ai");
 		}
 
 		if (window.isNonameServer) {
