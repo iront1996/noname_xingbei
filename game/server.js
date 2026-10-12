@@ -1,6 +1,8 @@
 (function () {
 	var WebSocketServer = require("ws").Server;
-	var createRoomLifecycle = require("./server-room-lifecycle.js").createRoomLifecycle;
+	var roomLifecycleModule = require("./server-room-lifecycle.js");
+	var createRoomLifecycle = roomLifecycleModule.createRoomLifecycle;
+	var releaseRoomClients = roomLifecycleModule.releaseRoomClients;
 	var wss = new WebSocketServer({ port: 8080 });
 	var bannedKeys = [];
 	var bannedIps = [];
@@ -13,13 +15,7 @@
 	var roomCleanupTimer = setInterval(function () {
 		var expiredRooms = roomLifecycle.sweepExpired();
 		for (var room of expiredRooms) {
-			for (var id in clients) {
-				if (clients[id].room == room) {
-					clients[id].sendl("selfclose", "room_expired");
-					delete clients[id].owner;
-					delete clients[id].room;
-				}
-			}
+			releaseRoomClients(clients, room, "room_expired");
 		}
 		if (expiredRooms.length) util.updaterooms();
 	}, 30000);
@@ -56,16 +52,12 @@
 				this.sendl("enterroomfailed");
 				return;
 			}
-			this.room = room;
-			delete this.status;
 			if (!room.owner || room.lifecycleState != "active") {
-				this.sendl(
-					"roompaused",
-					room.lifecycleState,
-					Math.max(0, (room.expiresAt || 0) - Date.now())
-				);
-				util.updaterooms();
+				this.sendl("enterroomfailed", "room_paused");
+				return;
 			} else if (room.owner) {
+				this.room = room;
+				delete this.status;
 				if (
 					room.servermode &&
 					!room.owner._onconfig &&
@@ -441,6 +433,12 @@
 					var room = rooms[i];
 					if (room.servermode) {
 						roomLifecycle.removeRoom(room);
+						releaseRoomClients(
+							clients,
+							room,
+							"server_host_closed",
+							this
+						);
 						i--;
 						continue;
 					}

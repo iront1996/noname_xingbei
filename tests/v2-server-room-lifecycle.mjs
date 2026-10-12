@@ -4,7 +4,10 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const { createRoomLifecycle } = require("../game/server-room-lifecycle.js");
+const {
+	createRoomLifecycle,
+	releaseRoomClients,
+} = require("../game/server-room-lifecycle.js");
 
 function socket(id, onlineKey) {
 	return {
@@ -42,9 +45,13 @@ function harness() {
 	}
 
 	function enter(client, room) {
+		if (!room.owner || room.lifecycleState != "active") {
+			client.sendl("enterroomfailed", "room_paused");
+			return false;
+		}
 		client.room = room;
-		if (room.owner && room.lifecycleState == "active") client.owner = room.owner;
-		else client.sendl("roompaused", room.lifecycleState);
+		client.owner = room.owner;
+		return true;
 	}
 
 	function disconnect(client) {
@@ -149,6 +156,44 @@ test("owner disconnect pauses instead of deleting the room or ejecting guests", 
 	assert.equal(guest.messages.some(message => message[0] == "selfclose"), false);
 });
 
+test("paused room retains existing guests but rejects new visitors", () => {
+	const h = harness();
+	const owner = h.add(socket("owner-1", "room-key"));
+	const existingGuest = h.add(socket("guest-1", "guest-key"));
+	const room = h.create(owner, "room-key");
+	h.enter(existingGuest, room);
+	h.disconnect(owner);
+
+	const newcomer = h.add(socket("guest-2", "new-key"));
+	assert.equal(h.enter(newcomer, room), false);
+	assert.equal(newcomer.room, undefined);
+	assert.equal(newcomer.owner, undefined);
+	assert.deepEqual(newcomer.messages, [["enterroomfailed", "room_paused"]]);
+	assert.equal(existingGuest.room, room);
+	assert.deepEqual(existingGuest.messages, [["roompaused", "awaiting_host"]]);
+});
+
+test("server-mode host shutdown notifies guests and clears stale room references", () => {
+	const owner = socket("server-host", "server-key");
+	const guest = socket("guest-1", "guest-key");
+	const unrelated = socket("guest-2", "other-key");
+	const room = { owner, servermode: true };
+	const otherRoom = { owner: unrelated };
+	owner.room = room;
+	guest.room = room;
+	guest.owner = owner;
+	unrelated.room = otherRoom;
+	const clients = { owner, guest, unrelated };
+
+	assert.equal(releaseRoomClients(clients, room, "server_host_closed", owner), 1);
+	assert.equal(guest.room, undefined);
+	assert.equal(guest.owner, undefined);
+	assert.deepEqual(guest.messages, [["selfclose", "server_host_closed"]]);
+	assert.equal(owner.room, room);
+	assert.equal(unrelated.room, otherRoom);
+	assert.deepEqual(unrelated.messages, []);
+});
+
 test("owner reclaim requires both bound identity and rotating secret", () => {
 	const h = harness();
 	const originalOwner = h.add(socket("owner-1", "room-key"));
@@ -201,6 +246,8 @@ test("real HALL source integrates lifecycle pause, reclaim and cleanup paths", (
 	assert.match(source, /roomLifecycle\.pauseForOwnerDisconnect\(room, this\)/);
 	assert.match(source, /roomLifecycle\.sweepExpired\(\)/);
 	assert.match(source, /"roompaused",\s*"awaiting_host"/);
+	assert.match(source, /"enterroomfailed", "room_paused"/);
+	assert.match(source, /releaseRoomClients\([\s\S]*?"server_host_closed"/);
 	assert.doesNotMatch(
 		source,
 		/clients\[j\]\.sendl\("selfclose"\);[\s\S]{0,200}rooms\.splice\(i--, 1\)/

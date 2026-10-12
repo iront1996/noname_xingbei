@@ -14,6 +14,19 @@ function safeTokenEquals(actual, expected) {
 	);
 }
 
+function releaseRoomClients(clients, room, reason, exceptClient) {
+	let released = 0;
+	for (const id in clients) {
+		const client = clients[id];
+		if (client === exceptClient || client.room !== room) continue;
+		client.sendl("selfclose", reason);
+		delete client.owner;
+		delete client.room;
+		released++;
+	}
+	return released;
+}
+
 function createRoomLifecycle(options) {
 	options = options || {};
 	const rooms = options.rooms || [];
@@ -126,4 +139,5 @@ function createRoomLifecycle(options) {
 module.exports = {
 	DEFAULT_OWNER_RECONNECT_MS,
 	createRoomLifecycle,
+	releaseRoomClients,
 };

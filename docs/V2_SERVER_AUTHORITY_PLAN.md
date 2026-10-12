@@ -39,6 +39,12 @@ Known M1 limitations and next batches:
 - Add client credential storage/reclaim negotiation, explicit protocol version handling, rate limiting/audit telemetry, and a real HALL WebSocket process test before declaring M1 complete.
 - Verify compatibility against the exact redacted VPS HALL source offline before any deployment request.
 
+### M1 review hardening
+
+- Paused rooms now reject fresh `enter` attempts with `room_paused` before assigning any room or owner reference. Existing associated guests remain attached and can wait for recovery.
+- Closing a legacy server-mode host releases every attached guest, sends `selfclose` with `server_host_closed`, and clears both `room` and `owner` references. Unrelated rooms and the already-closing host are not mutated.
+- Expiry cleanup and server-mode shutdown share the same tested reference-release helper.
+
 ## M2 — managed server host process
 
 Status: not started.
