@@ -155,6 +155,26 @@ export async function createV3AuthorityWebSocketBroker({WebSocketServer,launchWo
    // projections or acknowledge requests after its authority was revoked.
    if(workersByRoom.get(ws.__v3AuthorityRoom)!==ws)
     return send(ws,{type:'error',code:'WORKER_CHANNEL_REVOKED'});
+   if(obj.type==='authority_private_hands_batch'){
+    if(!enablePrivateHandExperiments)
+     return send(ws,{type:'error',code:'PRIVATE_HAND_EXPERIMENT_DISABLED'});
+    const roomId=ws.__v3AuthorityRoom;
+    const stable=stablePlayersByRoom.get(roomId);
+    if(obj.roomId!==roomId||!stable||!Array.isArray(obj.seats)||
+       obj.seats.length!==stable.size||
+       obj.seats.some((s,i)=>s?.seat!==i||stable.get(i)!==s.playerId))
+     return send(ws,{type:'error',code:'PRIVATE_HAND_SEAT_DENIED'});
+    const stored=privateHands.publishRoom({
+     roomId,revision:obj.revision,seats:obj.seats
+    });
+    if(!stored.ok)return send(ws,{type:'error',code:stored.code});
+    // ACK carries no private cards; only the owner sockets receive
+    // their projection, AFTER all seats committed in one transaction.
+    send(ws,{type:'authority_private_hands_batch_stored',
+     revision:stored.revision,seatCount:stored.seatCount,code:stored.code});
+    for(let seat=0;seat<stored.seatCount;seat++)sendPrivateHand(roomId,seat);
+    return;
+   }
    if(obj.type==='authority_private_hand'){
     if(!enablePrivateHandExperiments)
      return send(ws,{type:'error',code:'PRIVATE_HAND_EXPERIMENT_DISABLED'});

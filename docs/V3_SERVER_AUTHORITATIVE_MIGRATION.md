@@ -719,3 +719,10 @@ Chromium CI 對 `91b7ecf` 的 2v2、3v3、4v4 證實第四人真原生 `Player.u
 新增 V3-only `privateProjections.publishRoom`，一次接收 4／6／8 個座位的完整同修訂版快照，先確認所有 Player ID 不重複、各座位版本單調遞增、完整公開張數對應實際私牌張數、全房實體 Card ID 唯一以及目前固定座位認證身份未被替換，再**一次性替換房間投影**；驗證失敗則不更動任何座位。此操作避免未來玩家間牌張轉移以逐座位寫入造成錯誤的暫時雙重持牌或混合修訂版。只回傳 revision／seatCount，絕不在 ACK 中傳送其他玩家的私牌；所有讀取仍透過現有 owner-check `get`。
 
 本段先新增資料模型及其未授權、移牌、舊版、缺失座位、重複持有／ID、公開數量不符的單元測試；**尚未改動 broker 與 Chromium 的實際逐座位傳送協定**，下批再以可信 worker 專用的全房 snapshot 訊息串接。V1／V2／VPS／master 不變。
+
+
+## 2026-10-12：全房原子投影從受管 Chromium 接通至 V3 broker
+
+將受管 Chromium `publishNativeLiveHands()` 改為單一 `authority_private_hands_batch` 私有 WS 消息：每次快照均帶同一修訂版與全部 4／6／8 座位實體手牌。broker 只接受當前**已認證的受管 worker 私有通道**且所有玩家 Player ID／座位均與既有穩定名冊相符的訊息；再使用 `publishRoom` 先驗證、後原子交換快照，成功之後才向各真人 socket 發出**該座位自己的**完整手牌。ACK 只包含 seatCount、revision 及狀態碼，無任何其他座位的卡片。受管 Chromium 僅接受匹配 `pendingBatchRevision` 的全房 ACK，避免舊 ACK 錯判新快照完成；其他工作中快照一律拒絕重入。開局單座位 API 維持相容，不影響既有隔離重連測試。
+
+另新增假 WebSocket worker 測試：真人企圖冒充 worker 批次訊息須拒絕；可信 worker 原子提交、跨座位移牌、私人資料隔離、身份竄改與回放舊 revision 必須完整拒絕且所有座位上一版資料不變。本批未做真卡牌使用／技能結算或 VPS 部署。

@@ -31,11 +31,12 @@ async function ask(ws,obj){
  return waitFor(ws,r=>r.type==='reply'&&r.requestId===requestId);
 }
 const config={mode:'xingBei',seatMode:'2v2'};
-async function setup({latency=0,choiceExperiment=false,ownershipExperiment=false,workerHealthIntervalMs=3000}={}){
+async function setup({latency=0,choiceExperiment=false,ownershipExperiment=false,privateHandExperiment=false,workerHealthIntervalMs=3000}={}){
  let started=0,stopped=0,authority,crashWorker,nextInspectGate;
  const broker=await createV3AuthorityWebSocketBroker({
   WebSocketServer:FakeWebSocketServer,
   enableChoiceWindowExperiments:choiceExperiment,
+  enablePrivateHandExperiments:privateHandExperiment,
   enableNativeOwnershipProbes:ownershipExperiment,
   workerHealthIntervalMs,
   launchWorker:async()=>{
@@ -751,4 +752,65 @@ test('native action ownership probe cannot be enabled without isolated CI flag',
   }),
   /NATIVE_CARD_OWNERSHIP_PROBE_CI_ONLY/
  );
+});
+
+
+test('worker-only whole-room private snapshot commits atomically and does not leak cards',async()=>{
+ const x=await setup({privateHandExperiment:true});
+ try{
+  const {ws,sessions}=await fill(x);
+  assert.equal((await ask(ws[0],{type:'launch'})).ok,true);
+  const cards=seat=>Array.from({length:4},(_,i)=>({
+   cardId:'v3card_'+(seat*4+i).toString(16).padStart(6,'0'),
+   name:i%2===0?'anMie':'shuiLianZhan'
+  }));
+  const next=(revision=1)=>({
+   type:'authority_private_hands_batch',roomId:'TEST',revision,
+   seats:Array.from({length:4},(_,seat)=>({
+    seat,playerId:sessions[seat].playerId,character:'youXia',
+    ownHand:cards(seat),
+    publicOtherHandCounts:Array.from({length:4},(_,i)=>({seat:i,handCount:4}))
+   }))
+  });
+  assert.equal((await ask(ws[0],next())).code,'UNKNOWN_MESSAGE_TYPE');
+  x.authority.clientSend(next());
+  const stored=await waitFor(x.authority,m=>
+   m.type==='authority_private_hands_batch_stored'&&m.revision===1);
+  assert.equal(stored.code,'PRIVATE_PROJECTION_ROOM_STORED');
+  assert.equal(Object.hasOwn(stored,'seats'),false);
+  assert.equal(JSON.stringify(stored).includes('v3card_'),false);
+  for(let seat=0;seat<4;seat++){
+   const own=await ask(ws[seat],{type:'private_hand_query'});
+   assert.equal(own.view.revision,1);
+   assert.deepEqual(own.view.ownHand,cards(seat));
+   assert.deepEqual(own.view.publicOtherHandCounts.map(x=>x.handCount),[4,4,4,4]);
+  }
+  // Moves across seats are one transaction: no brief duplicate ownership.
+  const transferred=next(2);
+  const moved=transferred.seats[0].ownHand.pop();
+  transferred.seats[1].ownHand.push(moved);
+  for(const s of transferred.seats){
+   s.publicOtherHandCounts[0].handCount=3;
+   s.publicOtherHandCounts[1].handCount=5;
+  }
+  x.authority.clientSend(transferred);
+  await waitFor(x.authority,m=>
+   m.type==='authority_private_hands_batch_stored'&&m.revision===2);
+  for(let seat=0;seat<4;seat++){
+   const own=await ask(ws[seat],{type:'private_hand_query'});
+   assert.equal(own.view.revision,2);
+   assert.equal(own.view.ownHand.length,seat===0?3:seat===1?5:4);
+   assert.deepEqual(own.view.publicOtherHandCounts.map(x=>x.handCount),[3,5,4,4]);
+  }
+  const corrupted=next(3);
+  corrupted.seats[1].playerId=sessions[0].playerId;
+  x.authority.clientSend(corrupted);
+  await waitFor(x.authority,m=>m.type==='error'&&m.code==='PRIVATE_HAND_SEAT_DENIED');
+  for(let seat=0;seat<4;seat++)
+   assert.equal((await ask(ws[seat],{type:'private_hand_query'})).view.revision,2);
+  x.authority.clientSend(next(1));
+  await waitFor(x.authority,m=>m.type==='error'&&
+   m.code==='PRIVATE_PROJECTION_STALE_OR_ID_MISMATCH');
+  assert.equal((await ask(ws[1],{type:'private_hand_query'})).view.revision,2);
+ }finally{await x.broker.close()}
 });

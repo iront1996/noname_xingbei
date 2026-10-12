@@ -164,7 +164,7 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
       let nativeSelectionPreviewHooks=null;
       const previewLeases=new Map();
       const privateHandAcks=new Map();
-      let privateHandsRevision=0,autoNativeHandSync=false;
+      let privateHandsRevision=0,autoNativeHandSync=false,pendingBatchRevision=null;
       ws.addEventListener('open',()=>ws.send(JSON.stringify({
        type:'authority_hello',roomId:opts.roomId,secret:opts.secret
       })));
@@ -177,6 +177,14 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
           msg.code==='PRIVATE_PROJECTION_STORED'){
         const b=bindings.find(x=>x.seat===msg.seat&&x.playerId===msg.playerId);
         if(b)privateHandAcks.set(msg.seat,msg.revision);
+       }
+       if(msg.type==='authority_private_hands_batch_stored'&&connected&&
+          pendingBatchRevision!==null&&
+          msg.code==='PRIVATE_PROJECTION_ROOM_STORED'&&
+          msg.revision===pendingBatchRevision&&
+          msg.seatCount===seatCount&&bindings.length===seatCount){
+        for(const b of bindings)privateHandAcks.set(b.seat,msg.revision);
+        pendingBatchRevision=null;
        }
        if(msg.type==='authority_choice_open_result'){
         if(msg.ok===true&&msg.view?.roomId===opts.roomId)choiceOpenResult=msg.view;
@@ -360,7 +368,8 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
          // Only Chromium may publish these private per-seat projections.
          // Never accept a human-provided card list or public card IDs.
          publishNativeLiveHands:()=>{
-          if(!connected||!seenRoster||bindings.length!==seatCount)return false;
+          if(!connected||!seenRoster||bindings.length!==seatCount||
+             pendingBatchRevision!==null||ws.readyState!==WebSocket.OPEN)return false;
           const native=window.__v3NativeXingBeiTest?.core?.game?.__v3NativeSeatSession;
           if(!native||native.inspect().startingCardsDealt!==true||
              native.inspect().characterCount!==bindings.length)return false;
@@ -379,13 +388,13 @@ export async function launchV3ChromiumAuthorityWorker({executable,timeoutMs=MAX_
            return false;
           privateHandAcks.clear();
           privateHandsRevision=revision;
-          for(const b of bindings){
-           const own=views[b.seat];
-           ws.send(JSON.stringify({type:'authority_private_hand',
-            roomId:opts.roomId,seat:b.seat,playerId:b.playerId,
-            revision,character:own.character,ownHand:own.ownHand,
-            publicOtherHandCounts:own.publicOtherHandCounts}));
-          }
+          pendingBatchRevision=revision;
+          ws.send(JSON.stringify({type:'authority_private_hands_batch',
+           roomId:opts.roomId,revision,seats:views.map(own=>({
+            seat:own.seat,playerId:own.playerId,character:own.character,
+            ownHand:own.ownHand,
+            publicOtherHandCounts:own.publicOtherHandCounts
+           }))}));
           return revision;
          },
          publishNativeOpeningHands:()=>{
