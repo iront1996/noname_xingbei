@@ -52,6 +52,13 @@ Known M1 limitations and next batches:
 - Actual handler execution tests run `createroom` followed by the real WebSocket `onclose` body and prove the owner recovery entry point is reached.
 - Guest `roompaused` accepts only bounded deadlines and known states for an online, non-owner HALL client; it clears stale choice/progress identifiers. `roomresumed` requires protocol 1 plus the current room ID before reopening the guest lifecycle state.
 
+### M1 and B2 same-process integration
+
+- Linux CI generates a HALL server from the current `game/server.js` through the production B2 patcher, then starts that generated server on an isolated loopback port with real WebSocket clients.
+- The integration verifies that an authenticated guest seat cannot be reclaimed while the room is paused, survives owner recovery, is rebound to the replacement owner, and resumes bidirectional game-message routing.
+- Repeated valid takeovers retain one stable seat identity, terminate the superseded transport, route only the newest socket, and reject an invalid credential without disturbing the live seat.
+- This is equivalent server-process integration evidence, not real-browser acceptance. M1 remains incomplete until the browser client and engine path are exercised end to end.
+
 ### M1 review hardening
 
 - Paused rooms now reject fresh `enter` attempts with `room_paused` before assigning any room or owner reference. Existing associated guests remain attached and can wait for recovery.

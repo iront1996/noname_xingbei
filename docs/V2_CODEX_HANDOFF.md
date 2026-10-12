@@ -53,4 +53,7 @@ M1 continuation on the same PR:
 - The HALL validates owner-recovery protocol version before token processing. A successful reclaim remains gated in `waiting_host_process` until the browser resends configuration.
 - `tests/v2-hall-process-integration.mjs` launches the real HALL entry point on an isolated loopback port with actual WebSocket clients. No VPS or live service is involved.
 - `5d4130d` implements the versioned browser owner-resume path and spawned HALL process test. Linux CI run 38305127613 passed all workflow steps.
-- M1 is not yet declared complete: real-browser concentrated acceptance, exact deployed-source offline compatibility, and a combined generated-B2 seat-registry plus owner-lifecycle real-process scenario remain outstanding.
+- `8541fef` corrects the human-host state transition: `createroom` leaves the host in `onlineroom`, so WebSocket close now permits owner recovery from either active online state. Executed actual-client-handler tests cover this path rather than relying on text-only assertions.
+- Guest pause/resume control now fails closed unless the client is an online non-owner in the same protocol-v1 room. Pause clears stale choice/progress identifiers; resume carries a server-authenticated room binding.
+- The next M1 batch adds a Linux CI scenario that runs the production B2 patcher over the current M1 HALL and starts the generated server. It covers paused reclaim denial, owner recovery, stable-seat rebinding, resumed bidirectional traffic, duplicate takeover fencing and invalid credential rejection.
+- M1 is not yet declared complete: the generated-server integration is process-level evidence, while real-browser concentrated acceptance and exact deployed-source offline compatibility remain outstanding.

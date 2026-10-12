@@ -52,5 +52,9 @@ jobs:
         env:
           NODE_PATH: ${{ runner.temp }}/xingbei-ws/node_modules
         run: node --test tests/v2-hall-process-integration.mjs
+      - name: V2 generated B2 and M1 same-process integration
+        env:
+          NODE_PATH: ${{ runner.temp }}/xingbei-ws/node_modules
+        run: node --test tests/v2-b2-m1-process-integration.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js
