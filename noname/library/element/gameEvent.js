@@ -454,8 +454,12 @@ export class GameEvent {
 		return null;
 	}
 	send() {
+		// C3b: create the wait lease BEFORE sending the corresponding event.
+		// WebSocket ordering guarantees xbChoiceLease precedes the action packet.
+		this.player.wait();
+		const wireId = lib.node?.xingbeiChoiceLeases?.current(this.player.playerid)?.wireId || null;
 		this.player.send(
-			function (name, args, set, event, skills) {
+			function (name, args, set, event, skills, originWireId) {
 				game.me.applySkills(skills);
 				var next = game.me[name].apply(game.me, args);
 				for (var i = 0; i < set.length; i++) {
@@ -464,6 +468,9 @@ export class GameEvent {
 				if (next._backupevent) {
 					next.backup(next._backupevent);
 				}
+				if (originWireId && /^c2:[0-9a-z]+$/.test(originWireId)) {
+					next._xingbeiChoiceWireId = originWireId;
+				}
 				next._modparent = event;
 				game.resume();
 			},
@@ -471,9 +478,9 @@ export class GameEvent {
 			this._args || [],
 			this._set,
 			get.stringifiedResult(this.parent),
-			get.skillState(this.player)
+			get.skillState(this.player),
+			wireId
 		);
-		this.player.wait();
 		game.pause();
 		return this;
 	}
@@ -1191,7 +1198,18 @@ export class GameEvent {
 				if (!this.next.length) return result;
 				const next = this.next[0];
 				await next.start();
-				if (next.result) result = next.result;
+				if (next.result) {
+					// Propagate the origin ticket through the game-event result, not
+					// through a mutable global "current choice" variable.
+					if (next._xingbeiChoiceWireId && typeof next.result === "object") {
+						try {
+							Object.defineProperty(next.result, "_xingbeiChoiceWireId", {
+								value: next._xingbeiChoiceWireId, enumerable: false, configurable: true
+							});
+						} catch (_) { /* sealed legacy result; strict host may reject it */ }
+					}
+					result = next.result;
+				}
 				this.next.shift();
 			}
 		})().finally(() => (this.#waitNext = null));
