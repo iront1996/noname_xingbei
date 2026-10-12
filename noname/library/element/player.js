@@ -4,6 +4,7 @@ import { game } from "../../game/index.js";
 import { lib } from "../index.js";
 import { _status } from "../../status/index.js";
 import { ui } from "../../ui/index.js";
+import { ChoiceLeaseRegistry } from "../../util/xingbei-choice-lease.js";
 import { CacheContext } from "../cache/cacheContext.js";
 import { ChildNodesWatcher } from "../cache/childNodesWatcher.js";
 import security from "../../util/security.js";
@@ -7509,65 +7510,80 @@ export class Player extends HTMLDivElement {
 		this.skipList.add(name);
 	}
 	wait(callback) {
-		if (lib.node) {
-			if (typeof callback == "function") {
-				callback._noname_waiting = true;
-				lib.node.torespond[this.playerid] = callback;
-			} else {
-				lib.node.torespond[this.playerid] = "_noname_waiting";
+		if (!lib.node) return;
+		const seatId = this.playerid;
+		if (!lib.node.xingbeiChoiceLeases) lib.node.xingbeiChoiceLeases = new ChoiceLeaseRegistry();
+		const leases = lib.node.xingbeiChoiceLeases;
+		// An old timer must never be able to settle a newer choice.
+		if (typeof callback === "function") {
+			callback._noname_waiting = true;
+			lib.node.torespond[seatId] = callback;
+		} else {
+			lib.node.torespond[seatId] = "_noname_waiting";
+		}
+		clearTimeout(lib.node.torespondtimeout[seatId]);
+		const originalSocket = this.ws;
+		const requestedMs = parseInt(lib.configOL.choose_timeout) * 1000;
+		const time = Number.isFinite(requestedMs) && requestedMs >= 0 ? requestedMs : 30000;
+		const expiryMs = time + 5000;
+		const pendingMarker = lib.node.torespond[seatId];
+		const lease = leases.open(seatId, {socket: originalSocket, timeoutMs: expiryMs});
+		if (originalSocket && !originalSocket.closed) {
+			const player = this;
+			if (_status.event._global_timer || _status.event.getParent().skillHidden) {
+				for (let i = 0; i < game.players.length; i++) game.players[i].showTimer(time);
+				player._hide_all_timer = true;
+			} else if (!_status.event._global_waiting && _status.noclearcountdown !== "direct") {
+				player.showTimer(time);
 			}
-			clearTimeout(lib.node.torespondtimeout[this.playerid]);
-			if (this.ws && !this.ws.closed) {
-				var player = this;
-				var time = parseInt(lib.configOL.choose_timeout) * 1000;
-				if (_status.event._global_timer || _status.event.getParent().skillHidden) {
-					for (var i = 0; i < game.players.length; i++) {
-						game.players[i].showTimer(time);
-					}
-					player._hide_all_timer = true;
-				} else if (!_status.event._global_waiting && _status.noclearcountdown !== "direct") {
-					player.showTimer(time);
+			lib.node.torespondtimeout[seatId] = setTimeout(function () {
+				if (!leases.isCurrent(seatId, lease) || lib.node.torespond[seatId] !== pendingMarker) return;
+				const settled = player.unwait("ai", lease);
+				// A late timer may resolve an expired choice, but it must NEVER close
+				// a new WebSocket which took over the original player seat.
+				if (settled && originalSocket === player.ws && !originalSocket.closed) {
+					try { originalSocket.ws?.close(); } catch (_) {}
 				}
-				lib.node.torespondtimeout[this.playerid] = setTimeout(function () {
-					player.unwait("ai");
-					player.ws.ws.close();
-				}, time + 5000);
-			}
+			}, expiryMs);
 		}
 	}
-	unwait(result) {
+	unwait(result, expectedLease = null) {
+		if (!lib.node) return false;
+		const seatId = this.playerid;
+		const pending = lib.node.torespond[seatId];
+		const pendingChoice = pending === "_noname_waiting" ||
+			(typeof pending === "function" && pending._noname_waiting === true);
+		if (!pendingChoice) return false;
+		const leases = lib.node.xingbeiChoiceLeases;
+		if (expectedLease && !leases?.isCurrent(seatId, expectedLease)) return false;
+		if (leases && !leases.settle(seatId, expectedLease)) return false;
+		// Settle before running callbacks: a callback can synchronously open the next wait.
+		lib.node.torespond[seatId] = result;
 		if (this._hide_all_timer) {
 			delete this._hide_all_timer;
-			for (var i = 0; i < game.players.length; i++) {
-				game.players[i].hideTimer();
-			}
+			for (let i = 0; i < game.players.length; i++) game.players[i].hideTimer();
 		} else if (!get.event("_global_waiting") && (_status.noclearcountdown !== "direct" || (result && result.bool)) && !(result && result._noHidingTimer)) {
 			this.hideTimer();
 		}
-		clearTimeout(lib.node.torespondtimeout[this.playerid]);
-		delete lib.node.torespondtimeout[this.playerid];
-		if (!(this.playerid in lib.node.torespond)) return;
-		var noresume = false;
-		var proceed = null;
-		if (typeof lib.node.torespond[this.playerid] == "function" && lib.node.torespond[this.playerid]._noname_waiting) {
-			proceed = lib.node.torespond[this.playerid](result, this);
-			if (proceed === false) {
-				noresume = true;
-			}
+		clearTimeout(lib.node.torespondtimeout[seatId]);
+		delete lib.node.torespondtimeout[seatId];
+		let noresume = false;
+		let proceed = null;
+		if (typeof pending === "function" && pending._noname_waiting) {
+			proceed = pending(result, this);
+			if (proceed === false) noresume = true;
 		}
-		lib.node.torespond[this.playerid] = result;
-		for (var i in lib.node.torespond) {
-			if (lib.node.torespond[i] == "_noname_waiting") {
-				return;
-			} else if (lib.node.torespond[i] && lib.node.torespond[i]._noname_waiting) {
-				return;
-			}
+		for (let id in lib.node.torespond) {
+			const waiting = lib.node.torespond[id];
+			if (waiting === "_noname_waiting" ||
+				(typeof waiting === "function" && waiting._noname_waiting)) return true;
 		}
 		_status.event.result = result;
 		_status.event.resultOL = lib.node.torespond;
 		lib.node.torespond = {};
-		if (typeof proceed == "function") proceed();
+		if (typeof proceed === "function") proceed();
 		else if (_status.paused && !noresume) game.resume();
+		return true;
 	}
 	tempUnwait(result) {
 		if (!(this.playerid in lib.node.torespond)) return;
