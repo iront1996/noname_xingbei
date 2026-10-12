@@ -25,7 +25,7 @@ import { updateURLs } from "./update-urls.js";
 import { defaultHooks } from "./hooks/index.js";
 import { freezeButExtensible } from "../util/index.js";
 import security from "../util/security.js";
-import { saveSeatCredentials, loadSeatCredentials, clearSeatCredentials } from "../util/xingbei-seat-credentials.js";
+import { handleSeatRecoveryControl } from "../util/xingbei-recovery-protocol.js";
 import { ErrorManager } from "../util/error.js";
 
 import { defaultSplashs } from "../init/onload/index.js";
@@ -7645,43 +7645,15 @@ export class Library {
 				try {
 					message = JSON.parse(messageevent.data);
 					if (!Array.isArray(message)) throw "err";
-					// XINGBEI RECOVERY B3: keep the old game UI while reclaiming a seat.
-					if (message[0] === "xbSeatCredentials") {
-						const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
-						saveSeatCredentials(storage, _status.ip, message[1], message[2], message[3]);
-						return;
-					}
-					if (game._xingbeiRecovery?.active) {
-						const recover = game._xingbeiRecovery;
-						if (message[0] === "roomlist") {
-							const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
-							const seat = loadSeatCredentials(storage, _status.ip);
-							if (!seat || seat.roomId !== game.roomId || seat.seatId !== game.onlineID) {
-								recover.reject("missing_seat_credentials");
-								game._xingbeiSuppressRecovery = true;
-								return;
-							}
-							if (!game._xingbeiReclaimRequested) {
-								game._xingbeiReclaimRequested = true;
-								game.send("server", "key", [game.onlineKey, lib.version]);
-								game.send("server", "xbResumeSeat", seat.roomId, seat.seatId, seat.token);
-							}
-							return;
-						}
-						if (message[0] === "xbSeatReclaimed") {
-							if (message[1] === game.roomId && message[2] === game.onlineID) {
-								game._xingbeiSeatReclaimed = true;
-							} else recover.reject("seat_mismatch");
-							return;
-						}
-						if (message[0] === "xbSeatResumeRejected") {
-							recover.reject("seat_rejected");
-							game._xingbeiSuppressRecovery = true;
-							const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
-							clearSeatCredentials(storage, _status.ip);
-							return;
-						}
-					}
+					// No lobby reinitialization until authenticated guest seat takeover.
+					if (handleSeatRecoveryControl(message, {
+						state: game,
+						storage: typeof sessionStorage === "undefined" ? null : sessionStorage,
+						endpoint: _status.ip,
+						onlineKey: game.onlineKey,
+						version: lib.version,
+						send: (...args) => game.send(...args)
+					})) return;
 					if (typeof lib.message.client[message[0]] !== "function") {
 						throw "err";
 					}
