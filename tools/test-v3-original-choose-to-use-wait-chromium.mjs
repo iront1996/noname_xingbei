@@ -525,8 +525,29 @@ for(const {answer,seatCount} of [
      secondCounter:game.players[1].storage.gongJiOrFaShu,
      thirdCounter:game.players[2].storage.gongJiOrFaShu};
    })()`);
-   assert.deepEqual(finalNative.hands,beforeNative.hands);
-   assert.deepEqual(finalNative.deck,beforeNative.deck);
+   // The fourth native phase has legitimately advanced through its
+   // original draw hook BEFORE the xingDong entry gate. Prove exactly
+   // one physical card moved from the deck to that actor; do not
+   // mistake that real game transition for card-use side effects.
+   for(let seat=0;seat<seatCount;seat++){
+    if(seat!==3)assert.deepEqual(finalNative.hands[seat],beforeNative.hands[seat]);
+   }
+   const initialFourth=beforeNative.hands[3],actualFourth=finalNative.hands[3];
+   assert.equal(actualFourth.length,initialFourth.length+1);
+   const added=actualFourth.filter(id=>!initialFourth.includes(id));
+   assert.equal(added.length,1);
+   const drawnCardId=added[0];
+   assert.match(drawnCardId,/^v3card_[a-f0-9]{6}$/);
+   assert.deepEqual(actualFourth.filter(id=>id!==drawnCardId),initialFourth);
+   assert.equal(beforeNative.deck.filter(id=>id===drawnCardId).length,1);
+   assert.equal(finalNative.deck.includes(drawnCardId),false);
+   assert.equal(finalNative.deck.length,beforeNative.deck.length-1);
+   assert.deepEqual(finalNative.deck,
+    beforeNative.deck.filter(id=>id!==drawnCardId));
+   // Exactly one card is transferred, never generated or duplicated.
+   const initialPhysical=[...beforeNative.hands.flat(),...beforeNative.deck].sort();
+   const finalPhysical=[...finalNative.hands.flat(),...finalNative.deck].sort();
+   assert.deepEqual(finalPhysical,initialPhysical);
    assert.deepEqual(finalNative.hp,beforeNative.hp);
    assert.equal(finalNative.secondCounter,0);
    assert.equal(finalNative.thirdCounter,0);
