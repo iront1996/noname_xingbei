@@ -1,5 +1,19 @@
 # V2 Codex engineering handoff
 
+## Normative final target
+
+The final V2 server-authority design completely removes the human-host role. The creator is an ordinary player seat with a separate, scoped room-administrator capability. Only an authenticated server-managed game process may execute rules or commit authoritative state/results. Creator/admin disconnect is an ordinary player/control-plane event; managed-host failure is a separate M4 checkpoint-recovery event.
+
+Do not extend `room.owner`, `client.owner`, `ownerResumeToken`, `resumeowner`, `awaiting_host`, or `waiting_host_process` into M2/M3. They are tested M1 compatibility mechanisms for the current human-hosted engine and may remain version-gated while the new path is built.
+
+Current classification at PR #1 HEAD `c0968c40ae22d808f283cec7cca53613e7b7e9d5`:
+
+- **Already aligned/reusable:** server room record and bounded lifecycle cleanup; B2 cryptographic room-scoped seat credentials; stable seat identity; stale socket, duplicate takeover and replay defenses; existing V2-1–V2-9 security regressions.
+- **Transitional architecture only:** creator stored as `room.owner`; guest `client.owner` routing; browser-generated engine output; owner resume token and host pause/resume states; B2 eligibility coupled to a live human owner.
+- **Not implemented:** creator auto-admission as an ordinary seat, separately scoped administrator authorization, managed-host sole authority, browser-independent choice deadlines/game progression, uniform A/B/C/D recovery on the new route, and M4 validated host checkpoint recovery.
+
+The normative requirements, minimal-difference M2/M3 sequence and automatable acceptance IDs `SA-A01` through `SA-A10` live in `docs/V2_SERVER_AUTHORITY_PLAN.md`. No M2 implementation was started by this specification-correction batch.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

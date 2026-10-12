@@ -1,12 +1,43 @@
 # V2 server-authority plan and evidence
 
-## Non-negotiable architecture boundary
+## Final architecture contract (normative)
 
-HALL owns room lifecycle, credentials and routing. During M1 the existing human browser may still own game execution, so a disconnected host produces an explicit paused state rather than a false claim of continued gameplay. M2 is required before host-independent game progression can be claimed.
+The target is not a recoverable human host. It is the complete removal of every human browser from the game-host role.
 
-## M1 — server-owned room lifecycle
+1. HALL/server code exclusively creates and owns room records and lifecycle transitions. A browser sends a create request; it never becomes the authoritative room or engine process.
+2. The creator is automatically admitted as an ordinary authenticated player seat using the same seat credential and recovery protocol as every later player.
+3. The creator may separately receive a scoped room-administrator capability for configuration and moderation. This control-plane capability cannot execute rules, mutate authoritative game state, submit trusted results, impersonate the host process, or derive host credentials.
+4. A server-managed, authenticated and supervised game process is the sole game authority. It runs initialization, events, skills/cards, choices, turns, deadlines/timeout or trustee policy, and result determination independently of all player browsers.
+5. Creator and non-creator gameplay packets, disconnect handling, seat reclaim, stale-socket fencing and replay protection are identical. No player connection is stored as the game host.
+6. Player disconnect/reload/browser closure cannot close the room, stop the managed host, or disconnect other players. Administrator absence cannot pause gameplay.
+7. If a disconnected player has a pending choice, the authoritative host applies an explicit server deadline and configured timeout/trustee action; it cannot wait forever for a browser.
+8. Administrator recovery or transfer is a separate authenticated policy. It neither resumes nor takes over game execution.
+9. Only the managed host may commit authoritative state and results. HALL must reject player/admin attempts to use privileged control messages as engine output.
+10. Managed-host/server failure is an M4 recovery event based on validated checkpoints. It is never handled as player disconnect or administrator recovery.
 
-Status: batch 1 implemented; Linux CI passed; PR review pending.
+M1 deliberately remains a compatibility bridge: HALL now preserves a human-hosted room safely, but the browser still executes the engine. The M1 `ownerResumeToken`, `resumeowner`, `room.owner`, `awaiting_host`, and `waiting_host_process` paths may remain for legacy compatibility, but M2/M3 must not use them as architectural foundations.
+
+## Current compliance audit
+
+| Area | Classification | Evidence and required adjustment |
+| --- | --- | --- |
+| Server-held room record, lifecycle state, bounded expiry and cleanup | **Already aligned** | `game/server-room-lifecycle.js` owns records, deadlines and cleanup. Generalize its lifecycle actor from human owner loss to player-count/policy and managed-host state without discarding the tested component. |
+| Cryptographic seat credentials, room scope, stale-socket and duplicate takeover fencing | **Already aligned** | `tools/connection-recovery/seat-registry.js` and B2 tests provide reusable identity defenses. Remove its current dependency on `room.owner`/human-host routing when integrating M3. |
+| Room creation and creator admission | **Transitional architecture** | `game/server.js` `create` makes the requesting socket `room.owner`; the creator is not issued an ordinary seat. Replace this in the new protocol with server creation followed atomically by normal-seat admission plus a distinct admin capability. |
+| Gameplay routing and authority | **Transitional architecture** | `game/server.js` stores `client.owner`, forwards guest traffic to the human at the WebSocket message handler, and trusts that browser to send game messages back. M2 must route player commands to an authenticated managed host identity instead. |
+| `ownerResumeToken`, `resumeowner`, host pause/resume | **Transitional architecture** | Retain as a versioned compatibility path only. Never reuse its token as an admin token, seat token or managed-host credential. |
+| Non-owner `roompaused`/`roomresumed` safety | **Already aligned for compatibility** | The validation prevents forged legacy lifecycle transitions, but final gameplay must not pause merely because the creator/admin disconnected. |
+| Creator equals ordinary player | **Not implemented** | M3 must issue the creator the same B2-derived seat credential and recovery behavior as B/C/D. |
+| Separate administrator capability and authorization boundary | **Not implemented** | Add an independently scoped, rotating/revocable server capability and allowlisted admin commands; no engine-output commands. |
+| Server-managed authoritative engine | **Not implemented** | M2 must add supervised process identity, authenticated routing, startup/readiness, resource and termination controls, and sole-authority enforcement. |
+| Pending-choice server deadline/trustee policy | **Not implemented** | M2 must move choice ownership/deadlines to the managed host and prove deterministic timeout handling without a browser. |
+| Managed-host checkpoint recovery | **Not implemented** | M4 must distinguish host failure from player transport loss and validate checkpoints/replay before resuming authority. |
+
+“Already aligned” means reusable toward the target; it does not mean the final architecture is present end to end.
+
+## M1 — human-host compatibility lifecycle
+
+Status: compatibility batches implemented and Linux CI passed; further M1 expansion is paused for final-architecture calibration. PR review remains pending.
 
 Lifecycle states:
 
@@ -31,12 +62,13 @@ Batch 1 implementation:
 - `tests/v2-server-room-lifecycle.mjs`: simulated WebSocket coverage for normal flow, guest disconnect, host disconnect, authenticated host reclaim, token rotation and expiry cleanup, plus real-source integration anchors.
 - CI now runs the M1 test on pull requests targeting the V2 base.
 
-Known M1 limitations and next batches:
+Known M1 limitations and disposition:
 
-- The browser client does not yet persist and submit the new owner resume credential; batch 1 proves the HALL contract with simulated sockets only.
+- Browser owner credential persistence/resubmission and actual handler tests are implemented, but exist only to make the transitional human-host route safer.
 - Room and token state are memory-only; process restart recovery belongs to M4.
 - The host still executes the engine. `waiting_host_process` prevents this batch from claiming gameplay continued during host absence.
-- Add client credential storage/reclaim negotiation, explicit protocol version handling, rate limiting/audit telemetry, and a real HALL WebSocket process test before declaring M1 complete.
+- Real HALL WebSocket and generated B2+M1 process tests pass. Real-browser game-engine acceptance, rate limiting/audit telemetry and exact VPS-source compatibility remain unverified.
+- Do not expand owner recovery into the final design. Future implementation work starts with the M2 managed-host boundary after explicit approval.
 - Verify compatibility against the exact redacted VPS HALL source offline before any deployment request.
 
 ### M1 browser owner recovery and real-process test
@@ -66,23 +98,55 @@ Known M1 limitations and next batches:
 - Closing a legacy server-mode host releases every attached guest, sends `selfclose` with `server_host_closed`, and clears both `room` and `owner` references. Unrelated rooms and the already-closing host are not mutated.
 - Expiry cleanup and server-mode shutdown share the same tested reference-release helper.
 
-## M2 — managed server host process
+## M2 — managed server authority and administrator separation
 
 Status: not started.
 
-Research the existing engine and V3 hosting approach read-only. Build a supervised, isolated Chromium/game-host process per room (or a justified bounded pool), with startup handshake, resource limits, routing identity, crash/timeout handling and cleanup. Reuse the existing Xingbei engine rather than reimplementing rules. Required tests cover launch failure, process isolation, message routing, resource ceilings, exit and orphan cleanup.
+Minimal-difference sequence:
+
+1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
+2. Launch a supervised isolated Chromium/game process per room (or a justified bounded pool), reusing the existing Xingbei engine. Keep M1 room IDs, lifecycle storage and cleanup helpers.
+3. Split the protocol into three roles: ordinary player seat, scoped room administrator, and internal managed host. Replace new-protocol `room.owner`/`client.owner` routing with explicit host-session routing while leaving the legacy path version-gated.
+4. Make the managed host the only accepted source for authoritative state updates and results. Administrator messages are allowlisted configuration/moderation requests and are rejected once outside their permitted phase.
+5. Move pending-choice deadlines and timeout/trustee actions into the managed host. Test launch failure, readiness, isolation, resource ceilings, routing, spoof rejection, process exit and orphan cleanup.
+
+M2 is not complete merely because a server Chromium process starts. It must demonstrate that gameplay continues when the creator/admin browser disappears and that no player/admin packet can impersonate host output.
 
 ## M3 — uniform player recovery
 
 Status: not started; blocked on M2.
 
-Treat the creator as an ordinary authenticated seat. Extend the V2-1 through V2-9 credential/replay protections to every seat, reject public-ID takeover, fence stale sockets and duplicate packets, and retain all prior security regressions.
+Minimal-difference sequence after M2 authority routing exists:
 
-## M4 — persistence and host recovery
+1. On create, atomically create the server room, admit A through the same seat-registry path used by B/C/D, and separately issue the scoped administrator capability.
+2. Generalize B2 registry eligibility away from `room.owner` to the server room plus active managed-host/session state. Preserve room-scoped secrets, timing-safe checks, stable seat IDs, stale socket fencing and duplicate-message defenses.
+3. Use one join/reclaim/reinit state machine for A/B/C/D. Delete no compatibility code until equivalent security regression coverage exists; keep legacy human-host messages version-gated and unreachable from the new protocol.
+4. Add explicit admin reconnect/transfer tests that prove admin absence has no gameplay effect and admin commands cannot mutate authoritative engine state.
+
+## M4 — persistence and managed-host recovery
 
 Status: not started; blocked on M2/M3.
 
 Persist lifecycle, authenticated seat bindings, confirmed engine checkpoints and replay identifiers. Prove behavior under host crash, process restart, duplicate submission, event replay, inconsistent checkpoints and unrecoverable state. A restarted process alone is not recovery evidence.
+
+Player disconnect events must never enter this flow. M4 begins only for managed-host/server failure, validates checkpoint identity/integrity and replay position, and either resumes equivalent behavior or fails closed with an explicit unrecoverable state.
+
+## Automatable final-architecture acceptance contract
+
+These are specification tests to add incrementally during M2–M4. They are not claimed as passing today.
+
+| ID | Automated setup and required assertions | Planned milestone |
+| --- | --- | --- |
+| SA-A01 create-and-seat | A sends only a create request. Assert the server creates the room, launches/binds the managed host, admits A through the ordinary seat path, and issues A a seat credential plus a separate admin capability. Assert A is not `room.owner` and has no host credential. | M2/M3 |
+| SA-A02 four-equal-seats | A creates; B/C/D join. Assert four entries share the same player-seat schema, credential rules and command route. Assert creator/admin metadata is outside authoritative player/engine state. | M3 |
+| SA-A03 creator-offline-continuity | Give A a pending/ordinary turn boundary, disconnect A, keep B/C/D connected. Assert host PID/session and room identity remain, B/C/D commands advance authoritative state, and A's pending choice follows the configured deadline/trustee outcome. | M2/M3 |
+| SA-A04 creator-seat-only-reclaim | Reconnect A with its seat credential. Assert only A's stable seat is reclaimed; host session/PID and authoritative sequence do not rotate or restart; no owner/host-resume message is required. | M3 |
+| SA-A05 uniform-player-reclaim | Repeat the same disconnect/reclaim cases for B and C. Assert protocol messages, validation, reinit gates, duplicate takeover and stale-socket behavior are identical to A. | M3 |
+| SA-A06 admin-absence-independence | Disconnect A's player and admin transports. Assert host and B/C/D gameplay continue. Reauthenticate admin later and assert this changes no turn/event/state sequence. | M2/M3 |
+| SA-A07 admin-authority-denial | With a valid admin capability, attempt authoritative state mutation, rule execution, result declaration and host-session takeover. Assert every attempt is rejected/audited and authoritative digest/sequence is unchanged. | M2 |
+| SA-A08 all-players-offline-policy | Disconnect A/B/C/D. Assert the host/room follows explicit server retention, timeout and cleanup policy; no transition is keyed to creator/admin presence. Verify both retained and expired branches with an injected clock. | M2/M3 |
+| SA-A09 distinct-failure-domains | In one case disconnect a player; in another kill the managed host. Assert the first uses seat recovery without checkpoint restore, while the second enters the M4 host-failure state and requires validated checkpoint/replay recovery. Cross-use of either recovery protocol must fail closed. | M4 |
+| SA-A10 sole-result-authority | Submit conflicting victory/result packets from A/B/C/D/admin and from the authenticated managed host. Assert only the managed-host result with the expected room/session/sequence is committed once; duplicates and stale sessions are rejected. | M2/M4 |
 
 ## Evidence ledger
 
@@ -92,6 +156,8 @@ Persist lifecycle, authenticated seat bindings, confirmed engine checkpoints and
 - Review-hardening Linux CI: run 38304735974 succeeded for paused admission and server-mode cleanup.
 - Current local M1 continuation: 66/66 portable Node tests plus the standalone seat-registry suite passed, including a spawned real HALL process with real loopback WebSockets.
 - Owner-recovery Linux CI: run 38305127613 succeeded, including the isolated `ws@8.18.3` real-process test dependency and the actual HALL entry point.
+- Generated B2+M1 Linux CI: run 38306224205 passed the dedicated same-process takeover/lifecycle scenario.
+- Final PR HEAD before this architecture-only batch: `c0968c4`; Linux CI run 38306324498 succeeded. Portable local regression passed 70/70 Node tests plus the standalone B2 seat-registry test.
 - Syntax checks: `game/server.js` and `game/server-room-lifecycle.js` passed `node --check`.
 - Production/VPS compatibility: not verified.
 - Real browser/player acceptance: not verified.
