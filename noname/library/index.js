@@ -7685,6 +7685,7 @@ export class Library {
 				if (this._nocallback) return;
 				// Never reuse a pending choice ticket after a transport replacement.
 				game._xingbeiChoiceTicket = null;
+				game._xingbeiProgressServerSeq = null;
 				if (_status.connectCallback) {
 					_status.connectCallback(false);
 					delete _status.connectCallback;
@@ -11219,6 +11220,21 @@ export class Library {
 			/**
 			 * @this {import("./element/client.js").Client}
 			 */
+			xbProgressHello(protocolVersion) {
+				// C3 is opt-in and must only observe the current fully initialized seat.
+				if (protocolVersion !== 1 || this.closed || this.inited !== true ||
+					lib.node.observing.includes(this)) return;
+				const player = lib.playerOL?.[this.id];
+				if (!player || player.ws !== this) return;
+				lib.node.xingbeiProgressTracker?.bind(this.id, this,
+					(sequence, phase) => this.send("xbProgressProbe", sequence, phase));
+			},
+			xbProgressAck(sequence, clientPhase) {
+				if (this.closed || this.inited !== true || lib.node.observing.includes(this)) return;
+				const player = lib.playerOL?.[this.id];
+				if (!player || player.ws !== this) return;
+				lib.node.xingbeiProgressTracker?.acknowledge(this.id, this, sequence, clientPhase);
+			},
 			xbChoiceHello(protocolVersion) {
 				// Only a fully initialized current socket may opt into C2 validation.
 				if (protocolVersion !== 1 || lib.node.observing.includes(this) ||
@@ -11456,6 +11472,16 @@ export class Library {
 			},
 		},
 		client: {
+			xbProgressProbe(sequence, hostPhase) {
+				// Probe is placed after prior broadcast messages on this WebSocket.
+				// Ack proves message dispatch reached this point, not event completion.
+				if (!game.online || !Number.isSafeInteger(sequence) || sequence < 0) return;
+				const previous = game._xingbeiProgressServerSeq;
+				if (typeof previous === "number" && sequence < previous) return;
+				game._xingbeiProgressServerSeq = sequence;
+				game.send("xbProgressAck", sequence,
+					Number.isSafeInteger(game.phaseNumber) ? game.phaseNumber : null);
+			},
 			xbChoiceLease(wireId) {
 				// C2: this ID correlates a reply with one host-side pending choice.
 				if (typeof wireId === "string" && /^c2:[0-9a-z]+$/.test(wireId)) {
@@ -11876,6 +11902,7 @@ export class Library {
 						game.loop();
 						game.send("inited");
 						game.send("xbChoiceHello", 1);
+						game.send("xbProgressHello", 1);
 						ui.create.connecting(true);
 					});
 				};
@@ -12206,6 +12233,8 @@ export class Library {
 					game.send("reinited");
 					game._xingbeiChoiceTicket = null;
 					game.send("xbChoiceHello", 1);
+					game._xingbeiProgressServerSeq = null;
+					game.send("xbProgressHello", 1);
 					game.showHistory();
 					_status.gameStarted = true;
 					if (lib.config.show_cardpile) {
@@ -12350,6 +12379,7 @@ export class Library {
 				}
 				_status.gameStarted = true;
 				game.showHistory();
+				game.send("xbProgressHello", 1);
 			},
 			updateWaiting: function (map) {
 				if (!game.connectPlayers) return;
