@@ -11227,13 +11227,13 @@ export class Library {
 				const player = lib.playerOL?.[this.id];
 				if (!player || player.ws !== this) return;
 				lib.node.xingbeiProgressTracker?.bind(this.id, this,
-					(sequence, phase) => this.send("xbProgressProbe", sequence, phase));
+					(probeId, sequence, phase) => this.send("xbProgressProbe", probeId, sequence, phase));
 			},
-			xbProgressAck(sequence, clientPhase) {
+			xbProgressAck(probeId, sequence, clientPhase) {
 				if (this.closed || this.inited !== true || lib.node.observing.includes(this)) return;
 				const player = lib.playerOL?.[this.id];
 				if (!player || player.ws !== this) return;
-				lib.node.xingbeiProgressTracker?.acknowledge(this.id, this, sequence, clientPhase);
+				lib.node.xingbeiProgressTracker?.acknowledge(this.id, this, probeId, sequence, clientPhase);
 			},
 			xbChoiceHello(protocolVersion) {
 				// Only a fully initialized current socket may opt into C2 validation.
@@ -11472,14 +11472,15 @@ export class Library {
 			},
 		},
 		client: {
-			xbProgressProbe(sequence, hostPhase) {
+			xbProgressProbe(probeId, sequence, hostPhase) {
 				// Probe is placed after prior broadcast messages on this WebSocket.
 				// Ack proves message dispatch reached this point, not event completion.
-				if (!game.online || !Number.isSafeInteger(sequence) || sequence < 0) return;
+				if (!game.online || !Number.isSafeInteger(probeId) || probeId <= 0 ||
+					!Number.isSafeInteger(sequence) || sequence < 0) return;
 				const previous = game._xingbeiProgressServerSeq;
 				if (typeof previous === "number" && sequence < previous) return;
 				game._xingbeiProgressServerSeq = sequence;
-				game.send("xbProgressAck", sequence,
+				game.send("xbProgressAck", probeId, sequence,
 					Number.isSafeInteger(game.phaseNumber) ? game.phaseNumber : null);
 			},
 			xbChoiceLease(wireId) {
