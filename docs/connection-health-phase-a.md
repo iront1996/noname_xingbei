@@ -58,3 +58,19 @@ A1 VPS heartbeat remains the only deployed part; this branch is not production.
 **Limits:** C1 prevents stale-socket actions and stale *host timers*. The existing legacy client wire protocol does not yet send a per-choice `actionId`; delayed results from the **same** still-current socket after a new choice starts remain indistinguishable. C2 must add opt-in request/response action IDs with backward compatibility and explicit acknowledgements. Game-state/event-sequence verification is still pending. C1 does not solve a JavaScript main-thread freeze.
 
 **Deployment:** A1 heartbeat is on VPS. B1/B2/B3/C1 are GitHub experiment branch only, not deployed. Do not merge or deploy before paired frontend/backend tests and real V3 Chromium host verification. Monitor v2.3.0 remains unchanged.
+
+
+## Phase C2 – host choice operation-ID fencing (development only)
+
+- `noname/util/xingbei-choice-lease.js`: every pending choice has a monotonic per-host `wireId` (`c2:<base36 sequence>`). This ID is a *correlation identifier*, **not** an authentication token; seat ownership remains enforced by the broker and the host-side socket identity check.
+- `noname/library/element/player.js`: an opted-in seat receives `xbChoiceLease(wireId)` **before** its choice instruction. After settlement or AI timeout, `xbChoiceSettled(wireId)` invalidates that ID without clearing a subsequent ticket.
+- `noname/library/index.js`: clients advertise `xbChoiceHello(1)` only after `inited` or `reinited`, so the host can require a matching ID for both `result(result,wireId)` and `tempResult(result,wireId)`. Strict mode persists for the host player seat after reconnect: an older client cannot silently downgrade it. A current pending ticket is resent after a valid seat takeover.
+- `noname/library/init/index.js`: the actual `startOnline()` result-sending path snapshots and consumes the current ID; `noname/game/index.js` attaches it to compatible secondary result senders. Ticket state is cleared when a socket closes.
+- `tests/connection-recovery-c2.mjs`: executes the actual `Player.wait` / `unwait`, host result handlers, client handlers and `LibInit.startOnline` with controlled fake transports to check replay, malformed/missing/old IDs, reconnect replacement, downgrade resistance, token ordering and pre-negotiation compatibility.
+- `.github/workflows/connection-recovery-experimental.yml`: includes the C2 test for the isolated branch.
+
+### C2 scope and limitations
+
+A submitted **network packet carrying a stale choice ID** is rejected by an upgraded host. C2 does not *fully* protect a stale client-side callback that fires after the client has already received a new choice ID: the legacy client event engine may stamp that callback with the newest global ID. C3 must bind the ID to the originating UI/game event when the action is created, and add an authoritative gameplay progress/version check. Do not claim that the same-socket delayed-callback problem is fully solved.
+
+Legacy clients that do not send `xbChoiceHello(1)` retain the pre-C2 behavior for compatibility; strict-ID protections apply only after opt-in. Opt-in is sticky per seat to prevent downgrade during recovery. UI/browser runtime testing and current V3 independent Chromium-host compatibility remain unverified. No production deployment: A1 heartbeat only; monitor v2.3.0 unchanged.
