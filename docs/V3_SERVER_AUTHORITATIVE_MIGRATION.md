@@ -669,3 +669,10 @@ CI 測試核對第三人的 event provenance、與第二人的 GameEvent 物件�
 ## 2026-10-12：第四座位重連憑證廢止採全新 socket 驗證
 
 強化第四座位原生斷線重連回歸：不再對已認證的新座位 socket 再呼叫 `reconnect`（那只會撞到 `CONNECTION_ALREADY_BOUND`，無法證明舊 token 真的失效）；改由另一條全新、未綁定的真人 WebSocket 使用舊 `reconnectToken` 嘗試認證，必須得到 `RECONNECT_DENIED`，並持續 `NOT_AUTHENTICATED`，確保舊權杖不能趁原生第四玩家等待時奪回座位。此次只有測試與文件變更，絕無執行真出牌。
+
+
+## 2026-10-12：第四玩家原生 chooseToUse 等待（V3 隔離測試）
+
+最新一批已將原生第四玩家 `xingDong → gongJiOrFaShu` 子事件的單次 CI-only 釋放擴展至原版編譯 `chooseToUse` 的 `GameEvent.send` 等待點。`Player.wait` 由伺服器 Chromium 自行維護，唯一有效私人票券只能發給重新認證的第四玩家，其他三座位與未認證 socket 不得查詢或提交。新增 `fourthSelectionContentReleased`／`fourthOriginalUseWaitReached` 的階段辨識，事件仍在原版 `Player.unwait` 前暫停，所有原本的動態出牌及技能執行仍拒絕。2v2／3v3／4v4 的同一 Chromium 實驗涵蓋票券隔離、原生事件實體歸屬、重複釋放拒絕及 OS 程序不重建。
+
+本次並未授權第四人提交 no-card 造成下一個原生回合的實際推進；該部分需要額外專屬回歸與牌組守恆測試。這不是完整玩法或中途冷恢復。V1/V2/VPS/master 完全不參與。

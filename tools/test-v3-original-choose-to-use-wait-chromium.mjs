@@ -639,6 +639,42 @@ for(const {answer,seatCount} of [
     /V3_NATIVE_FOURTH_SELECTION_RELEASE_DENIED/);
    await assert.rejects(chrome.releaseNextOriginalSelectionToNativeWait(),
     /V3_NATIVE_NEXT_ORIGINAL_USE_RELEASE_DENIED/);
+   // Only the currently authenticated fourth actor reaches the real
+   // original chooseToUse wait: it must issue a PRIVATE, unconsumed ticket.
+   const fourthWait=await chrome.releaseFourthOriginalSelectionToNativeWait();
+   assert.equal(fourthWait.started,true);
+   assert.equal(fourthWait.ownerPlayerId,sessions[3].playerId);
+   assert.equal(fourthWait.actionExecuted,false);
+   const fourthWaiting=await until(async()=>{
+    const state=await chrome.inspectOriginalSelectionGate();
+    if(state.failed)throw Error('FOURTH_ORIGINAL_WAIT_FAILED_'+state.error+
+     '_'+String(state.trace??'').slice(0,230));
+    return state.fourthOriginalOnlineWaitReached&&state.paused&&state;
+   });
+   assert.equal(fourthWaiting.fourthSelectionContentReleased,true);
+   const fourthWindow=await until(()=>returnedFourth.received.find(m=>
+    m.type==='choice_window'&&m.window?.seat===3&&
+    m.window?.source==='preview'&&m.window?.options.includes('pass')
+   )?.window);
+   assert.equal(fourthWindow.playerId,sessions[3].playerId);
+   assert.deepEqual(fourthWindow.options.slice(0,-1).sort(),
+    fourthHand.ownHand.map(c=>c.cardId).sort());
+   const fourthPreview=await chrome.inspectNativeUseCardPreview();
+   assert.equal(fourthPreview.state,'open');
+   assert.equal(fourthPreview.samePausedEvent,true);
+   assert.equal(fourthPreview.nativeUnwaitInvoked,false);
+   for(const peer of [...finalPeers.slice(0,3),staleFourth]){
+    assert.equal(peer.received.some(m=>
+     m.type==='choice_window'&&m.window?.ticket===fourthWindow.ticket),false);
+    assert.equal((await ask(peer,'choice_submit',{
+     ticket:fourthWindow.ticket,option:'pass'
+    })).code,peer===staleFourth?'NOT_AUTHENTICATED':'CHOICE_WINDOW_NOT_FOUND');
+   }
+   assert.equal((await ask(returnedFourth,'command',{action:'playCard'})).code,
+    'RULES_ENGINE_NOT_IMPLEMENTED');
+   await assert.rejects(chrome.releaseFourthOriginalSelectionToNativeWait(),
+    /V3_NATIVE_FOURTH_ORIGINAL_USE_RELEASE_DENIED/);
+   assert.equal(chrome.pid,fourthPid);
    assert.equal((await ask(finalSecond,'command',{action:'playCard'})).code,
     'RULES_ENGINE_NOT_IMPLEMENTED');
   }

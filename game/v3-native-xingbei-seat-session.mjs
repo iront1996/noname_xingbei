@@ -488,7 +488,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     thirdSelectionGate:false,thirdSelectionEvent:null,
     thirdSelectionContentReleased:false,thirdOriginalUseWaitReached:false,
     fourthActionGate:null,fourthActionEntryReleased:false,
-    fourthSelectionGate:false,fourthSelectionEvent:null};
+    fourthSelectionGate:false,fourthSelectionEvent:null,
+    fourthSelectionContentReleased:false,fourthOriginalUseWaitReached:false};
    // This hook runs in original content.js phaseLoop step 1, immediately
    // BEFORE the native Player.phase() event is queued. It is NOT a gameplay
    // hook and must never be installed in production V3.
@@ -761,6 +762,33 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     actionExecuted:false,cardConsumed:false,fullRulesValidated:false
    });
   },
+  releaseFourthOriginalSelectionToNativeWait(){
+   // Isolated Chromium-only: release the FOURTH original chooseToUse to
+   // its native online wait. No card use or skill effect is authorized.
+   const gate=game.__v3PausedPhaseRuntime;
+   const actor=gate?.fourthActionGate?.player;
+   const seat=players.indexOf(actor),event=gate?.fourthSelectionEvent;
+   const first=players[game.__v3OpeningTurnBoundary?.firstSeat??-1];
+   if(!previewHooksAvailable||!gate||gate.failure||
+      !gate.fourthActionEntryReleased||!gate.fourthSelectionGate||
+      !(event instanceof lib.element.GameEvent)||
+      event.name!=='gongJiOrFaShu'||event.player!==actor||
+      actor!==first?.nextSeat?.nextSeat?.nextSeat||seat<0||
+      gate.fourthSelectionContentReleased||
+      gate.fourthOriginalUseWaitReached||!_status.paused||
+      useCardPreview?.state!=='passed'||
+      adapter.inspect().originalUsePassApplied!==3||
+      adapter.inspect().pending!==0)
+    throw err('V3_NATIVE_FOURTH_ORIGINAL_USE_RELEASE_DENIED');
+   gate.fourthSelectionContentReleased=true;
+   try{adapter.armOriginalUseWait({seat,playerId:actor.playerid,event})}
+   catch(e){gate.fourthSelectionContentReleased=false;throw e}
+   useCardPreview=null;
+   game.resume();
+   return Object.freeze({started:true,nativeChooseToUse:true,
+    ownerPlayerId:actor.playerid,originalFourthPlayer:true,
+    actionExecuted:false,cardConsumed:false,fullRulesValidated:false});
+  },
   releaseThirdOriginalSelectionToNativeWait(){
    const gate=game.__v3PausedPhaseRuntime;
    const actor=gate?.thirdActionGate?.player;
@@ -849,19 +877,23 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // chooseToUse step 0 is unsafe until skill callbacks are isolated.
    // Offer physical, PRIVATE hand identifiers only to its authenticated owner.
    const gate=game.__v3PausedPhaseRuntime;
-   // There is no authorized fourth original chooseToUse bridge yet.
-   // The third actor's old event must not be reused after seat four starts.
-   if(gate?.fourthActionGate)
+   // A fourth player cannot inherit the third player's old event.
+   // Only an explicitly released fourth native wait may open a ticket.
+   if(gate?.fourthActionGate&&!gate.fourthSelectionContentReleased)
     throw err('V3_NATIVE_USE_PREVIEW_NOT_READY');
-   const third=gate?.thirdSelectionContentReleased===true;
-   const second=!third&&gate?.nextSelectionContentReleased===true;
-   const event=third?gate.thirdSelectionEvent:
+   const fourth=gate?.fourthSelectionContentReleased===true;
+   const third=!fourth&&gate?.thirdSelectionContentReleased===true;
+   const second=!fourth&&!third&&gate?.nextSelectionContentReleased===true;
+   const event=fourth?gate.fourthSelectionEvent:
+    third?gate.thirdSelectionEvent:
     second?gate.nextSelectionEvent:gate?.selectionEvent;
-   const actorSeat=third?players.indexOf(gate.thirdActionGate?.player):
+   const actorSeat=fourth?players.indexOf(gate.fourthActionGate?.player):
+    third?players.indexOf(gate.thirdActionGate?.player):
     second?players.indexOf(gate.nextActionGate?.player):
     game.__v3OpeningTurnBoundary?.firstSeat;
    if(!previewHooksAvailable||useCardPreview||!gate||gate.failure||
-      !(third?gate.thirdSelectionGate:
+      !(fourth?gate.fourthSelectionGate:
+       third?gate.thirdSelectionGate:
        second?gate.nextSelectionGate:gate.selectionGate)||
       !(event instanceof lib.element.GameEvent)||
       event.name!=='gongJiOrFaShu'||event.player!==players[seat]||
@@ -888,7 +920,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    // 'pass' exists ONLY after the original chooseToUse step 0 has
    // reached the verified server waiting boundary; manual CI-only
    // read-only card previews never have the privilege to unwind an event.
-   if(allowPass&&(third?gate.thirdOriginalUseWaitReached!==true:
+   if(allowPass&&(fourth?gate.fourthOriginalUseWaitReached!==true:
+       third?gate.thirdOriginalUseWaitReached!==true:
        second?gate.nextOriginalUseWaitReached!==true:
        gate.originalUseWaitReached!==true))
     throw err('V3_NATIVE_USE_PASS_NOT_AUTHORIZED');
@@ -911,7 +944,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    if(!previewHooksAvailable||!p||p.state!=='recorded'||p.targetStage||
       p.seat!==seat||p.playerId!==playerId||
       p.ticket!==previousTicket||
-      (gate?.thirdSelectionContentReleased?
+      (gate?.fourthSelectionContentReleased?
+       gate.fourthSelectionEvent:gate?.thirdSelectionContentReleased?
        gate.thirdSelectionEvent:gate?.nextSelectionContentReleased?
        gate.nextSelectionEvent:gate?.selectionEvent)!==p.event||
       !_status.paused)
@@ -1110,7 +1144,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     staticRuleAudit:p.targetStage?.staticRuleAudit??null,
     nativeGameEvent:p.event instanceof lib.element.GameEvent,
     originalEvent:p.event.name,
-    samePausedEvent:(gate?.thirdSelectionContentReleased?
+    samePausedEvent:(gate?.fourthSelectionContentReleased?
+     gate.fourthSelectionEvent:gate?.thirdSelectionContentReleased?
      gate.thirdSelectionEvent:gate?.nextSelectionContentReleased?
      gate.nextSelectionEvent:gate?.selectionEvent)===p.event&&_status.paused===true,
     fullRulesValidated:false,actionExecuted:false,cardConsumed:false,
@@ -1229,7 +1264,9 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     fourthSelectionEventNative:state.fourthSelectionEvent instanceof lib.element.GameEvent,
     fourthSelectionEventName:state.fourthSelectionEvent?.name??null,
     fourthSelectionOwnerPlayerId:state.fourthSelectionEvent?.player?.playerid??null,
-    fourthSelectionContentExecuted:false,
+    fourthSelectionContentExecuted:state.fourthOriginalUseWaitReached===true,
+    fourthSelectionContentReleased:state.fourthSelectionContentReleased===true,
+    fourthOriginalOnlineWaitReached:state.fourthOriginalUseWaitReached===true,
     originalXingDongEvent:state.actionEvent instanceof lib.element.GameEvent,
     selectionEventNative:event instanceof lib.element.GameEvent,
     selectionEventName:event?.name??null,
@@ -1481,7 +1518,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
   },
   delivered(message){
    const p=useCardPreview,gate=game.__v3PausedPhaseRuntime;
-   if(!p||(gate?.thirdSelectionContentReleased?
+   if(!p||(gate?.fourthSelectionContentReleased?
+       gate.fourthSelectionEvent:gate?.thirdSelectionContentReleased?
        gate.thirdSelectionEvent:gate?.nextSelectionContentReleased?
        gate.nextSelectionEvent:gate?.selectionEvent)!==p.event||!_status.paused||
       message?.seat!==p.seat||message.playerId!==p.playerId)
