@@ -57,6 +57,7 @@ Known M1 limitations and next batches:
 - Linux CI generates a HALL server from the current `game/server.js` through the production B2 patcher, then starts that generated server on an isolated loopback port with real WebSocket clients.
 - The integration verifies that an authenticated guest seat cannot be reclaimed while the room is paused, survives owner recovery, is rebound to the replacement owner, and resumes bidirectional game-message routing.
 - Repeated valid takeovers retain one stable seat identity, terminate the superseded transport, route only the newest socket, and reject an invalid credential without disturbing the live seat.
+- Evidence: commit `289d082`; Linux CI run 38306224205 completed the dedicated generated-B2/M1 step successfully. The portable local regression also passed 70/70 Node tests plus the standalone B2 seat-registry test.
 - This is equivalent server-process integration evidence, not real-browser acceptance. M1 remains incomplete until the browser client and engine path are exercised end to end.
 
 ### M1 review hardening
