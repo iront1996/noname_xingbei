@@ -12,7 +12,7 @@ export class XingbeiProgressTracker {
     if(!Number.isSafeInteger(staleMs)||staleMs<=intervalMs)throw new Error("bad stale timeout");
     this.now=now;this.schedule=setIntervalFn;this.unschedule=clearIntervalFn;
     this.intervalMs=intervalMs;this.staleMs=staleMs;this.minPending=minPending;
-    this.onSuspect=onSuspect;this.phaseNow=phaseNow;this.sequence=0;this.probeSerial=0;this.clients=new Map();
+    this.onSuspect=onSuspect;this.phaseNow=phaseNow;this.sequence=0;this.probeSerial=0;this.checkpointSerial=0;this.clients=new Map();
     this.timer=null;
   }
   broadcastAdvanced() {
@@ -28,7 +28,8 @@ export class XingbeiProgressTracker {
       client,send,startedAt:this.now(),lastAckAt:this.now(),
       lastAckSeq:this.sequence,lastSentSeq:this.sequence,
       lastProbeAt:0,lastProbeId:0,lastAckProbeId:0,phase,clientPhase:null,phaseLagStreak:0,
-      suspect:false,phaseSuspect:false
+      suspect:false,phaseSuspect:false,
+      checkpoint:null,checkpointFirstUnackedAt:null,checkpointSuspect:false,checkpointMismatchCount:0
     });
     if(this.timer===null)this.timer=this.schedule(()=>this.probe(),this.intervalMs);
     return true;
@@ -46,6 +47,12 @@ export class XingbeiProgressTracker {
     for(const [seatId,rec] of this.clients) {
       if(rec.client.closed||rec.client.inited!==true){
         this.forget(seatId,rec.client);continue;
+      }
+      if(rec.checkpoint && rec.checkpointFirstUnackedAt!==null &&
+         time-rec.checkpointFirstUnackedAt>=this.staleMs && !rec.checkpointSuspect){
+        rec.checkpointSuspect=true;
+        try{this.onSuspect({seatId,kind:"state_checkpoint_unconfirmed",
+          checkpointId:rec.checkpoint.id,ageMs:time-rec.checkpointFirstUnackedAt});}catch(_){}
       }
       const behind=this.sequence-rec.lastAckSeq;
       if(behind>=this.minPending && time-rec.lastAckAt>=this.staleMs && !rec.suspect){
@@ -87,14 +94,51 @@ export class XingbeiProgressTracker {
     }else{rec.phaseLagStreak=0;rec.phaseSuspect=false;}
     return true;
   }
+  /**
+   * Issue an authoritative checkpoint AFTER the host has captured the state
+   * fields that its existing syncState broadcast will apply to each client.
+   * This is a semantic checkpoint, not proof every asynchronous choice ended.
+   */
+  issueCheckpoint(phase,currentSeatId=null) {
+    if(!Number.isSafeInteger(phase)||phase<0)return null;
+    if(currentSeatId!==null && (typeof currentSeatId!=="string" || !currentSeatId))return null;
+    const data={id:++this.checkpointSerial,phase,currentSeatId};
+    for(const [,rec] of this.clients) {
+      if(rec.client.closed||rec.client.inited!==true)continue;
+      rec.checkpoint=data;
+      if(rec.checkpointFirstUnackedAt===null)rec.checkpointFirstUnackedAt=this.now();
+    }
+    return data;
+  }
+  acknowledgeCheckpoint(seatId,client,checkpointId,appliedPhase,appliedSeatId=null) {
+    const rec=this.clients.get(seatId);
+    if(!rec||rec.client!==client||rec.client.closed||rec.client.inited!==true ||
+       !rec.checkpoint||rec.checkpoint.id!==checkpointId)return false;
+    if(!Number.isSafeInteger(appliedPhase)||appliedPhase<0||
+       (appliedSeatId!==null && (typeof appliedSeatId!=="string"||!appliedSeatId)))return false;
+    const expected=rec.checkpoint;
+    if(appliedPhase!==expected.phase||appliedSeatId!==expected.currentSeatId){
+      rec.checkpointMismatchCount++;
+      try{this.onSuspect({seatId,kind:"state_checkpoint_mismatch",checkpointId,
+        expectedPhase:expected.phase,appliedPhase,
+        expectedSeatId:expected.currentSeatId,appliedSeatId});}catch(_){}
+      return false;
+    }
+    rec.checkpoint=null;
+    rec.checkpointFirstUnackedAt=null;
+    rec.checkpointSuspect=false;
+    return true;
+  }
   get(seatId) {
     const r=this.clients.get(seatId);
     if(!r)return null;
     return {acknowledgedSequence:r.lastAckSeq,hostSequence:this.sequence,
-      lastAckAgeMs:this.now()-r.lastAckAt,suspect:r.suspect,phaseSuspect:r.phaseSuspect};
+      lastAckAgeMs:this.now()-r.lastAckAt,suspect:r.suspect,phaseSuspect:r.phaseSuspect,
+      pendingCheckpointId:r.checkpoint?.id??null,checkpointSuspect:r.checkpointSuspect,
+      checkpointMismatchCount:r.checkpointMismatchCount};
   }
   dispose(){
     if(this.timer!==null)this.unschedule(this.timer);
-    this.timer=null;this.clients.clear();this.sequence=0;this.probeSerial=0;
+    this.timer=null;this.clients.clear();this.sequence=0;this.probeSerial=0;this.checkpointSerial=0;
   }
 }
