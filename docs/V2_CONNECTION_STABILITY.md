@@ -26,3 +26,13 @@ This branch was forked from commit `9b4c2a29582e412733014f60e6e70f1f4ec03397`, b
 - Do not deploy V2 changes until HALL B2 adapter, seat-credential provisioning, guest reinit and host-side timeout fencing pass a paired end-to-end test.
 
 **No VPS, V1, live V2, live V3 or monitoring v2.3.0 files/services were changed in this batch.**
+
+## V2-2: generated B2 HALL integration regression
+
+- `tests/v2-b2-hall-integration.mjs` invokes the real Python B2 HALL patcher against an isolated legacy `game/server.js` source fixture with A1+v2.3 markers, then runs the generated code with fake WebSocket transports. This does not change a running broker.
+- Tests fresh guest credential issuance, wrong-token rejection, B3 browser ordered key/resume messages, stable seat ID, forced old-socket retirement, stale WebSocket packet and close fencing, owner-to-new-guest reinit routing, repeated guest recovery, and denial after room owner departure.
+- Distinguishes broker takeover, delivery of a reinit packet, and application of a valid snapshot; the simulator only verifies the first two plus explicit recovery-state gating, not engine-level snapshot completeness.
+- Asserts patcher refuses backend sources missing either A1 or monitoring v2.3 markers. The markers in the test fixture are synthetically inserted: this does **not** establish a verified match with the current VPS deployed source.
+- GitHub CI runs this separately from the current V2-1 safety-gate tests. No server, VPS, V1, V3 or monitor deployment/change.
+
+**Next:** use a redacted copy of the exact A1+v2.3 HALL production source to check patcher anchor compatibility and monitor observer retention, then add browser-host `init` → `reinit` and C3 false-online diagnostic acceptance, finally plan one concentrated manual playtest. No claim of fully authoritative/replayable V2 engine state.
