@@ -18,7 +18,7 @@ const playerCode=source("noname/library/element/player.js");
 const libraryCode=source("noname/library/index.js");
 const playerMethods=new Function("lib","_status","game","get","ChoiceLeaseRegistry","setTimeout","clearTimeout",
   "return class{"+segment(playerCode,"\twait(callback) {","\ttempUnwait(result) {")+"}")
-  (lib,status,game,game.get,ChoiceLeaseRegistry,schedule,unschedule).prototype;
+  (lib,status,game,get,ChoiceLeaseRegistry,schedule,unschedule).prototype;
 const host=new Function("lib","return ({"+
   segment(libraryCode,"\t\t\txbChoiceHello(protocolVersion) {","\t\t\tstartGame() {")+"})")(lib);
 function socket(id){return {id,inited:true,closed:false,sent:[],send(...msg){this.sent.push(msg);}};}

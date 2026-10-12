@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { ConnectionRecovery } from "../../noname/util/xingbei-connection-recovery.js";
+import { ConnectionRecovery } from "../noname/util/xingbei-connection-recovery.js";
 
 function fixture(overrides={}) {
   let now=0, id=0;

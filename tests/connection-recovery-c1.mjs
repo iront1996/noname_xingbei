@@ -30,9 +30,9 @@ const lib={node:{torespond:{},torespondtimeout:{}},configOL:{choose_timeout:"10"
 const status={event:{_global_timer:false,getParent:()=>({skillHidden:false})},noclearcountdown:null,paused:true};
 const game={players:[],resume:()=>resumed++};
 const get={event:()=>false};
-const methods=runInNewContext("({"+playerSource.slice(start,end)+"})",
+const methods=runInNewContext("(class {"+playerSource.slice(start,end)+"})",
  {lib,_status:status,game,get,ChoiceLeaseRegistry,
-  setTimeout:setTimeoutFake,clearTimeout:clearTimeoutFake});
+  setTimeout:setTimeoutFake,clearTimeout:clearTimeoutFake}).prototype;
 const makeSocket=()=>{
   const transport={closes:0,close(){this.closes++;}};
   return {closed:false,ws:transport};
