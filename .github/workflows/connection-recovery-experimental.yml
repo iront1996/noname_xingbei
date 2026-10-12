@@ -58,5 +58,14 @@ jobs:
         run: node --test tests/v2-b2-m1-process-integration.mjs
       - name: V2 M2 managed host-session lifecycle and authority boundary
         run: node --test tests/v2-host-session-manager.mjs tests/v2-managed-host-process.mjs
+      - name: V2 M2 real Chromium off-board lifecycle proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" node --test tests/v2-managed-chromium-host.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js
