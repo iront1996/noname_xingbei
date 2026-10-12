@@ -35,7 +35,13 @@ async function ask(peer,type,body={}){
  return until(()=>peer.received.find(x=>x.type==='reply'&&x.requestId===requestId));
 }
 
-for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+' waits or passes without using a card',{
+for(const {answer,seatCount} of [
+ {answer:'card',seatCount:4},
+ {answer:'pass',seatCount:4},
+ {answer:'pass',seatCount:6},
+ {answer:'pass',seatCount:8}
+])test('original XingBei '+(seatCount/2)+'v'+(seatCount/2)+' chooseToUse '+answer+
+ ' waits or passes without using a card',{
  skip:!enabled,timeout:90000
 },async()=>{
  const {WebSocketServer}=await import('ws');
@@ -54,18 +60,18 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
  });
  const peers=[];
  try{
-  for(let i=0;i<4;i++)peers.push(await connect(broker.address));
+  for(let i=0;i<seatCount;i++)peers.push(await connect(broker.address));
   const roomId='V3_ORIGINAL_NATIVE_WAIT';
   const sessions=[await ask(peers[0],'create',{
-   roomId,config:{mode:'xingBei',seatMode:'2v2'}
+   roomId,config:{mode:'xingBei',seatMode:(seatCount/2)+'v'+(seatCount/2)}
   })];
-  for(let i=1;i<4;i++)sessions.push(await ask(peers[i],'join',{roomId}));
+  for(let i=1;i<seatCount;i++)sessions.push(await ask(peers[i],'join',{roomId}));
   assert.ok(sessions.every(x=>x.ok));
   assert.equal((await ask(peers[0],'launch')).code,
    'WORKER_PROOF_RUNNING_NOT_PLAYABLE');
   const stage=await chrome.stageNativeXingBeiSeats();
   assert.equal(stage.ok,true);
-  for(let seat=0;seat<4;seat++){
+  for(let seat=0;seat<seatCount;seat++){
    const offers=stage.characters.slice(seat*2,seat*2+2);
    await chrome.beginNativeCharacterDraft({seat,offers});
    const choice=await until(()=>peers[seat].received.find(x=>
@@ -80,7 +86,7 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
   const dealt=await chrome.dealNativeOpeningCardsByOriginalEvent();
   assert.equal(dealt.nativeGameDrawTriggered,true);
   assert.equal(dealt.realNativeGameEventCompleted,true);
-  assert.deepEqual(dealt.nativeHandCounts,[4,4,4,4]);
+  assert.deepEqual(dealt.nativeHandCounts,Array(seatCount).fill(4));
   const before=await chrome.inspectNativePrivateHand({seat:0});
   const pid=chrome.pid;
   assert.equal((await chrome.stageNativeOpeningTurnBoundary({firstSeat:0})).realNativeEvents,true);
@@ -144,7 +150,7 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
   const boundBeforeDisconnect=await chrome.evaluateSeatExperiment(
    'window.__v3AuthorityBridge.getSeatBindings()'
   );
-  assert.equal(boundBeforeDisconnect.length,4);
+  assert.equal(boundBeforeDisconnect.length,seatCount);
   assert.ok(boundBeforeDisconnect.every(p=>/^[a-f0-9]{24}$/.test(p.connectionId)));
   // Every human including the creator leaves at the live original
   // GameEvent wait. The authoritative browser must NOT belong to any
@@ -155,7 +161,7 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
    const s=await chrome.inspectNativeXingBeiSeats();
    return s.roster.every(x=>!x.connected)&&s;
   });
-  assert.equal(empty.roster.length,4);
+  assert.equal(empty.roster.length,seatCount);
   assert.equal((await broker.inspectWorker(roomId)).code,'WORKER_PROOF_ALIVE');
   assert.equal(chrome.pid,pid);
   assert.equal((await chrome.inspectRoomChannel()).boundPeerCount,0);
@@ -168,7 +174,7 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
   assert.equal(await chrome.evaluateSeatExperiment(
    'window.__v3AuthorityBridge.testRenewPreviewLeases()'),true);
   const replacements=[];
-  for(let seat=0;seat<4;seat++){
+  for(let seat=0;seat<seatCount;seat++){
    const peer=await connect(broker.address);peers.push(peer);
    replacements.push(peer);
    const resumed=await ask(peer,'reconnect',{
@@ -184,20 +190,20 @@ for(const answer of ['card','pass'])test('original XingBei chooseToUse '+answer+
   )?.window);
   assert.deepEqual(reopened.options,window.options);
   assert.ok(reopened.expiresAt>window.expiresAt);
-  for(let seat=1;seat<4;seat++){
+  for(let seat=1;seat<seatCount;seat++){
    assert.equal(replacements[seat].received.some(x=>
     x.type==='choice_window'&&x.window?.ticket===window.ticket),false);
    assert.equal((await ask(replacements[seat],'choice_submit',{
     ticket:window.ticket,option:window.options[0]
    })).code,'CHOICE_WINDOW_NOT_FOUND');
   }
-  assert.equal((await chrome.inspectRoomChannel()).boundPeerCount,4);
+  assert.equal((await chrome.inspectRoomChannel()).boundPeerCount,seatCount);
   assert.equal(chrome.pid,pid);
   const boundAfterReconnect=await chrome.evaluateSeatExperiment(
    'window.__v3AuthorityBridge.getSeatBindings()'
   );
-  assert.equal(boundAfterReconnect.length,4);
-  for(let seat=0;seat<4;seat++){
+  assert.equal(boundAfterReconnect.length,seatCount);
+  for(let seat=0;seat<seatCount;seat++){
    assert.equal(boundAfterReconnect[seat].playerId,boundBeforeDisconnect[seat].playerId);
    assert.match(boundAfterReconnect[seat].connectionId,/^[a-f0-9]{24}$/);
    assert.notEqual(boundAfterReconnect[seat].connectionId,

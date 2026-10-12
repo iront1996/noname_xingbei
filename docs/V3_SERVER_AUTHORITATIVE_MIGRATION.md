@@ -559,3 +559,8 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 - 驗證前置條件包含第一玩家確實完成原生 pass、第一次預覽標記 passed、第二玩家的 native `GameEvent` 及固定 Player ID、有效暫停點、不可重複釋放。禁止第一玩家重複選牌、跳座位與直接呼叫出牌 API。
 - 真 Chromium 原生測試新增第二玩家事件歸屬、靜止中的四名玩家實體手牌、牌庫與 HP 不被這次控制閘門改動，以及重複釋放、未實作 `command:playCard` 拒絕的斷言。此階段**沒有**執行第二玩家 `chooseToUse`、沒產生第二張選牌票券、沒有技能／傷害／終局完整驗證。
 - 修改僅限 `game/v3-native-xingbei-seat-session.mjs`、`game/v3-chromium-authority-worker.mjs`、`tools/test-v3-original-choose-to-use-wait-chromium.mjs` 與本文件，仍只由 `V3_ALLOW_SEAT_EXPERIMENT=1` 允許、未部署 VPS、V1/V2/master 未變更。執行結果必須以本次 CI 原始 log 確認，不沿用前一輪 PASS。
+
+
+## 2026-10-12：原版取消出牌 → 下一玩家安全選牌的 4／6／8 人矩陣
+
+原先只對 2v2 運行的 `tools/test-v3-original-choose-to-use-wait-chromium.mjs` 擴展為 2v2 的選牌／取消兩路徑，以及 3v3、4v4 的取消路徑；全用真人座位 WebSocket 模擬、多席同時離線後重新認證，並通過原版 `gongJiOrFaShu`／`xingDong` 證明第二玩家選牌子事件仍暫停、手牌與牌庫不變。每個人數均採相同伺服器程序所有權，不開放正式出牌權。CI 結果須對應**本次提交**，不能套用以前通過的紀錄。
