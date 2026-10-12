@@ -53,6 +53,8 @@ export class Client {
 		return this;
 	}
 	close() {
+		// Only the currently bound transport may withdraw its progress tracker.
+		lib.node.xingbeiProgressTracker?.forget(this.id, this);
 		lib.node.clients.remove(this);
 		lib.node.observing.remove(this);
 		if (ui.removeObserve && !lib.node.observing.length) {
