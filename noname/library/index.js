@@ -7683,6 +7683,8 @@ export class Library {
 			},
 			onclose: function () {
 				if (this._nocallback) return;
+				// Never reuse a pending choice ticket after a transport replacement.
+				game._xingbeiChoiceTicket = null;
 				if (_status.connectCallback) {
 					_status.connectCallback(false);
 					delete _status.connectCallback;
