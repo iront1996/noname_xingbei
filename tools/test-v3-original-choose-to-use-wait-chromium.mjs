@@ -422,6 +422,29 @@ for(const {answer,seatCount} of [
    });
    assert.equal(thirdActor.thirdActionPlayerId,sessions[2].playerId);
    assert.equal(thirdActor.thirdActionEventNative,true);
+   // Third actor may advance only to its ORIGINAL chooseToUse boundary:
+   // do not grant an action or create a ticket before explicit approval.
+   assert.equal(thirdActor.thirdActionEntryReleased,false);
+   const thirdRelease=await chrome.releaseThirdOriginalActionToSelectionGate();
+   assert.equal(thirdRelease.started,true);
+   assert.equal(thirdRelease.ownerPlayerId,sessions[2].playerId);
+   assert.equal(thirdRelease.actionExecuted,false);
+   const thirdSelection=await until(async()=>{
+    const state=await chrome.inspectOriginalSelectionGate();
+    if(state.failed)throw Error('THIRD_NATIVE_SELECTION_FAILED_'+state.error+
+     '_'+String(state.trace??'').slice(0,230));
+    return state.thirdSelectionGateReached&&state.paused&&state;
+   });
+   assert.equal(thirdSelection.thirdSelectionEventNative,true);
+   assert.equal(thirdSelection.thirdSelectionEventName,'gongJiOrFaShu');
+   assert.equal(thirdSelection.thirdSelectionOwnerPlayerId,sessions[2].playerId);
+   assert.equal(thirdSelection.thirdSelectionContentExecuted,false);
+   assert.equal((await chrome.inspectOriginalActionGate()).thirdActionEntryReleased,true);
+   await assert.rejects(chrome.releaseThirdOriginalActionToSelectionGate(),
+    /V3_NATIVE_THIRD_SELECTION_RELEASE_DENIED/);
+   assert.equal(finalPeers.some(peer=>peer.received.some(m=>
+    m.type==='choice_window'&&m.window?.seat===2&&
+    m.window?.source==='preview')),false);
    const finalNative=await chrome.evaluateSeatExperiment(`(()=>{
     const {game,ui}=window.__v3NativeXingBeiTest.core;
     return {hands:game.players.map(p=>p.getCards('h').map(c=>c.__v3PhysicalId)),

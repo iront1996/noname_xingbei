@@ -621,3 +621,10 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 
 - 健康監控已判斷 Chromium 程序失效時，優先對 Node `ws` 伺服器側使用 `terminate()`，而非等待已死亡／卡住的瀏覽器回應正常 Close 帧。這會立即觸發現有私有通道失聯清理、註銷票券、廣播 `choice_interrupted`；只有傳輸實作不支援 `terminate` 時退回 `close`。
 - 回歸測試蓄意使假私有 WebSocket 的正常 `close` 不做任何事，但允許 `terminate` 確實中止，確認所有四名在線玩家仍能獲得中斷通知。仍不代表 GameEvent 可跨 Chromium 重啟恢復。
+
+
+## 2026-10-12：第三玩家原版 xingDong → gongJiOrFaShu 安全入口（V3-only）
+
+第二名玩家真原版 `chooseToUse` 的已驗證 no-card 回覆推進第三名玩家原生 `xingDong` 後，新設立單次 `releaseThirdOriginalActionToSelectionGate`：它只允許第三人原版 `xingDong` step 0 執行，必須在真實 `gongJiOrFaShu` 子 `GameEvent` 生成時立即暫停，不開放 `chooseToUse`、技能回呼、真正出牌、牌庫／HP 改變。所有座位的 Player 身分固定，並驗證 2v2/3v3/4v4、不得重複釋放、第三人私人票券尚不存在。沒有通過合法性與執行授權，正式 `command:playCard` 持續拒絕。
+
+本段只修改 V3-only 原生 seat session、受管 Chromium wrapper、隔離測試和文件；不改 master、V1/V2、線上 V3 或 VPS。是否通過以新提交 CI 為準。
