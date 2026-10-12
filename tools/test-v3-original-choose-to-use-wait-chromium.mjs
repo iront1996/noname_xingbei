@@ -453,6 +453,22 @@ for(const {answer,seatCount} of [
    });
    assert.equal(ownThird.code,'ACTION_CARD_OWNERSHIP_PRECHECK_PASSED');
    assert.equal(ownThird.actionExecuted,false);
+   // Inspect the original event provenance without calling a dynamic
+   // filter or exposing any other player's private cards.
+   const thirdEventLineage=await chrome.evaluateSeatExperiment(`(()=>{
+    const {game,lib,_status}=window.__v3NativeXingBeiTest.core;
+    const gate=game.__v3PausedPhaseRuntime,actor=game.players[2];
+    return {paused:_status.paused===true,
+     actorBound:gate.thirdSelectionEvent?.player===actor,
+     native:gate.thirdSelectionEvent instanceof lib.element.GameEvent,
+     oldSelectionDifferent:gate.nextSelectionEvent!==gate.thirdSelectionEvent,
+     stepExecuted:gate.thirdSelectionContentReleased===true};
+   })()`);
+   assert.equal(thirdEventLineage.paused,true);
+   assert.equal(thirdEventLineage.actorBound,true);
+   assert.equal(thirdEventLineage.native,true);
+   assert.equal(thirdEventLineage.oldSelectionDifferent,true);
+   assert.equal(thirdEventLineage.stepExecuted,false);
    const oldSecondHand=await chrome.inspectNativePrivateHand({seat:1});
    const obsolete=await ask(finalSecond,'action_ownership_probe',{
     cardId:oldSecondHand.ownHand[0].cardId

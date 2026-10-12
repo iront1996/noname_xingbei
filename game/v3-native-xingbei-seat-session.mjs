@@ -951,13 +951,23 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
    const actor=players[seat],def=lib.card[actor.getCards('h').find(c=>
     c.__v3PhysicalId===cardId)?.name];
    const gate=game.__v3PausedPhaseRuntime;
-   const staticCardContract=target.supportedPrintedAttack===true&&
+   // Static printed-rule evidence must be bound to the SAME native
+   // selection GameEvent as the caller's current (read-only) ownership
+   // check. A former actor's filter is never proof for a later seat.
+   const activeSelection=gate?.thirdActionGate?
+    gate.thirdSelectionEvent:gate?.nextActionGate?
+    gate.nextSelectionEvent:gate?.selectionEvent;
+   const activeEventOwned=activeSelection instanceof lib.element.GameEvent&&
+    activeSelection.player===actor&&
+    activeSelection.name==='gongJiOrFaShu';
+   const staticCardContract=activeEventOwned&&
+    target.supportedPrintedAttack===true&&
     def?.enable===true&&def?.selectTarget===1&&
     def?.usable===undefined&&def?.updateUsable===undefined&&
     def?.range===undefined&&def?.outrange===undefined&&
     def?.modTarget===undefined&&def?.singleCard===undefined&&
-    gate?.selectionEvent?.filterCard===lib.filter.filterCard&&
-    gate?.selectionEvent?.filterTarget===lib.filter.filterTarget;
+    activeSelection.filterCard===lib.filter.filterCard&&
+    activeSelection.filterTarget===lib.filter.filterTarget;
    // Original chooseToUse step 0 expands invisible/global skills and
    // invokes onChooseToUse. Original game.checkMod may invoke mod hooks.
    // Detect possible callbacks by inspecting definitions, never execute.
@@ -995,8 +1005,8 @@ export function prepareV3NativeXingBeiSeats({core,bridge}={}){
     dynamicRulesEvaluated:false,cardEnabledEvaluated:false,
     cardUsableEvaluated:false,rangeModsEvaluated:false,
     fullRulesValidated:false,actionExecuted:false,cardConsumed:false,
-    originalEventStillPaused:_status.paused===true&&
-     gate?.selectionEvent?.name==='gongJiOrFaShu',
+    originalEventStillPaused:_status.paused===true&&activeEventOwned,
+    activeOriginalEventPlayerId:activeEventOwned?actor.playerid:null,
     seat,playerId,cardId,targetSeat
    });
   },

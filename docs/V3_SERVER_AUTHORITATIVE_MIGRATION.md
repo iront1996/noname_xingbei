@@ -635,3 +635,10 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 已辨識原 `preflightNativeActionCardOwnership` 仍以「第二人的選擇內容曾釋放」推斷目前行動者，在第三人的真原版 `gongJiOrFaShu` 到達後可能錯把已完成的第二玩家事件當作活躍事件。V3-only 修改改以**最新實際原生 `xingDong` 邊界**及其專屬 `GameEvent` 判斷第一、第二、第三玩家，尚未生成該回合選牌事件時直接拒絕，不會回退授權舊座位。
 
 隔離真 Chromium 測試在第三人選牌前暫停點查核：第三人可唯讀查詢自己實體手牌卡牌的持有權；已完成原生 pass 的第二人，即使手中仍保留實體卡，也不能獲得舊回合的 ownership 成功；手牌、牌庫、HP 和未授權出牌狀態維持不變。這不是 `filterCard`、動態技能、目標完整合法性或真正攻擊執行。
+
+
+## 2026-10-12：印刷攻擊規則預檢綁定當前原生事件
+
+原本 `auditNativePrintedAttackStaticRules` 的印刷定義檢查硬綁第一座位 `selectionEvent`。現改為從伺服器 Chromium 已建立的最新 `xingDong` 原生事件及其所屬 `gongJiOrFaShu` 子事件取出 `filterCard`／`filterTarget` 合約，並確認 `selection.player` 就是此回合的受認證實體 Player。讀取結果額外標明 `activeOriginalEventPlayerId`，避免將第一人的舊 `GameEvent` 誤用於第三人的審核證據。
+
+CI 測試核對第三人的 event provenance、與第二人的 GameEvent 物件分離、未執行第三次選牌 step。這仍只是靜態印刷規則的唯讀證據，不執行完整 `filterCard`、技能修正、效果結算或真出牌。
