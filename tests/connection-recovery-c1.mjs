@@ -91,7 +91,7 @@ assert.equal(player.unwait("ai"),true);
 assert.equal(resumed,4);
 
 const library=readFileSync(new URL("../noname/library/index.js",import.meta.url),"utf8");
-assert.match(library,/player && player\.ws === this && !this\.closed && this\.inited === true/);
+assert.match(library,/if \(!player \|\| player\.ws !== this \|\| this\.closed \|\| this\.inited !== true\) return;/);
 const client=readFileSync(new URL("../noname/library/element/client.js",import.meta.url),"utf8");
 assert.match(client,/active && timer != null/);
 // Execute the actual Client.close method: when a player disconnects during a
