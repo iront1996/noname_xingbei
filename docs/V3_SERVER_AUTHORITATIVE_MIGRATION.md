@@ -676,3 +676,8 @@ CI 測試核對第三人的 event provenance、與第二人的 GameEvent 物件�
 最新一批已將原生第四玩家 `xingDong → gongJiOrFaShu` 子事件的單次 CI-only 釋放擴展至原版編譯 `chooseToUse` 的 `GameEvent.send` 等待點。`Player.wait` 由伺服器 Chromium 自行維護，唯一有效私人票券只能發給重新認證的第四玩家，其他三座位與未認證 socket 不得查詢或提交。新增 `fourthSelectionContentReleased`／`fourthOriginalUseWaitReached` 的階段辨識，事件仍在原版 `Player.unwait` 前暫停，所有原本的動態出牌及技能執行仍拒絕。2v2／3v3／4v4 的同一 Chromium 實驗涵蓋票券隔離、原生事件實體歸屬、重複釋放拒絕及 OS 程序不重建。
 
 本次並未授權第四人提交 no-card 造成下一個原生回合的實際推進；該部分需要額外專屬回歸與牌組守恆測試。這不是完整玩法或中途冷恢復。V1/V2/VPS/master 完全不參與。
+
+
+## 2026-10-12：第四玩家原生 chooseToUse 進入時的牌張異動稽核
+
+前一版 `20fac4e` 兩套 CI 中，離線測試通過，但 Chromium 2v2／3v3／4v4 的第四人測試於舊手牌與私人票券比較時發現票券多一張卡。這並不直接證明該增量為合法原版效果，因此改以真 Chromium 在第四人 `chooseToUse` 前後的實體手牌、牌庫、HP 作嚴格守恆：第四人舊牌完全保留，恰新增一張唯一存在於原始牌庫的卡；牌庫移除該卡且其他牌順序不變，其他玩家手牌完全不變，HP 不變，全體卡 ID multiset 不變，私人票券必須完全等於實際原生手牌（而非較早的私人快照）。若任一條件不成立仍由 CI 報錯。這僅驗證觀察到的物理轉移，**尚未證明摸牌的規則來源或合法性**，仍不會允許生產真人出牌。

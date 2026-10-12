@@ -657,8 +657,37 @@ for(const {answer,seatCount} of [
     m.window?.source==='preview'&&m.window?.options.includes('pass')
    )?.window);
    assert.equal(fourthWindow.playerId,sessions[3].playerId);
+   // Native chooseToUse step zero can trigger an original-rule card
+   // draw. The pre-wait hand is NOT authoritative for the ticket.
+   // Instead, verify exactly one unique physical deck card moved into
+   // the current actor's real hand, with no unrelated state mutation.
+   const postFourthWait=await chrome.evaluateSeatExperiment(`(()=>{
+    const {game,ui,_status}=window.__v3NativeXingBeiTest.core;
+    return {paused:_status.paused===true,
+     hands:game.players.map(p=>p.getCards('h').map(c=>c.__v3PhysicalId)),
+     deck:Array.from(ui.cardPile?.childNodes??[]).map(c=>c.__v3PhysicalId),
+     hp:game.players.map(p=>p.hp??null)};
+   })()`);
+   assert.equal(postFourthWait.paused,true);
+   for(let seat=0;seat<seatCount;seat++)
+    if(seat!==3)assert.deepEqual(postFourthWait.hands[seat],fourthSafe.hands[seat]);
+   assert.equal(postFourthWait.hands[3].length,fourthSafe.hands[3].length+1);
+   const acquired=postFourthWait.hands[3].filter(id=>
+    !fourthSafe.hands[3].includes(id));
+   assert.equal(acquired.length,1);
+   assert.match(acquired[0],/^v3card_[a-f0-9]{6}$/);
+   assert.deepEqual(postFourthWait.hands[3].filter(id=>id!==acquired[0]),
+    fourthSafe.hands[3]);
+   assert.equal(fourthSafe.deck.filter(id=>id===acquired[0]).length,1);
+   assert.equal(postFourthWait.deck.includes(acquired[0]),false);
+   assert.deepEqual(postFourthWait.deck,
+    fourthSafe.deck.filter(id=>id!==acquired[0]));
+   assert.deepEqual(
+    [...postFourthWait.hands.flat(),...postFourthWait.deck].sort(),
+    [...fourthSafe.hands.flat(),...fourthSafe.deck].sort());
+   assert.deepEqual(postFourthWait.hp,fourthSafe.hp);
    assert.deepEqual(fourthWindow.options.slice(0,-1).sort(),
-    fourthHand.ownHand.map(c=>c.cardId).sort());
+    [...postFourthWait.hands[3]].sort());
    const fourthPreview=await chrome.inspectNativeUseCardPreview();
    assert.equal(fourthPreview.state,'open');
    assert.equal(fourthPreview.samePausedEvent,true);
