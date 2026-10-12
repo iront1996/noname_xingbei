@@ -82,3 +82,13 @@ This branch was forked from commit `9b4c2a29582e412733014f60e6e70f1f4ec03397`, b
 - `tests/v2-lobby-stale-close.mjs` executes the real Client.close method for stale socket, current socket, unrelated socket and repeat close.
 
 **Unverified and not deployed:** The real redacted VPS HALL source has not been supplied to the preflight; no exact deployed monitor hook code was inspected. `node --check` verifies syntax only and cannot prove monitor callback behavior, runtime dependencies, UI game-engine replay, or correct player choices. Approval for a staged deployment and concentrated real-player acceptance remains a separate prerequisite.
+
+## V2-7: asynchronous guest reinit generation fence and structural preflight
+
+- The actual browser `lib.message.client.reinit` now checks a B3 recovery snapshot's roster/handcard/judge/expansion array shape, seat identity, and arena count **before** it resets the connect UI or game player/card registry. Unrecognized or incomplete snapshots are ignored and the existing recovery timeout remains in charge; do not declare recovery success.
+- Each admitted recovery snapshot gets a monotonic generation. Its mode-loader callback is single-use and can apply only to the same `game.ws`, same `ConnectionRecovery` instance, active `SYNCING` phase, broker-confirmed seat, and latest reinit generation. Stale callbacks after a retry/timeout or another reinit on the *same socket* cannot mutate mode skills, player state or arena.
+- Further guards after `mode.onreinit` and at completion prevent mode/extension reconnect hooks from sending `reinited` on a replaced socket. The original game event startup, choice ticket and progress-ACK wire order remain intact for current snapshots.
+- `validateXingbeiSeatSnapshot` is a **minimum structural** validation of `get.arenaState` and `Player.getState` contracts. It does not verify secret skills, card ownership, skill event stacks, replay determinism, or the authority of the human host; there is no forced overwrite, kick, AI turn or independent event replay.
+- `tests/v2-reinit-async-fence.mjs` executes the actual guest reinit handler with delayed mode-loader callbacks, models same-socket supersession, phase change, socket takeover, callback duplication, malformed roster and normal reinit compatibility.
+
+**No live V2, VPS, V1, V3, or monitor changes.** The production-source HALL preflight and concentrated browser/real-player acceptance are still pending.

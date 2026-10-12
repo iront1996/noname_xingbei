@@ -26,6 +26,7 @@ import { defaultHooks } from "./hooks/index.js";
 import { freezeButExtensible } from "../util/index.js";
 import security from "../util/security.js";
 import { handleSeatRecoveryControl } from "../util/xingbei-recovery-protocol.js";
+import { validateXingbeiSeatSnapshot } from "../util/xingbei-reinit-snapshot.js";
 import { ErrorManager } from "../util/error.js";
 
 import { defaultSplashs } from "../init/onload/index.js";
@@ -11949,6 +11950,20 @@ export class Library {
 				if (game._xingbeiRecovery?.active &&
 					(!xbReinitSocket || game._xingbeiRecovery.phase !== "SYNCING" ||
 					 game._xingbeiSeatReclaimed !== true)) return;
+				// Only recovery snapshots are structurally gated, preserving
+				// the normal spectator and fresh-join reinit contract.
+				const xbRecovery = game._xingbeiRecovery?.active ? game._xingbeiRecovery : null;
+				if (xbRecovery && !validateXingbeiSeatSnapshot(state, game.onlineID)) return;
+				// One generation per accepted B3 reinit. A second reinit on the
+				// SAME WebSocket invalidates any older pending mode-load callback.
+				const xbGeneration = xbRecovery
+					? (game._xingbeiReinitGeneration = (game._xingbeiReinitGeneration || 0) + 1)
+					: null;
+				const xbReinitCurrent = () => game.ws === xbReinitSocket &&
+					(!xbRecovery || (game._xingbeiReinitGeneration === xbGeneration &&
+					 game._xingbeiRecovery === xbRecovery && xbRecovery.active &&
+					 xbRecovery.phase === "SYNCING" && game._xingbeiSeatReclaimed === true));
+				let xbReinitCallbackUsed = false;
 				ui.auto.show();
 				ui.pause.show();
 				game.clearConnect();
@@ -11980,7 +11995,10 @@ export class Library {
 				lib.vcardOL = {};
 
 				game.loadModeAsync(config.mode, function (mode) {
-					if (game.ws !== xbReinitSocket) return; // superseded socket snapshot
+					// The same socket can outlive a failed SYNCING attempt or
+					// receive a newer snapshot. Neither old callback may apply.
+					if (xbReinitCallbackUsed || !xbReinitCurrent()) return;
+					xbReinitCallbackUsed = true;
 					for (var i in mode.ai) {
 						if (typeof mode.ai[i] == "object") {
 							if (ai[i] == undefined) ai[i] = {};
@@ -12032,6 +12050,8 @@ export class Library {
 					if (mode.onreinit) {
 						mode.onreinit();
 					}
+					// Mode-specific restoration can invalidate a connection.
+					if (!xbReinitCurrent()) return;
 					_status.cardtag = get.parsedResult(cardtag);
 					game.players = [];
 					game.dead = [];
@@ -12258,6 +12278,9 @@ export class Library {
 							onreconnect.shift().apply(this, onreconnect);
 						}
 					}
+					// A mode hook/onreconnect handler can replace game.ws.
+					// Never send a false completion to that newer transport.
+					if (!xbReinitCurrent()) return;
 					game.loop();
 					game.send("reinited");
 					game._xingbeiChoiceTicket = null;

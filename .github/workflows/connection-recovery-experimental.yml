@@ -29,6 +29,8 @@ jobs:
         run: node --test tests/v2-hall-progress-watch.mjs
       - name: V2 advisory game-progress and stalled-choice diagnostics
         run: node --test tests/v2-progress-audit.mjs
+      - name: V2 async snapshot generation and roster structural validation
+        run: node --test tests/v2-reinit-async-fence.mjs
       - name: V2 host and guest reinit readiness handshake
         run: node --test tests/v2-host-reinit-handshake.mjs
       - name: V2 seat reclaim and reinit safety gates
