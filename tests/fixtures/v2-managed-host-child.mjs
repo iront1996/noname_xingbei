@@ -13,11 +13,12 @@ process.on("message", message => {
 		sessionId: message.sessionId,
 		secret: message.secret,
 	};
-	process.send?.({ ...identity, type: "host_ready" });
+	process.send?.({ ...identity, type: "host_browser_ready" });
 	if (message.roomId === "crash_room") {
 		setTimeout(() => process.exit(17), 20);
 		return;
 	}
+	process.send?.({ ...identity, type: "host_engine_ready" });
 	process.send?.({
 		...identity,
 		type: "authoritative_result",

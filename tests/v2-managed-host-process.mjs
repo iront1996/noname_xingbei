@@ -29,7 +29,7 @@ test("real child-process adapter privately bootstraps, readies, commits and stop
 	assert.equal(started.ok, true);
 	assert.ok(started.session.pid > 0);
 	assert.equal("secret" in started.session, false);
-	await until(() => manager.inspect("process_room").state === "ready");
+	await until(() => manager.inspect("process_room").state === "engine_ready");
 	await until(() => results.length === 1);
 	assert.equal(results[0].result.source, "simulated_managed_host");
 	assert.equal(results[0].result.secretInArgv, false);
@@ -47,8 +47,8 @@ test("real child abnormal exit fails its hostSession without affecting another r
 	await manager.start("stable_room");
 	t.after(() => manager.stop("stable_room", "test_cleanup"));
 	await manager.start("crash_room");
-	await until(() => manager.inspect("stable_room").state === "ready");
+	await until(() => manager.inspect("stable_room").state === "engine_ready");
 	await until(() => manager.inspect("crash_room").state === "failed");
 	assert.equal(manager.inspect("crash_room").failureCode, "HOST_EXITED");
-	assert.equal(manager.inspect("stable_room").state, "ready");
+	assert.equal(manager.inspect("stable_room").state, "engine_ready");
 });

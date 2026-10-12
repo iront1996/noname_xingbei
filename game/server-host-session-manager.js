@@ -6,7 +6,7 @@ const PROTOCOL = 1;
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SESSION_ID = /^hs_[a-f0-9]{32}$/;
 const SECRET = /^[a-f0-9]{64}$/;
-const ACTIVE_STATES = new Set(["starting", "ready", "stopping"]);
+const ACTIVE_STATES = new Set(["starting", "browser_ready", "engine_ready", "stopping"]);
 
 function failure(code) {
 	return Object.freeze({ ok: false, code });
@@ -23,11 +23,13 @@ function safeEqualHex(left, right) {
 function createHostSessionManager({
 	launch,
 	randomBytes = crypto.randomBytes,
-	readyTimeoutMs = 15000,
+	browserReadyTimeoutMs = 15000,
+	engineReadyTimeoutMs = 15000,
 	onAuthoritativeResult = () => {},
 } = {}) {
 	if (typeof launch !== "function" || typeof randomBytes !== "function" ||
-		!Number.isSafeInteger(readyTimeoutMs) || readyTimeoutMs < 100 || readyTimeoutMs > 60000 ||
+		!Number.isSafeInteger(browserReadyTimeoutMs) || browserReadyTimeoutMs < 100 || browserReadyTimeoutMs > 60000 ||
+		!Number.isSafeInteger(engineReadyTimeoutMs) || engineReadyTimeoutMs < 100 || engineReadyTimeoutMs > 60000 ||
 		typeof onAuthoritativeResult !== "function") {
 		throw new TypeError("HOST_SESSION_CONFIG_INVALID");
 	}
@@ -47,18 +49,29 @@ function createHostSessionManager({
 		});
 	}
 
-	function clearReadyTimer(record) {
-		if (!record.readyTimer) return;
-		clearTimeout(record.readyTimer);
-		record.readyTimer = null;
+	function clearPhaseTimer(record) {
+		if (!record.phaseTimer) return;
+		clearTimeout(record.phaseTimer);
+		record.phaseTimer = null;
+	}
+
+	function armPhaseTimer(record, expectedState, timeoutMs, failureCode, stopReason) {
+		clearPhaseTimer(record);
+		record.phaseTimer = setTimeout(() => {
+			if (record.state !== expectedState) return;
+			record.state = "failed";
+			record.failureCode = failureCode;
+			Promise.resolve(record.handle?.stop(stopReason)).catch(() => {});
+		}, timeoutMs);
+		if (record.phaseTimer.unref) record.phaseTimer.unref();
 	}
 
 	function finish(record, code) {
-		clearReadyTimer(record);
+		clearPhaseTimer(record);
 		if (record.state === "stopping") {
 			record.state = "stopped";
 			record.failureCode = null;
-		} else if (record.state === "starting" || record.state === "ready") {
+		} else if (["starting", "browser_ready", "engine_ready"].includes(record.state)) {
 			record.state = "failed";
 			record.failureCode = code || "HOST_EXITED";
 		}
@@ -94,7 +107,7 @@ function createHostSessionManager({
 			state: "starting",
 			pid: null,
 			handle: null,
-			readyTimer: null,
+			phaseTimer: null,
 			nextResultSequence: 1,
 			failureCode: null,
 		};
@@ -117,16 +130,12 @@ function createHostSessionManager({
 			record.pid = handle.pid;
 			handle.once("exit", () => finish(record, "HOST_EXITED"));
 			handle.on("message", message => {
-				if (message?.type === "host_ready") markReady(message);
+				if (message?.type === "host_browser_ready") markBrowserReady(message);
+				else if (message?.type === "host_engine_ready") markEngineReady(message);
 				else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
 			});
-			record.readyTimer = setTimeout(() => {
-				if (record.state !== "starting") return;
-				record.state = "failed";
-				record.failureCode = "HOST_READY_TIMEOUT";
-				Promise.resolve(handle.stop("ready_timeout")).catch(() => {});
-			}, readyTimeoutMs);
-			if (record.readyTimer.unref) record.readyTimer.unref();
+			armPhaseTimer(record, "starting", browserReadyTimeoutMs,
+				"HOST_BROWSER_READY_TIMEOUT", "browser_ready_timeout");
 			if (typeof handle.start === "function") await handle.start();
 			if (record.state === "failed") return failure(record.failureCode);
 			return Object.freeze({ ok: true, session: publicView(record) });
@@ -138,19 +147,30 @@ function createHostSessionManager({
 		}
 	}
 
-	function markReady(message) {
+	function markBrowserReady(message) {
 		const record = sessions.get(message?.roomId);
-		if (message?.type !== "host_ready" || !authenticate(record, message) || record.state !== "starting") {
-			return failure("HOST_READY_REJECTED");
+		if (message?.type !== "host_browser_ready" || !authenticate(record, message) || record.state !== "starting") {
+			return failure("HOST_BROWSER_READY_REJECTED");
 		}
-		clearReadyTimer(record);
-		record.state = "ready";
+		record.state = "browser_ready";
+		armPhaseTimer(record, "browser_ready", engineReadyTimeoutMs,
+			"HOST_ENGINE_READY_TIMEOUT", "engine_ready_timeout");
+		return Object.freeze({ ok: true, session: publicView(record) });
+	}
+
+	function markEngineReady(message) {
+		const record = sessions.get(message?.roomId);
+		if (message?.type !== "host_engine_ready" || !authenticate(record, message) || record.state !== "browser_ready") {
+			return failure("HOST_ENGINE_READY_REJECTED");
+		}
+		clearPhaseTimer(record);
+		record.state = "engine_ready";
 		return Object.freeze({ ok: true, session: publicView(record) });
 	}
 
 	function commitAuthoritativeResult(message) {
 		const record = sessions.get(message?.roomId);
-		if (!authenticate(record, message) || record.state !== "ready") {
+		if (!authenticate(record, message) || record.state !== "engine_ready") {
 			return failure("HOST_AUTHORITY_REJECTED");
 		}
 		if (message.type !== "authoritative_result" ||
@@ -187,7 +207,7 @@ function createHostSessionManager({
 		if (!record || !ACTIVE_STATES.has(record.state)) {
 			return failure("HOST_SESSION_NOT_ACTIVE");
 		}
-		clearReadyTimer(record);
+		clearPhaseTimer(record);
 		record.state = "stopping";
 		try {
 			await record.handle.stop(reason);
@@ -202,7 +222,8 @@ function createHostSessionManager({
 
 	return Object.freeze({
 		start,
-		markReady,
+		markBrowserReady,
+		markEngineReady,
 		commitAuthoritativeResult,
 		stop,
 		inspect: roomId => publicView(sessions.get(roomId)),

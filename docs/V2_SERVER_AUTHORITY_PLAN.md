@@ -136,6 +136,14 @@ Read-only V3 research findings:
 - Local Windows testing used installed Chrome and passed; Linux CI locates its runner Chromium/Chrome explicitly. Evidence: commit `cc5adca`; Linux CI run 38308610888 passed both the host-session/process tests and the dedicated real-Chromium step. Portable local regression passed 78/78 plus B2 seat-registry.
 - Readiness in this batch means only “isolated browser and CDP are alive”. No Noname/Xingbei module is loaded, no game loop runs, no player is routed, and no authoritative result is produced. M2 and SA-A01–SA-A10 remain incomplete.
 
+### M2 batch 4 — browser-ready and engine-ready authority gate
+
+- hostSession readiness is now two mandatory authenticated transitions: `starting -> browser_ready -> engine_ready`. Browser-ready proves only the supervised browser transport; engine-ready is a separate host attestation reserved for validated engine initialization.
+- Browser and engine readiness use separate bounded timers and failure codes. A browser-ready process that never initializes the engine is stopped with `HOST_ENGINE_READY_TIMEOUT`; it cannot remain indefinitely half-ready.
+- `commitAuthoritativeResult` accepts only the current `engine_ready` session. Results submitted while starting or browser-ready, by stale sessions, with duplicate/out-of-order sequences, or with player/admin credentials fail closed.
+- The real Chromium supervisor intentionally emits only `host_browser_ready`. The simulated engine fixture emits both phases so the authority-result path remains testable without falsely treating CDP liveness as engine initialization.
+- Completion vocabulary is fixed for later batches: **Browser Ready** = Chromium/CDP alive; **Engine Ready** = required native engine APIs initialized and verified; **Game Ready** = room configuration/roster and authoritative initial state committed; **Playable** = event loop, choices, deadlines, rules and results execute server-side. These are independent of the later M2+M3 four-ordinary-player continuity acceptance.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

@@ -23,13 +23,24 @@ async function until(check, timeoutMs = 20000) {
 test("real Chromium reaches off-board hostSession ready and cleans up", { skip: !active }, async () => {
 	const manager = createHostSessionManager({
 		launch: createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 }),
-		readyTimeoutMs: 20000,
+		browserReadyTimeoutMs: 20000,
+		engineReadyTimeoutMs: 20000,
 	});
 	const started = await manager.start("chromium_room");
 	assert.equal(started.ok, true);
 	assert.ok(started.session.pid > 0);
 	assert.equal("secret" in started.session, false);
-	await until(() => manager.inspect("chromium_room").state === "ready");
+	await until(() => manager.inspect("chromium_room").state === "browser_ready");
+	assert.equal(manager.commitAuthoritativeResult({
+		kind: "managed_host",
+		type: "authoritative_result",
+		protocol: 1,
+		roomId: "chromium_room",
+		sessionId: started.session.sessionId,
+		secret: "00".repeat(32),
+		sequence: 1,
+		result: { forged: true },
+	}).code, "HOST_AUTHORITY_REJECTED");
 	assert.equal(manager.inspect("chromium_room").nextResultSequence, 1);
 	const stopped = await manager.stop("chromium_room", "test_complete");
 	assert.equal(stopped.ok, true);

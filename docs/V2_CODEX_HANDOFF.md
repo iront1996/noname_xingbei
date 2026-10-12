@@ -37,6 +37,12 @@ M2 batch 3:
 - Chromium readiness currently proves only browser/CDP liveness. Noname/Xingbei modules, engine initialization, HALL routing and authoritative gameplay are not connected.
 - M2+M3 four-player disconnect/continuation acceptance remains entirely unproven and must be tracked separately from these infrastructure passes.
 
+M2 batch 4:
+
+- hostSession now separates `browser_ready` from `engine_ready`; each phase has its own authenticated message, timeout and failure code.
+- Only `engine_ready` may submit ordered authoritative results. Real Chromium currently stops at Browser Ready by design; only the simulated engine fixture reaches Engine Ready.
+- Status remains: Browser Ready **proven**; Engine Ready **gate implemented but real engine not proven**; Game Ready **not implemented**; Playable **not implemented**; M2+M3 four-player integration **not implemented**.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

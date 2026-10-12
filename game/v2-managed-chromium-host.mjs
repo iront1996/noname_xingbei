@@ -44,7 +44,7 @@ async function boot(message) {
 	}
 	identity = {
 		kind: "managed_host",
-		type: "host_ready",
+		type: "host_browser_ready",
 		protocol: message.protocol,
 		roomId: message.roomId,
 		sessionId: message.sessionId,
