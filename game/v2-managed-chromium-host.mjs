@@ -14,10 +14,52 @@ let chromium = null;
 let profile = null;
 let identity = null;
 let stopping = false;
+let cdp = null;
+
+function createCdpSession(url) {
+	if (typeof url !== "string" || !/^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/[A-Za-z0-9-]+$/.test(url)) {
+		throw new Error("CHROMIUM_CDP_SOCKET_INVALID");
+	}
+	const socket = new WebSocket(url);
+	let sequence = 0;
+	const pending = new Map();
+	socket.addEventListener("message", event => {
+		let message;
+		try { message = JSON.parse(event.data); } catch { return; }
+		if (!Number.isInteger(message.id) || !pending.has(message.id)) return;
+		const entry = pending.get(message.id);
+		pending.delete(message.id);
+		clearTimeout(entry.timer);
+		if (message.error) entry.reject(new Error("CHROMIUM_CDP_REJECTED"));
+		else entry.resolve(message.result);
+	});
+	return {
+		async open() {
+			if (socket.readyState === WebSocket.OPEN) return;
+			await new Promise((resolve, reject) => {
+				const timer = setTimeout(() => reject(new Error("CHROMIUM_CDP_TIMEOUT")), WAIT_MS);
+				socket.addEventListener("open", () => { clearTimeout(timer); resolve(); }, { once: true });
+				socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("CHROMIUM_CDP_ERROR")); }, { once: true });
+			});
+		},
+		send(method, params = {}) {
+			if (!["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.navigate", "Runtime.evaluate"].includes(method) ||
+				socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error("CHROMIUM_CDP_METHOD_DENIED"));
+			const id = ++sequence;
+			return new Promise((resolve, reject) => {
+				const timer = setTimeout(() => { pending.delete(id); reject(new Error("CHROMIUM_CDP_TIMEOUT")); }, WAIT_MS);
+				pending.set(id, { resolve, reject, timer });
+				socket.send(JSON.stringify({ id, method, params }));
+			});
+		},
+		close() { socket.close(); },
+	};
+}
 
 async function cleanup() {
 	if (stopping) return;
 	stopping = true;
+	try { cdp?.close(); } catch {}
 	if (chromium && chromium.exitCode === null && chromium.signalCode === null) {
 		chromium.kill("SIGTERM");
 		await Promise.race([
@@ -111,12 +153,50 @@ async function boot(message) {
 	});
 	if (!response.ok) throw new Error("CHROMIUM_CDP_DISCOVERY_FAILED");
 	const targets = await response.json();
-	if (!targets.some(target => target?.type === "page" && target.url === "about:blank" &&
+	const page = targets.find(target => target?.type === "page" && target.url === "about:blank" &&
 		typeof target.webSocketDebuggerUrl === "string" &&
-		target.webSocketDebuggerUrl.startsWith(`ws://127.0.0.1:${port}/`))) {
+		target.webSocketDebuggerUrl.startsWith(`ws://127.0.0.1:${port}/`));
+	if (!page) {
 		throw new Error("CHROMIUM_PAGE_MISSING");
 	}
 	process.send?.(identity);
+
+	const origin = process.env.V2_GAME_ORIGIN;
+	if (origin === undefined) return;
+	if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(origin)) throw new Error("ENGINE_ORIGIN_INVALID");
+	cdp = createCdpSession(page.webSocketDebuggerUrl);
+	await cdp.open();
+	await cdp.send("Page.enable");
+	await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+		source: 'Object.defineProperty(window,"isNonameServer",{value:true,writable:false,configurable:false});',
+	});
+	const navigation = await cdp.send("Page.navigate", { url: `${origin}/v2-managed-host.html` });
+	if (navigation.errorText) throw new Error("ENGINE_NAVIGATION_FAILED");
+	const engine = await cdp.send("Runtime.evaluate", {
+		expression: `(async()=>{
+		 await new Promise(resolve=>document.readyState==='complete'?resolve():addEventListener('load',resolve,{once:true}));
+		 if(window.isNonameServer!==true)throw Error('OFFBOARD_FLAG_MISSING');
+		 const core=await import('/noname.js');
+		 const imported=await import('/mode/xingBei.js');
+		 const mode=imported.default();
+		 if(!core.game||!core.lib||!core.ui||!core._status||mode.name!=='xingBei'||
+		    typeof mode.game?.checkResult!=='function'||
+		    typeof mode.game?.checkOnlineResult!=='function'||
+		    typeof core.game.randomMapOL!=='function')throw Error('ENGINE_API_MISSING');
+		 Object.defineProperty(window,'__v2ManagedEngine',{configurable:false,
+		  value:Object.freeze({core,mode})});
+		 return {loaded:true,mode:mode.name,offboard:true,
+		  nativeGame:typeof core.game.randomMapOL==='function',
+		  nativeResult:typeof mode.game.checkResult==='function',gameLoopStarted:false};
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	const proof = engine.result?.value;
+	if (engine.exceptionDetails || proof?.loaded !== true || proof.mode !== "xingBei" ||
+		proof.offboard !== true || proof.nativeGame !== true || proof.nativeResult !== true ||
+		proof.gameLoopStarted !== false) throw new Error("ENGINE_INITIALIZATION_FAILED");
+	process.send?.({ ...identity, type: "host_engine_ready", proof });
 }
 
 process.on("message", message => {

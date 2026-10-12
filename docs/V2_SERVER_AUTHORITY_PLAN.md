@@ -152,6 +152,14 @@ Read-only V3 research findings:
 - Sandbox policy remains unchanged: no automatic `--no-sandbox`, and root launch fails closed.
 - Local full regression passed 81/81 plus B2 seat-registry, with no remaining managed-host temp profiles. This is resource-supervision evidence, not Engine Ready or Game Ready evidence.
 
+### M2 batch 6 — minimal real-engine initialization
+
+- When given an explicit loopback-only game origin, the V2 Chromium supervisor opens a narrow CDP session, installs immutable `window.isNonameServer`, navigates to an isolated empty host page and dynamically imports the checkout's real `noname.js` and `mode/xingBei.js` modules.
+- Engine Ready requires concrete native API checks: `game`, `lib`, `ui`, `_status`, Xingbei mode identity, `randomMapOL`, `checkResult` and `checkOnlineResult`. Only after every check succeeds does the supervisor send authenticated `host_engine_ready`.
+- The verified proof explicitly requires `gameLoopStarted:false`. No arena, roster, players, cards, events, choices or network routing are initialized, and the engine submits no authoritative result.
+- The loopback static module host exists only in test fixtures and rejects traversal, query strings and non-GET/HEAD methods. No service is deployed.
+- Local real-browser and full regression passed 82/82 plus B2 seat-registry with no managed profile residue. This upgrades **Engine Ready** to proven for minimal native module/API initialization only; **Game Ready**, **Playable**, and M2+M3 four-player integration remain not implemented.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

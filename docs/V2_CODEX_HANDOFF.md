@@ -50,6 +50,12 @@ M2 batch 5:
 - Local full regression passed 81/81 plus B2 seat-registry and left no `v2-managed-host-*` profile behind.
 - Completion status is unchanged above Browser Ready; no real engine initialization or gameplay claim is made.
 
+M2 batch 6:
+
+- Real off-board Chromium now reaches Engine Ready only after importing the actual Noname and Xingbei modules from a loopback test origin and verifying the required native APIs.
+- The proof deliberately reports `gameLoopStarted:false`; it creates no match state and sends no result. Game Ready, Playable and M2+M3 continuity remain unimplemented.
+- Local full regression passed 82/82 plus B2 seat-registry with no managed profile residue. Linux CI evidence must be recorded against the implementation commit before treating this batch as accepted.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`
