@@ -659,3 +659,8 @@ CI 測試核對第三人的 event provenance、與第二人的 GameEvent 物件�
 ## 2026-10-12：第四玩家真原生 xingDong／gongJiOrFaShu 邊界
 
 在原版前三位玩家均只提交真 `Player.unwait({bool:false})`、第四人經原版階段抽一張牌並到達 `xingDong` 前安全閘門之後，新增 V3-only `releaseFourthOriginalActionToSelectionGate`，只允許第四人原版 `xingDong` step 0 執行至真 `gongJiOrFaShu` 子事件產生，立刻暫停，不允許原版 `chooseToUse` 及任何出牌／技能。新增最晚原生事件歸屬的第四座位唯讀實體持有權，原第三座位持有權不再代表活躍回合；封鎖使用第三座位的舊事件建立卡牌預覽。CI 覆蓋 2v2／3v3／4v4，對照前一段已核實的第四階段摸牌後狀態，確認第四安全釋放不再改動手牌、牌庫、HP，且不能重複釋放。本批仍沒有合法出牌、攻防、技能、勝負或中途冷恢復。
+
+
+## 2026-10-12：第四玩家原生選牌前斷線／重連的程序所有權回歸
+
+於 2v2／3v3／4v4 經三次真原版 no-card 回覆後，第四玩家原版 `xingDong` 已建立並產生真 `gongJiOrFaShu` 子 `GameEvent`，且選牌內容尚未執行。在此狀態主動斷開第四真人 socket，驗證其原生事件仍暫停、Chromium PID 未變、房間持續存在。第四人使用最新一次認證 token 重新連線，確認新 token 和新的 `connectionId` 均輪替、固定 Player ID 不變、舊 token 不可重用，且不會自動出現未授權的選牌票券。第四人自己的唯讀手牌持有權仍可查，第三人已完成回合的持有權不能冒充目前行動權。沒有修改原生規則或增加真人測試要求；只更新 V3 的真 Chromium 自動化測試及文件。

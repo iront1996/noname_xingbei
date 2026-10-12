@@ -365,7 +365,7 @@ for(const {answer,seatCount} of [
    assert.equal(offlineWait.samePausedEvent,true);
    assert.equal(offlineWait.playerId,sessions[1].playerId);
    assert.equal(chrome.pid,pid);
-   const finalPeers=[];
+   const finalPeers=[],finalTokens=[];
    for(let seat=0;seat<seatCount;seat++){
     const peer=await connect(broker.address);peers.push(peer);
     finalPeers.push(peer);
@@ -376,6 +376,7 @@ for(const {answer,seatCount} of [
     assert.equal(resumed.ok,true);
     assert.equal(resumed.playerId,sessions[seat].playerId);
     assert.notEqual(resumed.reconnectToken,oldToken);
+    finalTokens[seat]=resumed.reconnectToken;
    }
    finalSeatZero=finalPeers[0];
    const finalSecond=finalPeers[1];
@@ -565,8 +566,46 @@ for(const {answer,seatCount} of [
    assert.equal(fourthSelection.fourthSelectionEventName,'gongJiOrFaShu');
    assert.equal(fourthSelection.fourthSelectionOwnerPlayerId,sessions[3].playerId);
    assert.equal(fourthSelection.fourthSelectionContentExecuted,false);
+   // The fourth native selection event must outlive its human socket.
+   // No host migration or AI unwait is permitted during this reconnect.
+   const fourthPid=chrome.pid;
+   const fourthBeforeBinding=await chrome.evaluateSeatExperiment(
+    'window.__v3AuthorityBridge.getSeatBindings()'
+   );
+   const previousFourthConnection=fourthBeforeBinding[3].connectionId;
+   finalPeers[3].ws.close();
+   await until(()=>broker.roomView(roomId).roster[3].connected===false);
+   const pausedWithoutFourth=await chrome.inspectOriginalSelectionGate();
+   assert.equal(pausedWithoutFourth.fourthSelectionGateReached,true);
+   assert.equal(pausedWithoutFourth.fourthSelectionOwnerPlayerId,sessions[3].playerId);
+   assert.equal(pausedWithoutFourth.paused,true);
+   assert.equal(chrome.pid,fourthPid);
+   const returnedFourth=await connect(broker.address);
+   peers.push(returnedFourth);
+   const fourthResumed=await ask(returnedFourth,'reconnect',{
+    roomId,seat:3,reconnectToken:finalTokens[3]
+   });
+   assert.equal(fourthResumed.ok,true);
+   assert.equal(fourthResumed.playerId,sessions[3].playerId);
+   assert.notEqual(fourthResumed.reconnectToken,finalTokens[3]);
+   assert.equal((await ask(returnedFourth,'reconnect',{
+    roomId,seat:3,reconnectToken:finalTokens[3]
+   })).ok,false);
+   const fourthRebinding=await until(async()=>{
+    const now=await chrome.evaluateSeatExperiment(
+     'window.__v3AuthorityBridge.getSeatBindings()'
+    );
+    return now[3]?.connectionId!==previousFourthConnection&&now;
+   });
+   assert.equal(fourthRebinding[3].playerId,sessions[3].playerId);
+   assert.match(fourthRebinding[3].connectionId,/^[a-f0-9]{24}$/);
+   assert.equal((await chrome.inspectOriginalSelectionGate()).paused,true);
+   assert.equal(chrome.pid,fourthPid);
+   assert.equal(returnedFourth.received.some(m=>
+    m.type==='choice_window'&&m.window?.source==='preview'&&
+    m.window?.seat===3),false);
    const fourthHand=await chrome.inspectNativePrivateHand({seat:3});
-   const ownFourth=await ask(finalPeers[3],'action_ownership_probe',{
+   const ownFourth=await ask(returnedFourth,'action_ownership_probe',{
     cardId:fourthHand.ownHand[0].cardId
    });
    assert.equal(ownFourth.code,'ACTION_CARD_OWNERSHIP_PRECHECK_PASSED');
