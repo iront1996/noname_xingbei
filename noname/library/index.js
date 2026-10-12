@@ -11220,7 +11220,8 @@ export class Library {
 			result(result) {
 				if (lib.node.observing.includes(this)) return;
 				var player = lib.playerOL[this.id];
-				if (player) {
+				// C1: a superseded/initializing connection must never consume a choice.
+				if (player && player.ws === this && !this.closed && this.inited === true) {
 					player.unwait(result);
 				}
 			},
@@ -11230,7 +11231,7 @@ export class Library {
 			tempResult(result) {
 				if (lib.node.observing.includes(this)) return;
 				var player = lib.playerOL[this.id];
-				if (player) {
+				if (player && player.ws === this && !this.closed && this.inited === true) {
 					player.tempUnwait(result);
 				}
 			},
