@@ -73,3 +73,12 @@ This branch was forked from commit `9b4c2a29582e412733014f60e6e70f1f4ec03397`, b
 - CI patches a synthetic `game/server.js` using inserted A1/monitor markers, **not an exact dump of the currently deployed VPS HALL**. Full source compatibility and observer-hook preservation must be verified offline from the real redacted source before any deployment.
 - A fully blocked HALL Node event loop cannot run its own watchdog. The host-origin telemetry cannot independently prove that asynchronous engine events completed. This phase adds external liveness classification, not an authoritative game server.
 - Continue V2-first, then V1, then V3. All production service changes require explicit permission.
+
+## V2-6: offline HALL compatibility preflight and lobby stale-close fencing
+
+- `tools/connection-recovery/preflight_v2_hall.py` accepts a **local copy** of a HALL backend source, optional pinned SHA-256, validates unique A1 and v2.3 monitor markers, invokes the same B2 patcher strictly in memory, checks both existing markers persist, and runs `node --check` on a temporary patched file. It verifies its input source was not modified and reports no production deployment. It returns `runtime_compatible: not_verified` even on success.
+- `tests/v2-hall-preflight.mjs` covers pinned hash, synthetic compatible fixture, absent/duplicate prerequisites, drifted anchors and parser rejection. The CI fixture is not the real VPS backend. The command is intentionally **read-only** and has no `--apply` or `--output` mode.
+- `noname/library/element/client.js` now prevents the close event of an old lobby socket from uninitializing a newly rebound player slot or resetting `onlinezhu`. It also ignores repeated close calls. This is critical for a recoverable seat during pre-game player management; the gameplay `player.ws === this` fence is retained.
+- `tests/v2-lobby-stale-close.mjs` executes the real Client.close method for stale socket, current socket, unrelated socket and repeat close.
+
+**Unverified and not deployed:** The real redacted VPS HALL source has not been supplied to the preflight; no exact deployed monitor hook code was inspected. `node --check` verifies syntax only and cannot prove monitor callback behavior, runtime dependencies, UI game-engine replay, or correct player choices. Approval for a staged deployment and concentrated real-player acceptance remains a separate prerequisite.

@@ -53,6 +53,7 @@ export class Client {
 		return this;
 	}
 	close() {
+		if (this.closed) return this; // duplicate stale close is harmless
 		// Only the currently bound transport may withdraw its progress tracker.
 		lib.node.xingbeiProgressTracker?.forget(this.id, this);
 		lib.node.clients.remove(this);
@@ -63,16 +64,21 @@ export class Client {
 		}
 		this.closed = true;
 		if (_status.waitingForPlayer) {
+			// V2: a stale close after the lobby seat was rebound must not
+			// uninitialize the new transport or erase the current owner.
+			let withdrewSeat = false;
 			for (var i = 0; i < game.connectPlayers.length; i++) {
-				if (game.connectPlayers[i].playerid == this.id) {
-					game.connectPlayers[i].uninitOL();
-					delete game.connectPlayers[i].playerid;
+				const seat = game.connectPlayers[i];
+				if (seat.playerid === this.id && seat.ws === this) {
+					seat.uninitOL();
+					delete seat.playerid;
+					withdrewSeat = true;
 				}
 			}
-			if (game.onlinezhu == this.id) {
-				game.onlinezhu = null;
+			if (withdrewSeat) {
+				if (game.onlinezhu === this.id) game.onlinezhu = null;
+				game.updateWaiting();
 			}
-			game.updateWaiting();
 		} else if (lib.playerOL[this.id] && lib.playerOL[this.id].ws === this) {
 			// Rebound seats belong to the newest connection. A late close from a
 			// superseded socket must not force AI or mark the player offline.
