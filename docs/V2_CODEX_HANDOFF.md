@@ -40,3 +40,8 @@ These local failures are not treated as product regressions, but the PR must obt
 ## Current batch
 
 M1 batch 1 adds a server-owned lifecycle record around the still-human-hosted engine. Owner disconnect pauses and retains the room for a bounded grace period; it does not claim gameplay continues. Reclaim requires the original bound online identity plus a rotating server-generated secret. A resumed owner remains in `waiting_host_process` until it reconfigures; guests are not routed to it beforehand. Expired rooms are explicitly cleaned and only then close remaining guests.
+
+- Implementation commit: `34c8dbc` (`feat(v2): add server-owned room lifecycle foundation`)
+- HALL harness compatibility commit: `dbe61ee` (`test(v2): load M1 lifecycle in HALL harnesses`)
+- Review PR: `#1`, targeting `feature/v2-connection-stability`; left open and unmerged.
+- Linux CI run 38304099421: `node-recovery-tests` succeeded after the generated HALL harnesses were taught to load the new local lifecycle dependency. Cloudflare Pages also succeeded, but is not lifecycle acceptance evidence.

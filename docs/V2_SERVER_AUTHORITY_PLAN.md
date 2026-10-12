@@ -6,7 +6,7 @@ HALL owns room lifecycle, credentials and routing. During M1 the existing human 
 
 ## M1 — server-owned room lifecycle
 
-Status: batch 1 implemented locally; Linux CI and review pending.
+Status: batch 1 implemented; Linux CI passed; PR review pending.
 
 Lifecycle states:
 
@@ -61,6 +61,7 @@ Persist lifecycle, authenticated seat bindings, confirmed engine checkpoints and
 
 - Base GitHub CI: run 38301778625 succeeded at `2baf366`.
 - M1 plus locally portable V2 regressions: 58/58 Node tests passed; the standalone B2 seat-registry suite also passed.
+- PR Linux CI: run 38304099421 `node-recovery-tests` succeeded for M1 implementation plus generated-HALL harness compatibility commits.
 - Syntax checks: `game/server.js` and `game/server-room-lifecycle.js` passed `node --check`.
 - Production/VPS compatibility: not verified.
 - Real browser/player acceptance: not verified.
