@@ -39,7 +39,8 @@ for(const {answer,seatCount} of [
  {answer:'card',seatCount:4},
  {answer:'pass',seatCount:4},
  {answer:'pass',seatCount:6},
- {answer:'pass',seatCount:8}
+ {answer:'pass',seatCount:8},
+ {answer:'crash',seatCount:4}
 ])test('original XingBei '+(seatCount/2)+'v'+(seatCount/2)+' chooseToUse '+answer+
  ' waits or passes without using a card',{
  skip:!enabled,timeout:90000
@@ -211,8 +212,8 @@ for(const {answer,seatCount} of [
    assert.notEqual(boundAfterReconnect[seat].connectionId,
     boundBeforeDisconnect[seat].connectionId);
   }
-  const submittedOption=answer==='pass'?'pass':
-   reopened.options.find(c=>c!=='pass');
+  const submittedOption=answer==='card'?
+   reopened.options.find(c=>c!=='pass'):'pass';
   assert.equal((await ask(next,'choice_submit',{
    ticket:reopened.ticket,option:submittedOption
   })).code,'CHOICE_SUBMITTED_NOT_APPLIED');
@@ -388,6 +389,25 @@ for(const {answer,seatCount} of [
     m.type==='choice_window'&&m.window?.ticket===secondWindow.ticket)),false);
    assert.equal((await chrome.inspectRoomChannel()).boundPeerCount,seatCount);
    assert.equal(chrome.pid,pid);
+   if(answer==='crash'){
+    // A mid-event Chromium death is NOT a resumable checkpoint.
+    // Never grant the still-visible ticket a false native success.
+    await chrome.stop();
+    const health=await until(async()=>{
+     const status=await broker.inspectWorker(roomId);
+     return status.code==='WORKER_UNAVAILABLE'&&status;
+    });
+    assert.equal(health.ok,false);
+    assert.equal((await ask(finalSecond,'choice_submit',{
+     ticket:restoredTicket.ticket,option:'pass'
+    })).code,'WORKER_CHANNEL_OFFLINE');
+    const roomAfterDeath=broker.roomView(roomId);
+    assert.equal(roomAfterDeath.roster.length,seatCount);
+    assert.ok(roomAfterDeath.roster.every(p=>p.connected));
+    assert.equal((await broker.recoverOpeningCheckpoint(roomId)).code,
+     'OPENING_RECOVERY_DISABLED');
+    return; // Finally closes the still-isolated broker and sockets.
+   }
    assert.equal((await ask(finalSecond,'choice_submit',{
     ticket:restoredTicket.ticket,option:'pass'
    })).code,'CHOICE_SUBMITTED_NOT_APPLIED');

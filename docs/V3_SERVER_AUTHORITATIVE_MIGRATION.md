@@ -589,3 +589,8 @@ V1/V2、master、`noname/**`、`mode/xingBei.js`、VPS、Cloudflare、8080/8081 
 ## 2026-10-12：第二個原生選擇視窗期間，全房間再度離線的壓力回歸
 
 將第二玩家原版 `chooseToUse` 真等待中的二次斷線，強化為**全部 4／6／8 位真人同時斷線**；Chromium 私有通道和遊戲事件仍保留，真人 socket 歸零後，各座位依序以自己的最新憑證重連；原第二玩家應取回原私人票券，其他玩家不得看到票券。以原生無牌回覆繼續推進第三座位，對照全體手牌、牌庫、HP。此項仍不代表 Node/Chromium 進程重啟後中途事件能恢復。
+
+
+## 2026-10-12：原生中途等待的 Chromium 崩潰必須安全拒絕
+
+新增真 2v2 故障注入測試：全部座位在第二個真原版 `chooseToUse` 等待票券開啟時離線、重新認證；然後主動終止受管 Chromium，確認 broker 健康立即判定 `WORKER_UNAVAILABLE`，原票券不能再宣稱 `CHOICE_SUBMITTED_NOT_APPLIED` 成功（應回 `WORKER_CHANNEL_OFFLINE`），但仍存在的真人房間座位不因此被假裝成功恢復。由於本隔離測試沒有啟用開局快照復原，`recoverOpeningCheckpoint` 須返回 `OPENING_RECOVERY_DISABLED`。本項只證明故障後 fail-closed，**中途 GameEvent／Promise／RNG／技能真正冷恢復仍未實作**。
