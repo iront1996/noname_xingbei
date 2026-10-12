@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {handleSeatRecoveryControl} from "../noname/util/xingbei-recovery-protocol.js";
 import {saveSeatCredentials,loadSeatCredentials} from "../noname/util/xingbei-seat-credentials.js";
+import {validateXingbeiSeatSnapshot} from "../noname/util/xingbei-reinit-snapshot.js";
 
 const roomId="ROOM_V2",seatId="GUEST_A",endpoint="wss://hall.example:443";
 const token="ab".repeat(32);
@@ -83,21 +84,30 @@ test("actual V2 game reinit cannot clear arena before broker claim and SYNCING",
  let touched=0;
  const sentinel=Symbol("reinit_guard_passed");
  const ui={auto:{show(){touched++;throw sentinel}},pause:{show(){throw sentinel}}};
- const game={ws:{id:"new-transport"},_xingbeiRecovery:{active:true,phase:"SYNCING"},
-   _xingbeiSeatReclaimed:false};
- const client=new Function("game","ui","return ({"+source.slice(first,last)+"})")(game,ui);
+ const game={ws:{id:"new-transport"},onlineID:seatId,
+  _xingbeiRecovery:{active:true,phase:"SYNCING"},
+  _xingbeiSeatReclaimed:false};
+ const roster={
+  number:"1",
+  players:{[seatId]:{position:0,handcards:[],gaintag:[],
+    equips:[],judges:[],views:[],specials:[],expansions:[],expansion_gaintag:[]}}
+ };
+ const client=new Function("game","ui","validateXingbeiSeatSnapshot",
+   "return ({"+source.slice(first,last)+"})")(game,ui,validateXingbeiSeatSnapshot);
  // No guest seat proof: neither UI nor state initialization may run.
- assert.equal(client.reinit({mode:"xingBei"},{}),undefined);
+ assert.equal(client.reinit({mode:"xingBei"},roster),undefined);
  assert.equal(touched,0);
  game._xingbeiSeatReclaimed=true;
  game._xingbeiRecovery.phase="CONNECTING";
- assert.equal(client.reinit({mode:"xingBei"},{}),undefined);
+ assert.equal(client.reinit({mode:"xingBei"},roster),undefined);
  assert.equal(touched,0);
  game._xingbeiRecovery.phase="SYNCING";
- assert.throws(()=>client.reinit({mode:"xingBei"},{}),e=>e===sentinel);
+ assert.throws(()=>client.reinit({mode:"xingBei"},roster),e=>e===sentinel);
  assert.equal(touched,1,"only confirmed active takeover gets to state application");
  game._xingbeiRecovery.active=false;
  game._xingbeiSeatReclaimed=false;
- assert.throws(()=>client.reinit({mode:"xingBei"},{}),e=>e===sentinel);
+ assert.throws(()=>client.reinit({mode:"xingBei"},roster),e=>e===sentinel);
  assert.equal(touched,2,"non-recovery legacy reinit remains functional");
+ assert.throws(()=>client.reinit({mode:"xingBei"},{}),e=>e===sentinel);
+ assert.equal(touched,3,"legacy reinit can still receive a non-B3 payload");
 });
