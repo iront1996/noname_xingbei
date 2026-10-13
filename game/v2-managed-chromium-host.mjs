@@ -487,10 +487,18 @@ async function runManagedNativeChoice() {
 		 const {game,lib,_status}=managed.core;
 		 if(game.me!==null||container.authorityState.revision!==1||game.players.some(player=>player.ws))throw Error('MANAGED_CHOICE_PRECONDITION_FAILED');
 		 const originalBroadcastAll=game.broadcastAll,originalInit=game.initSideAndPosition,originalSetTimeout=globalThis.setTimeout;
-		 let dialogBroadcasts=0,blockedTrustee=false;
+		 let dialogBroadcasts=0,capturedTrusteeSchedule=false,coordinateNativeTrustee=true;
 		 game.broadcastAll=function(fn,...args){if(dialogBroadcasts++===0)return;return originalBroadcastAll.call(this,fn,...args)};
 		 game.initSideAndPosition=function(){return null};
-		 globalThis.setTimeout=function(fn,delay,...args){if(!blockedTrustee&&delay===6000){blockedTrustee=true;return 0}return originalSetTimeout(fn,delay,...args)};
+		 // This adapter recognizes the selection event's explicit coordination state,
+		 // not a magic delay or callback source text.  It captures exactly its one
+		 // deferred offline-trustee schedule while server choices are pending.
+		 globalThis.setTimeout=function(fn,delay,...args){
+		  const current=_status.event;
+		  if(coordinateNativeTrustee&&!capturedTrusteeSchedule&&current?.name==='chooseCharacterOL'&&
+		     current.ai_targets?.length===game.players.length){capturedTrusteeSchedule=true;return 0}
+		  return originalSetTimeout(fn,delay,...args)
+		 };
 		 try{
 		  lib.configOL.choose_number='2'; game.chooseCharacterOLDuoXuanYi(); const event=_status.event;
 		  if(event?.name!=='chooseCharacterOL')throw Error('MANAGED_CHOICE_EVENT_MISSING');
@@ -500,7 +508,8 @@ async function runManagedNativeChoice() {
 		  // exposes its genuine candidate set without waiting for a human UI.
 		  game.loop(event); await new Promise(resolve=>originalSetTimeout(resolve,0));
 		  const choices=game.players.map(player=>({seatId:player.playerid,options:[...(game._characterChoice[player.playerid]||[])]}));
-		  if(!blockedTrustee||dialogBroadcasts!==1||choices.some(choice=>choice.options.length<2))throw Error('MANAGED_CHOICE_CANDIDATES_INVALID');
+		  coordinateNativeTrustee=false;
+		  if(!capturedTrusteeSchedule||dialogBroadcasts!==1||choices.some(choice=>choice.options.length<2))throw Error('MANAGED_CHOICE_CANDIDATES_INVALID');
 		  return {choices,before:{revision:1,firstActSeatId:_status.firstAct?.playerid||null,sides:game.players.map(player=>({seatId:player.playerid,side:player.side}))}};
 		 }finally{game.broadcastAll=originalBroadcastAll;game.initSideAndPosition=originalInit;globalThis.setTimeout=originalSetTimeout}
 		})()`, awaitPromise: true, returnByValue: true,
@@ -509,7 +518,7 @@ async function runManagedNativeChoice() {
 	if (prepared.exceptionDetails || !Array.isArray(value?.choices) || value.choices.length < 2 || value.choices.some(choice => !Array.isArray(choice.options) || choice.options.length < 2)) {
 		throw new Error("MANAGED_CHOICE_PREPARE_FAILED");
 	}
-	interactiveChoice = { nativeEventId, before: value.before, choices: new Map(value.choices.map(choice => [choice.seatId, choice])), completed: null, resolve: null, reject: null };
+	interactiveChoice = { nativeEventId, before: value.before, choices: new Map(value.choices.map(choice => [choice.seatId, choice])), deliveries: new Map(), completed: null, resolve: null, reject: null };
 	process.send?.({ ...identity, type: "host_choice_candidates", nativeEventId, eventSequence: 2, choices: value.choices, deadlineMs: 1000 });
 	const completed = await new Promise((resolve, reject) => { interactiveChoice.resolve = resolve; interactiveChoice.reject = reject; });
 	const beforeDigest = createHash("sha256").update(canonicalize(completed.before)).digest("hex");
@@ -541,8 +550,26 @@ async function applyManagedChoice(message) {
 	}, 15000);
 	const result = applied.result?.value;
 	if (applied.exceptionDetails || !result) throw new Error("MANAGED_CHOICE_APPLY_FAILED");
-	process.send?.({ ...identity, type: "host_choice_ack", choiceId: message.choiceId, deliveryId: message.deliveryId, nativeEventId: message.nativeEventId });
-	if (result.completed && !interactiveChoice.completed) { interactiveChoice.completed = result; interactiveChoice.resolve(result); }
+	if (result.duplicate && interactiveChoice.completed) {
+		const prior = interactiveChoice.deliveries.get(message.seatId);
+		if (!prior || prior.choiceId !== message.choiceId || prior.deliveryId !== message.deliveryId || prior.option !== message.resolution.option) {
+			throw new Error("MANAGED_CHOICE_DUPLICATE_CONFLICT");
+		}
+		process.send?.({ ...identity, type: "host_choice_ack", seatId: message.seatId, choiceId: prior.choiceId, deliveryId: prior.deliveryId, nativeEventId: message.nativeEventId });
+		return;
+	}
+	interactiveChoice.deliveries.set(message.seatId, Object.freeze({ choiceId: message.choiceId, deliveryId: message.deliveryId, option: message.resolution.option }));
+	if (!result.completed || interactiveChoice.completed) return;
+	// Native step 5 has now initialized every Player.  ACK each immutable delivery
+	// only after matching its final native role; a sendback call alone is not proof.
+	for (const entry of result.after.characters) {
+		const delivery = interactiveChoice.deliveries.get(entry.seatId);
+		if (!delivery || delivery.option !== entry.character) throw new Error("MANAGED_CHOICE_NATIVE_RESULT_MISMATCH");
+	}
+	if (interactiveChoice.deliveries.size !== result.after.characters.length) throw new Error("MANAGED_CHOICE_ACK_INCOMPLETE");
+	interactiveChoice.completed = result;
+	for (const [seatId, delivery] of interactiveChoice.deliveries) process.send?.({ ...identity, type: "host_choice_ack", seatId, choiceId: delivery.choiceId, deliveryId: delivery.deliveryId, nativeEventId: message.nativeEventId });
+	interactiveChoice.resolve(result);
 }
 
 process.on("message", message => {

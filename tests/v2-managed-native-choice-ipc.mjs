@@ -31,7 +31,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1" });
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen;
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, dropAcks = true, droppedAcks = 0;
 	controller = createManagedChoiceController({
 		isHostSessionActive: (candidateRoom, sessionId) => manager?.inspect(candidateRoom)?.sessionId === sessionId && manager.inspect(candidateRoom)?.state === "playable_probe",
 		authorizeManagedHost: message => message.hostProof === sessionSecret,
@@ -54,6 +54,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(controller.bindSeatConnection({ roomId, seatId: candidate.seatId, connectionId: `conn_${candidate.seatId}`, serverProof: `conn_${candidate.seatId}` }).ok, true);
 				}
 			} else if (type === "host_choice_ack") {
+				if (dropAcks) { droppedAcks++; return; }
 				assert.equal(controller.acknowledgeDelivery({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret }).ok, true);
 			}
 		},
@@ -74,6 +75,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: d.hostSessionId, nativeEventId: d.nativeEventId, seatId: d.seatId, eventSequence: 2, choiceId: d.choiceId, connectionId: `conn_${d.seatId}`, credential: `credential_${d.seatId}`, option: "forged" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: d.hostSessionId, nativeEventId: d.nativeEventId, seatId: d.seatId, eventSequence: 2, choiceId: d.choiceId, connectionId: `conn_${d.seatId}`, credential: `credential_${d.seatId}`, option: d.options[0] }).ok, true);
 	const completed = await until(() => manager.inspect(roomId)?.authorityStateRevision === 2 && manager.inspect(roomId));
+	assert.equal(droppedAcks, 4);
+	// Simulate lost parent-side ACK processing. Retry uses the unchanged delivery
+	// IDs; Chromium must acknowledge the already-applied native result without
+	// running `event.sendback` or Player.init a second time.
+	dropAcks = false;
+	for (const choice of opened) assert.equal(controller.retryDelivery({ roomId, choiceId: choice.choiceId }).ok, true);
+	await until(() => opened.every(choice => controller.inspect(roomId, choice.choiceId)?.state === "resolved"));
 	assert.equal(completed.state, "playable_probe");
 	assert.deepEqual(completed.lastAuthorityEvent, { sequence: 2, name: "chooseCharacterOL" });
 	assert.equal(controller.inspect(roomId, a.choiceId).resolution.option, a.options[1]);
