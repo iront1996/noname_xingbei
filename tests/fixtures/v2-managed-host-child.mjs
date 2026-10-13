@@ -5,6 +5,10 @@ let started = false;
 
 process.on("message", message => {
 	if (message?.type === "host_stop") process.exit(0);
+	if (message?.type === "host_choice_delivery" || message?.type === "host_choice_cancel") {
+		process.send?.({ type: "host_command_observed", bootCount: started ? 1 : 0, command: message.type });
+		return;
+	}
 	if (started || message?.kind !== "host_session_bootstrap") return;
 	started = true;
 	const identity = {

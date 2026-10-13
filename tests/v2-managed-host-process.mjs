@@ -41,6 +41,29 @@ test("real child-process adapter privately bootstraps, readies, commits and stop
 	assert.equal(stopped.session.state, "stopped");
 });
 
+test("managed child bootstraps once and choice commands cannot bootstrap it again", async () => {
+	const launcher = createManagedHostProcessLauncher({ script: fixture });
+	const bootstrap = Object.freeze({
+		kind: "host_session_bootstrap", protocol: 1, roomId: "one_boot_room", sessionId: "session_once",
+		secret: "private_test_secret", setupDigest: "a".repeat(64), gameSetup,
+	});
+	const handle = await launcher(bootstrap);
+	const observed = [];
+	handle.on("message", message => observed.push(message));
+	try {
+		await handle.start();
+		await until(() => observed.some(message => message?.type === "host_game_ready"));
+		await handle.sendHostCommand({ type: "host_choice_delivery", choiceId: "choice_once", deliveryId: "delivery_once" });
+		await handle.sendHostCommand({ type: "host_choice_cancel", choiceId: "choice_once" });
+		await until(() => observed.filter(message => message?.type === "host_command_observed").length === 2);
+		assert.deepEqual(observed.filter(message => message?.type === "host_command_observed").map(message => message.bootCount), [1, 1]);
+		assert.equal(observed.filter(message => message?.type === "host_game_ready").length, 1);
+		await assert.rejects(handle.sendHostCommand({ type: "host_session_bootstrap" }), /HOST_COMMAND_REJECTED/);
+	} finally {
+		await handle.stop("test_complete");
+	}
+});
+
 test("real child abnormal exit fails its hostSession without affecting another room", async t => {
 	const manager = createHostSessionManager({
 		launch: createManagedHostProcessLauncher({ script: fixture }),

@@ -468,7 +468,9 @@ async function boot(message) {
 }
 
 process.on("message", message => {
-	if (message?.type === "host_session_bootstrap") {
+	// Bootstrap is the one private launch envelope.  Commands deliberately use
+	// `type`, so they can never be mistaken for a second bootstrap.
+	if (message?.kind === "host_session_bootstrap") {
 		boot(message).catch(async () => {
 			await cleanup();
 			process.exit(1);
