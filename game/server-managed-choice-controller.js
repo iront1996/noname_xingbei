@@ -70,6 +70,8 @@ function createManagedChoiceController({
 			return failure("MANAGED_CHOICE_OPEN_REJECTED");
 		}
 		if ([...choices.values()].filter(choice => choice.state === "pending").length >= maxPendingChoices) return failure("MANAGED_CHOICE_CAPACITY_REJECTED");
+		if ([...choices.values()].some(choice => choice.state === "pending" && choice.hostSessionId === request.hostSessionId &&
+			choice.nativeEventId === request.nativeEventId && choice.seatId === request.seatId)) return failure("MANAGED_CHOICE_NATIVE_EVENT_EXISTS");
 		let choiceId;
 		try { choiceId = `choice_${randomBytes(16).toString("hex")}`; } catch (_) { return failure("MANAGED_CHOICE_OPEN_REJECTED"); }
 		if (!CHOICE_ID.test(choiceId)) return failure("MANAGED_CHOICE_OPEN_REJECTED");
