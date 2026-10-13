@@ -168,6 +168,7 @@ Read-only V3 research findings:
 - An authenticated managed host may enter Game Ready only by returning the exact server setup digest, exact ordered seat set and a SHA-256 initial-authoritative-state digest. A separate bounded Game Ready timeout stops an engine that never completes initialization.
 - Existing managed-host authentication, stale-session fencing and exact result sequence protection remain in force. Player and administrator credentials still cannot attest readiness or submit a result.
 - This batch proves the state/authority gate with deterministic and supervised-process fixtures only. It does **not** claim real Game Ready until Chromium constructs and verifies the actual engine state in the next batch; Playable and M2+M3 four-player integration remain unimplemented.
+- Evidence: commit `7805bf2`; Linux CI run 38353870134 succeeded.
 
 ### M2 batch 8 — real Chromium Game Ready initialization
 
@@ -177,6 +178,7 @@ Read-only V3 research findings:
 - The engine event loop remains deliberately stopped (`eventLoopStarted:false`), with no winner and no authoritative result emitted. This is **Game Ready** evidence for a validated pre-game native state, not **Playable** evidence.
 - The loopback fixture serves the real config/package/module files only to the isolated test Chromium. Chromium sandbox policy and the prior process-tree cleanup controls remain unchanged.
 - M2+M3 four-player disconnect/continuation acceptance remains unimplemented and is not implied by Game Ready.
+- Evidence: commit `0267880`; local targeted tests passed 9/9 host-session/process tests, 5/5 real-Chromium tests and B2 seat-registry. Linux CI run 38354781202 passed every workflow step, including the real-Chromium Game Ready test.
 
 Minimal-difference sequence:
 
