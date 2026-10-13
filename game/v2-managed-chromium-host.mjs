@@ -380,13 +380,19 @@ async function boot(message) {
 		 // that presentation callback; all rule/event work remains native Xingbei code.
 		 const originalBroadcastAll=game.broadcastAll;
 		 const originalInitSideAndPosition=game.initSideAndPosition;
-		 const presentationCallback=fn=>String(fn).includes('game._characterDialogID')&&String(fn).includes('请选择角色');
 		 const adapter=Object.freeze({kind:'v2_server_control_adapter_v1',humanPlayer:false,
 		  suppresses:['character_selection_local_dialog','duplicate_side_assignment']});
 		 Object.defineProperty(window,'__v2ServerControl',{configurable:false,value:adapter});
 		 let suppressedDialog=false, suppressedSideAssignment=false, selectionEventName=null;
+		 // The first broadcast in this exact native event only opens the local browser
+		 // character dialog.  Its position is a scoped adapter contract, rather than
+		 // brittle inspection of the callback's function text. Any missing or extra
+		 // suppression fails the post-event invariant below.
+		 let pendingLocalDialogBroadcasts=1;
 		 game.broadcastAll=function(fn,...args){
-		  if(presentationCallback(fn)){suppressedDialog=true;return;}
+		  if(pendingLocalDialogBroadcasts===1){
+		   pendingLocalDialogBroadcasts=0;suppressedDialog=true;return;
+		  }
 		  return originalBroadcastAll.call(this,fn,...args);
 		 };
 		 // The native online selection wrapper normally owns side assignment.  It has
@@ -415,7 +421,7 @@ async function boot(message) {
 		 const before={revision:1,firstActSeatId:_status.firstAct?.playerid||null,
 		  sides:game.players.map(player=>({seatId:player.playerid,side:player.side}))};
 		 const characters=game.players.map(player=>({seatId:player.playerid,character:player.name1||null}));
-		 if(!suppressedDialog||!suppressedSideAssignment||game.me!==null||game.players.some(player=>player.ws)||
+		 if(!suppressedDialog||pendingLocalDialogBroadcasts!==0||!suppressedSideAssignment||game.me!==null||game.players.some(player=>player.ws)||
 		  characters.some(entry=>typeof entry.character!=='string')||new Set(characters.map(entry=>entry.character)).size!==characters.length){
 		  throw Error('CHARACTER_SELECTION_STATE_INVALID:'+JSON.stringify({suppressedDialog,suppressedSideAssignment,gameMe:game.me===null,transports:game.players.filter(player=>player.ws).length,characters}));
 		 }

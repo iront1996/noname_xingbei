@@ -224,6 +224,13 @@ Read-only V3 research findings:
 - This is not the requested human-player choice protocol: no external player operation, choice ID, deadline, stale connection fence or HALL routing exists yet. The exercised trustee fallback is native Xingbei behavior used solely to prove the adapter/event-chain boundary. It is not full Playable or M3/M4 evidence.
 - Evidence: commit `a91a52a`; local targeted regressions passed 10/10 host-session/process, 9/9 real-Chromium tests and B2 seat-registry. Linux CI run 38368237702 passed every workflow step.
 
+### M2 batch 14 — Chromium selection CI coverage and adapter contract
+
+- The Linux real-Chromium workflow command now explicitly includes `tests/v2-managed-character-selection.mjs`, alongside Browser Ready, Engine Ready, Game Ready and the first native-event test. The selection proof is no longer local-only evidence.
+- `v2_server_control_adapter_v1` no longer identifies the presentation callback by searching function source text. During the bounded `chooseCharacterOLDuoXuanYi` adapter scope, it suppresses exactly the first native `broadcastAll` call, documented by the checked-in native event order as the local-dialog creation. It records consumption and fails post-event validation if that one scoped suppression did not occur. Later broadcast calls retain native behavior.
+- This is a fail-closed compatibility contract for the tested source revision, not a general `broadcastAll` policy. Any upstream event-order change must be revalidated before managed character selection can proceed.
+- Evidence pending this batch's Linux CI; local real-Chromium selection regression passed before the workflow change.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

@@ -110,6 +110,12 @@ M2 batch 13:
 - This proves a two-event native chain and a minimal server-control compatibility boundary. It does not accept human player selections yet: choice identifiers, seat credentials, deadlines, stale transport rejection and HALL routing remain next work. It is not full Playable, M3 or M4 evidence.
 - Evidence: commit `a91a52a`; local targeted regressions passed 10/10 host-session/process, 9/9 real-Chromium tests and B2 seat-registry. Linux CI run 38368237702 passed every workflow step.
 
+M2 batch 14:
+
+- `tests/v2-managed-character-selection.mjs` is now named in the Linux real-Chromium CI command; successful workflow evidence must include the actual native selection test rather than only adjacent Chromium tests.
+- The server-control adapter no longer searches callback function text. Its native-selection scope consumes exactly the first `broadcastAll` as the documented local-dialog call and verifies that consumption; any changed ordering requires a new explicit adapter review.
+- Local real-Chromium regression passed before this workflow change. Linux CI evidence is pending the implementation commit.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`
