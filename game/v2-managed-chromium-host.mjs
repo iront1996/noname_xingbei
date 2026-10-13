@@ -17,6 +17,7 @@ let identity = null;
 let stopping = false;
 let cdp = null;
 let interactiveChoice = null;
+let choiceCommandChain = Promise.resolve();
 
 function createCdpSession(url) {
 	if (typeof url !== "string" || !/^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/[A-Za-z0-9-]+$/.test(url)) {
@@ -590,7 +591,12 @@ process.on("message", message => {
 	// Choice delivery is accepted only after the C2 IPC adapter validates the
 	// private host identity inside the managed process. Unknown IPC is inert.
 	if (message?.type === "host_choice_delivery") {
-		applyManagedChoice(message).catch(error => interactiveChoice?.reject?.(error));
+		// IPC may deliver all four resolutions in one event-loop turn.  Serialize
+		// CDP evaluations so event.sendback and the native resume transition cannot
+		// race each other or observe a half-written choice map.
+		choiceCommandChain = choiceCommandChain.then(() => applyManagedChoice(message)).catch(error => {
+			interactiveChoice?.reject?.(error);
+		});
 		return;
 	}
 	if (message?.type === "host_choice_cancel") return;
