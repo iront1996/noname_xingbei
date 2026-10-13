@@ -1,4 +1,5 @@
 import process from "node:process";
+import { createHash } from "node:crypto";
 
 let started = false;
 
@@ -19,6 +20,15 @@ process.on("message", message => {
 		return;
 	}
 	process.send?.({ ...identity, type: "host_engine_ready" });
+	process.send?.({
+		...identity,
+		type: "host_game_ready",
+		proof: {
+			setupDigest: message.setupDigest,
+			initialStateDigest: createHash("sha256").update(JSON.stringify({ simulated: true })).digest("hex"),
+			seatIds: message.gameSetup.seats.map(seat => seat.seatId),
+		},
+	});
 	process.send?.({
 		...identity,
 		type: "authoritative_result",

@@ -6,7 +6,9 @@ const PROTOCOL = 1;
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SESSION_ID = /^hs_[a-f0-9]{32}$/;
 const SECRET = /^[a-f0-9]{64}$/;
-const ACTIVE_STATES = new Set(["starting", "browser_ready", "engine_ready", "stopping"]);
+const DIGEST = /^[a-f0-9]{64}$/;
+const SEAT_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const ACTIVE_STATES = new Set(["starting", "browser_ready", "engine_ready", "game_ready", "stopping"]);
 
 function failure(code) {
 	return Object.freeze({ ok: false, code });
@@ -20,16 +22,52 @@ function safeEqualHex(left, right) {
 	return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
+function canonicalize(value) {
+	if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
+	if (typeof value === "number" && Number.isFinite(value)) return JSON.stringify(value);
+	if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
+	if (value && Object.getPrototypeOf(value) === Object.prototype) {
+		return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(",")}}`;
+	}
+	throw new TypeError("HOST_GAME_SETUP_INVALID");
+}
+
+function prepareGameSetup(value) {
+	if (!value || Object.getPrototypeOf(value) !== Object.prototype || value.mode !== "xingBei" ||
+		!Array.isArray(value.seats) || value.seats.length < 2 || value.seats.length > 8 ||
+		!value.config || Object.getPrototypeOf(value.config) !== Object.prototype) {
+		throw new TypeError("HOST_GAME_SETUP_INVALID");
+	}
+	const seats = value.seats.map((seat, position) => {
+		if (!seat || Object.getPrototypeOf(seat) !== Object.prototype || !SEAT_ID.test(seat.seatId) ||
+			seat.position !== position || Object.keys(seat).some(key => !["seatId", "position"].includes(key))) {
+			throw new TypeError("HOST_GAME_SETUP_INVALID");
+		}
+		return Object.freeze({ seatId: seat.seatId, position });
+	});
+	if (new Set(seats.map(seat => seat.seatId)).size !== seats.length) throw new TypeError("HOST_GAME_SETUP_INVALID");
+	const setup = JSON.parse(canonicalize({ mode: value.mode, config: value.config, seats }));
+	const encoded = canonicalize(setup);
+	if (Buffer.byteLength(encoded, "utf8") > 65536) throw new TypeError("HOST_GAME_SETUP_INVALID");
+	return Object.freeze({
+		setup: Object.freeze(setup),
+		digest: crypto.createHash("sha256").update(encoded).digest("hex"),
+		seatIds: Object.freeze(seats.map(seat => seat.seatId)),
+	});
+}
+
 function createHostSessionManager({
 	launch,
 	randomBytes = crypto.randomBytes,
 	browserReadyTimeoutMs = 15000,
 	engineReadyTimeoutMs = 15000,
+	gameReadyTimeoutMs = 15000,
 	onAuthoritativeResult = () => {},
 } = {}) {
 	if (typeof launch !== "function" || typeof randomBytes !== "function" ||
 		!Number.isSafeInteger(browserReadyTimeoutMs) || browserReadyTimeoutMs < 100 || browserReadyTimeoutMs > 60000 ||
 		!Number.isSafeInteger(engineReadyTimeoutMs) || engineReadyTimeoutMs < 100 || engineReadyTimeoutMs > 60000 ||
+		!Number.isSafeInteger(gameReadyTimeoutMs) || gameReadyTimeoutMs < 100 || gameReadyTimeoutMs > 60000 ||
 		typeof onAuthoritativeResult !== "function") {
 		throw new TypeError("HOST_SESSION_CONFIG_INVALID");
 	}
@@ -46,6 +84,8 @@ function createHostSessionManager({
 			pid: record.pid,
 			nextResultSequence: record.nextResultSequence,
 			failureCode: record.failureCode,
+			setupDigest: record.setupDigest,
+			initialStateDigest: record.initialStateDigest,
 		});
 	}
 
@@ -71,7 +111,7 @@ function createHostSessionManager({
 		if (record.state === "stopping") {
 			record.state = "stopped";
 			record.failureCode = null;
-		} else if (["starting", "browser_ready", "engine_ready"].includes(record.state)) {
+		} else if (["starting", "browser_ready", "engine_ready", "game_ready"].includes(record.state)) {
 			record.state = "failed";
 			record.failureCode = code || "HOST_EXITED";
 		}
@@ -86,13 +126,19 @@ function createHostSessionManager({
 			safeEqualHex(message.secret, record.secret));
 	}
 
-	async function start(roomId) {
+	async function start(roomId, gameSetup) {
 		if (typeof roomId !== "string" || !ROOM_ID.test(roomId)) {
 			return failure("HOST_ROOM_ID_INVALID");
 		}
 		const existing = sessions.get(roomId);
 		if (existing && ACTIVE_STATES.has(existing.state)) {
 			return failure("HOST_SESSION_EXISTS");
+		}
+		let prepared;
+		try {
+			prepared = prepareGameSetup(gameSetup);
+		} catch (_) {
+			return failure("HOST_GAME_SETUP_INVALID");
 		}
 
 		const sessionId = `hs_${randomBytes(16).toString("hex")}`;
@@ -110,6 +156,10 @@ function createHostSessionManager({
 			phaseTimer: null,
 			nextResultSequence: 1,
 			failureCode: null,
+			gameSetup: prepared.setup,
+			setupDigest: prepared.digest,
+			seatIds: prepared.seatIds,
+			initialStateDigest: null,
 		};
 		sessions.set(roomId, record);
 
@@ -120,6 +170,8 @@ function createHostSessionManager({
 				roomId,
 				sessionId,
 				secret,
+				gameSetup: record.gameSetup,
+				setupDigest: record.setupDigest,
 			}));
 			if (!handle || !Number.isSafeInteger(handle.pid) || handle.pid <= 0 ||
 				typeof handle.once !== "function" || typeof handle.on !== "function" ||
@@ -132,6 +184,7 @@ function createHostSessionManager({
 			handle.on("message", message => {
 				if (message?.type === "host_browser_ready") markBrowserReady(message);
 				else if (message?.type === "host_engine_ready") markEngineReady(message);
+				else if (message?.type === "host_game_ready") markGameReady(message);
 				else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
 			});
 			armPhaseTimer(record, "starting", browserReadyTimeoutMs,
@@ -165,12 +218,29 @@ function createHostSessionManager({
 		}
 		clearPhaseTimer(record);
 		record.state = "engine_ready";
+		armPhaseTimer(record, "engine_ready", gameReadyTimeoutMs,
+			"HOST_GAME_READY_TIMEOUT", "game_ready_timeout");
+		return Object.freeze({ ok: true, session: publicView(record) });
+	}
+
+	function markGameReady(message) {
+		const record = sessions.get(message?.roomId);
+		const proof = message?.proof;
+		if (message?.type !== "host_game_ready" || !authenticate(record, message) || record.state !== "engine_ready" ||
+			!proof || proof.setupDigest !== record.setupDigest || !DIGEST.test(proof.initialStateDigest) ||
+			!Array.isArray(proof.seatIds) || proof.seatIds.length !== record.seatIds.length ||
+			proof.seatIds.some((seatId, index) => seatId !== record.seatIds[index])) {
+			return failure("HOST_GAME_READY_REJECTED");
+		}
+		clearPhaseTimer(record);
+		record.initialStateDigest = proof.initialStateDigest;
+		record.state = "game_ready";
 		return Object.freeze({ ok: true, session: publicView(record) });
 	}
 
 	function commitAuthoritativeResult(message) {
 		const record = sessions.get(message?.roomId);
-		if (!authenticate(record, message) || record.state !== "engine_ready") {
+		if (!authenticate(record, message) || record.state !== "game_ready") {
 			return failure("HOST_AUTHORITY_REJECTED");
 		}
 		if (message.type !== "authoritative_result" ||
@@ -224,6 +294,7 @@ function createHostSessionManager({
 		start,
 		markBrowserReady,
 		markEngineReady,
+		markGameReady,
 		commitAuthoritativeResult,
 		stop,
 		inspect: roomId => publicView(sessions.get(roomId)),

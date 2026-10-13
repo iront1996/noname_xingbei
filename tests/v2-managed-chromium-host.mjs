@@ -11,6 +11,7 @@ const { createHostSessionManager } = require("../game/server-host-session-manage
 const { createManagedHostProcessLauncher } = require("../game/server-managed-host-launcher.js");
 const script = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
+const gameSetup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({ length: 4 }, (_, position) => ({ seatId: `seat_${position + 1}`, position })) };
 
 async function until(check, timeoutMs = 20000) {
 	const deadline = Date.now() + timeoutMs;
@@ -65,7 +66,7 @@ test("real Chromium reaches off-board hostSession ready and cleans up", { skip: 
 		browserReadyTimeoutMs: 20000,
 		engineReadyTimeoutMs: 20000,
 	});
-	const started = await manager.start("chromium_room");
+	const started = await manager.start("chromium_room", gameSetup);
 	assert.equal(started.ok, true);
 	assert.ok(started.session.pid > 0);
 	assert.equal("secret" in started.session, false);
@@ -104,8 +105,8 @@ test("forced supervisor death cleans Chromium tree and isolates another room", {
 		browserReadyTimeoutMs: 20000,
 		engineReadyTimeoutMs: 20000,
 	});
-	await manager.start("force_room");
-	await manager.start("isolated_room");
+	await manager.start("force_room", gameSetup);
+	await manager.start("isolated_room", gameSetup);
 	t.after(async () => {
 		await manager.stop("force_room", "test_cleanup");
 		await manager.stop("isolated_room", "test_cleanup");
@@ -135,8 +136,8 @@ test("Chromium abnormal exit cleans resources and does not fail another room", {
 		browserReadyTimeoutMs: 20000,
 		engineReadyTimeoutMs: 20000,
 	});
-	await manager.start("chrome_crash_room");
-	await manager.start("chrome_stable_room");
+	await manager.start("chrome_crash_room", gameSetup);
+	await manager.start("chrome_stable_room", gameSetup);
 	t.after(async () => {
 		await manager.stop("chrome_crash_room", "test_cleanup");
 		await manager.stop("chrome_stable_room", "test_cleanup");
@@ -163,7 +164,7 @@ test("Chromium startup failure leaves no managed profile", { skip: !active }, as
 			browserReadyTimeoutMs: 5000,
 			engineReadyTimeoutMs: 5000,
 		});
-		await manager.start("startup_failure_room");
+		await manager.start("startup_failure_room", gameSetup);
 		await until(() => manager.inspect("startup_failure_room").state === "failed");
 		assert.equal(manager.inspect("startup_failure_room").failureCode, "HOST_EXITED");
 		await until(async () => {

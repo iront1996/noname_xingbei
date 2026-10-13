@@ -161,6 +161,14 @@ Read-only V3 research findings:
 - The loopback static module host exists only in test fixtures and rejects traversal, query strings and non-GET/HEAD methods. No service is deployed.
 - Local real-browser and full regression passed 82/82 plus B2 seat-registry with no managed profile residue. Evidence: commit `8e7c7d3`; Linux CI run 38311479712 passed every `node-recovery-tests` step, including the real-Chromium lifecycle/engine-init step. This upgrades **Engine Ready** to proven for minimal native module/API initialization only; **Game Ready**, **Playable**, and M2+M3 four-player integration remain not implemented.
 
+### M2 batch 7 — Game Ready authority gate
+
+- hostSession now requires `starting -> browser_ready -> engine_ready -> game_ready`. Engine Ready no longer authorizes authoritative result submission.
+- The server validates and binds an immutable Xingbei room setup before launch: bounded configuration, ordered unique seat IDs and positions, plus a canonical SHA-256 setup digest. Invalid setup never starts a process.
+- An authenticated managed host may enter Game Ready only by returning the exact server setup digest, exact ordered seat set and a SHA-256 initial-authoritative-state digest. A separate bounded Game Ready timeout stops an engine that never completes initialization.
+- Existing managed-host authentication, stale-session fencing and exact result sequence protection remain in force. Player and administrator credentials still cannot attest readiness or submit a result.
+- This batch proves the state/authority gate with deterministic and supervised-process fixtures only. It does **not** claim real Game Ready until Chromium constructs and verifies the actual engine state in the next batch; Playable and M2+M3 four-player integration remain unimplemented.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

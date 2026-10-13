@@ -11,6 +11,7 @@ const { createManagedHostProcessLauncher } = require("../game/server-managed-hos
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
+const gameSetup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({ length: 4 }, (_, position) => ({ seatId: `seat_${position + 1}`, position })) };
 
 async function until(check, timeoutMs = 30000) {
 	const deadline = Date.now() + timeoutMs;
@@ -37,7 +38,7 @@ test("real Chromium loads actual Noname and Xingbei APIs before Engine Ready", {
 		engineReadyTimeoutMs: 30000,
 	});
 	t.after(() => manager.stop("engine_room", "test_cleanup"));
-	assert.equal((await manager.start("engine_room")).ok, true);
+	assert.equal((await manager.start("engine_room", gameSetup)).ok, true);
 	await until(() => manager.inspect("engine_room").state === "engine_ready");
 	assert.equal(manager.inspect("engine_room").nextResultSequence, 1);
 	const stopped = await manager.stop("engine_room", "test_complete");

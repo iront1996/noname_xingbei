@@ -5,6 +5,11 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 const { createHostSessionManager } = require("../game/server-host-session-manager.js");
+const gameSetup = Object.freeze({
+	mode: "xingBei",
+	config: Object.freeze({ playerCount: 4 }),
+	seats: Object.freeze(Array.from({ length: 4 }, (_, position) => Object.freeze({ seatId: `seat_${position + 1}`, position }))),
+});
 
 function fixture(options = {}) {
 	const launches = [];
@@ -30,6 +35,7 @@ function fixture(options = {}) {
 		},
 		browserReadyTimeoutMs: options.browserReadyTimeoutMs || 1000,
 		engineReadyTimeoutMs: options.engineReadyTimeoutMs || 1000,
+		gameReadyTimeoutMs: options.gameReadyTimeoutMs || 1000,
 		onAuthoritativeResult: result => results.push(result),
 	});
 	return { launches, manager, results };
@@ -49,7 +55,7 @@ function hostMessage(bootstrap, type, extra = {}) {
 
 test("browser readiness cannot authorize results before separate engine readiness", async () => {
 	const f = fixture();
-	const started = await f.manager.start("room_A");
+	const started = await f.manager.start("room_A", gameSetup);
 	assert.equal(started.ok, true);
 	assert.equal(started.session.state, "starting");
 	assert.equal("secret" in started.session, false);
@@ -66,6 +72,16 @@ test("browser readiness cannot authorize results before separate engine readines
 	const engineReady = f.manager.markEngineReady(hostMessage(f.launches[0].bootstrap, "host_engine_ready"));
 	assert.equal(engineReady.ok, true);
 	assert.equal(engineReady.session.state, "engine_ready");
+	assert.equal(f.manager.commitAuthoritativeResult(result).code, "HOST_AUTHORITY_REJECTED");
+	const gameReady = f.manager.markGameReady(hostMessage(f.launches[0].bootstrap, "host_game_ready", {
+		proof: {
+			setupDigest: f.launches[0].bootstrap.setupDigest,
+			initialStateDigest: "ab".repeat(32),
+			seatIds: gameSetup.seats.map(seat => seat.seatId),
+		},
+	}));
+	assert.equal(gameReady.ok, true);
+	assert.equal(gameReady.session.state, "game_ready");
 	const committed = f.manager.commitAuthoritativeResult(result);
 	assert.equal(committed.ok, true);
 	assert.equal(f.results.length, 1);
@@ -79,7 +95,7 @@ test("browser readiness cannot authorize results before separate engine readines
 
 test("player and administrator credentials cannot attest or submit authoritative results", async () => {
 	const f = fixture();
-	await f.manager.start("room_roles");
+	await f.manager.start("room_roles", gameSetup);
 	const bootstrap = f.launches[0].bootstrap;
 	for (const credential of [
 		{ kind: "player_seat", token: bootstrap.secret },
@@ -98,6 +114,9 @@ test("player and administrator credentials cannot attest or submit authoritative
 	assert.equal(f.results.length, 0);
 	assert.equal(f.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready")).ok, true);
 	assert.equal(f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready")).ok, true);
+	assert.equal(f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", {
+		proof: { setupDigest: bootstrap.setupDigest, initialStateDigest: "cd".repeat(32), seatIds: gameSetup.seats.map(seat => seat.seatId) },
+	})).ok, true);
 
 	const adminResult = hostMessage(bootstrap, "authoritative_result", {
 		kind: "room_administrator",
@@ -111,10 +130,13 @@ test("player and administrator credentials cannot attest or submit authoritative
 
 test("duplicate, out-of-order and stale-session results fail closed", async () => {
 	const f = fixture();
-	await f.manager.start("room_sequence");
+	await f.manager.start("room_sequence", gameSetup);
 	const first = f.launches[0].bootstrap;
 	assert.equal(f.manager.markBrowserReady(hostMessage(first, "host_browser_ready")).ok, true);
 	assert.equal(f.manager.markEngineReady(hostMessage(first, "host_engine_ready")).ok, true);
+	assert.equal(f.manager.markGameReady(hostMessage(first, "host_game_ready", {
+		proof: { setupDigest: first.setupDigest, initialStateDigest: "ef".repeat(32), seatIds: gameSetup.seats.map(seat => seat.seatId) },
+	})).ok, true);
 	const result = sequence => hostMessage(first, "authoritative_result", {
 		sequence,
 		result: { sequence },
@@ -124,11 +146,14 @@ test("duplicate, out-of-order and stale-session results fail closed", async () =
 	assert.equal(f.manager.commitAuthoritativeResult(result(1)).code, "HOST_RESULT_SEQUENCE_REJECTED");
 	await f.manager.stop("room_sequence");
 
-	await f.manager.start("room_sequence");
+	await f.manager.start("room_sequence", gameSetup);
 	const second = f.launches[1].bootstrap;
 	assert.notEqual(second.sessionId, first.sessionId);
 	assert.equal(f.manager.markBrowserReady(hostMessage(second, "host_browser_ready")).ok, true);
 	assert.equal(f.manager.markEngineReady(hostMessage(second, "host_engine_ready")).ok, true);
+	assert.equal(f.manager.markGameReady(hostMessage(second, "host_game_ready", {
+		proof: { setupDigest: second.setupDigest, initialStateDigest: "12".repeat(32), seatIds: gameSetup.seats.map(seat => seat.seatId) },
+	})).ok, true);
 	assert.equal(f.manager.commitAuthoritativeResult(result(2)).code, "HOST_AUTHORITY_REJECTED");
 	assert.equal(f.results.length, 1);
 	await f.manager.stop("room_sequence");
@@ -136,26 +161,35 @@ test("duplicate, out-of-order and stale-session results fail closed", async () =
 
 test("launch, browser-ready and engine-ready failures retain distinct states", async () => {
 	const failed = fixture({ launch: async () => { throw new Error("spawn"); } });
-	assert.equal((await failed.manager.start("launch_fail")).code, "HOST_LAUNCH_FAILED");
+	assert.equal((await failed.manager.start("launch_fail", gameSetup)).code, "HOST_LAUNCH_FAILED");
 	assert.equal(failed.manager.inspect("launch_fail").failureCode, "HOST_LAUNCH_FAILED");
 
 	const timed = fixture({ browserReadyTimeoutMs: 100 });
-	await timed.manager.start("browser_timeout");
+	await timed.manager.start("browser_timeout", gameSetup);
 	await new Promise(resolve => setTimeout(resolve, 130));
 	assert.equal(timed.manager.inspect("browser_timeout").state, "failed");
 	assert.equal(timed.manager.inspect("browser_timeout").failureCode, "HOST_BROWSER_READY_TIMEOUT");
 	assert.deepEqual(timed.launches[0].handle.stops, ["browser_ready_timeout"]);
 
 	const engineTimed = fixture({ engineReadyTimeoutMs: 100 });
-	await engineTimed.manager.start("engine_timeout");
+	await engineTimed.manager.start("engine_timeout", gameSetup);
 	const bootstrap = engineTimed.launches[0].bootstrap;
 	assert.equal(engineTimed.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready")).ok, true);
 	await new Promise(resolve => setTimeout(resolve, 130));
 	assert.equal(engineTimed.manager.inspect("engine_timeout").failureCode, "HOST_ENGINE_READY_TIMEOUT");
 	assert.deepEqual(engineTimed.launches[0].handle.stops, ["engine_ready_timeout"]);
 
+	const gameTimed = fixture({ gameReadyTimeoutMs: 100 });
+	await gameTimed.manager.start("game_timeout", gameSetup);
+	const gameBootstrap = gameTimed.launches[0].bootstrap;
+	assert.equal(gameTimed.manager.markBrowserReady(hostMessage(gameBootstrap, "host_browser_ready")).ok, true);
+	assert.equal(gameTimed.manager.markEngineReady(hostMessage(gameBootstrap, "host_engine_ready")).ok, true);
+	await new Promise(resolve => setTimeout(resolve, 130));
+	assert.equal(gameTimed.manager.inspect("game_timeout").failureCode, "HOST_GAME_READY_TIMEOUT");
+	assert.deepEqual(gameTimed.launches[0].handle.stops, ["game_ready_timeout"]);
+
 	const exited = fixture();
-	await exited.manager.start("unexpected_exit");
+	await exited.manager.start("unexpected_exit", gameSetup);
 	exited.launches[0].handle.emit("exit", 12, null);
 	assert.equal(exited.manager.inspect("unexpected_exit").state, "failed");
 	assert.equal(exited.manager.inspect("unexpected_exit").failureCode, "HOST_EXITED");
@@ -163,8 +197,36 @@ test("launch, browser-ready and engine-ready failures retain distinct states", a
 
 test("one room cannot start two active host sessions", async () => {
 	const f = fixture();
-	await f.manager.start("one_host");
-	assert.equal((await f.manager.start("one_host")).code, "HOST_SESSION_EXISTS");
+	await f.manager.start("one_host", gameSetup);
+	assert.equal((await f.manager.start("one_host", gameSetup)).code, "HOST_SESSION_EXISTS");
 	assert.equal(f.launches.length, 1);
 	await f.manager.stop("one_host");
+});
+
+test("game readiness rejects mismatched setup, seat set and initial-state proof", async () => {
+	const f = fixture();
+	assert.equal((await f.manager.start("room_game_gate", gameSetup)).ok, true);
+	const bootstrap = f.launches[0].bootstrap;
+	f.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready"));
+	f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready"));
+	for (const proof of [
+		{ setupDigest: "00".repeat(32), initialStateDigest: "ab".repeat(32), seatIds: gameSetup.seats.map(seat => seat.seatId) },
+		{ setupDigest: bootstrap.setupDigest, initialStateDigest: "not-a-digest", seatIds: gameSetup.seats.map(seat => seat.seatId) },
+		{ setupDigest: bootstrap.setupDigest, initialStateDigest: "ab".repeat(32), seatIds: ["seat_1", "seat_2"] },
+	]) {
+		assert.equal(f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", { proof })).code, "HOST_GAME_READY_REJECTED");
+		assert.equal(f.manager.inspect("room_game_gate").state, "engine_ready");
+	}
+	await f.manager.stop("room_game_gate");
+});
+
+test("invalid server game setup never launches a managed host", async () => {
+	const f = fixture();
+	for (const setup of [undefined, { ...gameSetup, mode: "identity" }, { ...gameSetup, seats: [] }, {
+		...gameSetup,
+		seats: [{ seatId: "duplicate", position: 0 }, { seatId: "duplicate", position: 1 }],
+	}]) {
+		assert.equal((await f.manager.start("invalid_setup", setup)).code, "HOST_GAME_SETUP_INVALID");
+	}
+	assert.equal(f.launches.length, 0);
 });

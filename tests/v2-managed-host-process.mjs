@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url);
 const { createHostSessionManager } = require("../game/server-host-session-manager.js");
 const { createManagedHostProcessLauncher } = require("../game/server-managed-host-launcher.js");
 const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/v2-managed-host-child.mjs");
+const gameSetup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({ length: 4 }, (_, position) => ({ seatId: `seat_${position + 1}`, position })) };
 
 async function until(check, timeoutMs = 3000) {
 	const deadline = Date.now() + timeoutMs;
@@ -25,11 +26,11 @@ test("real child-process adapter privately bootstraps, readies, commits and stop
 		launch: createManagedHostProcessLauncher({ script: fixture }),
 		onAuthoritativeResult: result => results.push(result),
 	});
-	const started = await manager.start("process_room");
+	const started = await manager.start("process_room", gameSetup);
 	assert.equal(started.ok, true);
 	assert.ok(started.session.pid > 0);
 	assert.equal("secret" in started.session, false);
-	await until(() => manager.inspect("process_room").state === "engine_ready");
+	await until(() => manager.inspect("process_room").state === "game_ready");
 	await until(() => results.length === 1);
 	assert.equal(results[0].result.source, "simulated_managed_host");
 	assert.equal(results[0].result.secretInArgv, false);
@@ -44,11 +45,11 @@ test("real child abnormal exit fails its hostSession without affecting another r
 	const manager = createHostSessionManager({
 		launch: createManagedHostProcessLauncher({ script: fixture }),
 	});
-	await manager.start("stable_room");
+	await manager.start("stable_room", gameSetup);
 	t.after(() => manager.stop("stable_room", "test_cleanup"));
-	await manager.start("crash_room");
-	await until(() => manager.inspect("stable_room").state === "engine_ready");
+	await manager.start("crash_room", gameSetup);
+	await until(() => manager.inspect("stable_room").state === "game_ready");
 	await until(() => manager.inspect("crash_room").state === "failed");
 	assert.equal(manager.inspect("crash_room").failureCode, "HOST_EXITED");
-	assert.equal(manager.inspect("stable_room").state, "engine_ready");
+	assert.equal(manager.inspect("stable_room").state, "game_ready");
 });

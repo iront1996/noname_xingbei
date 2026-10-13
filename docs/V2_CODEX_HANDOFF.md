@@ -58,6 +58,13 @@ M2 batch 6:
 - The proof deliberately reports `gameLoopStarted:false`; it creates no match state and sends no result. Game Ready, Playable and M2+M3 continuity remain unimplemented.
 - Local full regression passed 82/82 plus B2 seat-registry with no managed profile residue. Commit `8e7c7d3`; Linux CI run 38311479712 passed all `node-recovery-tests` steps, including the real-Chromium lifecycle/engine-init step.
 
+M2 batch 7:
+
+- A separate `game_ready` hostSession state now gates authoritative results; Engine Ready alone is deliberately insufficient.
+- Launch requires a validated server-supplied Xingbei setup with ordered unique seat bindings. Game Ready attestation must match its canonical setup digest, ordered seat IDs and a valid initial-state digest, and has its own bounded timeout.
+- Simulated and supervised-process tests exercise the gate, invalid setup, mismatched proof, timeout, stale session, role spoofing and result sequencing. These fixtures are security/lifecycle evidence only.
+- Real Chromium Game Ready, Playable engine execution, HALL routing and M2+M3 four-player continuity remain unimplemented and separately tracked.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`
