@@ -114,7 +114,13 @@ M2 batch 14:
 
 - `tests/v2-managed-character-selection.mjs` is now named in the Linux real-Chromium CI command; successful workflow evidence must include the actual native selection test rather than only adjacent Chromium tests.
 - The server-control adapter no longer searches callback function text. Its native-selection scope consumes exactly the first `broadcastAll` as the documented local-dialog call and verifies that consumption; any changed ordering requires a new explicit adapter review.
-- Local real-Chromium regression passed before this workflow change. Linux CI evidence is pending the implementation commit.
+- Evidence: commit `d9cb556`; Linux CI run 38433165248 succeeded, including the completed `V2 M2 real Chromium off-board lifecycle proof` step whose command explicitly names the selection test.
+
+M2 batch 15:
+
+- Added a server-side managed-choice controller for an eventual managed-host route. Each choice binds room, hostSession, seat, opaque choice ID, authority event sequence, exact allowed options, deadline and trustee option.
+- Current authenticated seat connection, credential/seat identity, active host session, option membership and deadline are all required. Rebinding rejects the prior connection without discarding the pending choice; expiry yields only the configured valid trustee option.
+- This is protocol and security evidence only. It is not connected to HALL or Chromium yet and therefore cannot be described as a real player selection. The Linux host-session CI step now includes its 3-test suite; CI evidence is pending.
 
 ## Verified starting point
 

@@ -229,7 +229,16 @@ Read-only V3 research findings:
 - The Linux real-Chromium workflow command now explicitly includes `tests/v2-managed-character-selection.mjs`, alongside Browser Ready, Engine Ready, Game Ready and the first native-event test. The selection proof is no longer local-only evidence.
 - `v2_server_control_adapter_v1` no longer identifies the presentation callback by searching function source text. During the bounded `chooseCharacterOLDuoXuanYi` adapter scope, it suppresses exactly the first native `broadcastAll` call, documented by the checked-in native event order as the local-dialog creation. It records consumption and fails post-event validation if that one scoped suppression did not occur. Later broadcast calls retain native behavior.
 - This is a fail-closed compatibility contract for the tested source revision, not a general `broadcastAll` policy. Any upstream event-order change must be revalidated before managed character selection can proceed.
-- Evidence pending this batch's Linux CI; local real-Chromium selection regression passed before the workflow change.
+- Evidence: commit `d9cb556`; local real-Chromium selection regression passed before the workflow change. Linux CI run 38433165248 succeeded; its `V2 M2 real Chromium off-board lifecycle proof` step completed successfully with the explicit selection-test command.
+
+### M2 batch 15 — managed choice-control protocol foundation
+
+- `game/server-managed-choice-controller.js` is an isolated server-side protocol boundary, not a browser-host path and not HALL routing. A pending choice binds `roomId`, authenticated `hostSessionId`, `seatId`, opaque `choiceId`, native event sequence, exact native-produced option set, deadline and a prevalidated trustee option.
+- Seat authentication and active-host validation are injected by the caller so future HALL/B2 integration can reuse its credential and stale-transport fencing rather than inventing a second player identity. The controller additionally binds the current seat connection ID; a superseded connection cannot submit after rebind.
+- Only the assigned authenticated seat may submit a permitted option before the deadline. Wrong seat, forged option, wrong sequence, stale connection, invalid credential, duplicate response, expired response and inactive host fail closed. Disconnect/rebind does not delete the pending choice.
+- At deadline, only the active managed host can resolve the same pending choice through the already-validated trustee option. This makes the bounded timeout policy testable without claiming that it is already wired into a native event or HALL.
+- The CI host-session step now includes `tests/v2-managed-choice-controller.mjs`. Native option extraction, Chromium IPC routing and the real player-choice branch remain the next batch.
+- Evidence pending this batch's Linux CI; local protocol tests passed 3/3.
 
 Minimal-difference sequence:
 
