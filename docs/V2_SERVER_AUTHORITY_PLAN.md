@@ -187,6 +187,7 @@ Read-only V3 research findings:
 - Terminology and protocol are explicit: `preGameSummaryDigest` authenticates bounded verification metadata; the live authoritative state remains inside managed Chromium at revision 0; `checkpointAvailable` is false. This summary is neither a serialized authoritative state nor an M4-recoverable checkpoint.
 - `game.me === null` is valid for Game Ready initialization, but inspection of the loaded native Xingbei mode finds legacy functions that directly reference `game.me` (81 references in the tested checkout). Therefore the unadapted full mode/event path is not yet safe to run. The next Playable batch must introduce a server-control compatibility boundary without assigning any human browser as `game.me`.
 - Game Ready remains proven; Playable, HALL managed-host routing, full checkpoints and M2+M3 continuity remain unimplemented.
+- Evidence: commit `02772de`; local targeted tests passed 9/9 host-session/process tests, 7/7 real-Chromium lifecycle and 4/6/8-seat tests, plus B2 seat-registry. Linux CI run 38355673115 passed.
 
 Minimal-difference sequence:
 

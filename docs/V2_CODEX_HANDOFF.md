@@ -79,6 +79,7 @@ M2 batch 9:
 - `preGameSummaryDigest` is verification metadata only. The live authority is still process memory at revision 0 and `checkpointAvailable:false`; no restorable checkpoint exists.
 - Native Xingbei inspection reports 81 direct `game.me` references across mode functions. Keeping `game.me === null` proves there is no human host, but also blocks an unadapted full mode start. A later server-control adapter must address those local-perspective assumptions without turning a human player into the host.
 - Playable, choices/deadlines, HALL routing, M3 continuity and M4 recovery remain separately unimplemented.
+- Evidence: commit `02772de`; local targeted tests passed 9/9 host-session/process tests, 7/7 real-Chromium lifecycle and seat-count tests, plus B2 seat-registry. Linux CI run 38355673115 passed.
 
 ## Verified starting point
 
