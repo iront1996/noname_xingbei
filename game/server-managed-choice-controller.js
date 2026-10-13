@@ -123,8 +123,10 @@ function createManagedChoiceController({
 	}
 	function acknowledgeDelivery(message) {
 		const record = choices.get(key(message?.roomId, message?.choiceId));
-		if (!record || record.state !== "delivery_pending" || message.hostSessionId !== record.hostSessionId ||
-			message.deliveryId !== record.deliveryId || !isHostSessionActive(record.roomId, record.hostSessionId)) return failure("MANAGED_CHOICE_ACK_REJECTED");
+		if (!record || message?.protocol !== 1 || message.kind !== "managed_host" || record.state !== "delivery_pending" ||
+			message.roomId !== record.roomId || message.hostSessionId !== record.hostSessionId ||
+			message.deliveryId !== record.deliveryId || !isHostSessionActive(record.roomId, record.hostSessionId) ||
+			!authorizeManagedHost(message)) return failure("MANAGED_CHOICE_ACK_REJECTED");
 		const acknowledged = Object.freeze({ ...record, state: "resolved" });
 		choices.set(key(record.roomId, record.choiceId), acknowledged); pruneResolved();
 		return Object.freeze({ ok: true, choice: publicChoice(acknowledged) });
