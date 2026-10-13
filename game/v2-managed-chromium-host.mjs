@@ -344,17 +344,23 @@ async function boot(message) {
 	if (beforeDigest === afterDigest) throw new Error("NATIVE_EVENT_NO_PROGRESS");
 	process.send?.({
 		...identity,
-		type: "host_native_progress",
+		type: "host_authority_event",
 		proof: {
-			kind: "native_xingbei_side_assignment_v1",
-			eventName: nativeProgress.eventName,
-			stateRevision: 1,
+			kind: "native_authority_event_v1",
+			checkpoint: null,
+			eventSequence: 1,
+			stateRevisionBefore: 0,
+			stateRevisionAfter: 1,
 			beforeDigest,
 			afterDigest,
-			firstActSeatId: nativeProgress.after.firstActSeatId,
-			sides: nativeProgress.after.sides,
-			hostPlayerAbsent: true,
-			connectedTransports: 0,
+			event: {
+				kind: "xingbei_side_assignment_v1",
+				name: nativeProgress.eventName,
+				firstActSeatId: nativeProgress.after.firstActSeatId,
+				sides: nativeProgress.after.sides,
+				hostPlayerAbsent: true,
+				connectedTransports: 0,
+			},
 		},
 	});
 }

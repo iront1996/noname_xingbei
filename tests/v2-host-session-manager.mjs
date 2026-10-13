@@ -86,6 +86,7 @@ test("browser readiness cannot authorize results before separate engine readines
 	assert.equal(committed.ok, true);
 	assert.equal(f.results.length, 1);
 	assert.equal(f.manager.inspect("room_A").nextResultSequence, 2);
+	assert.equal(f.manager.inspect("room_A").authorityStateRevision, 0);
 
 	const stopped = await f.manager.stop("room_A", "room_cleanup");
 	assert.equal(stopped.ok, true);
@@ -235,7 +236,7 @@ test("invalid server game setup never launches a managed host", async () => {
 	assert.equal(f.launches.length, 0);
 });
 
-test("native progress requires authenticated changed Xingbei state and exact seats", async () => {
+test("authority event chain requires authenticated balanced native Xingbei side assignment", async () => {
 	const f = fixture();
 	await f.manager.start("native_progress_gate", gameSetup);
 	const bootstrap = f.launches[0].bootstrap;
@@ -243,36 +244,48 @@ test("native progress requires authenticated changed Xingbei state and exact sea
 	f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready"));
 	f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", { proof: gameReadyProof(bootstrap) }));
 	const proof = {
-		kind: "native_xingbei_side_assignment_v1",
-		eventName: "initSideAndPosition",
-		stateRevision: 1,
+		kind: "native_authority_event_v1",
+		checkpoint: null,
+		eventSequence: 1,
+		stateRevisionBefore: 0,
+		stateRevisionAfter: 1,
 		beforeDigest: "01".repeat(32),
 		afterDigest: "02".repeat(32),
-		firstActSeatId: "seat_1",
-		sides: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, side: index < 2 })),
-		hostPlayerAbsent: true,
-		connectedTransports: 0,
+		event: {
+			kind: "xingbei_side_assignment_v1",
+			name: "initSideAndPosition",
+			firstActSeatId: "seat_1",
+			sides: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, side: index < 2 })),
+			hostPlayerAbsent: true,
+			connectedTransports: 0,
+		},
 	};
 	for (const invalid of [
 		{ ...proof, afterDigest: proof.beforeDigest },
-		{ ...proof, stateRevision: 2 },
-		{ ...proof, firstActSeatId: "foreign_seat" },
-		{ ...proof, sides: proof.sides.slice(1) },
-		{ ...proof, hostPlayerAbsent: false },
+		{ ...proof, eventSequence: 2 },
+		{ ...proof, stateRevisionAfter: 2 },
+		{ ...proof, event: { ...proof.event, firstActSeatId: "foreign_seat" } },
+		{ ...proof, event: { ...proof.event, sides: proof.event.sides.slice(1) } },
+		{ ...proof, event: { ...proof.event, sides: proof.event.sides.map((side, index) => ({ ...side, side: index === 2 ? true : side.side })) } },
+		{ ...proof, event: { ...proof.event, firstActSeatId: "seat_3" } },
+		{ ...proof, event: { ...proof.event, hostPlayerAbsent: false } },
+		{ ...proof, checkpoint: { misleading: true } },
 	]) {
-		assert.equal(f.manager.markNativeProgress(hostMessage(bootstrap, "host_native_progress", { proof: invalid })).code,
-			"HOST_NATIVE_PROGRESS_REJECTED");
+		assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: invalid })).code,
+			"HOST_AUTHORITY_EVENT_REJECTED");
 	}
-	assert.equal(f.manager.markNativeProgress({
-		...hostMessage(bootstrap, "host_native_progress", { proof }),
+	assert.equal(f.manager.commitAuthorityEvent({
+		...hostMessage(bootstrap, "host_authority_event", { proof }),
 		kind: "room_administrator",
-	}).code, "HOST_NATIVE_PROGRESS_REJECTED");
-	const accepted = f.manager.markNativeProgress(hostMessage(bootstrap, "host_native_progress", { proof }));
+	}).code, "HOST_AUTHORITY_EVENT_REJECTED");
+	const accepted = f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof }));
 	assert.equal(accepted.ok, true);
 	assert.equal(accepted.session.state, "playable_probe");
 	assert.equal(accepted.session.authorityStateRevision, 1);
-	assert.equal(accepted.session.lastNativeEvent, "initSideAndPosition");
-	assert.equal(f.manager.markNativeProgress(hostMessage(bootstrap, "host_native_progress", { proof })).code,
-		"HOST_NATIVE_PROGRESS_REJECTED");
+	assert.equal(accepted.session.authorityStateDigest, proof.afterDigest);
+	assert.equal(accepted.session.nextAuthorityEventSequence, 2);
+	assert.deepEqual(accepted.session.lastAuthorityEvent, { sequence: 1, name: "initSideAndPosition" });
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof })).code,
+		"HOST_AUTHORITY_EVENT_REJECTED");
 	await f.manager.stop("native_progress_gate");
 });

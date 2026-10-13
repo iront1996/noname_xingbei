@@ -54,7 +54,9 @@ test("managed Chromium executes native Xingbei side assignment without a human h
 		return current?.state === "playable_probe" && current;
 	});
 	assert.equal(session.authorityStateRevision, 1);
-	assert.equal(session.lastNativeEvent, "initSideAndPosition");
+	assert.match(session.authorityStateDigest, /^[a-f0-9]{64}$/);
+	assert.equal(session.nextAuthorityEventSequence, 2);
+	assert.deepEqual(session.lastAuthorityEvent, { sequence: 1, name: "initSideAndPosition" });
 	assert.equal(session.checkpointAvailable, false);
 	assert.equal(session.nextResultSequence, 1);
 	const stopped = await manager.stop("native_event_room", "test_complete");

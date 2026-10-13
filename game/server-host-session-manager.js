@@ -88,8 +88,10 @@ function createHostSessionManager({
 			setupDigest: record.setupDigest,
 			preGameSummaryDigest: record.preGameSummaryDigest,
 			authorityStateRevision: record.authorityStateRevision,
+			authorityStateDigest: record.authorityStateDigest,
+			nextAuthorityEventSequence: record.nextAuthorityEventSequence,
 			checkpointAvailable: false,
-			lastNativeEvent: record.lastNativeEvent,
+			lastAuthorityEvent: record.lastAuthorityEvent,
 		});
 	}
 
@@ -165,7 +167,9 @@ function createHostSessionManager({
 			seatIds: prepared.seatIds,
 			preGameSummaryDigest: null,
 			authorityStateRevision: null,
-			lastNativeEvent: null,
+			authorityStateDigest: null,
+			nextAuthorityEventSequence: 1,
+			lastAuthorityEvent: null,
 		};
 		sessions.set(roomId, record);
 
@@ -191,7 +195,7 @@ function createHostSessionManager({
 				if (message?.type === "host_browser_ready") markBrowserReady(message);
 				else if (message?.type === "host_engine_ready") markEngineReady(message);
 				else if (message?.type === "host_game_ready") markGameReady(message);
-				else if (message?.type === "host_native_progress") markNativeProgress(message);
+				else if (message?.type === "host_authority_event") commitAuthorityEvent(message);
 				else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
 			});
 			armPhaseTimer(record, "starting", browserReadyTimeoutMs,
@@ -207,20 +211,45 @@ function createHostSessionManager({
 		}
 	}
 
-	function markNativeProgress(message) {
+	function validateXingbeiSideAssignment(record, event) {
+		if (!event || event.kind !== "xingbei_side_assignment_v1" || event.name !== "initSideAndPosition" ||
+			event.hostPlayerAbsent !== true || event.connectedTransports !== 0 ||
+			!record.seatIds.includes(event.firstActSeatId) || !Array.isArray(event.sides) ||
+			event.sides.length !== record.seatIds.length || event.sides.some((side, index) =>
+				side?.seatId !== record.seatIds[index] || typeof side.side !== "boolean")) return false;
+		const red = event.sides.filter(side => side.side).length;
+		const blue = event.sides.length - red;
+		const firstActor = event.sides.find(side => side.seatId === event.firstActSeatId);
+		return red === event.sides.length / 2 && blue === event.sides.length / 2 && firstActor?.side === true;
+	}
+
+	function validateAuthorityEvent(record, event) {
+		// This dispatch is intentionally event-specific: later native events add a validator
+		// instead of weakening the common sequence/digest chain.
+		if (event?.kind === "xingbei_side_assignment_v1" && event.name === "initSideAndPosition") {
+			return validateXingbeiSideAssignment(record, event);
+		}
+		return false;
+	}
+
+	function commitAuthorityEvent(message) {
 		const record = sessions.get(message?.roomId);
 		const proof = message?.proof;
-		if (message?.type !== "host_native_progress" || !authenticate(record, message) || record.state !== "game_ready" ||
-			!proof || proof.kind !== "native_xingbei_side_assignment_v1" || proof.eventName !== "initSideAndPosition" ||
-			proof.stateRevision !== 1 || !DIGEST.test(proof.beforeDigest) || !DIGEST.test(proof.afterDigest) ||
-			proof.beforeDigest === proof.afterDigest || proof.hostPlayerAbsent !== true || proof.connectedTransports !== 0 ||
-			!record.seatIds.includes(proof.firstActSeatId) || !Array.isArray(proof.sides) ||
-			proof.sides.length !== record.seatIds.length || proof.sides.some((side, index) =>
-				side?.seatId !== record.seatIds[index] || typeof side.side !== "boolean")) {
-			return failure("HOST_NATIVE_PROGRESS_REJECTED");
+		if (message?.type !== "host_authority_event" || !authenticate(record, message) ||
+			!['game_ready', 'playable_probe'].includes(record.state) || !proof ||
+			proof.kind !== "native_authority_event_v1" || proof.checkpoint !== null ||
+			!Number.isSafeInteger(proof.eventSequence) || proof.eventSequence !== record.nextAuthorityEventSequence ||
+			!Number.isSafeInteger(proof.stateRevisionBefore) || proof.stateRevisionBefore !== record.authorityStateRevision ||
+			!Number.isSafeInteger(proof.stateRevisionAfter) || proof.stateRevisionAfter !== proof.stateRevisionBefore + 1 ||
+			!DIGEST.test(proof.beforeDigest) || !DIGEST.test(proof.afterDigest) || proof.beforeDigest === proof.afterDigest ||
+			(record.authorityStateDigest !== null && proof.beforeDigest !== record.authorityStateDigest) ||
+			!validateAuthorityEvent(record, proof.event)) {
+			return failure("HOST_AUTHORITY_EVENT_REJECTED");
 		}
-		record.authorityStateRevision = 1;
-		record.lastNativeEvent = proof.eventName;
+		record.authorityStateRevision = proof.stateRevisionAfter;
+		record.authorityStateDigest = proof.afterDigest;
+		record.nextAuthorityEventSequence++;
+		record.lastAuthorityEvent = Object.freeze({ sequence: proof.eventSequence, name: proof.event.name });
 		record.state = "playable_probe";
 		return Object.freeze({ ok: true, session: publicView(record) });
 	}
@@ -261,6 +290,9 @@ function createHostSessionManager({
 		clearPhaseTimer(record);
 		record.preGameSummaryDigest = proof.preGameSummaryDigest;
 		record.authorityStateRevision = 0;
+		record.authorityStateDigest = null;
+		record.nextAuthorityEventSequence = 1;
+		record.lastAuthorityEvent = null;
 		record.state = "game_ready";
 		return Object.freeze({ ok: true, session: publicView(record) });
 	}
@@ -296,7 +328,8 @@ function createHostSessionManager({
 			return failure("HOST_RESULT_SINK_FAILED");
 		}
 		record.nextResultSequence++;
-		record.authorityStateRevision++;
+		// Result delivery is not a native state transition. Only authenticated native
+		// authority events may advance the digest/version chain.
 		return Object.freeze({ ok: true, accepted });
 	}
 
@@ -323,7 +356,7 @@ function createHostSessionManager({
 		markBrowserReady,
 		markEngineReady,
 		markGameReady,
-		markNativeProgress,
+		commitAuthorityEvent,
 		commitAuthoritativeResult,
 		stop,
 		inspect: roomId => publicView(sessions.get(roomId)),

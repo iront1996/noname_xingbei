@@ -199,6 +199,15 @@ Read-only V3 research findings:
 - **Proven only:** one native Xingbei state-changing event in managed Chromium. Character choice, deadlines/trustee, turn loop, card/skill effects, victory/result production, HALL routing, M3 continuity and checkpoints remain unimplemented.
 - Evidence: commit `5681c04`; local targeted tests passed 10/10 host-session/process tests, 8/8 real-Chromium tests and B2 seat-registry. Linux CI run 38356056414 passed every workflow step, including the new native-event proof.
 
+### M2 batch 11 — authenticated authority-event chain
+
+- Native engine progress now crosses the managed-host boundary as an explicit `native_authority_event_v1`: strictly increasing event sequence, adjacent authority-state revisions, and changed canonical before/after digests. The manager retains the resulting authority digest and rejects stale, duplicate, out-of-order or digest-disconnected events.
+- The initial native validator is deliberately event-specific. `initSideAndPosition` must report the exact ordered server seat set, an even red/blue split, a red first actor belonging to that set, no human `game.me`, and zero player transports. Future native events must add their own validator rather than bypassing the common chain.
+- `preGameSummaryDigest` remains verification metadata only. It is not the initial authority-state digest; the first authenticated native event establishes the live in-memory chain. Every authority-event proof requires `checkpoint:null`, and `checkpointAvailable` remains false. Neither a pre-game digest nor this event chain is an M4 recoverable checkpoint.
+- Result delivery keeps its independent monotonically increasing result sequence, but no longer advances `authorityStateRevision`: only authenticated native state events can mutate the authority version/digest chain.
+- This remains one native Playable Probe, not full Playable. No player choice, deadline/trustee, turn loop, card/skill resolution, victory flow, HALL managed-host routing, M3 continuity or M4 recovery is proven.
+- Evidence pending this batch's Linux CI; local targeted regressions passed 10/10 host-session/process and 8/8 real-Chromium tests.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
