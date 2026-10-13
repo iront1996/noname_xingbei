@@ -221,7 +221,7 @@ async function boot(message) {
 		expression: `(async()=>{
 		 const setup=${encodedSetup};
 		 const managed=window.__v2ManagedEngine;
-		 const {game,lib,ui,_status}=managed.core;
+		 const {game,lib,ui,get,_status}=managed.core;
 		 const loading=await import('/noname/init/loading.js');
 		 const seen=new Set();
 		 const countGameMe=value=>{
@@ -233,6 +233,9 @@ async function boot(message) {
 		 if(setup.mode!=='xingBei'||![4,6,8].includes(setup.config.playerCount)||
 		    setup.config.playerCount!==setup.seats.length)throw Error('GAME_SETUP_INVALID');
 		 lib.config.mode='xingBei';
+		 // Mirror the initialization performed by noname/init/onload.js before the
+		 // native gameDraw event reaches Player.directgain.
+		 lib.config.sort_card=get.sortCard(lib.config.sort);
 		 lib.storage={};
 		 lib.connectCharacterPack=[];
 		 lib.connectCardPack=[];
@@ -243,7 +246,8 @@ async function boot(message) {
 		 if(lib.imported.card)Object.values(lib.imported.card).forEach(loading.loadCard);
 		 lib.configOL=Object.assign({},setup.config,{mode:'xingBei',number:setup.seats.length,
 		  player_number:setup.seats.length,versus_mode:setup.seats.length===4?'2v2':setup.seats.length===6?'3v3':'4v4',
-		  characterPack:Object.keys(lib.characterPack),banned:[]});
+		  characterPack:Object.keys(lib.characterPack),banned:[],bannedcards:[]});
+		 lib.config.bannedcards??=[];
 		 _status.connectMode=true;
 		 _status.mode=lib.configOL.versus_mode;
 		 if(typeof ui.create.table!=='function')ui.create.table=(rows,columns,parent)=>{
@@ -253,6 +257,10 @@ async function boot(message) {
 		 };
 		 if(!ui.arena)ui.create.arena();
 		 game.prepareArena(setup.seats.length);
+		 // Normal startup defers ui.create.cardsAsync() through the global onfree
+		 // queue. A managed headless room has no free-screen transition, so execute
+		 // only that native card-pile initialization callback now.
+		 if(_status.waitingForCards){const args=_status.waitingForCards;delete _status.waitingForCards;ui.create.cards.apply(ui.create,args)}
 		 if(game.players.length!==setup.seats.length||!_status.prepareArena)throw Error('ARENA_INITIALIZATION_FAILED');
 		 lib.playerOL=Object.create(null);
 		 for(let index=0;index<setup.seats.length;index++){
@@ -293,7 +301,7 @@ async function boot(message) {
 		preGameSummary.configuredCardCount <= 0 || preGameSummary.hostPlayerAbsent !== true ||
 		preGameSummary.connectedTransports !== 0 || preGameSummary.legacyModeFunctionsRequireGameMe !== true ||
 		preGameSummary.gameMeReferenceCount <= 0) {
-		throw new Error("GAME_INITIALIZATION_FAILED");
+		throw new Error(`GAME_INITIALIZATION_FAILED:${initialized.exceptionDetails?.text || JSON.stringify(preGameSummary)}`);
 	}
 	const preGameSummaryDigest = createHash("sha256").update(canonicalize(preGameSummary)).digest("hex");
 	process.send?.({
@@ -593,7 +601,10 @@ process.on("message", message => {
 	// `type`, so they can never be mistaken for a second bootstrap.
 	if (message?.kind === "host_session_bootstrap") {
 		boot(message).catch(async error => {
-			process.send?.({ ...identity, type: "host_failure", code: String(error?.message || "HOST_BOOT_FAILED").slice(0, 128) });
+			const detail=String(error?.message||"HOST_BOOT_FAILED").replaceAll(identity?.secret||"", "[redacted]").slice(0,3072);
+			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: null, observed: { failureCode: "HOST_BOOT_FAILED", detail } });
+			const code=detail.match(/[A-Z][A-Z0-9_]{2,95}/)?.[0]||"HOST_BOOT_FAILED";
+			process.send?.({ ...identity, type: "host_failure", code });
 			await cleanup();
 			process.exit(1);
 		});
@@ -611,6 +622,14 @@ process.on("message", message => {
 		// race each other or observe a half-written choice map.
 		choiceCommandChain = choiceCommandChain.then(() => applyManagedChoice(message)).catch(error => {
 			interactiveChoice?.reject?.(error);
+			const detail = String(error?.message || "HOST_MANAGED_COMMAND_FAILED")
+				.replaceAll(identity?.secret || "", "[redacted]").slice(0, 3072);
+			const code = detail.match(/[A-Z][A-Z0-9_]{2,95}/)?.[0] || "HOST_MANAGED_COMMAND_FAILED";
+			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: interactiveChoice?.nativeEventId || null,
+				observed: { failureCode: code, detail } });
+			if (process.connected) process.send?.({ ...identity, type: "host_failure", code }, () => {
+				cleanup().finally(() => process.exit(1));
+			});
 		});
 		return;
 	}

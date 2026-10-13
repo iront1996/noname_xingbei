@@ -291,6 +291,14 @@ Read-only V3 research findings:
 - ACK, room cleanup and host-session cleanup cancel a scheduled delivery retry. The retry never regenerates a choice, option, native event ID or delivery ID; Chromium's existing duplicate-delivery guard remains the second fence.
 - This improves C2 reliability only. It does not make a first native turn safe: the next coordinator must reproduce Xingbei's original start-event stack (`gameStart` → opening draw → phaseLoop) before a real `xingDong` selection can be exposed.
 
+### Next-turn investigation from `b6bf599`
+
+- Preserved the verified four-seat native choice path and its event #1 → #2 authority chain.
+- A real local Chrome experiment invoked the original Xingbei `mode.start` function through a new root `GameEvent` after selection. After `root.start()` the CDP target stopped answering Runtime.evaluate, so the process could not verify event stack, gameStart, draw, phaseLoop, or a player-input boundary. The host therefore remained at revision 2 and emitted no accepted event #3. The experimental coordinator was removed from the active path; no draw or phase success is claimed.
+- Restored/retained the passing four-seat Chromium choice regression (3 consecutive runs, zero skipped); selected local host/session/controller and Chromium regression tests passed 16/16 with zero skips. This is a local Windows Chrome check only; Linux CI for this investigation is pending and no commit was produced here.
+- Exact blocking location inside the native root's asynchronous event execution is still unresolved. Next work must isolate the native stack in bounded steps and surface progress without relying on a CDP evaluation that can be starved by the game event loop. Do not increase test timeout, synthesize a phase, or accept a digest-only state as recovery evidence.
+- Status: Browser Ready / Engine Ready / Game Ready / four-seat native choice remain prior verified capabilities; root-event startup, native opening draw, phaseLoop, first legal player action, authority event #3/#4, full playable, HALL routing, M3 and M4 are not complete.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

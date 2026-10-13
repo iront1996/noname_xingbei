@@ -31,7 +31,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1" });
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen, dropAcks = true, droppedAcks = 0, nativeDiagnostic = null, ackCount = 0, deliveryCount = 0;
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, dropAcks = true, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, deliveryCount = 0;
 	controller = createManagedChoiceController({
 		isHostSessionActive: (candidateRoom, sessionId) => manager?.inspect(candidateRoom)?.sessionId === sessionId && manager.inspect(candidateRoom)?.state === "playable_probe",
 		authorizeManagedHost: message => message.hostProof === sessionSecret,
@@ -58,7 +58,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				if (dropAcks) { droppedAcks++; return; }
 				assert.equal(controller.acknowledgeDelivery({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret }).ok, true);
 			} else if (type === "host_choice_diagnostic") {
-				nativeDiagnostic = message.observed;
+			 nativeDiagnostic.push(message.observed);
 			}
 		},
 	});
@@ -66,7 +66,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	assert.equal((await manager.start(roomId, setup)).ok, true);
 	await until(() => {
 		const current = manager.inspect(roomId);
-		if (current?.state === "failed") throw new Error(`native choice host failed: ${current.failureCode}`);
+		if (current?.state === "failed") throw new Error(`native choice host failed: ${current.failureCode}:${JSON.stringify(nativeDiagnostic)}`);
 		return opened.length === 4;
 	}, 15000);
 	assert.ok(candidatesSeen.every(choice => choice.options.length >= 2));
@@ -79,7 +79,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: d.hostSessionId, nativeEventId: d.nativeEventId, seatId: d.seatId, eventSequence: 2, choiceId: d.choiceId, connectionId: `conn_${d.seatId}`, credential: `credential_${d.seatId}`, option: d.options[0] }).ok, true);
 	const completed = await until(() => {
 		const session = manager.inspect(roomId);
-		if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks })}`);
+		if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks, nativeDiagnostic })}`);
 		return session?.authorityStateRevision === 2 && session;
 	}, 45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), deliveryCount, ackCount, droppedAcks, nativeDiagnostic }));
 	assert.equal(droppedAcks, 4);

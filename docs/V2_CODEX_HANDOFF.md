@@ -134,6 +134,8 @@ M2 batch 22: ACK timing is now fenced behind the completed native selection even
 
 M2 batch 23: asynchronous `sendChoiceDelivery` failure is now retained and automatically retried with the same immutable delivery rather than relying on a test manually calling `retryDelivery`. ACK/room/session cleanup cancels queued retry timers. This closes a C2 transport-reliability gap but does not change the outstanding requirement for an original Xingbei start-event/phase-loop coordinator before any real turn action is claimed.
 
+M2 next-turn investigation from `b6bf5996d858609a6d8cc4e5c550404aa8c43eec`: the four-seat native choice IPC test passed locally in real Chrome with all four deliveries ACK-gated, but an experimental attempt to resume the original `mode.start` root after the isolated choice event caused Chromium's CDP page target to stop answering once `root.start()` was invoked. The observable state remained at authority revision 2; no Event #3 proof was accepted. The experiment was removed from the default path rather than leaving CI hanging or claiming a turn. After removal, the four-seat test passed three consecutive runs; the selected local M2 host/session/controller and Chromium regression set passed 16/16 with no skips. Exact internal stall point is not yet identified because subsequent CDP Runtime.evaluate commands did not return; this is reproducible evidence of a coordinator boundary problem, not evidence that the native start event completed. Opening draw, first phase, first player decision, and authority Events #3/#4 remain unimplemented/unverified. Linux CI has not yet run for this investigation.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`
