@@ -81,6 +81,13 @@ M2 batch 9:
 - Playable, choices/deadlines, HALL routing, M3 continuity and M4 recovery remain separately unimplemented.
 - Evidence: commit `02772de`; local targeted tests passed 9/9 host-session/process tests, 7/7 real-Chromium lifecycle and seat-count tests, plus B2 seat-registry. Linux CI run 38355673115 passed.
 
+M2 batch 10:
+
+- Real managed Chromium now executes one original Xingbei `initSideAndPosition` GameEvent through native `game.loop()`. It changes the bound Player side map, sets native `_status.firstAct` and advances in-memory authority revision 0→1.
+- The adapter must read the created event from `_status.event` because the legacy Xingbei helper does not return it. The no-choice/non-phaseswap configuration avoids the known `game.me`-dependent branches while keeping `game.me === null` and all player WebSockets absent.
+- hostSession calls this state `playable_probe`; before/after digests, exact sides, first-act seat and no-human-host properties are authenticated and replay-protected. It is not full Playable.
+- Still missing: character/player choices, explicit deadlines and trustee actions, turns, card/skill resolution, victory/results, HALL routing, four-player disconnect continuity and M4 checkpoints.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

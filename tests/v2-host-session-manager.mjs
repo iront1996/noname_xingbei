@@ -234,3 +234,45 @@ test("invalid server game setup never launches a managed host", async () => {
 	}
 	assert.equal(f.launches.length, 0);
 });
+
+test("native progress requires authenticated changed Xingbei state and exact seats", async () => {
+	const f = fixture();
+	await f.manager.start("native_progress_gate", gameSetup);
+	const bootstrap = f.launches[0].bootstrap;
+	f.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready"));
+	f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready"));
+	f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", { proof: gameReadyProof(bootstrap) }));
+	const proof = {
+		kind: "native_xingbei_side_assignment_v1",
+		eventName: "initSideAndPosition",
+		stateRevision: 1,
+		beforeDigest: "01".repeat(32),
+		afterDigest: "02".repeat(32),
+		firstActSeatId: "seat_1",
+		sides: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, side: index < 2 })),
+		hostPlayerAbsent: true,
+		connectedTransports: 0,
+	};
+	for (const invalid of [
+		{ ...proof, afterDigest: proof.beforeDigest },
+		{ ...proof, stateRevision: 2 },
+		{ ...proof, firstActSeatId: "foreign_seat" },
+		{ ...proof, sides: proof.sides.slice(1) },
+		{ ...proof, hostPlayerAbsent: false },
+	]) {
+		assert.equal(f.manager.markNativeProgress(hostMessage(bootstrap, "host_native_progress", { proof: invalid })).code,
+			"HOST_NATIVE_PROGRESS_REJECTED");
+	}
+	assert.equal(f.manager.markNativeProgress({
+		...hostMessage(bootstrap, "host_native_progress", { proof }),
+		kind: "room_administrator",
+	}).code, "HOST_NATIVE_PROGRESS_REJECTED");
+	const accepted = f.manager.markNativeProgress(hostMessage(bootstrap, "host_native_progress", { proof }));
+	assert.equal(accepted.ok, true);
+	assert.equal(accepted.session.state, "playable_probe");
+	assert.equal(accepted.session.authorityStateRevision, 1);
+	assert.equal(accepted.session.lastNativeEvent, "initSideAndPosition");
+	assert.equal(f.manager.markNativeProgress(hostMessage(bootstrap, "host_native_progress", { proof })).code,
+		"HOST_NATIVE_PROGRESS_REJECTED");
+	await f.manager.stop("native_progress_gate");
+});

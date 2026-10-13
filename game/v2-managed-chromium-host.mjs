@@ -273,7 +273,7 @@ async function boot(message) {
 		    preGameSummary.eventLoopStarted!==false||preGameSummary.gameOver)throw Error('PRE_GAME_SUMMARY_INVALID');
 		 Object.defineProperty(window,'__v2ManagedGame',{configurable:false,
 		  value:Object.freeze({setup:Object.freeze(setup),preGameSummary:Object.freeze(preGameSummary),
-		   authorityState:Object.freeze({storage:'managed_chromium_memory',revision:0}),checkpoint:null})});
+		   authorityState:{storage:'managed_chromium_memory',revision:0},checkpoint:null})});
 		 return preGameSummary;
 		})()`,
 		awaitPromise: true,
@@ -299,6 +299,62 @@ async function boot(message) {
 			preGameSummaryDigest,
 			seatIds: preGameSummary.seats.map(seat => seat.seatId),
 			checkpoint: null,
+		},
+	});
+
+	if (process.env.V2_PLAYABLE_PROOF !== "1") return;
+	const progressed = await cdp.send("Runtime.evaluate", {
+		expression: `(async()=>{
+		 const managed=window.__v2ManagedEngine,container=window.__v2ManagedGame;
+		 const {game,lib,_status}=managed.core;
+		 if(game.me!==null||game.players.some(player=>player.ws)||container.checkpoint!==null||
+		    container.authorityState.revision!==0)throw Error('NATIVE_EVENT_PRECONDITION_FAILED');
+		 lib.configOL.chooseSide=false;
+		 lib.configOL.choose_mode='normal';
+		 lib.configOL.team_sequence='near';
+		 lib.configOL.phaseswap=false;
+		 const before={revision:0,firstActSeatId:null,
+		  sides:game.players.map(player=>({seatId:player.playerid,side:typeof player.side==='boolean'?player.side:null}))};
+		 game.initSideAndPosition(false);
+		 const event=_status.event;
+		 if(event?.name!=='initSideAndPosition')throw Error('NATIVE_EVENT_MISSING');
+		 await game.loop(event);
+		 const after={revision:1,firstActSeatId:_status.firstAct?.playerid||null,
+		  sides:game.players.map(player=>({seatId:player.playerid,side:player.side}))};
+		 const red=after.sides.filter(entry=>entry.side===true).length;
+		 const blue=after.sides.filter(entry=>entry.side===false).length;
+		 if(!after.firstActSeatId||red!==game.players.length/2||blue!==game.players.length/2||
+		    after.sides.some(entry=>typeof entry.side!=='boolean')||game.me!==null||
+		    game.players.some(player=>player.ws))throw Error('NATIVE_EVENT_STATE_INVALID');
+		 container.authorityState.revision=1;
+		 return {eventName:event.name,before,after,hostPlayerAbsent:game.me===null,
+		  connectedTransports:game.players.filter(player=>player.ws).length};
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	const nativeProgress = progressed.result?.value;
+	if (progressed.exceptionDetails || nativeProgress?.eventName !== "initSideAndPosition" ||
+		nativeProgress.hostPlayerAbsent !== true || nativeProgress.connectedTransports !== 0 ||
+		!nativeProgress.before || !nativeProgress.after || nativeProgress.after.revision !== 1) {
+		throw new Error("NATIVE_EVENT_EXECUTION_FAILED");
+	}
+	const beforeDigest = createHash("sha256").update(canonicalize(nativeProgress.before)).digest("hex");
+	const afterDigest = createHash("sha256").update(canonicalize(nativeProgress.after)).digest("hex");
+	if (beforeDigest === afterDigest) throw new Error("NATIVE_EVENT_NO_PROGRESS");
+	process.send?.({
+		...identity,
+		type: "host_native_progress",
+		proof: {
+			kind: "native_xingbei_side_assignment_v1",
+			eventName: nativeProgress.eventName,
+			stateRevision: 1,
+			beforeDigest,
+			afterDigest,
+			firstActSeatId: nativeProgress.after.firstActSeatId,
+			sides: nativeProgress.after.sides,
+			hostPlayerAbsent: true,
+			connectedTransports: 0,
 		},
 	});
 }

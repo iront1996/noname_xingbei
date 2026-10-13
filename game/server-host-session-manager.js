@@ -8,7 +8,7 @@ const SESSION_ID = /^hs_[a-f0-9]{32}$/;
 const SECRET = /^[a-f0-9]{64}$/;
 const DIGEST = /^[a-f0-9]{64}$/;
 const SEAT_ID = /^[A-Za-z0-9_-]{1,64}$/;
-const ACTIVE_STATES = new Set(["starting", "browser_ready", "engine_ready", "game_ready", "stopping"]);
+const ACTIVE_STATES = new Set(["starting", "browser_ready", "engine_ready", "game_ready", "playable_probe", "stopping"]);
 
 function failure(code) {
 	return Object.freeze({ ok: false, code });
@@ -89,6 +89,7 @@ function createHostSessionManager({
 			preGameSummaryDigest: record.preGameSummaryDigest,
 			authorityStateRevision: record.authorityStateRevision,
 			checkpointAvailable: false,
+			lastNativeEvent: record.lastNativeEvent,
 		});
 	}
 
@@ -114,7 +115,7 @@ function createHostSessionManager({
 		if (record.state === "stopping") {
 			record.state = "stopped";
 			record.failureCode = null;
-		} else if (["starting", "browser_ready", "engine_ready", "game_ready"].includes(record.state)) {
+		} else if (["starting", "browser_ready", "engine_ready", "game_ready", "playable_probe"].includes(record.state)) {
 			record.state = "failed";
 			record.failureCode = code || "HOST_EXITED";
 		}
@@ -164,6 +165,7 @@ function createHostSessionManager({
 			seatIds: prepared.seatIds,
 			preGameSummaryDigest: null,
 			authorityStateRevision: null,
+			lastNativeEvent: null,
 		};
 		sessions.set(roomId, record);
 
@@ -189,6 +191,7 @@ function createHostSessionManager({
 				if (message?.type === "host_browser_ready") markBrowserReady(message);
 				else if (message?.type === "host_engine_ready") markEngineReady(message);
 				else if (message?.type === "host_game_ready") markGameReady(message);
+				else if (message?.type === "host_native_progress") markNativeProgress(message);
 				else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
 			});
 			armPhaseTimer(record, "starting", browserReadyTimeoutMs,
@@ -202,6 +205,24 @@ function createHostSessionManager({
 			record.failureCode = "HOST_LAUNCH_FAILED";
 			return failure("HOST_LAUNCH_FAILED");
 		}
+	}
+
+	function markNativeProgress(message) {
+		const record = sessions.get(message?.roomId);
+		const proof = message?.proof;
+		if (message?.type !== "host_native_progress" || !authenticate(record, message) || record.state !== "game_ready" ||
+			!proof || proof.kind !== "native_xingbei_side_assignment_v1" || proof.eventName !== "initSideAndPosition" ||
+			proof.stateRevision !== 1 || !DIGEST.test(proof.beforeDigest) || !DIGEST.test(proof.afterDigest) ||
+			proof.beforeDigest === proof.afterDigest || proof.hostPlayerAbsent !== true || proof.connectedTransports !== 0 ||
+			!record.seatIds.includes(proof.firstActSeatId) || !Array.isArray(proof.sides) ||
+			proof.sides.length !== record.seatIds.length || proof.sides.some((side, index) =>
+				side?.seatId !== record.seatIds[index] || typeof side.side !== "boolean")) {
+			return failure("HOST_NATIVE_PROGRESS_REJECTED");
+		}
+		record.authorityStateRevision = 1;
+		record.lastNativeEvent = proof.eventName;
+		record.state = "playable_probe";
+		return Object.freeze({ ok: true, session: publicView(record) });
 	}
 
 	function markBrowserReady(message) {
@@ -246,7 +267,7 @@ function createHostSessionManager({
 
 	function commitAuthoritativeResult(message) {
 		const record = sessions.get(message?.roomId);
-		if (!authenticate(record, message) || record.state !== "game_ready") {
+		if (!authenticate(record, message) || !["game_ready", "playable_probe"].includes(record.state)) {
 			return failure("HOST_AUTHORITY_REJECTED");
 		}
 		if (message.type !== "authoritative_result" ||
@@ -302,6 +323,7 @@ function createHostSessionManager({
 		markBrowserReady,
 		markEngineReady,
 		markGameReady,
+		markNativeProgress,
 		commitAuthoritativeResult,
 		stop,
 		inspect: roomId => publicView(sessions.get(roomId)),

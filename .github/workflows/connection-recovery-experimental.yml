@@ -66,6 +66,6 @@ jobs:
             if [ -x "$candidate" ]; then browser="$candidate"; break; fi
           done
           test -n "$browser"
-          env V2_CHROMIUM="$browser" node --test tests/v2-managed-chromium-host.mjs tests/v2-managed-engine-init.mjs
+          env V2_CHROMIUM="$browser" node --test tests/v2-managed-chromium-host.mjs tests/v2-managed-engine-init.mjs tests/v2-managed-native-event.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js

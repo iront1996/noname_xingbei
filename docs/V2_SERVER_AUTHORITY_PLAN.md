@@ -189,6 +189,15 @@ Read-only V3 research findings:
 - Game Ready remains proven; Playable, HALL managed-host routing, full checkpoints and M2+M3 continuity remain unimplemented.
 - Evidence: commit `02772de`; local targeted tests passed 9/9 host-session/process tests, 7/7 real-Chromium lifecycle and 4/6/8-seat tests, plus B2 seat-registry. Linux CI run 38355673115 passed.
 
+### M2 batch 10 — first native Playable probe
+
+- An opt-in real-Chromium proof invokes the Xingbei mode's native `game.initSideAndPosition(false)`, obtains the native event from `_status.event`, and executes it through the engine's `game.loop()`/`GameEvent.start()` path.
+- The original mode event assigns red/blue sides, selects `_status.firstAct`, updates native Player/DOM identity state and advances authority revision from 0 to 1. Canonical before/after digests must differ; merely setting a boolean cannot satisfy the proof.
+- The tested branch uses server-selected `chooseSide:false`, `choose_mode:'normal'`, `team_sequence:'near'` and `phaseswap:false`. This is a narrow compatibility configuration for a deterministic no-choice pre-game event, not a replacement rules implementation.
+- Execution is rejected unless `game.me` remains null, every player has no WebSocket, the exact server seat set is preserved, teams are balanced and firstAct names a bound seat. Authenticated progress is reported as `playable_probe`, not full Playable.
+- hostSession validates the native event name, state revision, changed digests, complete boolean side map, first-act seat, no-human-host proof and zero transports. Player/admin spoofing, replay and malformed progress fail closed.
+- **Proven only:** one native Xingbei state-changing event in managed Chromium. Character choice, deadlines/trustee, turn loop, card/skill effects, victory/result production, HALL routing, M3 continuity and checkpoints remain unimplemented.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
