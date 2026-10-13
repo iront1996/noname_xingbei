@@ -122,6 +122,8 @@ M2 batch 15:
 - Current authenticated seat connection, credential/seat identity, active host session, option membership and deadline are all required. Rebinding rejects the prior connection without discarding the pending choice; expiry yields only the configured valid trustee option.
 - This is protocol and security evidence only. It is not connected to HALL or Chromium yet and therefore cannot be described as a real player selection. Evidence: commit `a3cd0e0`; Linux CI run 38433810630 passed every workflow step, including its 3-test suite.
 
+M2 batch 16: trusted host/native-event opening, verified server-only seat binding, generated choice IDs, deadline timers, one-shot resolution, capacity and room/session cleanup are now covered by isolated tests. Chromium IPC and real player operations remain unimplemented; Linux CI evidence is pending.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

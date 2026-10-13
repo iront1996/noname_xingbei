@@ -240,6 +240,12 @@ Read-only V3 research findings:
 - The CI host-session step now includes `tests/v2-managed-choice-controller.mjs`. Native option extraction, Chromium IPC routing and the real player-choice branch remain the next batch.
 - Evidence: commit `a3cd0e0`; local protocol tests passed 3/3. Linux CI run 38433810630 passed every workflow step, including the expanded managed host-session/choice-control step.
 
+### M2 batch 16 — choice-control trust and cleanup hardening
+
+- Choice opening now requires an injected authenticated managed-host/native-event verifier; it binds a native event ID and generates the opaque choice ID internally. Seat connection binding likewise requires a trusted server-side B2/socket-verification callback, so player packets cannot overwrite a seat connection.
+- Pending choices have a bounded capacity, automatic deadline timer, single-resolution guard, room/session cleanup and timer cancellation. Player-vs-timeout races resolve once; replay after resolution or cleanup fails closed.
+- This remains isolated protocol testing: no Chromium IPC, native option extraction, HALL routing or real player operation is claimed. Evidence pending Linux CI.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

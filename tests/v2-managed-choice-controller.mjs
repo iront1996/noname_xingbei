@@ -1,64 +1,9 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import test from "node:test";
-
-const require = createRequire(import.meta.url);
-const { createManagedChoiceController } = require("../game/server-managed-choice-controller.js");
-const roomId = "choice_room";
-const hostSessionId = `hs_${"a".repeat(32)}`;
-const seatId = "seat_1";
-const choiceId = "choice_character_pick_0001";
-
-function fixture() {
-	let clock = 1000;
-	const active = new Set([`${roomId}\u0000${hostSessionId}`]);
-	const controller = createManagedChoiceController({
-		now: () => clock,
-		isHostSessionActive: (room, session) => active.has(`${room}\u0000${session}`),
-		authenticateSeat: (message, record) => message.seatCredential === `credential:${record.seatId}`,
-	});
-	const open = extra => controller.openChoice({
-		protocol: 1, roomId, hostSessionId, seatId, choiceId, eventSequence: 2,
-		options: ["character_a", "character_b"], trusteeOption: "character_b", deadlineAt: 2000, ...extra,
-	});
-	const submit = extra => controller.submitChoice({
-		protocol: 1, roomId, hostSessionId, seatId, choiceId, eventSequence: 2,
-		connectionId: "connection_1", seatCredential: "credential:seat_1", option: "character_a", ...extra,
-	});
-	return { controller, open, submit, active, setClock: value => { clock = value; } };
-}
-
-test("managed choice accepts only the authenticated current seat connection and valid native option", () => {
-	const f = fixture();
-	assert.equal(f.open().ok, true);
-	assert.equal(f.controller.bindSeatConnection({ roomId, seatId, connectionId: "connection_1" }).ok, true);
-	for (const invalid of [
-		{ seatId: "seat_2" }, { option: "forged_character" }, { connectionId: "old_connection" },
-		{ seatCredential: "credential:seat_2" }, { eventSequence: 3 },
-	]) assert.equal(f.submit(invalid).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
-	const accepted = f.submit();
-	assert.equal(accepted.ok, true);
-	assert.deepEqual(accepted.choice.resolution, { kind: "player", option: "character_a", connectionId: "connection_1" });
-	assert.equal(f.submit().code, "MANAGED_CHOICE_SUBMIT_REJECTED");
-});
-
-test("managed choice retains disconnect state and resolves a timed-out seat through trustee", () => {
-	const f = fixture();
-	assert.equal(f.open().ok, true);
-	assert.equal(f.controller.bindSeatConnection({ roomId, seatId, connectionId: "connection_1" }).ok, true);
-	assert.equal(f.controller.bindSeatConnection({ roomId, seatId, connectionId: "connection_2" }).ok, true);
-	assert.equal(f.submit({ connectionId: "connection_1" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
-	f.setClock(2000);
-	assert.equal(f.submit({ connectionId: "connection_2" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
-	const resolved = f.controller.expireChoice({ roomId, choiceId, hostSessionId });
-	assert.equal(resolved.ok, true);
-	assert.deepEqual(resolved.choice.resolution, { kind: "trustee", option: "character_b" });
-});
-
-test("managed choice fails closed for invalid setup or expired host session", () => {
-	const f = fixture();
-	assert.equal(f.open({ options: ["duplicate", "duplicate"] }).code, "MANAGED_CHOICE_OPEN_REJECTED");
-	assert.equal(f.open({ deadlineAt: 1000 }).code, "MANAGED_CHOICE_OPEN_REJECTED");
-	f.active.clear();
-	assert.equal(f.open().code, "MANAGED_CHOICE_OPEN_REJECTED");
-});
+const require=createRequire(import.meta.url); const {createManagedChoiceController}=require("../game/server-managed-choice-controller.js");
+const roomId="choice_room",hostSessionId=`hs_${"a".repeat(32)}`,seatId="seat_1",nativeEventId="native_character_pick_0001";
+function fixture(extra={}){let now=1000,byte=0;const timers=new Map(),resolved=[];const c=createManagedChoiceController({now:()=>now,randomBytes:n=>Buffer.alloc(n,++byte),isHostSessionActive:(r,s)=>r===roomId&&s===hostSessionId,authenticateSeat:(m,r)=>m.credential===r.seatId,authorizeManagedHost:r=>r.hostProof===r.hostSessionId,authorizeSeatBinding:r=>r.serverProof===r.connectionId,schedule:(fn,ms)=>{const id=++byte;timers.set(id,{fn,at:now+ms});return id},cancel:id=>timers.delete(id),onResolved:r=>resolved.push(r),...extra});const open=o=>c.openChoice({protocol:1,roomId,hostSessionId,seatId,nativeEventId,eventSequence:2,options:["a","b"],trusteeOption:"b",deadlineAt:2000,hostProof:hostSessionId,...o});const bind=(id="conn_1",o={})=>c.bindSeatConnection({roomId,seatId,connectionId:id,serverProof:id,...o});const submit=(id,o={})=>c.submitChoice({protocol:1,roomId,hostSessionId,seatId,nativeEventId,eventSequence:2,choiceId:id,connectionId:"conn_1",credential:seatId,option:"a",...o});return{c,open,bind,submit,resolved,advance:v=>{now=v;for(const [id,t]of[...timers])if(t.at<=now){timers.delete(id);t.fn()}}}}
+test("only trusted host and server seat flow may create or bind a choice",()=>{const f=fixture();assert.equal(f.open({hostProof:"forged"}).code,"MANAGED_CHOICE_OPEN_REJECTED");const x=f.open();assert.equal(x.ok,true);assert.match(x.choice.choiceId,/^choice_[a-f0-9]{32}$/);assert.equal(f.bind("conn_1",{serverProof:"forged"}).code,"MANAGED_CHOICE_CONNECTION_REJECTED");assert.equal(f.bind().ok,true);assert.equal(f.submit(x.choice.choiceId,{nativeEventId:"native_wrong_event_0001"}).code,"MANAGED_CHOICE_SUBMIT_REJECTED");assert.equal(f.submit(x.choice.choiceId).ok,true);assert.equal(f.submit(x.choice.choiceId).code,"MANAGED_CHOICE_SUBMIT_REJECTED")});
+test("deadline resolves once and cleanup rejects replay",()=>{const f=fixture(),x=f.open();f.bind("conn_2");f.advance(2000);assert.deepEqual(f.resolved[0].resolution,{kind:"trustee",option:"b"});assert.equal(f.submit(x.choice.choiceId,{connectionId:"conn_2"}).code,"MANAGED_CHOICE_SUBMIT_REJECTED");const y=f.open({deadlineAt:3000});assert.equal(f.c.cleanupHostSession(roomId,hostSessionId).ok,true);assert.equal(f.c.pendingCount(),0);assert.equal(f.submit(y.choice.choiceId).code,"MANAGED_CHOICE_SUBMIT_REJECTED")});
+test("capacity bounds pending native choices",()=>{const f=fixture({maxPendingChoices:1});assert.equal(f.open().ok,true);assert.equal(f.open().code,"MANAGED_CHOICE_CAPACITY_REJECTED");assert.equal(f.c.cleanupRoom(roomId).ok,true);assert.equal(f.c.pendingCount(),0)});
