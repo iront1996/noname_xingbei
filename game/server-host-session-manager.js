@@ -203,7 +203,7 @@ function createHostSessionManager({
 					record.failureCode = typeof message.code === "string" && /^[A-Z0-9_]{3,96}$/.test(message.code) ? message.code : "HOST_MANAGED_EXECUTION_FAILED";
 				}
 					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
-					else if (["host_choice_candidates", "host_choice_ack"].includes(message?.type) && authenticate(record, message)) {
+					else if (["host_choice_candidates", "host_choice_ack", "host_choice_diagnostic"].includes(message?.type) && authenticate(record, message)) {
 						// A trusted-host IPC consumer is part of the authority path.  Do not
 						// silently lose a candidate/ACK and leave the native event paused forever.
 						Promise.resolve(onManagedChoiceMessage(Object.freeze({ type: message.type, roomId: record.roomId, sessionId: record.sessionId, message }))).catch(() => {

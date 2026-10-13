@@ -18,6 +18,7 @@ let stopping = false;
 let cdp = null;
 let interactiveChoice = null;
 let choiceCommandChain = Promise.resolve();
+let choiceDiagnosticTimer = null;
 
 function createCdpSession(url) {
 	if (typeof url !== "string" || !/^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/[A-Za-z0-9-]+$/.test(url)) {
@@ -520,6 +521,7 @@ async function runManagedNativeChoice() {
 		throw new Error("MANAGED_CHOICE_PREPARE_FAILED");
 	}
 	interactiveChoice = { nativeEventId, before: value.before, choices: new Map(value.choices.map(choice => [choice.seatId, choice])), deliveries: new Map(), completed: null, resolve: null, reject: null };
+	choiceDiagnosticTimer = setTimeout(() => emitManagedChoiceDiagnostic(), 5000);
 	process.send?.({ ...identity, type: "host_choice_candidates", nativeEventId, eventSequence: 2, choices: value.choices, deadlineMs: 1000 });
 	const completed = await new Promise((resolve, reject) => { interactiveChoice.resolve = resolve; interactiveChoice.reject = reject; });
 	const beforeDigest = createHash("sha256").update(canonicalize(completed.before)).digest("hex");
@@ -569,8 +571,21 @@ async function applyManagedChoice(message) {
 	}
 	if (interactiveChoice.deliveries.size !== result.after.characters.length) throw new Error("MANAGED_CHOICE_ACK_INCOMPLETE");
 	interactiveChoice.completed = result;
+	if (choiceDiagnosticTimer) { clearTimeout(choiceDiagnosticTimer); choiceDiagnosticTimer = null; }
 	for (const [seatId, delivery] of interactiveChoice.deliveries) process.send?.({ ...identity, type: "host_choice_ack", seatId, choiceId: delivery.choiceId, deliveryId: delivery.deliveryId, nativeEventId: message.nativeEventId });
 	interactiveChoice.resolve(result);
+}
+
+async function emitManagedChoiceDiagnostic() {
+	if (!interactiveChoice || interactiveChoice.completed || !cdp) return;
+	try {
+		const observed = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2ManagedChoiceState,e=s?.event,g=window.__v2ManagedEngine?.core?.game;
+		return {eventName:e?.name||null,eventStep:Number.isSafeInteger(e?.step)?e.step:null,choiceMapCount:Object.keys(e?._choiceMap||{}).length,
+		appliedDeliveryCount:s?.applied?.size??null,resumed:!window.__v2ManagedEngine?.core?._status?.paused,
+		players:(g?.players||[]).map(p=>({seatId:p.playerid,initialized:typeof p.name1==='string'}))}})()`, returnByValue: true });
+		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: interactiveChoice.nativeEventId,
+			deliveries: [...interactiveChoice.deliveries.values()].map(value => ({ choiceId: value.choiceId, deliveryId: value.deliveryId })), observed: observed.result?.value || null });
+	} catch { process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: interactiveChoice.nativeEventId, deliveries: [], observed: null }); }
 }
 
 process.on("message", message => {

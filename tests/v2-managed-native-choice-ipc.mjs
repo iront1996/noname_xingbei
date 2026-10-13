@@ -15,14 +15,14 @@ const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(pr
 const roomId = "native_choice_room";
 const setup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({ length: 4 }, (_, position) => ({ seatId: `native_seat_${position + 1}`, position })) };
 
-async function until(check, timeoutMs = 45000) {
+async function until(check, timeoutMs = 45000, diagnostic = () => null) {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
 		const value = check();
 		if (value) return value;
 		await new Promise(resolve => setTimeout(resolve, 20));
 	}
-	throw new Error("condition timeout");
+	throw new Error(`condition timeout:${JSON.stringify(diagnostic())}`);
 }
 
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
@@ -31,13 +31,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1" });
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen, dropAcks = true, droppedAcks = 0;
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, dropAcks = true, droppedAcks = 0, nativeDiagnostic = null, ackCount = 0, deliveryCount = 0;
 	controller = createManagedChoiceController({
 		isHostSessionActive: (candidateRoom, sessionId) => manager?.inspect(candidateRoom)?.sessionId === sessionId && manager.inspect(candidateRoom)?.state === "playable_probe",
 		authorizeManagedHost: message => message.hostProof === sessionSecret,
 		authorizeSeatBinding: message => message.serverProof === message.connectionId,
 		authenticateSeat: (message, record) => message.credential === `credential_${record.seatId}`,
-		onResolved: choice => manager.sendChoiceDelivery(roomId, choice).then(result => result.ok),
+		onResolved: choice => { deliveryCount++; return manager.sendChoiceDelivery(roomId, choice).then(result => result.ok); },
 	});
 	manager = createHostSessionManager({
 		launch: createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 }),
@@ -54,8 +54,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(controller.bindSeatConnection({ roomId, seatId: candidate.seatId, connectionId: `conn_${candidate.seatId}`, serverProof: `conn_${candidate.seatId}` }).ok, true);
 				}
 			} else if (type === "host_choice_ack") {
+				ackCount++;
 				if (dropAcks) { droppedAcks++; return; }
 				assert.equal(controller.acknowledgeDelivery({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret }).ok, true);
+			} else if (type === "host_choice_diagnostic") {
+				nativeDiagnostic = message.observed;
 			}
 		},
 	});
@@ -78,7 +81,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		const session = manager.inspect(roomId);
 		if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks })}`);
 		return session?.authorityStateRevision === 2 && session;
-	});
+	}, 45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), deliveryCount, ackCount, droppedAcks, nativeDiagnostic }));
 	assert.equal(droppedAcks, 4);
 	// Simulate lost parent-side ACK processing. Retry uses the unchanged delivery
 	// IDs; Chromium must acknowledge the already-applied native result without
