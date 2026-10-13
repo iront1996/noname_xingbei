@@ -95,7 +95,7 @@ M2 batch 11:
 - The first registered event remains the real Xingbei `initSideAndPosition` event. Its validator independently checks complete ordered seats, equal red/blue teams, a legal red `_status.firstAct`, `game.me === null`, and zero player transports. It is extensible only by adding further event-specific validators.
 - `preGameSummaryDigest`, authority-event digests and `checkpoint` have separate meanings. The first is bounded setup verification, the second is live in-memory continuity evidence, and the third remains absent (`checkpoint:null`/`checkpointAvailable:false`). No M4 recovery claim follows.
 - An authoritative-result delivery receipt does not increment the native authority-state revision; it has its own duplicate-protected result sequence. This prevents result transport from silently breaking the native event chain.
-- Local evidence: 10/10 host-session/process and 8/8 real-Chromium regressions. Linux CI evidence is pending the implementation commit. No HALL routing, choice flow, M3 continuity or M4 checkpoint work was begun in this batch.
+- Evidence: commit `8b9ae15`; local targeted regressions passed 10/10 host-session/process, 8/8 real-Chromium tests and B2 seat-registry. Linux CI run 38359398796 passed every workflow step. No HALL routing, choice flow, M3 continuity or M4 checkpoint work was begun in this batch.
 
 ## Verified starting point
 

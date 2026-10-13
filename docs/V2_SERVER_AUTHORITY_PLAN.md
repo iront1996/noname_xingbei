@@ -206,7 +206,7 @@ Read-only V3 research findings:
 - `preGameSummaryDigest` remains verification metadata only. It is not the initial authority-state digest; the first authenticated native event establishes the live in-memory chain. Every authority-event proof requires `checkpoint:null`, and `checkpointAvailable` remains false. Neither a pre-game digest nor this event chain is an M4 recoverable checkpoint.
 - Result delivery keeps its independent monotonically increasing result sequence, but no longer advances `authorityStateRevision`: only authenticated native state events can mutate the authority version/digest chain.
 - This remains one native Playable Probe, not full Playable. No player choice, deadline/trustee, turn loop, card/skill resolution, victory flow, HALL managed-host routing, M3 continuity or M4 recovery is proven.
-- Evidence pending this batch's Linux CI; local targeted regressions passed 10/10 host-session/process and 8/8 real-Chromium tests.
+- Evidence: commit `8b9ae15`; local targeted regressions passed 10/10 host-session/process, 8/8 real-Chromium tests and B2 seat-registry. Linux CI run 38359398796 passed every workflow step.
 
 Minimal-difference sequence:
 
