@@ -278,6 +278,13 @@ Read-only V3 research findings:
 - The four-seat real-Chromium test proves: A's second native option becomes its actual character; B follows the controller deadline trustee path; C survives a connection rebind while its old connection is rejected; D's forged option is rejected before its legal result. Native event #2 follows #1's digest chain with `game.me === null` and no player transports.
 - A trusted choice IPC handler exception now fails the managed session closed instead of being swallowed and leaving a native event permanently paused. Evidence: commits `73e7404` and `206f356`; local targeted suites passed 15/15 protocol/process tests and 10/10 real-Chromium tests; Linux CI run 38467551154 passed with the new native-choice test explicitly executed. This is not HALL routing, M3 browser recovery, an M4 checkpoint, full turn/card/skill gameplay, or a real-player acceptance claim.
 
+### M2 batch 22 — native-choice apply acknowledgement fence
+
+- A managed-choice ACK is now delayed until the original `chooseCharacterOL` event has resumed through native step 5 and every final native `Player.name1` matches its immutable controller resolution. A prior `event.sendback` is not treated as application proof.
+- The four-seat Chromium test intentionally drops all first ACKs, retries the same stable deliveries, and verifies that Chromium emits repeat ACKs without re-running `sendback` or Player initialization. Its trustee deadline is bounded at three seconds to tolerate CI process scheduling; it is not a browser bootstrap timeout increase.
+- A direct `game.gameDraw()` / `Player.phase()` call was investigated but intentionally not accepted: outside the original Xingbei startup event-stack topology its loop does not yield a safe, independently controllable turn boundary. The next M2 work must introduce a constrained native start/phase coordinator modelled on the original event stack, then gate the first `xingDong`/`gongJiOrFaShu` selection before connecting it to the controller. No turn, card, skill, or result authority is claimed yet.
+- Evidence: commits `bf115c7` and `1cc0f6f`; Linux CI run 38470185857 passed all workflow steps.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

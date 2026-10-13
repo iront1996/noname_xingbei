@@ -130,6 +130,8 @@ M2 batch 19: ACKs now require managed-host protocol identity plus the injected h
 
 M2 batch 21: the first real native managed-choice loop is implemented and covered by `tests/v2-managed-native-choice-ipc.mjs`. A supervised Chromium process extracts real Xingbei `chooseCharacterOLDuoXuanYi` candidates, opens four server-controller choices, accepts an authenticated player result and deadline trustee result, protects a rebinding seat from its old connection, rejects an invalid option, delivers immutable results through private IPC, applies them using native `event.sendback`, and acknowledges only after native Player initialization. The test keeps `game.me === null`, creates no player transports, and validates authority event #2 after #1. Commits `73e7404`/`206f356`; Linux CI run 38467551154 passed. This does not establish HALL routing, M3 four-real-player recovery, M4 persistence, or full playable turns/cards/skills.
 
+M2 batch 22: ACK timing is now fenced behind the completed native selection event and final Player-role comparison. The Chromium integration deliberately loses the first ACKs, retries the identical deliveries, and proves repeat delivery does not apply a role twice. Linux CI run 38470185857 passed. Investigation of the first native turn confirmed that a direct standalone draw/phase call is not a valid substitute for Xingbei's original startup event-stack topology; it is recorded as a required constrained coordinator rather than being committed as a hanging or fake turn probe. Turn actions, cards, skills, HALL routing, M3 recovery, and M4 persistence remain unverified.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`
