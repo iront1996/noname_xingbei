@@ -143,6 +143,7 @@ Read-only V3 research findings:
 - `commitAuthoritativeResult` accepts only the current `engine_ready` session. Results submitted while starting or browser-ready, by stale sessions, with duplicate/out-of-order sequences, or with player/admin credentials fail closed.
 - The real Chromium supervisor intentionally emits only `host_browser_ready`. The simulated engine fixture emits both phases so the authority-result path remains testable without falsely treating CDP liveness as engine initialization.
 - Completion vocabulary is fixed for later batches: **Browser Ready** = Chromium/CDP alive; **Engine Ready** = required native engine APIs initialized and verified; **Game Ready** = room configuration/roster and authoritative initial state committed; **Playable** = event loop, choices, deadlines, rules and results execute server-side. These are independent of the later M2+M3 four-ordinary-player continuity acceptance.
+- Evidence: commit `b943f47`; Linux CI run 38310628904 succeeded.
 
 ### M2 batch 5 — Chromium process-tree and resource cleanup
 
@@ -150,7 +151,7 @@ Read-only V3 research findings:
 - The launcher retains cleanup responsibility after supervisor death. It terminates the registered group, escalates to forced termination after a bounded wait, and removes only a validated `v2-managed-host-*` directory under the system temporary root.
 - Tests use real Chromium/Edge processes to verify normal stop, invalid-executable startup failure, forced supervisor termination, Chromium abnormal exit, PID disappearance, profile removal and two-room fault isolation. Startup executable access is validated before profile creation.
 - Sandbox policy remains unchanged: no automatic `--no-sandbox`, and root launch fails closed.
-- Local full regression passed 81/81 plus B2 seat-registry, with no remaining managed-host temp profiles. This is resource-supervision evidence, not Engine Ready or Game Ready evidence.
+- Local full regression passed 81/81 plus B2 seat-registry, with no remaining managed-host temp profiles. Evidence: commit `0ec5dc1`; Linux CI run 38311258383 succeeded. This is resource-supervision evidence, not Engine Ready or Game Ready evidence.
 
 ### M2 batch 6 — minimal real-engine initialization
 
@@ -158,7 +159,7 @@ Read-only V3 research findings:
 - Engine Ready requires concrete native API checks: `game`, `lib`, `ui`, `_status`, Xingbei mode identity, `randomMapOL`, `checkResult` and `checkOnlineResult`. Only after every check succeeds does the supervisor send authenticated `host_engine_ready`.
 - The verified proof explicitly requires `gameLoopStarted:false`. No arena, roster, players, cards, events, choices or network routing are initialized, and the engine submits no authoritative result.
 - The loopback static module host exists only in test fixtures and rejects traversal, query strings and non-GET/HEAD methods. No service is deployed.
-- Local real-browser and full regression passed 82/82 plus B2 seat-registry with no managed profile residue. This upgrades **Engine Ready** to proven for minimal native module/API initialization only; **Game Ready**, **Playable**, and M2+M3 four-player integration remain not implemented.
+- Local real-browser and full regression passed 82/82 plus B2 seat-registry with no managed profile residue. Evidence: commit `8e7c7d3`; Linux CI run 38311479712 passed every `node-recovery-tests` step, including the real-Chromium lifecycle/engine-init step. This upgrades **Engine Ready** to proven for minimal native module/API initialization only; **Game Ready**, **Playable**, and M2+M3 four-player integration remain not implemented.
 
 Minimal-difference sequence:
 

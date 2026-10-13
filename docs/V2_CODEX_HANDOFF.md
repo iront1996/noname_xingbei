@@ -42,19 +42,21 @@ M2 batch 4:
 - hostSession now separates `browser_ready` from `engine_ready`; each phase has its own authenticated message, timeout and failure code.
 - Only `engine_ready` may submit ordered authoritative results. Real Chromium currently stops at Browser Ready by design; only the simulated engine fixture reaches Engine Ready.
 - Status remains: Browser Ready **proven**; Engine Ready **gate implemented but real engine not proven**; Game Ready **not implemented**; Playable **not implemented**; M2+M3 four-player integration **not implemented**.
+- Evidence: commit `b943f47`; Linux CI run 38310628904 succeeded.
 
 M2 batch 5:
 
 - The parent launcher now tracks an authenticated Chromium process-group/profile registration and performs cleanup even when the Node supervisor is forcibly killed.
 - Real-browser tests cover normal shutdown, startup failure, supervisor kill, Chromium kill, resource residue and cross-room isolation. Sandbox restrictions are unchanged.
 - Local full regression passed 81/81 plus B2 seat-registry and left no `v2-managed-host-*` profile behind.
+- Evidence: commit `0ec5dc1`; Linux CI run 38311258383 succeeded.
 - Completion status is unchanged above Browser Ready; no real engine initialization or gameplay claim is made.
 
 M2 batch 6:
 
 - Real off-board Chromium now reaches Engine Ready only after importing the actual Noname and Xingbei modules from a loopback test origin and verifying the required native APIs.
 - The proof deliberately reports `gameLoopStarted:false`; it creates no match state and sends no result. Game Ready, Playable and M2+M3 continuity remain unimplemented.
-- Local full regression passed 82/82 plus B2 seat-registry with no managed profile residue. Linux CI evidence must be recorded against the implementation commit before treating this batch as accepted.
+- Local full regression passed 82/82 plus B2 seat-registry with no managed profile residue. Commit `8e7c7d3`; Linux CI run 38311479712 passed all `node-recovery-tests` steps, including the real-Chromium lifecycle/engine-init step.
 
 ## Verified starting point
 
