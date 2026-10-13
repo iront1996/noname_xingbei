@@ -285,6 +285,12 @@ Read-only V3 research findings:
 - A direct `game.gameDraw()` / `Player.phase()` call was investigated but intentionally not accepted: outside the original Xingbei startup event-stack topology its loop does not yield a safe, independently controllable turn boundary. The next M2 work must introduce a constrained native start/phase coordinator modelled on the original event stack, then gate the first `xingDong`/`gongJiOrFaShu` selection before connecting it to the controller. No turn, card, skill, or result authority is claimed yet.
 - Evidence: commits `bf115c7` and `1cc0f6f`; Linux CI run 38470185857 passed all workflow steps.
 
+### M2 batch 23 — automatic managed-choice delivery retry
+
+- `managed-choice-controller` now treats an asynchronous managed-host IPC rejection as a delivery-pending condition and schedules a bounded-delay retry of the unchanged immutable delivery. This closes the former integration-path bug where a test callback could catch-and-discard a failed `sendChoiceDelivery` promise.
+- ACK, room cleanup and host-session cleanup cancel a scheduled delivery retry. The retry never regenerates a choice, option, native event ID or delivery ID; Chromium's existing duplicate-delivery guard remains the second fence.
+- This improves C2 reliability only. It does not make a first native turn safe: the next coordinator must reproduce Xingbei's original start-event stack (`gameStart` → opening draw → phaseLoop) before a real `xingDong` selection can be exposed.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

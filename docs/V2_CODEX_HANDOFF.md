@@ -132,6 +132,8 @@ M2 batch 21: the first real native managed-choice loop is implemented and covere
 
 M2 batch 22: ACK timing is now fenced behind the completed native selection event and final Player-role comparison. The Chromium integration deliberately loses the first ACKs, retries the identical deliveries, and proves repeat delivery does not apply a role twice. Linux CI run 38470185857 passed. Investigation of the first native turn confirmed that a direct standalone draw/phase call is not a valid substitute for Xingbei's original startup event-stack topology; it is recorded as a required constrained coordinator rather than being committed as a hanging or fake turn probe. Turn actions, cards, skills, HALL routing, M3 recovery, and M4 persistence remain unverified.
 
+M2 batch 23: asynchronous `sendChoiceDelivery` failure is now retained and automatically retried with the same immutable delivery rather than relying on a test manually calling `retryDelivery`. ACK/room/session cleanup cancels queued retry timers. This closes a C2 transport-reliability gap but does not change the outstanding requirement for an original Xingbei start-event/phase-loop coordinator before any real turn action is claimed.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`
