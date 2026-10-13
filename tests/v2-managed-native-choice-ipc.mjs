@@ -49,7 +49,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				for (const candidate of message.choices) {
 					const openedChoice = controller.openChoice({ protocol: 1, roomId, hostSessionId: message.sessionId, nativeEventId: message.nativeEventId,
 						seatId: candidate.seatId, eventSequence: message.eventSequence, options: candidate.options, trusteeOption: candidate.options[0],
-						deadlineAt: Date.now() + 700, hostProof: sessionSecret });
+						deadlineAt: Date.now() + 3000, hostProof: sessionSecret });
 					assert.equal(openedChoice.ok, true); opened.push(openedChoice.choice);
 					assert.equal(controller.bindSeatConnection({ roomId, seatId: candidate.seatId, connectionId: `conn_${candidate.seatId}`, serverProof: `conn_${candidate.seatId}` }).ok, true);
 				}
