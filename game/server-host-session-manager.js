@@ -197,9 +197,22 @@ function createHostSessionManager({
 				else if (message?.type === "host_engine_ready") markEngineReady(message);
 				else if (message?.type === "host_game_ready") markGameReady(message);
 				else if (message?.type === "host_authority_event") commitAuthorityEvent(message);
+				else if (message?.type === "host_failure" && authenticate(record, message)) {
+					clearPhaseTimer(record);
+					record.state = "failed";
+					record.failureCode = typeof message.code === "string" && /^[A-Z0-9_]{3,96}$/.test(message.code) ? message.code : "HOST_MANAGED_EXECUTION_FAILED";
+				}
 					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
 					else if (["host_choice_candidates", "host_choice_ack"].includes(message?.type) && authenticate(record, message)) {
-						try { onManagedChoiceMessage(Object.freeze({ type: message.type, roomId: record.roomId, sessionId: record.sessionId, message })); } catch (_) {}
+						// A trusted-host IPC consumer is part of the authority path.  Do not
+						// silently lose a candidate/ACK and leave the native event paused forever.
+						Promise.resolve(onManagedChoiceMessage(Object.freeze({ type: message.type, roomId: record.roomId, sessionId: record.sessionId, message }))).catch(() => {
+							if (!ACTIVE_STATES.has(record.state)) return;
+							record.state = "failed";
+							record.failureCode = "HOST_CHOICE_IPC_HANDLER_FAILED";
+							clearPhaseTimer(record);
+							Promise.resolve(record.handle?.stop("choice_ipc_handler_failed")).catch(() => {});
+						});
 					}
 			});
 			armPhaseTimer(record, "starting", browserReadyTimeoutMs,
@@ -370,7 +383,9 @@ function createHostSessionManager({
 		const record = sessions.get(roomId);
 		if (!record || !["game_ready", "playable_probe"].includes(record.state) || !record.handle?.sendHostCommand ||
 			!delivery || Object.getPrototypeOf(delivery) !== Object.prototype || typeof delivery.choiceId !== "string" ||
-			typeof delivery.deliveryId !== "string" || typeof delivery.nativeEventId !== "string") return failure("HOST_CHOICE_DELIVERY_REJECTED");
+			typeof delivery.deliveryId !== "string" || typeof delivery.nativeEventId !== "string" || typeof delivery.seatId !== "string" ||
+			!delivery.resolution || Object.getPrototypeOf(delivery.resolution) !== Object.prototype ||
+			!["player", "trustee"].includes(delivery.resolution.kind) || typeof delivery.resolution.option !== "string") return failure("HOST_CHOICE_DELIVERY_REJECTED");
 		try {
 			await record.handle.sendHostCommand(Object.freeze({ ...delivery, type: "host_choice_delivery", kind: "managed_host", protocol: PROTOCOL,
 				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret }));

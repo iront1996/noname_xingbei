@@ -16,6 +16,7 @@ let profile = null;
 let identity = null;
 let stopping = false;
 let cdp = null;
+let interactiveChoice = null;
 
 function createCdpSession(url) {
 	if (typeof url !== "string" || !/^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/[A-Za-z0-9-]+$/.test(url)) {
@@ -367,6 +368,11 @@ async function boot(message) {
 		},
 	});
 
+	if (process.env.V2_MANAGED_CHOICE_IPC === "1") {
+		await runManagedNativeChoice();
+		return;
+	}
+
 	if (process.env.V2_CHARACTER_SELECTION_PROBE !== "1") return;
 	const characterSelection = await cdp.send("Runtime.evaluate", {
 		expression: `(async()=>{
@@ -467,11 +473,84 @@ async function boot(message) {
 	});
 }
 
+function validHostCommand(message) {
+	return message?.kind === "managed_host" && message.protocol === identity?.protocol &&
+		message.roomId === identity?.roomId && message.sessionId === identity?.sessionId &&
+		message.secret === identity?.secret;
+}
+
+async function runManagedNativeChoice() {
+	const nativeEventId = `native_${identity.sessionId.slice(3)}_character_selection`;
+	const prepared = await cdp.send("Runtime.evaluate", {
+		expression: `(async()=>{
+		 const managed=window.__v2ManagedEngine,container=window.__v2ManagedGame;
+		 const {game,lib,_status}=managed.core;
+		 if(game.me!==null||container.authorityState.revision!==1||game.players.some(player=>player.ws))throw Error('MANAGED_CHOICE_PRECONDITION_FAILED');
+		 const originalBroadcastAll=game.broadcastAll,originalInit=game.initSideAndPosition,originalSetTimeout=globalThis.setTimeout;
+		 let dialogBroadcasts=0,blockedTrustee=false;
+		 game.broadcastAll=function(fn,...args){if(dialogBroadcasts++===0)return;return originalBroadcastAll.call(this,fn,...args)};
+		 game.initSideAndPosition=function(){return null};
+		 globalThis.setTimeout=function(fn,delay,...args){if(!blockedTrustee&&delay===6000){blockedTrustee=true;return 0}return originalSetTimeout(fn,delay,...args)};
+		 try{
+		  lib.configOL.choose_number='2'; game.chooseCharacterOLDuoXuanYi(); const event=_status.event;
+		  if(event?.name!=='chooseCharacterOL')throw Error('MANAGED_CHOICE_EVENT_MISSING');
+		  window.__v2ManagedChoiceState={event,nativeEventId:${JSON.stringify(nativeEventId)},applied:new Set()};
+		  // The native event intentionally pauses at step 4 while the managed
+		  // controller owns its choices. Starting (rather than awaiting) the loop
+		  // exposes its genuine candidate set without waiting for a human UI.
+		  game.loop(event); await new Promise(resolve=>originalSetTimeout(resolve,0));
+		  const choices=game.players.map(player=>({seatId:player.playerid,options:[...(game._characterChoice[player.playerid]||[])]}));
+		  if(!blockedTrustee||dialogBroadcasts!==1||choices.some(choice=>choice.options.length<2))throw Error('MANAGED_CHOICE_CANDIDATES_INVALID');
+		  return {choices,before:{revision:1,firstActSeatId:_status.firstAct?.playerid||null,sides:game.players.map(player=>({seatId:player.playerid,side:player.side}))}};
+		 }finally{game.broadcastAll=originalBroadcastAll;game.initSideAndPosition=originalInit;globalThis.setTimeout=originalSetTimeout}
+		})()`, awaitPromise: true, returnByValue: true,
+	}, 45000);
+	const value = prepared.result?.value;
+	if (prepared.exceptionDetails || !Array.isArray(value?.choices) || value.choices.length < 2 || value.choices.some(choice => !Array.isArray(choice.options) || choice.options.length < 2)) {
+		throw new Error("MANAGED_CHOICE_PREPARE_FAILED");
+	}
+	interactiveChoice = { nativeEventId, before: value.before, choices: new Map(value.choices.map(choice => [choice.seatId, choice])), completed: null, resolve: null, reject: null };
+	process.send?.({ ...identity, type: "host_choice_candidates", nativeEventId, eventSequence: 2, choices: value.choices, deadlineMs: 1000 });
+	const completed = await new Promise((resolve, reject) => { interactiveChoice.resolve = resolve; interactiveChoice.reject = reject; });
+	const beforeDigest = createHash("sha256").update(canonicalize(completed.before)).digest("hex");
+	const afterDigest = createHash("sha256").update(canonicalize(completed.after)).digest("hex");
+	if (beforeDigest === afterDigest) throw new Error("MANAGED_CHOICE_NO_PROGRESS");
+	process.send?.({ ...identity, type: "host_authority_event", proof: { kind: "native_authority_event_v1", checkpoint: null,
+		eventSequence: 2, stateRevisionBefore: 1, stateRevisionAfter: 2, beforeDigest, afterDigest,
+		event: { kind: "xingbei_character_selection_v1", name: "chooseCharacterOL", characters: completed.after.characters,
+			hostPlayerAbsent: true, connectedTransports: 0 } } });
+}
+
+async function applyManagedChoice(message) {
+	if (!interactiveChoice || !validHostCommand(message) || message.nativeEventId !== interactiveChoice.nativeEventId ||
+		typeof message.deliveryId !== "string" || typeof message.choiceId !== "string" || typeof message.seatId !== "string" ||
+		typeof message.resolution?.option !== "string" || !interactiveChoice.choices.has(message.seatId)) return;
+	const applied = await cdp.send("Runtime.evaluate", {
+		expression: `(async()=>{const state=window.__v2ManagedChoiceState,payload=${JSON.stringify({ deliveryId: message.deliveryId, seatId: message.seatId, option: message.resolution.option })};
+		if(!state||state.nativeEventId!==${JSON.stringify(interactiveChoice.nativeEventId)})throw Error('MANAGED_CHOICE_STATE_MISSING');
+		if(state.applied.has(payload.deliveryId))return {duplicate:true,completed:false};
+		const {game,_status}=window.__v2ManagedEngine.core,event=state.event,player=game.players.find(item=>item.playerid===payload.seatId);
+		if(!player||!game._characterChoice[payload.seatId]?.includes(payload.option)||event._choiceMap[payload.seatId])throw Error('MANAGED_CHOICE_DELIVERY_INVALID');
+		event.sendback({result:true,links:[payload.option]},player);state.applied.add(payload.deliveryId);
+		if(state.applied.size!==game.players.length)return {duplicate:false,completed:false};
+		game.resume();const deadline=Date.now()+5000;while(game.players.some(item=>!item.name1)&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,10));
+		const before={revision:1,firstActSeatId:_status.firstAct?.playerid||null,sides:game.players.map(item=>({seatId:item.playerid,side:item.side}))};
+		const characters=game.players.map(item=>({seatId:item.playerid,character:item.name1||null}));
+		if(characters.some(item=>typeof item.character!=='string')||new Set(characters.map(item=>item.character)).size!==characters.length||game.me!==null||game.players.some(item=>item.ws))throw Error('MANAGED_CHOICE_APPLY_FAILED');
+		return {duplicate:false,completed:true,before,after:{revision:2,firstActSeatId:before.firstActSeatId,sides:before.sides,characters}}})()`, awaitPromise: true, returnByValue: true,
+	}, 15000);
+	const result = applied.result?.value;
+	if (applied.exceptionDetails || !result) throw new Error("MANAGED_CHOICE_APPLY_FAILED");
+	process.send?.({ ...identity, type: "host_choice_ack", choiceId: message.choiceId, deliveryId: message.deliveryId, nativeEventId: message.nativeEventId });
+	if (result.completed && !interactiveChoice.completed) { interactiveChoice.completed = result; interactiveChoice.resolve(result); }
+}
+
 process.on("message", message => {
 	// Bootstrap is the one private launch envelope.  Commands deliberately use
 	// `type`, so they can never be mistaken for a second bootstrap.
 	if (message?.kind === "host_session_bootstrap") {
-		boot(message).catch(async () => {
+		boot(message).catch(async error => {
+			process.send?.({ ...identity, type: "host_failure", code: String(error?.message || "HOST_BOOT_FAILED").slice(0, 128) });
 			await cleanup();
 			process.exit(1);
 		});
@@ -483,7 +562,11 @@ process.on("message", message => {
 	}
 	// Choice delivery is accepted only after the C2 IPC adapter validates the
 	// private host identity inside the managed process. Unknown IPC is inert.
-	if (message?.type === "host_choice_delivery" || message?.type === "host_choice_cancel") return;
+	if (message?.type === "host_choice_delivery") {
+		applyManagedChoice(message).catch(error => interactiveChoice?.reject?.(error));
+		return;
+	}
+	if (message?.type === "host_choice_cancel") return;
 });
 
 process.on("disconnect", () => cleanup().finally(() => process.exit(0)));

@@ -128,6 +128,8 @@ M2 batch 17: choice resolution now has an in-memory outbox state. A failed sink 
 
 M2 batch 19: ACKs now require managed-host protocol identity plus the injected host verifier, exact room/session and delivery ID. Player/admin/forged/wrong-room/stale-session ACKs are rejected. Real supervised IPC integration remains next.
 
+M2 batch 21: the first real native managed-choice loop is implemented and covered by `tests/v2-managed-native-choice-ipc.mjs`. A supervised Chromium process extracts real Xingbei `chooseCharacterOLDuoXuanYi` candidates, opens four server-controller choices, accepts an authenticated player result and deadline trustee result, protects a rebinding seat from its old connection, rejects an invalid option, delivers immutable results through private IPC, applies them using native `event.sendback`, and acknowledges only after native Player initialization. The test keeps `game.me === null`, creates no player transports, and validates authority event #2 after #1. This does not establish HALL routing, M3 four-real-player recovery, M4 persistence, or full playable turns/cards/skills; Linux CI evidence must be recorded after the workflow run completes.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

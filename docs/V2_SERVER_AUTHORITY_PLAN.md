@@ -271,6 +271,13 @@ Read-only V3 research findings:
 - The Chromium child now dispatches explicit bootstrap, stop and choice command types. Unknown messages are inert and cannot invoke bootstrap again.
 - Candidate extraction and native application/ACK are intentionally not implemented in this batch. Evidence pending Linux CI.
 
+### M2 batch 21 — native managed-choice closed loop
+
+- The managed Chromium now starts the real Xingbei `chooseCharacterOLDuoXuanYi` event after authority event #1, obtains each seat's native `_characterChoice` candidates, and pauses only its built-in offline trustee timer through the narrowly scoped server-control adapter. It does not create a human `game.me`, player WebSocket, substitute character rules, or synthesize Player state.
+- An authenticated supervised-child message supplies the native candidates to the server-side controller. The controller retains the server-generated choice ID, seat/session/event binding, option set and deadline; its immutable result returns under a stable delivery ID. Chromium calls the native event's own `event.sendback`, resumes the original event only after all four results, verifies native Player initialization, then emits an authenticated ACK. The same delivery ID is idempotently ignored after application.
+- The four-seat real-Chromium test proves: A's second native option becomes its actual character; B follows the controller deadline trustee path; C survives a connection rebind while its old connection is rejected; D's forged option is rejected before its legal result. Native event #2 follows #1's digest chain with `game.me === null` and no player transports.
+- A trusted choice IPC handler exception now fails the managed session closed instead of being swallowed and leaving a native event permanently paused. This is not HALL routing, M3 browser recovery, an M4 checkpoint, full turn/card/skill gameplay, or a real-player acceptance claim.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
