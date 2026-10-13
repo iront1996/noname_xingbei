@@ -87,6 +87,7 @@ M2 batch 10:
 - The adapter must read the created event from `_status.event` because the legacy Xingbei helper does not return it. The no-choice/non-phaseswap configuration avoids the known `game.me`-dependent branches while keeping `game.me === null` and all player WebSockets absent.
 - hostSession calls this state `playable_probe`; before/after digests, exact sides, first-act seat and no-human-host properties are authenticated and replay-protected. It is not full Playable.
 - Still missing: character/player choices, explicit deadlines and trustee actions, turns, card/skill resolution, victory/results, HALL routing, four-player disconnect continuity and M4 checkpoints.
+- Evidence: commit `5681c04`; local targeted tests passed 10/10 host-session/process tests, 8/8 real-Chromium tests and B2 seat-registry. Linux CI run 38356056414 passed, including the real native-event step.
 
 ## Verified starting point
 

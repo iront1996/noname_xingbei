@@ -197,6 +197,7 @@ Read-only V3 research findings:
 - Execution is rejected unless `game.me` remains null, every player has no WebSocket, the exact server seat set is preserved, teams are balanced and firstAct names a bound seat. Authenticated progress is reported as `playable_probe`, not full Playable.
 - hostSession validates the native event name, state revision, changed digests, complete boolean side map, first-act seat, no-human-host proof and zero transports. Player/admin spoofing, replay and malformed progress fail closed.
 - **Proven only:** one native Xingbei state-changing event in managed Chromium. Character choice, deadlines/trustee, turn loop, card/skill effects, victory/result production, HALL routing, M3 continuity and checkpoints remain unimplemented.
+- Evidence: commit `5681c04`; local targeted tests passed 10/10 host-session/process tests, 8/8 real-Chromium tests and B2 seat-registry. Linux CI run 38356056414 passed every workflow step, including the new native-event proof.
 
 Minimal-difference sequence:
 
