@@ -124,6 +124,8 @@ M2 batch 15:
 
 M2 batch 16: trusted host/native-event opening, verified server-only seat binding, generated choice IDs, deadline timers, one-shot resolution, capacity and room/session cleanup are now covered by isolated tests. Chromium IPC and real player operations remain unimplemented; Linux CI evidence is pending.
 
+M2 batch 17: choice resolution now has an in-memory outbox state. A failed sink leaves `delivery_pending` with a stable delivery ID; retry delivers the same result once without recalculating the choice. Successfully delivered records have bounded retention. Chromium IPC acknowledgement remains unimplemented; Linux CI evidence is pending.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

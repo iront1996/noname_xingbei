@@ -30,9 +30,10 @@ function createManagedChoiceController({
 	cancel = handle => clearTimeout(handle),
 	onResolved = () => {},
 	maxPendingChoices = 128,
+	maxResolvedChoices = 256,
 } = {}) {
 	if ([now, isHostSessionActive, authenticateSeat, authorizeManagedHost, authorizeSeatBinding, randomBytes, schedule, cancel, onResolved]
-		.some(value => typeof value !== "function") || !Number.isSafeInteger(maxPendingChoices) || maxPendingChoices < 1 || maxPendingChoices > 1024) {
+		.some(value => typeof value !== "function") || !Number.isSafeInteger(maxPendingChoices) || maxPendingChoices < 1 || maxPendingChoices > 1024 || !Number.isSafeInteger(maxResolvedChoices) || maxResolvedChoices < 1) {
 		throw new TypeError("MANAGED_CHOICE_CONFIG_INVALID");
 	}
 	const choices = new Map();
@@ -55,6 +56,7 @@ function createManagedChoiceController({
 			options: Object.freeze([...record.options]),
 			deadlineAt: record.deadlineAt,
 			state: record.state,
+			deliveryId: record.deliveryId || null,
 			resolution: record.resolution ? Object.freeze({ ...record.resolution }) : null,
 		});
 	}
@@ -106,10 +108,20 @@ function createManagedChoiceController({
 	function resolve(record, resolution) {
 		if (record.state !== "pending") return failure("MANAGED_CHOICE_RESOLUTION_REJECTED");
 		if (record.timer) cancel(record.timer);
-		const resolved = Object.freeze({ ...record, timer: null, state: "resolved", resolution: Object.freeze(resolution) });
+		const resolved = Object.freeze({ ...record, timer: null, state: "delivery_pending", resolution: Object.freeze(resolution), deliveryId: `delivery_${record.choiceId}`, resolvedAt: now() });
 		choices.set(key(record.roomId, record.choiceId), resolved);
-		try { onResolved(publicChoice(resolved)); } catch (_) { return failure("MANAGED_CHOICE_SINK_FAILED"); }
-		return Object.freeze({ ok: true, choice: publicChoice(resolved) });
+		return deliver(resolved);
+	}
+	function pruneResolved() {
+		const records = [...choices.entries()].filter(([, record]) => record.state === "resolved").sort((a, b) => a[1].resolvedAt - b[1].resolvedAt);
+		while (records.length > maxResolvedChoices) choices.delete(records.shift()[0]);
+	}
+	function deliver(record) {
+		if (!record || record.state !== "delivery_pending") return failure("MANAGED_CHOICE_DELIVERY_REJECTED");
+		try { onResolved(publicChoice(record)); } catch (_) { return Object.freeze({ ok: true, delivery: "pending", choice: publicChoice(record) }); }
+		const delivered = Object.freeze({ ...record, state: "resolved" });
+		choices.set(key(record.roomId, record.choiceId), delivered); pruneResolved();
+		return Object.freeze({ ok: true, delivery: "delivered", choice: publicChoice(delivered) });
 	}
 
 	function submitChoice(message) {
@@ -152,6 +164,7 @@ function createManagedChoiceController({
 		expireChoice,
 		cleanupRoom,
 		cleanupHostSession,
+		retryDelivery: ({ roomId, choiceId }) => deliver(choices.get(key(roomId, choiceId))),
 		pendingCount: () => [...choices.values()].filter(choice => choice.state === "pending").length,
 		inspect: (roomId, choiceId) => publicChoice(choices.get(key(roomId, choiceId))),
 	});

@@ -246,6 +246,12 @@ Read-only V3 research findings:
 - Pending choices have a bounded capacity, automatic deadline timer, single-resolution guard, room/session cleanup and timer cancellation. Player-vs-timeout races resolve once; replay after resolution or cleanup fails closed.
 - This remains isolated protocol testing: no Chromium IPC, native option extraction, HALL routing or real player operation is claimed. Evidence pending Linux CI.
 
+### M2 batch 17 — reliable managed-choice delivery
+
+- A resolved choice first enters `delivery_pending` with a stable delivery ID. If the managed-host notification sink throws, the resolution remains inspectable and `retryDelivery` resends the same immutable delivery instead of re-running selection logic.
+- Successful delivery transitions once to `resolved`; repeated acknowledgement/retry is rejected. Resolved records are bounded by `maxResolvedChoices` and oldest records are pruned after successful delivery.
+- This is outbox semantics inside the isolated controller. Chromium IPC acknowledgement and native event application remain C2 work; no claim of player-operable selection is made. Evidence pending Linux CI.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
