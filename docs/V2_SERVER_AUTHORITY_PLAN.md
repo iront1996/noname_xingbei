@@ -252,6 +252,12 @@ Read-only V3 research findings:
 - Successful delivery transitions once to `resolved`; repeated acknowledgement/retry is rejected. Resolved records are bounded by `maxResolvedChoices` and oldest records are pruned after successful delivery.
 - This is outbox semantics inside the isolated controller. Chromium IPC acknowledgement and native event application remain C2 work; no claim of player-operable selection is made. Evidence pending Linux CI.
 
+### M2 batch 18 — ACK-gated managed-choice delivery
+
+- Callback success now means only that a delivery was sent. A choice remains `delivery_pending` until an active matching hostSession acknowledges the exact stable delivery ID; duplicate, wrong-ID and stale-session ACKs fail closed.
+- Delivery-pending records consume the same bounded active capacity as pending choices, and native-event/seat uniqueness spans the full lifecycle through acknowledgement. Retry always re-emits the immutable result and delivery ID.
+- This establishes the server-side prerequisite for Chromium IPC, but does not itself implement IPC or a native ACK. Evidence pending Linux CI.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

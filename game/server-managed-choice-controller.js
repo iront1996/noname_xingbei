@@ -71,8 +71,8 @@ function createManagedChoiceController({
 			!authorizeManagedHost(request)) {
 			return failure("MANAGED_CHOICE_OPEN_REJECTED");
 		}
-		if ([...choices.values()].filter(choice => choice.state === "pending").length >= maxPendingChoices) return failure("MANAGED_CHOICE_CAPACITY_REJECTED");
-		if ([...choices.values()].some(choice => choice.state === "pending" && choice.hostSessionId === request.hostSessionId &&
+		if ([...choices.values()].filter(choice => choice.state !== "resolved").length >= maxPendingChoices) return failure("MANAGED_CHOICE_CAPACITY_REJECTED");
+		if ([...choices.values()].some(choice => choice.hostSessionId === request.hostSessionId &&
 			choice.nativeEventId === request.nativeEventId && choice.seatId === request.seatId)) return failure("MANAGED_CHOICE_NATIVE_EVENT_EXISTS");
 		let choiceId;
 		try { choiceId = `choice_${randomBytes(16).toString("hex")}`; } catch (_) { return failure("MANAGED_CHOICE_OPEN_REJECTED"); }
@@ -119,9 +119,15 @@ function createManagedChoiceController({
 	function deliver(record) {
 		if (!record || record.state !== "delivery_pending") return failure("MANAGED_CHOICE_DELIVERY_REJECTED");
 		try { onResolved(publicChoice(record)); } catch (_) { return Object.freeze({ ok: true, delivery: "pending", choice: publicChoice(record) }); }
-		const delivered = Object.freeze({ ...record, state: "resolved" });
-		choices.set(key(record.roomId, record.choiceId), delivered); pruneResolved();
-		return Object.freeze({ ok: true, delivery: "delivered", choice: publicChoice(delivered) });
+		return Object.freeze({ ok: true, delivery: "sent", choice: publicChoice(record) });
+	}
+	function acknowledgeDelivery(message) {
+		const record = choices.get(key(message?.roomId, message?.choiceId));
+		if (!record || record.state !== "delivery_pending" || message.hostSessionId !== record.hostSessionId ||
+			message.deliveryId !== record.deliveryId || !isHostSessionActive(record.roomId, record.hostSessionId)) return failure("MANAGED_CHOICE_ACK_REJECTED");
+		const acknowledged = Object.freeze({ ...record, state: "resolved" });
+		choices.set(key(record.roomId, record.choiceId), acknowledged); pruneResolved();
+		return Object.freeze({ ok: true, choice: publicChoice(acknowledged) });
 	}
 
 	function submitChoice(message) {
@@ -165,6 +171,7 @@ function createManagedChoiceController({
 		cleanupRoom,
 		cleanupHostSession,
 		retryDelivery: ({ roomId, choiceId }) => deliver(choices.get(key(roomId, choiceId))),
+		acknowledgeDelivery,
 		pendingCount: () => [...choices.values()].filter(choice => choice.state === "pending").length,
 		inspect: (roomId, choiceId) => publicChoice(choices.get(key(roomId, choiceId))),
 	});
