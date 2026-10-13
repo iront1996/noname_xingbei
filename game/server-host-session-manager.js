@@ -64,12 +64,13 @@ function createHostSessionManager({
 	engineReadyTimeoutMs = 15000,
 	gameReadyTimeoutMs = 15000,
 	onAuthoritativeResult = () => {},
+	onManagedChoiceMessage = () => {},
 } = {}) {
 	if (typeof launch !== "function" || typeof randomBytes !== "function" ||
 		!Number.isSafeInteger(browserReadyTimeoutMs) || browserReadyTimeoutMs < 100 || browserReadyTimeoutMs > 60000 ||
 		!Number.isSafeInteger(engineReadyTimeoutMs) || engineReadyTimeoutMs < 100 || engineReadyTimeoutMs > 60000 ||
 		!Number.isSafeInteger(gameReadyTimeoutMs) || gameReadyTimeoutMs < 100 || gameReadyTimeoutMs > 60000 ||
-		typeof onAuthoritativeResult !== "function") {
+		typeof onAuthoritativeResult !== "function" || typeof onManagedChoiceMessage !== "function") {
 		throw new TypeError("HOST_SESSION_CONFIG_INVALID");
 	}
 
@@ -191,12 +192,15 @@ function createHostSessionManager({
 			record.handle = handle;
 			record.pid = handle.pid;
 			handle.once("exit", () => finish(record, "HOST_EXITED"));
-			handle.on("message", message => {
+				handle.on("message", message => {
 				if (message?.type === "host_browser_ready") markBrowserReady(message);
 				else if (message?.type === "host_engine_ready") markEngineReady(message);
 				else if (message?.type === "host_game_ready") markGameReady(message);
 				else if (message?.type === "host_authority_event") commitAuthorityEvent(message);
-				else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
+					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
+					else if (["host_choice_candidates", "host_choice_ack"].includes(message?.type) && authenticate(record, message)) {
+						try { onManagedChoiceMessage(Object.freeze({ type: message.type, roomId: record.roomId, sessionId: record.sessionId, message })); } catch (_) {}
+					}
 			});
 			armPhaseTimer(record, "starting", browserReadyTimeoutMs,
 				"HOST_BROWSER_READY_TIMEOUT", "browser_ready_timeout");
@@ -362,6 +366,18 @@ function createHostSessionManager({
 		}
 	}
 
+	async function sendChoiceDelivery(roomId, delivery) {
+		const record = sessions.get(roomId);
+		if (!record || !["game_ready", "playable_probe"].includes(record.state) || !record.handle?.sendHostCommand ||
+			!delivery || Object.getPrototypeOf(delivery) !== Object.prototype || typeof delivery.choiceId !== "string" ||
+			typeof delivery.deliveryId !== "string" || typeof delivery.nativeEventId !== "string") return failure("HOST_CHOICE_DELIVERY_REJECTED");
+		try {
+			await record.handle.sendHostCommand(Object.freeze({ ...delivery, type: "host_choice_delivery", kind: "managed_host", protocol: PROTOCOL,
+				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret }));
+			return Object.freeze({ ok: true });
+		} catch (_) { return failure("HOST_CHOICE_DELIVERY_REJECTED"); }
+	}
+
 	return Object.freeze({
 		start,
 		markBrowserReady,
@@ -369,6 +385,7 @@ function createHostSessionManager({
 		markGameReady,
 		commitAuthorityEvent,
 		commitAuthoritativeResult,
+		sendChoiceDelivery,
 		stop,
 		inspect: roomId => publicView(sessions.get(roomId)),
 	});

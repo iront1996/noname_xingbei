@@ -264,6 +264,13 @@ Read-only V3 research findings:
 - Tests reject player/admin kinds, forged verifier material, wrong room, stale session, wrong delivery ID and duplicate ACK before accepting the authenticated current managed host.
 - This is still controller-level authentication; C2.1 must wire the verifier to the real supervised-child IPC boundary. Evidence pending Linux CI.
 
+### M2 batch 20 — private managed-host IPC command boundary
+
+- The supervised launcher exposes a parent-to-child command method restricted to `host_choice_delivery` and `host_choice_cancel`; arbitrary child IPC is not exposed to player paths.
+- hostSession manager validates the active room/session lifecycle and constructs delivery commands with the private managed-host identity before handing them to the child. Child-to-parent choice messages are accepted only after existing `authenticate()` validation.
+- The Chromium child now dispatches explicit bootstrap, stop and choice command types. Unknown messages are inert and cannot invoke bootstrap again.
+- Candidate extraction and native application/ACK are intentionally not implemented in this batch. Evidence pending Linux CI.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.

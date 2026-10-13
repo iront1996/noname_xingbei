@@ -468,14 +468,20 @@ async function boot(message) {
 }
 
 process.on("message", message => {
+	if (message?.type === "host_session_bootstrap") {
+		boot(message).catch(async () => {
+			await cleanup();
+			process.exit(1);
+		});
+		return;
+	}
 	if (message?.type === "host_stop") {
 		cleanup().finally(() => process.exit(0));
 		return;
 	}
-boot(message).catch(async () => {
-	await cleanup();
-		process.exit(1);
-	});
+	// Choice delivery is accepted only after the C2 IPC adapter validates the
+	// private host identity inside the managed process. Unknown IPC is inert.
+	if (message?.type === "host_choice_delivery" || message?.type === "host_choice_cancel") return;
 });
 
 process.on("disconnect", () => cleanup().finally(() => process.exit(0)));

@@ -96,6 +96,11 @@ function createManagedHostProcessLauncher({
 				child.send(bootstrap, error => error ? reject(error) : resolve());
 			});
 		};
+		handle.sendHostCommand = async command => {
+			if (exited || !child.connected || !command || !["host_choice_delivery", "host_choice_cancel"].includes(command.type) ||
+				Object.getPrototypeOf(command) !== Object.prototype) throw new Error("HOST_COMMAND_REJECTED");
+			await new Promise((resolve, reject) => child.send(command, error => error ? reject(error) : resolve()));
+		};
 		handle.stop = async reason => {
 			if (exited) {
 				await cleanupPromise;
