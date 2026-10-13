@@ -287,5 +287,24 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	assert.deepEqual(accepted.session.lastAuthorityEvent, { sequence: 1, name: "initSideAndPosition" });
 	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof })).code,
 		"HOST_AUTHORITY_EVENT_REJECTED");
+	const repeatedSemanticEvent = {
+		...proof,
+		eventSequence: 2,
+		stateRevisionBefore: 1,
+		stateRevisionAfter: 2,
+		beforeDigest: proof.afterDigest,
+		afterDigest: "03".repeat(32),
+	};
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", {
+		proof: repeatedSemanticEvent,
+	})).code, "HOST_AUTHORITY_EVENT_REJECTED");
+	for (const invalidChain of [
+		{ ...repeatedSemanticEvent, eventSequence: 3 },
+		{ ...repeatedSemanticEvent, beforeDigest: "04".repeat(32) },
+	]) {
+		assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", {
+			proof: invalidChain,
+		})).code, "HOST_AUTHORITY_EVENT_REJECTED");
+	}
 	await f.manager.stop("native_progress_gate");
 });

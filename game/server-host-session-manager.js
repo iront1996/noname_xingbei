@@ -227,7 +227,10 @@ function createHostSessionManager({
 		// This dispatch is intentionally event-specific: later native events add a validator
 		// instead of weakening the common sequence/digest chain.
 		if (event?.kind === "xingbei_side_assignment_v1" && event.name === "initSideAndPosition") {
-			return validateXingbeiSideAssignment(record, event);
+			// Side assignment is the one pre-character-selection transition.  Accepting
+			// it after the probe phase would re-run a semantic initialization event even
+			// when its sequence/digest fields look fresh.
+			return record.state === "game_ready" && validateXingbeiSideAssignment(record, event);
 		}
 		return false;
 	}

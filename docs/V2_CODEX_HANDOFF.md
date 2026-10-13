@@ -97,6 +97,12 @@ M2 batch 11:
 - An authoritative-result delivery receipt does not increment the native authority-state revision; it has its own duplicate-protected result sequence. This prevents result transport from silently breaking the native event chain.
 - Evidence: commit `8b9ae15`; local targeted regressions passed 10/10 host-session/process, 8/8 real-Chromium tests and B2 seat-registry. Linux CI run 38359398796 passed every workflow step. No HALL routing, choice flow, M3 continuity or M4 checkpoint work was begun in this batch.
 
+M2 batch 12:
+
+- `initSideAndPosition` has an explicit `game_ready` phase fence. It cannot be accepted again in `playable_probe`, even with a new sequence, adjacent revisions and the correct prior digest.
+- The rejection suite covers replayed semantic initialization, digest discontinuity and sequence skipping. It intentionally does not manufacture an unrelated accepted event: a two-event accepted chain requires the next real native Xingbei event.
+- The initial event digest remains transient in-memory authority evidence, not a complete state chain or checkpoint. Linux CI evidence is pending the implementation commit.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

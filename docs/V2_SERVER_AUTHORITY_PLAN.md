@@ -208,6 +208,13 @@ Read-only V3 research findings:
 - This remains one native Playable Probe, not full Playable. No player choice, deadline/trustee, turn loop, card/skill resolution, victory flow, HALL managed-host routing, M3 continuity or M4 recovery is proven.
 - Evidence: commit `8b9ae15`; local targeted regressions passed 10/10 host-session/process, 8/8 real-Chromium tests and B2 seat-registry. Linux CI run 38359398796 passed every workflow step.
 
+### M2 batch 12 — initialization-event phase fence
+
+- `initSideAndPosition` is now explicitly a one-time pre-character-selection authority event: its native validator accepts it only while the hostSession is `game_ready`. Once the first event reaches `playable_probe`, a fresh sequence/revision/digest cannot replay the same semantic initialization.
+- Regression coverage sends a syntactically fresh second side-assignment proof with the correct prior digest and next sequence, plus disconnected and skipped-sequence variants. All fail closed. A second accepted native event will be added only with the next real native event; this batch does not invent a generic/no-op event merely to simulate a chain.
+- The first event still establishes only an in-memory live authority digest. It does not prove a complete initialized-state chain and does not change the separation of pre-game summary, event digest, and M4 checkpoint.
+- Evidence pending this batch's Linux CI.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
