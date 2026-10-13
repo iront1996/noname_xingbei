@@ -120,7 +120,7 @@ M2 batch 15:
 
 - Added a server-side managed-choice controller for an eventual managed-host route. Each choice binds room, hostSession, seat, opaque choice ID, authority event sequence, exact allowed options, deadline and trustee option.
 - Current authenticated seat connection, credential/seat identity, active host session, option membership and deadline are all required. Rebinding rejects the prior connection without discarding the pending choice; expiry yields only the configured valid trustee option.
-- This is protocol and security evidence only. It is not connected to HALL or Chromium yet and therefore cannot be described as a real player selection. The Linux host-session CI step now includes its 3-test suite; CI evidence is pending.
+- This is protocol and security evidence only. It is not connected to HALL or Chromium yet and therefore cannot be described as a real player selection. Evidence: commit `a3cd0e0`; Linux CI run 38433810630 passed every workflow step, including its 3-test suite.
 
 ## Verified starting point
 

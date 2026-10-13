@@ -238,7 +238,7 @@ Read-only V3 research findings:
 - Only the assigned authenticated seat may submit a permitted option before the deadline. Wrong seat, forged option, wrong sequence, stale connection, invalid credential, duplicate response, expired response and inactive host fail closed. Disconnect/rebind does not delete the pending choice.
 - At deadline, only the active managed host can resolve the same pending choice through the already-validated trustee option. This makes the bounded timeout policy testable without claiming that it is already wired into a native event or HALL.
 - The CI host-session step now includes `tests/v2-managed-choice-controller.mjs`. Native option extraction, Chromium IPC routing and the real player-choice branch remain the next batch.
-- Evidence pending this batch's Linux CI; local protocol tests passed 3/3.
+- Evidence: commit `a3cd0e0`; local protocol tests passed 3/3. Linux CI run 38433810630 passed every workflow step, including the expanded managed host-session/choice-control step.
 
 Minimal-difference sequence:
 
