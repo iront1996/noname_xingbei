@@ -126,6 +126,8 @@ M2 batch 16: trusted host/native-event opening, verified server-only seat bindin
 
 M2 batch 17: choice resolution now has an in-memory outbox state. A failed sink leaves `delivery_pending` with a stable delivery ID; retry delivers the same result once without recalculating the choice. Successfully delivered records have bounded retention. Chromium IPC acknowledgement remains unimplemented; Linux CI evidence is pending.
 
+M2 batch 19: ACKs now require managed-host protocol identity plus the injected host verifier, exact room/session and delivery ID. Player/admin/forged/wrong-room/stale-session ACKs are rejected. Real supervised IPC integration remains next.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

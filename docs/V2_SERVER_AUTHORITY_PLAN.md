@@ -258,6 +258,12 @@ Read-only V3 research findings:
 - Delivery-pending records consume the same bounded active capacity as pending choices, and native-event/seat uniqueness spans the full lifecycle through acknowledgement. Retry always re-emits the immutable result and delivery ID.
 - This establishes the server-side prerequisite for Chromium IPC, but does not itself implement IPC or a native ACK. Evidence pending Linux CI.
 
+### M2 batch 19 — authenticated delivery ACK boundary
+
+- Delivery ACK now requires protocol-v1 `managed_host` identity, exact room, current hostSession, delivery ID and the injected managed-host authentication verifier. Public session or delivery identifiers alone cannot complete a choice.
+- Tests reject player/admin kinds, forged verifier material, wrong room, stale session, wrong delivery ID and duplicate ACK before accepting the authenticated current managed host.
+- This is still controller-level authentication; C2.1 must wire the verifier to the real supervised-child IPC boundary. Evidence pending Linux CI.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
