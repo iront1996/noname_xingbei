@@ -101,7 +101,14 @@ M2 batch 12:
 
 - `initSideAndPosition` has an explicit `game_ready` phase fence. It cannot be accepted again in `playable_probe`, even with a new sequence, adjacent revisions and the correct prior digest.
 - The rejection suite covers replayed semantic initialization, digest discontinuity and sequence skipping. It intentionally does not manufacture an unrelated accepted event: a two-event accepted chain requires the next real native Xingbei event.
-- The initial event digest remains transient in-memory authority evidence, not a complete state chain or checkpoint. Linux CI evidence is pending the implementation commit.
+- The initial event digest remains transient in-memory authority evidence, not a complete state chain or checkpoint. Evidence: commit `6e3a0a9`; Linux CI run 38365800591 passed every workflow step.
+
+M2 batch 13:
+
+- Native `chooseCharacterOLDuoXuanYi` first fails without a local perspective at its `broadcastAll` character-dialog callback, which reads `game.me` for browser UI only. The managed adapter suppresses precisely that presentation callback and the wrapper's duplicate side-assignment invocation; it never assigns a player to `game.me`.
+- The original native event runs its offline trustee route for the isolated four-seat test, assigns four distinct characters and commits authority event #2 only when event #1's after digest is its exact before digest. The manager validates predecessor phase, ordered seat map, unique names, no human host and no transports.
+- This proves a two-event native chain and a minimal server-control compatibility boundary. It does not accept human player selections yet: choice identifiers, seat credentials, deadlines, stale transport rejection and HALL routing remain next work. It is not full Playable, M3 or M4 evidence.
+- Local evidence: 10/10 host-session/process, 9/9 real-Chromium tests and B2 seat-registry. Linux CI evidence is pending the implementation commit.
 
 ## Verified starting point
 

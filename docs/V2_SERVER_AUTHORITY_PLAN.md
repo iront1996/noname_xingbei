@@ -213,7 +213,16 @@ Read-only V3 research findings:
 - `initSideAndPosition` is now explicitly a one-time pre-character-selection authority event: its native validator accepts it only while the hostSession is `game_ready`. Once the first event reaches `playable_probe`, a fresh sequence/revision/digest cannot replay the same semantic initialization.
 - Regression coverage sends a syntactically fresh second side-assignment proof with the correct prior digest and next sequence, plus disconnected and skipped-sequence variants. All fail closed. A second accepted native event will be added only with the next real native event; this batch does not invent a generic/no-op event merely to simulate a chain.
 - The first event still establishes only an in-memory live authority digest. It does not prove a complete initialized-state chain and does not change the separation of pre-game summary, event digest, and M4 checkpoint.
-- Evidence pending this batch's Linux CI.
+- Evidence: commit `6e3a0a9`; local targeted regressions passed 10/10 host-session/process, 8/8 real-Chromium tests and B2 seat-registry. Linux CI run 38365800591 passed every workflow step.
+
+### M2 batch 13 — presentation-free native character-selection adapter
+
+- The first concrete `game.me` blocker in the native `chooseCharacterOLDuoXuanYi` path is its `broadcastAll` callback that builds each browser's local character-dialog UI from `game.me`. That callback is presentation-only; it is not a Xingbei rule transition.
+- The managed Chromium installs a narrowly scoped `v2_server_control_adapter_v1` around this one native event. It suppresses only that local-dialog callback and suppresses the wrapper's duplicate `initSideAndPosition` call because side assignment is already authority event #1. It neither assigns `game.me`, creates a human host, nor replaces Xingbei's event/rules implementation.
+- The real native `chooseCharacterOL` event then runs with the original offline trustee branch for all four isolated seats. It initializes four distinct native characters, retains `game.me === null` and zero player transports, and commits authority event #2. Its before digest must exactly equal the side-assignment after digest.
+- The server now validates the second event's phase, predecessor event, ordered full seat set, nonempty unique character names, absent human host and absent transports. Tests cover the accepted two-event chain plus broken digest, skipped sequence, malformed seat list, duplicate character and replay rejection.
+- This is not the requested human-player choice protocol: no external player operation, choice ID, deadline, stale connection fence or HALL routing exists yet. The exercised trustee fallback is native Xingbei behavior used solely to prove the adapter/event-chain boundary. It is not full Playable or M3/M4 evidence.
+- Evidence pending this batch's Linux CI; local targeted regressions passed 10/10 host-session/process, 9/9 real-Chromium tests and B2 seat-registry.
 
 Minimal-difference sequence:
 

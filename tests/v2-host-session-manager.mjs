@@ -306,5 +306,38 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 			proof: invalidChain,
 		})).code, "HOST_AUTHORITY_EVENT_REJECTED");
 	}
+	const characterSelection = {
+		kind: "native_authority_event_v1",
+		checkpoint: null,
+		eventSequence: 2,
+		stateRevisionBefore: 1,
+		stateRevisionAfter: 2,
+		beforeDigest: proof.afterDigest,
+		afterDigest: "03".repeat(32),
+		event: {
+			kind: "xingbei_character_selection_v1",
+			name: "chooseCharacterOL",
+			characters: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, character: `character_${index + 1}` })),
+			hostPlayerAbsent: true,
+			connectedTransports: 0,
+		},
+	};
+	for (const invalid of [
+		{ ...characterSelection, beforeDigest: "04".repeat(32) },
+		{ ...characterSelection, eventSequence: 3 },
+		{ ...characterSelection, event: { ...characterSelection.event, characters: characterSelection.event.characters.slice(1) } },
+		{ ...characterSelection, event: { ...characterSelection.event, characters: characterSelection.event.characters.map((entry, index) => ({ ...entry, character: index ? "character_1" : entry.character })) } },
+	]) {
+		assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: invalid })).code,
+			"HOST_AUTHORITY_EVENT_REJECTED");
+	}
+	const selected = f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: characterSelection }));
+	assert.equal(selected.ok, true);
+	assert.equal(selected.session.authorityStateRevision, 2);
+	assert.equal(selected.session.authorityStateDigest, characterSelection.afterDigest);
+	assert.equal(selected.session.nextAuthorityEventSequence, 3);
+	assert.deepEqual(selected.session.lastAuthorityEvent, { sequence: 2, name: "chooseCharacterOL" });
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: characterSelection })).code,
+		"HOST_AUTHORITY_EVENT_REJECTED");
 	await f.manager.stop("native_progress_gate");
 });

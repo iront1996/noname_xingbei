@@ -43,12 +43,14 @@ function createCdpSession(url) {
 				socket.addEventListener("error", () => { clearTimeout(timer); reject(new Error("CHROMIUM_CDP_ERROR")); }, { once: true });
 			});
 		},
-		send(method, params = {}) {
+		send(method, params = {}, timeoutMs = WAIT_MS) {
 			if (!["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.navigate", "Runtime.evaluate"].includes(method) ||
-				socket.readyState !== WebSocket.OPEN) return Promise.reject(new Error("CHROMIUM_CDP_METHOD_DENIED"));
+				socket.readyState !== WebSocket.OPEN || !Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 60000) {
+				return Promise.reject(new Error("CHROMIUM_CDP_METHOD_DENIED"));
+			}
 			const id = ++sequence;
 			return new Promise((resolve, reject) => {
-				const timer = setTimeout(() => { pending.delete(id); reject(new Error("CHROMIUM_CDP_TIMEOUT")); }, WAIT_MS);
+				const timer = setTimeout(() => { pending.delete(id); reject(new Error("CHROMIUM_CDP_TIMEOUT")); }, timeoutMs);
 				pending.set(id, { resolve, reject, timer });
 				socket.send(JSON.stringify({ id, method, params }));
 			});
@@ -237,7 +239,8 @@ async function boot(message) {
 		 loading.loadCardPile();
 		 if(lib.imported.card)Object.values(lib.imported.card).forEach(loading.loadCard);
 		 lib.configOL=Object.assign({},setup.config,{mode:'xingBei',number:setup.seats.length,
-		  player_number:setup.seats.length,versus_mode:setup.seats.length===4?'2v2':setup.seats.length===6?'3v3':'4v4'});
+		  player_number:setup.seats.length,versus_mode:setup.seats.length===4?'2v2':setup.seats.length===6?'3v3':'4v4',
+		  characterPack:Object.keys(lib.characterPack),banned:[]});
 		 _status.connectMode=true;
 		 _status.mode=lib.configOL.versus_mode;
 		 if(typeof ui.create.table!=='function')ui.create.table=(rows,columns,parent)=>{
@@ -363,6 +366,99 @@ async function boot(message) {
 			},
 		},
 	});
+
+	if (process.env.V2_CHARACTER_SELECTION_PROBE !== "1") return;
+	const characterSelection = await cdp.send("Runtime.evaluate", {
+		expression: `(async()=>{
+		 const managed=window.__v2ManagedEngine,container=window.__v2ManagedGame;
+		 const {game,lib,_status}=managed.core;
+		 if(game.me!==null||container.authorityState.revision!==1||game.players.some(player=>player.ws)){
+		  throw Error('CHARACTER_SELECTION_PRECONDITION_FAILED');
+		 }
+		 // The legacy event uses broadcastAll solely to construct each browser's local
+		 // character dialog.  A managed host has no local player view, so suppress just
+		 // that presentation callback; all rule/event work remains native Xingbei code.
+		 const originalBroadcastAll=game.broadcastAll;
+		 const originalInitSideAndPosition=game.initSideAndPosition;
+		 const presentationCallback=fn=>String(fn).includes('game._characterDialogID')&&String(fn).includes('请选择角色');
+		 const adapter=Object.freeze({kind:'v2_server_control_adapter_v1',humanPlayer:false,
+		  suppresses:['character_selection_local_dialog','duplicate_side_assignment']});
+		 Object.defineProperty(window,'__v2ServerControl',{configurable:false,value:adapter});
+		 let suppressedDialog=false, suppressedSideAssignment=false, selectionEventName=null;
+		 game.broadcastAll=function(fn,...args){
+		  if(presentationCallback(fn)){suppressedDialog=true;return;}
+		  return originalBroadcastAll.call(this,fn,...args);
+		 };
+		 // The native online selection wrapper normally owns side assignment.  It has
+		 // already been committed as authority event #1, so it must not run twice.
+		 game.initSideAndPosition=function(){suppressedSideAssignment=true;return null;};
+		 try{
+		  lib.configOL.choose_number='1';
+		  game.chooseCharacterOLDuoXuanYi();
+		  const event=_status.event;
+		  if(event?.name!=='chooseCharacterOL')throw Error('CHARACTER_SELECTION_EVENT_MISSING');
+		  selectionEventName=event.name;
+		  await game.loop(event);
+		  // The original event pauses while its built-in offline trustee path resolves
+		  // each seat. Wait for that native asynchronous path rather than inventing a
+		  // replacement selection result.
+		  const deadline=Date.now()+20000;
+		  while(game.players.some(player=>!player.name1)&&Date.now()<deadline){
+		   await new Promise(resolve=>setTimeout(resolve,25));
+		  }
+		 }catch(error){
+		  throw Error('CHARACTER_SELECTION_NATIVE_ERROR:'+String(error?.stack||error));
+		 }finally{
+		  game.broadcastAll=originalBroadcastAll;
+		  game.initSideAndPosition=originalInitSideAndPosition;
+		 }
+		 const before={revision:1,firstActSeatId:_status.firstAct?.playerid||null,
+		  sides:game.players.map(player=>({seatId:player.playerid,side:player.side}))};
+		 const characters=game.players.map(player=>({seatId:player.playerid,character:player.name1||null}));
+		 if(!suppressedDialog||!suppressedSideAssignment||game.me!==null||game.players.some(player=>player.ws)||
+		  characters.some(entry=>typeof entry.character!=='string')||new Set(characters.map(entry=>entry.character)).size!==characters.length){
+		  throw Error('CHARACTER_SELECTION_STATE_INVALID:'+JSON.stringify({suppressedDialog,suppressedSideAssignment,gameMe:game.me===null,transports:game.players.filter(player=>player.ws).length,characters}));
+		 }
+		 const after={revision:2,firstActSeatId:before.firstActSeatId,sides:before.sides,characters};
+		 container.authorityState.revision=2;
+		 return {eventName:selectionEventName,before,after,characters,hostPlayerAbsent:game.me===null,
+		  connectedTransports:game.players.filter(player=>player.ws).length,adapter:adapter.kind};
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	}, 45000);
+	const selectionProgress = characterSelection.result?.value;
+	if (characterSelection.exceptionDetails || selectionProgress?.eventName !== "chooseCharacterOL" ||
+		selectionProgress.hostPlayerAbsent !== true || selectionProgress.connectedTransports !== 0 ||
+		selectionProgress.adapter !== "v2_server_control_adapter_v1" || !selectionProgress.before ||
+		!selectionProgress.after || selectionProgress.after.revision !== 2) {
+		throw new Error("CHARACTER_SELECTION_EXECUTION_FAILED");
+	}
+	const selectionBeforeDigest = createHash("sha256").update(canonicalize(selectionProgress.before)).digest("hex");
+	const selectionAfterDigest = createHash("sha256").update(canonicalize(selectionProgress.after)).digest("hex");
+	if (selectionBeforeDigest !== afterDigest || selectionBeforeDigest === selectionAfterDigest) {
+		throw new Error("CHARACTER_SELECTION_DIGEST_CHAIN_INVALID");
+	}
+	process.send?.({
+		...identity,
+		type: "host_authority_event",
+		proof: {
+			kind: "native_authority_event_v1",
+			checkpoint: null,
+			eventSequence: 2,
+			stateRevisionBefore: 1,
+			stateRevisionAfter: 2,
+			beforeDigest: selectionBeforeDigest,
+			afterDigest: selectionAfterDigest,
+			event: {
+				kind: "xingbei_character_selection_v1",
+				name: selectionProgress.eventName,
+				characters: selectionProgress.characters,
+				hostPlayerAbsent: true,
+				connectedTransports: 0,
+			},
+		},
+	});
 }
 
 process.on("message", message => {
@@ -370,8 +466,8 @@ process.on("message", message => {
 		cleanup().finally(() => process.exit(0));
 		return;
 	}
-	boot(message).catch(async () => {
-		await cleanup();
+boot(message).catch(async () => {
+	await cleanup();
 		process.exit(1);
 	});
 });

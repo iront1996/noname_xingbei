@@ -232,6 +232,14 @@ function createHostSessionManager({
 			// when its sequence/digest fields look fresh.
 			return record.state === "game_ready" && validateXingbeiSideAssignment(record, event);
 		}
+		if (event?.kind === "xingbei_character_selection_v1" && event.name === "chooseCharacterOL") {
+			if (record.state !== "playable_probe" || record.lastAuthorityEvent?.name !== "initSideAndPosition" ||
+				event.hostPlayerAbsent !== true || event.connectedTransports !== 0 || !Array.isArray(event.characters) ||
+				event.characters.length !== record.seatIds.length || event.characters.some((entry, index) =>
+				entry?.seatId !== record.seatIds[index] || typeof entry.character !== "string" ||
+				entry.character.length < 1 || entry.character.length > 128)) return false;
+			return new Set(event.characters.map(entry => entry.character)).size === event.characters.length;
+		}
 		return false;
 	}
 
