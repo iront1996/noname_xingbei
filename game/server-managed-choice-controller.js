@@ -31,9 +31,10 @@ function createManagedChoiceController({
 	onResolved = () => {},
 	maxPendingChoices = 128,
 	maxResolvedChoices = 256,
+	deliveryRetryMs = 1000,
 } = {}) {
 	if ([now, isHostSessionActive, authenticateSeat, authorizeManagedHost, authorizeSeatBinding, randomBytes, schedule, cancel, onResolved]
-		.some(value => typeof value !== "function") || !Number.isSafeInteger(maxPendingChoices) || maxPendingChoices < 1 || maxPendingChoices > 1024 || !Number.isSafeInteger(maxResolvedChoices) || maxResolvedChoices < 1) {
+		.some(value => typeof value !== "function") || !Number.isSafeInteger(maxPendingChoices) || maxPendingChoices < 1 || maxPendingChoices > 1024 || !Number.isSafeInteger(maxResolvedChoices) || maxResolvedChoices < 1 || !Number.isSafeInteger(deliveryRetryMs) || deliveryRetryMs < 100 || deliveryRetryMs > 60000) {
 		throw new TypeError("MANAGED_CHOICE_CONFIG_INVALID");
 	}
 	const choices = new Map();
@@ -108,7 +109,7 @@ function createManagedChoiceController({
 	function resolve(record, resolution) {
 		if (record.state !== "pending") return failure("MANAGED_CHOICE_RESOLUTION_REJECTED");
 		if (record.timer) cancel(record.timer);
-		const resolved = Object.freeze({ ...record, timer: null, state: "delivery_pending", resolution: Object.freeze(resolution), deliveryId: `delivery_${record.choiceId}`, resolvedAt: now() });
+		const resolved = Object.freeze({ ...record, timer: null, deliveryTimer: null, state: "delivery_pending", resolution: Object.freeze(resolution), deliveryId: `delivery_${record.choiceId}`, resolvedAt: now() });
 		choices.set(key(record.roomId, record.choiceId), resolved);
 		return deliver(resolved);
 	}
@@ -118,8 +119,24 @@ function createManagedChoiceController({
 	}
 	function deliver(record) {
 		if (!record || record.state !== "delivery_pending") return failure("MANAGED_CHOICE_DELIVERY_REJECTED");
-		try { onResolved(publicChoice(record)); } catch (_) { return Object.freeze({ ok: true, delivery: "pending", choice: publicChoice(record) }); }
+		let outcome;
+		try { outcome = onResolved(publicChoice(record)); } catch (_) { scheduleDeliveryRetry(record); return Object.freeze({ ok: true, delivery: "pending", choice: publicChoice(record) }); }
+		if (outcome && typeof outcome.then === "function") {
+			Promise.resolve(outcome).then(value => { if (value === false) scheduleDeliveryRetry(record); }, () => scheduleDeliveryRetry(record));
+		}
 		return Object.freeze({ ok: true, delivery: "sent", choice: publicChoice(record) });
+	}
+	function scheduleDeliveryRetry(record) {
+		const current = choices.get(key(record?.roomId, record?.choiceId));
+		if (!current || current.state !== "delivery_pending" || current.deliveryId !== record.deliveryId || current.deliveryTimer) return;
+		const timer = schedule(() => {
+			const latest = choices.get(key(record.roomId, record.choiceId));
+			if (!latest || latest.state !== "delivery_pending" || latest.deliveryId !== record.deliveryId) return;
+			const retrying = Object.freeze({ ...latest, deliveryTimer: null });
+			choices.set(key(retrying.roomId, retrying.choiceId), retrying);
+			deliver(retrying);
+		}, deliveryRetryMs);
+		choices.set(key(current.roomId, current.choiceId), Object.freeze({ ...current, deliveryTimer: timer }));
 	}
 	function acknowledgeDelivery(message) {
 		const record = choices.get(key(message?.roomId, message?.choiceId));
@@ -127,7 +144,8 @@ function createManagedChoiceController({
 			message.roomId !== record.roomId || message.hostSessionId !== record.hostSessionId ||
 			message.deliveryId !== record.deliveryId || !isHostSessionActive(record.roomId, record.hostSessionId) ||
 			!authorizeManagedHost(message)) return failure("MANAGED_CHOICE_ACK_REJECTED");
-		const acknowledged = Object.freeze({ ...record, state: "resolved" });
+		if (record.deliveryTimer) cancel(record.deliveryTimer);
+		const acknowledged = Object.freeze({ ...record, deliveryTimer: null, state: "resolved" });
 		choices.set(key(record.roomId, record.choiceId), acknowledged); pruneResolved();
 		return Object.freeze({ ok: true, choice: publicChoice(acknowledged) });
 	}
@@ -155,13 +173,13 @@ function createManagedChoiceController({
 
 	function cleanupRoom(roomId) {
 		if (!ROOM_ID.test(roomId)) return failure("MANAGED_CHOICE_CLEANUP_REJECTED");
-		for (const [choiceKey, record] of choices) if (record.roomId === roomId) { if (record.timer) cancel(record.timer); choices.delete(choiceKey); }
+		for (const [choiceKey, record] of choices) if (record.roomId === roomId) { if (record.timer) cancel(record.timer); if (record.deliveryTimer) cancel(record.deliveryTimer); choices.delete(choiceKey); }
 		for (const connectionKeyValue of connections.keys()) if (connectionKeyValue.startsWith(`${roomId}\u0000`)) connections.delete(connectionKeyValue);
 		return Object.freeze({ ok: true });
 	}
 	function cleanupHostSession(roomId, hostSessionId) {
 		if (!ROOM_ID.test(roomId) || !SESSION_ID.test(hostSessionId)) return failure("MANAGED_CHOICE_CLEANUP_REJECTED");
-		for (const [choiceKey, record] of choices) if (record.roomId === roomId && record.hostSessionId === hostSessionId) { if (record.timer) cancel(record.timer); choices.delete(choiceKey); }
+		for (const [choiceKey, record] of choices) if (record.roomId === roomId && record.hostSessionId === hostSessionId) { if (record.timer) cancel(record.timer); if (record.deliveryTimer) cancel(record.deliveryTimer); choices.delete(choiceKey); }
 		return Object.freeze({ ok: true });
 	}
 

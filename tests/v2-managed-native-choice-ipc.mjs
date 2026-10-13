@@ -37,7 +37,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		authorizeManagedHost: message => message.hostProof === sessionSecret,
 		authorizeSeatBinding: message => message.serverProof === message.connectionId,
 		authenticateSeat: (message, record) => message.credential === `credential_${record.seatId}`,
-		onResolved: choice => { manager.sendChoiceDelivery(roomId, choice).then(result => { if (!result.ok) throw new Error("delivery rejected"); }).catch(() => {}); },
+		onResolved: choice => manager.sendChoiceDelivery(roomId, choice).then(result => result.ok),
 	});
 	manager = createHostSessionManager({
 		launch: createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 }),
