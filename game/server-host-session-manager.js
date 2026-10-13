@@ -86,7 +86,9 @@ function createHostSessionManager({
 			nextResultSequence: record.nextResultSequence,
 			failureCode: record.failureCode,
 			setupDigest: record.setupDigest,
-			initialStateDigest: record.initialStateDigest,
+			preGameSummaryDigest: record.preGameSummaryDigest,
+			authorityStateRevision: record.authorityStateRevision,
+			checkpointAvailable: false,
 		});
 	}
 
@@ -160,7 +162,8 @@ function createHostSessionManager({
 			gameSetup: prepared.setup,
 			setupDigest: prepared.digest,
 			seatIds: prepared.seatIds,
-			initialStateDigest: null,
+			preGameSummaryDigest: null,
+			authorityStateRevision: null,
 		};
 		sessions.set(roomId, record);
 
@@ -228,13 +231,15 @@ function createHostSessionManager({
 		const record = sessions.get(message?.roomId);
 		const proof = message?.proof;
 		if (message?.type !== "host_game_ready" || !authenticate(record, message) || record.state !== "engine_ready" ||
-			!proof || proof.setupDigest !== record.setupDigest || !DIGEST.test(proof.initialStateDigest) ||
+			!proof || proof.kind !== "pre_game_verification_v1" || proof.setupDigest !== record.setupDigest ||
+			!DIGEST.test(proof.preGameSummaryDigest) || proof.checkpoint !== null ||
 			!Array.isArray(proof.seatIds) || proof.seatIds.length !== record.seatIds.length ||
 			proof.seatIds.some((seatId, index) => seatId !== record.seatIds[index])) {
 			return failure("HOST_GAME_READY_REJECTED");
 		}
 		clearPhaseTimer(record);
-		record.initialStateDigest = proof.initialStateDigest;
+		record.preGameSummaryDigest = proof.preGameSummaryDigest;
+		record.authorityStateRevision = 0;
 		record.state = "game_ready";
 		return Object.freeze({ ok: true, session: publicView(record) });
 	}
@@ -270,6 +275,7 @@ function createHostSessionManager({
 			return failure("HOST_RESULT_SINK_FAILED");
 		}
 		record.nextResultSequence++;
+		record.authorityStateRevision++;
 		return Object.freeze({ ok: true, accepted });
 	}
 

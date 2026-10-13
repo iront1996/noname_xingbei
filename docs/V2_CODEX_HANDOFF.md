@@ -61,7 +61,7 @@ M2 batch 6:
 M2 batch 7:
 
 - A separate `game_ready` hostSession state now gates authoritative results; Engine Ready alone is deliberately insufficient.
-- Launch requires a validated server-supplied Xingbei setup with ordered unique seat bindings. Game Ready attestation must match its canonical setup digest, ordered seat IDs and a valid initial-state digest, and has its own bounded timeout.
+- Launch requires a validated server-supplied Xingbei setup with ordered unique seat bindings. Game Ready attestation must match its canonical setup digest, ordered seat IDs and a valid pre-game verification-summary digest, and has its own bounded timeout.
 - Simulated and supervised-process tests exercise the gate, invalid setup, mismatched proof, timeout, stale session, role spoofing and result sequencing. These fixtures are security/lifecycle evidence only.
 - Real Chromium Game Ready, Playable engine execution, HALL routing and M2+M3 four-player continuity remain unimplemented and separately tracked.
 - Evidence: commit `7805bf2`; Linux CI run 38353870134 succeeded.
@@ -69,9 +69,16 @@ M2 batch 7:
 M2 batch 8:
 
 - Real managed Chromium now uses native Noname boot/loading functions, loads the Xingbei mode and card/character definitions, creates the arena with `game.prepareArena`, and binds the exact server-supplied ordered seats to native Player instances.
-- Game Ready fails closed unless mode/configuration, player positions, loaded card data, absence of a host player (`game.me === null`) and absence of player WebSocket bindings are verified. hostSession retains the canonical initial-state digest.
+- Game Ready fails closed unless mode/configuration, player positions, loaded card data, absence of a host player (`game.me === null`) and absence of player WebSocket bindings are verified. hostSession retains only the canonical pre-game verification-summary digest.
 - No event loop, player choice, turn, skill execution or victory/result path runs yet. Status is now: Browser Ready **proven**; Engine Ready **proven**; Game Ready **proven for the validated native pre-game state**; Playable **not implemented**; HALL routing and M2+M3 four-player continuity **not implemented**.
 - Evidence: commit `0267880`; local targeted tests passed 9/9 host-session/process tests, 5/5 real-Chromium tests and B2 seat-registry. Linux CI run 38354781202 passed all steps, including real-Chromium Game Ready.
+
+M2 batch 9:
+
+- Real Chromium Game Ready now covers 4/6/8 native seats. Invalid duplicate/wrong-position seats, room-count mismatch, malformed/mismatched summaries and checkpoint masquerading fail closed.
+- `preGameSummaryDigest` is verification metadata only. The live authority is still process memory at revision 0 and `checkpointAvailable:false`; no restorable checkpoint exists.
+- Native Xingbei inspection reports 81 direct `game.me` references across mode functions. Keeping `game.me === null` proves there is no human host, but also blocks an unadapted full mode start. A later server-control adapter must address those local-perspective assumptions without turning a human player into the host.
+- Playable, choices/deadlines, HALL routing, M3 continuity and M4 recovery remain separately unimplemented.
 
 ## Verified starting point
 

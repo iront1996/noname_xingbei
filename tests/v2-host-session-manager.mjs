@@ -53,6 +53,10 @@ function hostMessage(bootstrap, type, extra = {}) {
 	};
 }
 
+function gameReadyProof(bootstrap, digest = "ab".repeat(32), seatIds = gameSetup.seats.map(seat => seat.seatId)) {
+	return { kind: "pre_game_verification_v1", setupDigest: bootstrap.setupDigest, preGameSummaryDigest: digest, seatIds, checkpoint: null };
+}
+
 test("browser readiness cannot authorize results before separate engine readiness", async () => {
 	const f = fixture();
 	const started = await f.manager.start("room_A", gameSetup);
@@ -74,11 +78,7 @@ test("browser readiness cannot authorize results before separate engine readines
 	assert.equal(engineReady.session.state, "engine_ready");
 	assert.equal(f.manager.commitAuthoritativeResult(result).code, "HOST_AUTHORITY_REJECTED");
 	const gameReady = f.manager.markGameReady(hostMessage(f.launches[0].bootstrap, "host_game_ready", {
-		proof: {
-			setupDigest: f.launches[0].bootstrap.setupDigest,
-			initialStateDigest: "ab".repeat(32),
-			seatIds: gameSetup.seats.map(seat => seat.seatId),
-		},
+		proof: gameReadyProof(f.launches[0].bootstrap),
 	}));
 	assert.equal(gameReady.ok, true);
 	assert.equal(gameReady.session.state, "game_ready");
@@ -115,7 +115,7 @@ test("player and administrator credentials cannot attest or submit authoritative
 	assert.equal(f.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready")).ok, true);
 	assert.equal(f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready")).ok, true);
 	assert.equal(f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", {
-		proof: { setupDigest: bootstrap.setupDigest, initialStateDigest: "cd".repeat(32), seatIds: gameSetup.seats.map(seat => seat.seatId) },
+		proof: gameReadyProof(bootstrap, "cd".repeat(32)),
 	})).ok, true);
 
 	const adminResult = hostMessage(bootstrap, "authoritative_result", {
@@ -135,7 +135,7 @@ test("duplicate, out-of-order and stale-session results fail closed", async () =
 	assert.equal(f.manager.markBrowserReady(hostMessage(first, "host_browser_ready")).ok, true);
 	assert.equal(f.manager.markEngineReady(hostMessage(first, "host_engine_ready")).ok, true);
 	assert.equal(f.manager.markGameReady(hostMessage(first, "host_game_ready", {
-		proof: { setupDigest: first.setupDigest, initialStateDigest: "ef".repeat(32), seatIds: gameSetup.seats.map(seat => seat.seatId) },
+		proof: gameReadyProof(first, "ef".repeat(32)),
 	})).ok, true);
 	const result = sequence => hostMessage(first, "authoritative_result", {
 		sequence,
@@ -152,7 +152,7 @@ test("duplicate, out-of-order and stale-session results fail closed", async () =
 	assert.equal(f.manager.markBrowserReady(hostMessage(second, "host_browser_ready")).ok, true);
 	assert.equal(f.manager.markEngineReady(hostMessage(second, "host_engine_ready")).ok, true);
 	assert.equal(f.manager.markGameReady(hostMessage(second, "host_game_ready", {
-		proof: { setupDigest: second.setupDigest, initialStateDigest: "12".repeat(32), seatIds: gameSetup.seats.map(seat => seat.seatId) },
+		proof: gameReadyProof(second, "12".repeat(32)),
 	})).ok, true);
 	assert.equal(f.manager.commitAuthoritativeResult(result(2)).code, "HOST_AUTHORITY_REJECTED");
 	assert.equal(f.results.length, 1);
@@ -210,9 +210,11 @@ test("game readiness rejects mismatched setup, seat set and initial-state proof"
 	f.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready"));
 	f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready"));
 	for (const proof of [
-		{ setupDigest: "00".repeat(32), initialStateDigest: "ab".repeat(32), seatIds: gameSetup.seats.map(seat => seat.seatId) },
-		{ setupDigest: bootstrap.setupDigest, initialStateDigest: "not-a-digest", seatIds: gameSetup.seats.map(seat => seat.seatId) },
-		{ setupDigest: bootstrap.setupDigest, initialStateDigest: "ab".repeat(32), seatIds: ["seat_1", "seat_2"] },
+		{ ...gameReadyProof(bootstrap), setupDigest: "00".repeat(32) },
+		{ ...gameReadyProof(bootstrap), preGameSummaryDigest: "not-a-digest" },
+		{ ...gameReadyProof(bootstrap), seatIds: ["seat_1", "seat_2"] },
+		{ ...gameReadyProof(bootstrap), kind: "checkpoint_v1" },
+		{ ...gameReadyProof(bootstrap), checkpoint: { revision: 0 } },
 	]) {
 		assert.equal(f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", { proof })).code, "HOST_GAME_READY_REJECTED");
 		assert.equal(f.manager.inspect("room_game_gate").state, "engine_ready");
@@ -222,9 +224,11 @@ test("game readiness rejects mismatched setup, seat set and initial-state proof"
 
 test("invalid server game setup never launches a managed host", async () => {
 	const f = fixture();
-	for (const setup of [undefined, { ...gameSetup, mode: "identity" }, { ...gameSetup, seats: [] }, {
+	for (const setup of [undefined, { ...gameSetup, mode: "identity" }, { ...gameSetup, seats: [] },
+		{ ...gameSetup, config: { playerCount: 6 } },
+		{ ...gameSetup, seats: gameSetup.seats.map((seat, index) => ({ ...seat, position: index === 2 ? 3 : index })) }, {
 		...gameSetup,
-		seats: [{ seatId: "duplicate", position: 0 }, { seatId: "duplicate", position: 1 }],
+		seats: gameSetup.seats.map((seat, index) => ({ seatId: index < 2 ? "duplicate" : seat.seatId, position: index })),
 	}]) {
 		assert.equal((await f.manager.start("invalid_setup", setup)).code, "HOST_GAME_SETUP_INVALID");
 	}

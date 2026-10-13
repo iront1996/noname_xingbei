@@ -24,9 +24,11 @@ process.on("message", message => {
 		...identity,
 		type: "host_game_ready",
 		proof: {
+			kind: "pre_game_verification_v1",
 			setupDigest: message.setupDigest,
-			initialStateDigest: createHash("sha256").update(JSON.stringify({ simulated: true })).digest("hex"),
+			preGameSummaryDigest: createHash("sha256").update(JSON.stringify({ simulated: true })).digest("hex"),
 			seatIds: message.gameSetup.seats.map(seat => seat.seatId),
+			checkpoint: null,
 		},
 	});
 	process.send?.({

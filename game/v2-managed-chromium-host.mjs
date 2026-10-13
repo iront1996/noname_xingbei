@@ -218,6 +218,13 @@ async function boot(message) {
 		 const managed=window.__v2ManagedEngine;
 		 const {game,lib,ui,_status}=managed.core;
 		 const loading=await import('/noname/init/loading.js');
+		 const seen=new Set();
+		 const countGameMe=value=>{
+		  if(typeof value==='function')return (String(value).match(/game.me/g)||[]).length;
+		  if(!value||typeof value!=='object'||seen.has(value))return 0;
+		  seen.add(value);return Object.values(value).reduce((sum,item)=>sum+countGameMe(item),0);
+		 };
+		 const gameMeReferenceCount=countGameMe(managed.mode);
 		 if(setup.mode!=='xingBei'||![4,6,8].includes(setup.config.playerCount)||
 		    setup.config.playerCount!==setup.seats.length)throw Error('GAME_SETUP_INVALID');
 		 lib.config.mode='xingBei';
@@ -250,41 +257,48 @@ async function boot(message) {
 		  lib.playerOL[expected.seatId]=player;
 		 }
 		 game.me=null;
-		 const initialState={mode:managed.mode.name,versusMode:_status.mode,playerCount:game.players.length,
+		 const preGameSummary={kind:'pre_game_verification_v1',mode:managed.mode.name,versusMode:_status.mode,playerCount:game.players.length,
 		  seats:game.players.map(player=>({seatId:player.playerid,position:Number(player.dataset.position),dead:false})),
 		  nativePlayers:game.players.every(player=>player instanceof lib.element.Player),
 		  cardDefinitionCount:Object.keys(lib.card).length,configuredCardCount:lib.card.list.length,
 		  hostPlayerAbsent:game.me===null,
 		  connectedTransports:game.players.filter(player=>player.ws).length,
+		  legacyModeFunctionsRequireGameMe:gameMeReferenceCount>0,gameMeReferenceCount,
 		  phaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:0,
 		  eventLoopStarted:false,gameOver:Boolean(_status.over)};
-		 if(initialState.seats.some((seat,index)=>seat.seatId!==setup.seats[index].seatId||seat.position!==index)||
-		    !initialState.nativePlayers||initialState.cardDefinitionCount<=0||initialState.configuredCardCount<=0||
-		    !initialState.hostPlayerAbsent||initialState.connectedTransports!==0||
-		    initialState.eventLoopStarted!==false||initialState.gameOver)throw Error('INITIAL_STATE_INVALID');
+		 if(preGameSummary.seats.some((seat,index)=>seat.seatId!==setup.seats[index].seatId||seat.position!==index)||
+		    !preGameSummary.nativePlayers||preGameSummary.cardDefinitionCount<=0||preGameSummary.configuredCardCount<=0||
+		    !preGameSummary.hostPlayerAbsent||preGameSummary.connectedTransports!==0||
+		    !preGameSummary.legacyModeFunctionsRequireGameMe||preGameSummary.gameMeReferenceCount<=0||
+		    preGameSummary.eventLoopStarted!==false||preGameSummary.gameOver)throw Error('PRE_GAME_SUMMARY_INVALID');
 		 Object.defineProperty(window,'__v2ManagedGame',{configurable:false,
-		  value:Object.freeze({setup:Object.freeze(setup),initialState:Object.freeze(initialState)})});
-		 return initialState;
+		  value:Object.freeze({setup:Object.freeze(setup),preGameSummary:Object.freeze(preGameSummary),
+		   authorityState:Object.freeze({storage:'managed_chromium_memory',revision:0}),checkpoint:null})});
+		 return preGameSummary;
 		})()`,
 		awaitPromise: true,
 		returnByValue: true,
 	});
-	const initialState = initialized.result?.value;
-	if (initialized.exceptionDetails || !initialState || initialState.mode !== "xingBei" ||
-		initialState.playerCount !== message.gameSetup.seats.length || initialState.eventLoopStarted !== false ||
-		initialState.gameOver !== false || initialState.nativePlayers !== true ||
-		initialState.cardDefinitionCount <= 0 || initialState.configuredCardCount <= 0 ||
-		initialState.hostPlayerAbsent !== true || initialState.connectedTransports !== 0) {
+	const preGameSummary = initialized.result?.value;
+	if (initialized.exceptionDetails || !preGameSummary || preGameSummary.kind !== "pre_game_verification_v1" ||
+		preGameSummary.mode !== "xingBei" || preGameSummary.playerCount !== message.gameSetup.seats.length ||
+		preGameSummary.eventLoopStarted !== false || preGameSummary.gameOver !== false ||
+		preGameSummary.nativePlayers !== true || preGameSummary.cardDefinitionCount <= 0 ||
+		preGameSummary.configuredCardCount <= 0 || preGameSummary.hostPlayerAbsent !== true ||
+		preGameSummary.connectedTransports !== 0 || preGameSummary.legacyModeFunctionsRequireGameMe !== true ||
+		preGameSummary.gameMeReferenceCount <= 0) {
 		throw new Error("GAME_INITIALIZATION_FAILED");
 	}
-	const initialStateDigest = createHash("sha256").update(canonicalize(initialState)).digest("hex");
+	const preGameSummaryDigest = createHash("sha256").update(canonicalize(preGameSummary)).digest("hex");
 	process.send?.({
 		...identity,
 		type: "host_game_ready",
 		proof: {
+			kind: "pre_game_verification_v1",
 			setupDigest: message.setupDigest,
-			initialStateDigest,
-			seatIds: initialState.seats.map(seat => seat.seatId),
+			preGameSummaryDigest,
+			seatIds: preGameSummary.seats.map(seat => seat.seatId),
+			checkpoint: null,
 		},
 	});
 }

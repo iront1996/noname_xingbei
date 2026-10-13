@@ -165,7 +165,7 @@ Read-only V3 research findings:
 
 - hostSession now requires `starting -> browser_ready -> engine_ready -> game_ready`. Engine Ready no longer authorizes authoritative result submission.
 - The server validates and binds an immutable Xingbei room setup before launch: bounded configuration, ordered unique seat IDs and positions, plus a canonical SHA-256 setup digest. Invalid setup never starts a process.
-- An authenticated managed host may enter Game Ready only by returning the exact server setup digest, exact ordered seat set and a SHA-256 initial-authoritative-state digest. A separate bounded Game Ready timeout stops an engine that never completes initialization.
+- An authenticated managed host may enter Game Ready only by returning the exact server setup digest, exact ordered seat set and a SHA-256 pre-game verification-summary digest. A separate bounded Game Ready timeout stops an engine that never completes initialization.
 - Existing managed-host authentication, stale-session fencing and exact result sequence protection remain in force. Player and administrator credentials still cannot attest readiness or submit a result.
 - This batch proves the state/authority gate with deterministic and supervised-process fixtures only. It does **not** claim real Game Ready until Chromium constructs and verifies the actual engine state in the next batch; Playable and M2+M3 four-player integration remain unimplemented.
 - Evidence: commit `7805bf2`; Linux CI run 38353870134 succeeded.
@@ -174,11 +174,19 @@ Read-only V3 research findings:
 
 - The managed Chromium now runs the repository's native `boot()` preparation, loads the actual Xingbei mode through `loadMode`, loads the imported character/card definitions with the engine's own loading functions, and then calls native `game.prepareArena` for the server-supplied seat count.
 - Server-supplied ordered seat IDs are bound to native `lib.element.Player` instances and registered in `lib.playerOL`. The initialization fails closed unless the mode, 2v2/3v3/4v4 mapping, native player count/positions, loaded card definitions and configured card list all match.
-- The initial authority checkpoint also proves `game.me === null` and zero player WebSocket bindings: the managed process has no human-host player. Its canonical digest is retained by hostSession before the `game_ready` transition.
+- The pre-game verification summary also proves `game.me === null` and zero player WebSocket bindings: the managed process has no human-host player. Its canonical digest is retained by hostSession before the `game_ready` transition.
 - The engine event loop remains deliberately stopped (`eventLoopStarted:false`), with no winner and no authoritative result emitted. This is **Game Ready** evidence for a validated pre-game native state, not **Playable** evidence.
 - The loopback fixture serves the real config/package/module files only to the isolated test Chromium. Chromium sandbox policy and the prior process-tree cleanup controls remain unchanged.
 - M2+M3 four-player disconnect/continuation acceptance remains unimplemented and is not implied by Game Ready.
 - Evidence: commit `0267880`; local targeted tests passed 9/9 host-session/process tests, 5/5 real-Chromium tests and B2 seat-registry. Linux CI run 38354781202 passed every workflow step, including the real-Chromium Game Ready test.
+
+### M2 batch 9 — Game Ready acceptance hardening
+
+- Real Chromium acceptance now independently initializes native 4-, 6- and 8-seat arenas and verifies the corresponding 2v2, 3v3 and 4v4 configurations.
+- Server-side tests reject duplicate seat IDs, non-contiguous/wrong positions, mode/player-count mismatch, setup-digest mismatch, seat-set mismatch, malformed summary digests, a wrong summary kind and any attempt to smuggle checkpoint data through Game Ready.
+- Terminology and protocol are explicit: `preGameSummaryDigest` authenticates bounded verification metadata; the live authoritative state remains inside managed Chromium at revision 0; `checkpointAvailable` is false. This summary is neither a serialized authoritative state nor an M4-recoverable checkpoint.
+- `game.me === null` is valid for Game Ready initialization, but inspection of the loaded native Xingbei mode finds legacy functions that directly reference `game.me` (81 references in the tested checkout). Therefore the unadapted full mode/event path is not yet safe to run. The next Playable batch must introduce a server-control compatibility boundary without assigning any human browser as `game.me`.
+- Game Ready remains proven; Playable, HALL managed-host routing, full checkpoints and M2+M3 continuity remain unimplemented.
 
 Minimal-difference sequence:
 

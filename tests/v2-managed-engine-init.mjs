@@ -11,7 +11,9 @@ const { createManagedHostProcessLauncher } = require("../game/server-managed-hos
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
-const gameSetup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({ length: 4 }, (_, position) => ({ seatId: `seat_${position + 1}`, position })) };
+function gameSetup(playerCount) {
+	return { mode: "xingBei", config: { playerCount }, seats: Array.from({ length: playerCount }, (_, position) => ({ seatId: `seat_${playerCount}_${position + 1}`, position })) };
+}
 
 async function until(check, timeoutMs = 30000) {
 	const deadline = Date.now() + timeoutMs;
@@ -23,7 +25,7 @@ async function until(check, timeoutMs = 30000) {
 	throw new Error("condition timeout");
 }
 
-test("real Chromium creates native Xingbei arena and bound seats before Game Ready", { skip: !active, timeout: 60000 }, async t => {
+for (const playerCount of [4, 6, 8]) test(`real Chromium creates native ${playerCount}-seat Xingbei arena before Game Ready`, { skip: !active, timeout: 60000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
 	const previousOrigin = process.env.V2_GAME_ORIGIN;
@@ -37,17 +39,21 @@ test("real Chromium creates native Xingbei arena and bound seats before Game Rea
 		browserReadyTimeoutMs: 20000,
 		engineReadyTimeoutMs: 30000,
 	});
-	t.after(() => manager.stop("engine_room", "test_cleanup"));
-	assert.equal((await manager.start("engine_room", gameSetup)).ok, true);
+	const roomId = `engine_room_${playerCount}`;
+	t.after(() => manager.stop(roomId, "test_cleanup"));
+	assert.equal((await manager.start(roomId, gameSetup(playerCount))).ok, true);
 	await until(() => {
-		const session = manager.inspect("engine_room");
-		if (session?.state === "failed") throw new Error(`engine_room:${session.failureCode}`);
+		const session = manager.inspect(roomId);
+		if (session?.state === "failed") throw new Error(`${roomId}:${session.failureCode}`);
 		return session?.state === "game_ready";
 	});
-	assert.equal(manager.inspect("engine_room").nextResultSequence, 1);
-	assert.match(manager.inspect("engine_room").setupDigest, /^[a-f0-9]{64}$/);
-	assert.match(manager.inspect("engine_room").initialStateDigest, /^[a-f0-9]{64}$/);
-	const stopped = await manager.stop("engine_room", "test_complete");
+	const session = manager.inspect(roomId);
+	assert.equal(session.nextResultSequence, 1);
+	assert.equal(session.authorityStateRevision, 0);
+	assert.equal(session.checkpointAvailable, false);
+	assert.match(session.setupDigest, /^[a-f0-9]{64}$/);
+	assert.match(session.preGameSummaryDigest, /^[a-f0-9]{64}$/);
+	const stopped = await manager.stop(roomId, "test_complete");
 	assert.equal(stopped.ok, true);
 	assert.equal(stopped.session.state, "stopped");
 });
