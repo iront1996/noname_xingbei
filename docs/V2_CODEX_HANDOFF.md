@@ -108,7 +108,7 @@ M2 batch 13:
 - Native `chooseCharacterOLDuoXuanYi` first fails without a local perspective at its `broadcastAll` character-dialog callback, which reads `game.me` for browser UI only. The managed adapter suppresses precisely that presentation callback and the wrapper's duplicate side-assignment invocation; it never assigns a player to `game.me`.
 - The original native event runs its offline trustee route for the isolated four-seat test, assigns four distinct characters and commits authority event #2 only when event #1's after digest is its exact before digest. The manager validates predecessor phase, ordered seat map, unique names, no human host and no transports.
 - This proves a two-event native chain and a minimal server-control compatibility boundary. It does not accept human player selections yet: choice identifiers, seat credentials, deadlines, stale transport rejection and HALL routing remain next work. It is not full Playable, M3 or M4 evidence.
-- Local evidence: 10/10 host-session/process, 9/9 real-Chromium tests and B2 seat-registry. Linux CI evidence is pending the implementation commit.
+- Evidence: commit `a91a52a`; local targeted regressions passed 10/10 host-session/process, 9/9 real-Chromium tests and B2 seat-registry. Linux CI run 38368237702 passed every workflow step.
 
 ## Verified starting point
 

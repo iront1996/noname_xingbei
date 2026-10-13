@@ -222,7 +222,7 @@ Read-only V3 research findings:
 - The real native `chooseCharacterOL` event then runs with the original offline trustee branch for all four isolated seats. It initializes four distinct native characters, retains `game.me === null` and zero player transports, and commits authority event #2. Its before digest must exactly equal the side-assignment after digest.
 - The server now validates the second event's phase, predecessor event, ordered full seat set, nonempty unique character names, absent human host and absent transports. Tests cover the accepted two-event chain plus broken digest, skipped sequence, malformed seat list, duplicate character and replay rejection.
 - This is not the requested human-player choice protocol: no external player operation, choice ID, deadline, stale connection fence or HALL routing exists yet. The exercised trustee fallback is native Xingbei behavior used solely to prove the adapter/event-chain boundary. It is not full Playable or M3/M4 evidence.
-- Evidence pending this batch's Linux CI; local targeted regressions passed 10/10 host-session/process, 9/9 real-Chromium tests and B2 seat-registry.
+- Evidence: commit `a91a52a`; local targeted regressions passed 10/10 host-session/process, 9/9 real-Chromium tests and B2 seat-registry. Linux CI run 38368237702 passed every workflow step.
 
 Minimal-difference sequence:
 
