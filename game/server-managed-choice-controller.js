@@ -166,8 +166,20 @@ function createManagedChoiceController({
 
 	function expireChoice({ roomId, choiceId, hostSessionId }) {
 		const record = choices.get(key(roomId, choiceId));
-		if (!record || record.state !== "pending" || hostSessionId !== record.hostSessionId || now() < record.deadlineAt ||
+		if (!record || record.state !== "pending" || hostSessionId !== record.hostSessionId ||
 			!isHostSessionActive(record.roomId, record.hostSessionId)) return failure("MANAGED_CHOICE_EXPIRE_REJECTED");
+		const remaining = record.deadlineAt - now();
+		if (remaining > 0) {
+			// Node timers can fire slightly before the wall-clock deadline. Dropping
+			// that callback permanently strands an unanswered native player choice.
+			// Re-arm only the remaining interval, preserving the original choice.
+			if (record.timer) cancel(record.timer);
+			const retry = Object.freeze({ ...record, timer: schedule(
+				() => expireChoice({ roomId, choiceId, hostSessionId }), remaining,
+			) });
+			choices.set(key(roomId, choiceId), retry);
+			return Object.freeze({ ok: true, delivery: "waiting", choice: publicChoice(retry) });
+		}
 		return resolve(record, Object.freeze({ kind: "trustee", option: record.trusteeOption }));
 	}
 
