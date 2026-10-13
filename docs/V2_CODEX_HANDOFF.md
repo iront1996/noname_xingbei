@@ -65,6 +65,12 @@ M2 batch 7:
 - Simulated and supervised-process tests exercise the gate, invalid setup, mismatched proof, timeout, stale session, role spoofing and result sequencing. These fixtures are security/lifecycle evidence only.
 - Real Chromium Game Ready, Playable engine execution, HALL routing and M2+M3 four-player continuity remain unimplemented and separately tracked.
 
+M2 batch 8:
+
+- Real managed Chromium now uses native Noname boot/loading functions, loads the Xingbei mode and card/character definitions, creates the arena with `game.prepareArena`, and binds the exact server-supplied ordered seats to native Player instances.
+- Game Ready fails closed unless mode/configuration, player positions, loaded card data, absence of a host player (`game.me === null`) and absence of player WebSocket bindings are verified. hostSession retains the canonical initial-state digest.
+- No event loop, player choice, turn, skill execution or victory/result path runs yet. Status is now: Browser Ready **proven**; Engine Ready **proven**; Game Ready **proven for the validated native pre-game state**; Playable **not implemented**; HALL routing and M2+M3 four-player continuity **not implemented**.
+
 ## Verified starting point
 
 - Repository: `iront1996/noname_xingbei`

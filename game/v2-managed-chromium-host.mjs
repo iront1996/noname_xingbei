@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { access, mkdtemp, readFile, rm } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
@@ -76,6 +77,16 @@ function validBootstrap(message) {
 		ROOM_ID.test(message.roomId) && SESSION_ID.test(message.sessionId) && SECRET.test(message.secret);
 }
 
+function canonicalize(value) {
+	if (value === null || typeof value === "boolean" || typeof value === "string") return JSON.stringify(value);
+	if (typeof value === "number" && Number.isFinite(value)) return JSON.stringify(value);
+	if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
+	if (value && Object.getPrototypeOf(value) === Object.prototype) {
+		return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(",")}}`;
+	}
+	throw new Error("GAME_STATE_INVALID");
+}
+
 async function boot(message) {
 	if (identity || !validBootstrap(message)) throw new Error("HOST_BOOTSTRAP_INVALID");
 	const executable = process.env.V2_CHROMIUM;
@@ -143,7 +154,7 @@ async function boot(message) {
 				break;
 			}
 		} catch (error) {
-			if (error.code !== "ENOENT") throw error;
+			if (!["ENOENT", "EBUSY", "EACCES"].includes(error.code)) throw error;
 		}
 		await new Promise(resolve => setTimeout(resolve, 40));
 	}
@@ -173,11 +184,13 @@ async function boot(message) {
 	const navigation = await cdp.send("Page.navigate", { url: `${origin}/v2-managed-host.html` });
 	if (navigation.errorText) throw new Error("ENGINE_NAVIGATION_FAILED");
 	const engine = await cdp.send("Runtime.evaluate", {
-		expression: `(async()=>{
+		 expression: `(async()=>{
 		 await new Promise(resolve=>document.readyState==='complete'?resolve():addEventListener('load',resolve,{once:true}));
 		 if(window.isNonameServer!==true)throw Error('OFFBOARD_FLAG_MISSING');
-		 const core=await import('/noname.js');
-		 const imported=await import('/mode/xingBei.js');
+			 const core=await import('/noname.js');
+		 await core.boot();
+		 clearTimeout(window.resetGameTimeout);
+			 const imported=await import('/mode/xingBei.js');
 		 const mode=imported.default();
 		 if(!core.game||!core.lib||!core.ui||!core._status||mode.name!=='xingBei'||
 		    typeof mode.game?.checkResult!=='function'||
@@ -197,6 +210,83 @@ async function boot(message) {
 		proof.offboard !== true || proof.nativeGame !== true || proof.nativeResult !== true ||
 		proof.gameLoopStarted !== false) throw new Error("ENGINE_INITIALIZATION_FAILED");
 	process.send?.({ ...identity, type: "host_engine_ready", proof });
+
+	const encodedSetup = JSON.stringify(message.gameSetup);
+	const initialized = await cdp.send("Runtime.evaluate", {
+		expression: `(async()=>{
+		 const setup=${encodedSetup};
+		 const managed=window.__v2ManagedEngine;
+		 const {game,lib,ui,_status}=managed.core;
+		 const loading=await import('/noname/init/loading.js');
+		 if(setup.mode!=='xingBei'||![4,6,8].includes(setup.config.playerCount)||
+		    setup.config.playerCount!==setup.seats.length)throw Error('GAME_SETUP_INVALID');
+		 lib.config.mode='xingBei';
+		 lib.storage={};
+		 lib.connectCharacterPack=[];
+		 lib.connectCardPack=[];
+		 lib.disableCharacterPack=[];
+		 loading.loadMode(managed.mode);
+		 if(lib.imported.character)Object.values(lib.imported.character).forEach(loading.loadCharacter);
+		 loading.loadCardPile();
+		 if(lib.imported.card)Object.values(lib.imported.card).forEach(loading.loadCard);
+		 lib.configOL=Object.assign({},setup.config,{mode:'xingBei',number:setup.seats.length,
+		  player_number:setup.seats.length,versus_mode:setup.seats.length===4?'2v2':setup.seats.length===6?'3v3':'4v4'});
+		 _status.connectMode=true;
+		 _status.mode=lib.configOL.versus_mode;
+		 if(typeof ui.create.table!=='function')ui.create.table=(rows,columns,parent)=>{
+		  const table=document.createElement('table');
+		  for(let row=0;row<rows;row++){const tr=table.insertRow();for(let column=0;column<columns;column++)tr.insertCell();}
+		  parent?.appendChild(table);return table;
+		 };
+		 if(!ui.arena)ui.create.arena();
+		 game.prepareArena(setup.seats.length);
+		 if(game.players.length!==setup.seats.length||!_status.prepareArena)throw Error('ARENA_INITIALIZATION_FAILED');
+		 lib.playerOL=Object.create(null);
+		 for(let index=0;index<setup.seats.length;index++){
+		  const expected=setup.seats[index],player=game.players[index];
+		  if(Number(player.dataset.position)!==expected.position)throw Error('SEAT_POSITION_MISMATCH');
+		  player.playerid=expected.seatId;
+		  player.nickname=expected.seatId;
+		  lib.playerOL[expected.seatId]=player;
+		 }
+		 game.me=null;
+		 const initialState={mode:managed.mode.name,versusMode:_status.mode,playerCount:game.players.length,
+		  seats:game.players.map(player=>({seatId:player.playerid,position:Number(player.dataset.position),dead:false})),
+		  nativePlayers:game.players.every(player=>player instanceof lib.element.Player),
+		  cardDefinitionCount:Object.keys(lib.card).length,configuredCardCount:lib.card.list.length,
+		  hostPlayerAbsent:game.me===null,
+		  connectedTransports:game.players.filter(player=>player.ws).length,
+		  phaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:0,
+		  eventLoopStarted:false,gameOver:Boolean(_status.over)};
+		 if(initialState.seats.some((seat,index)=>seat.seatId!==setup.seats[index].seatId||seat.position!==index)||
+		    !initialState.nativePlayers||initialState.cardDefinitionCount<=0||initialState.configuredCardCount<=0||
+		    !initialState.hostPlayerAbsent||initialState.connectedTransports!==0||
+		    initialState.eventLoopStarted!==false||initialState.gameOver)throw Error('INITIAL_STATE_INVALID');
+		 Object.defineProperty(window,'__v2ManagedGame',{configurable:false,
+		  value:Object.freeze({setup:Object.freeze(setup),initialState:Object.freeze(initialState)})});
+		 return initialState;
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	const initialState = initialized.result?.value;
+	if (initialized.exceptionDetails || !initialState || initialState.mode !== "xingBei" ||
+		initialState.playerCount !== message.gameSetup.seats.length || initialState.eventLoopStarted !== false ||
+		initialState.gameOver !== false || initialState.nativePlayers !== true ||
+		initialState.cardDefinitionCount <= 0 || initialState.configuredCardCount <= 0 ||
+		initialState.hostPlayerAbsent !== true || initialState.connectedTransports !== 0) {
+		throw new Error("GAME_INITIALIZATION_FAILED");
+	}
+	const initialStateDigest = createHash("sha256").update(canonicalize(initialState)).digest("hex");
+	process.send?.({
+		...identity,
+		type: "host_game_ready",
+		proof: {
+			setupDigest: message.setupDigest,
+			initialStateDigest,
+			seatIds: initialState.seats.map(seat => seat.seatId),
+		},
+	});
 }
 
 process.on("message", message => {

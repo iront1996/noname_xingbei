@@ -9,7 +9,7 @@ const MIME = {
 	".css": "text/css; charset=utf-8",
 	".html": "text/html; charset=utf-8",
 };
-const page = '<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>V2 managed engine</title><body></body></html>';
+const page = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>V2 managed engine</title><script src="/game/config.js"></script><script src="/game/package.js"></script></head><body></body></html>';
 
 export async function createV2NativeModuleTestServer({ root } = {}) {
 	if (typeof root !== "string" || !path.isAbsolute(root)) throw new Error("ABSOLUTE_TEST_ROOT_REQUIRED");

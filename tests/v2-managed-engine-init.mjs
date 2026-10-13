@@ -23,7 +23,7 @@ async function until(check, timeoutMs = 30000) {
 	throw new Error("condition timeout");
 }
 
-test("real Chromium loads actual Noname and Xingbei APIs before Engine Ready", { skip: !active, timeout: 60000 }, async t => {
+test("real Chromium creates native Xingbei arena and bound seats before Game Ready", { skip: !active, timeout: 60000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
 	const previousOrigin = process.env.V2_GAME_ORIGIN;
@@ -39,8 +39,14 @@ test("real Chromium loads actual Noname and Xingbei APIs before Engine Ready", {
 	});
 	t.after(() => manager.stop("engine_room", "test_cleanup"));
 	assert.equal((await manager.start("engine_room", gameSetup)).ok, true);
-	await until(() => manager.inspect("engine_room").state === "engine_ready");
+	await until(() => {
+		const session = manager.inspect("engine_room");
+		if (session?.state === "failed") throw new Error(`engine_room:${session.failureCode}`);
+		return session?.state === "game_ready";
+	});
 	assert.equal(manager.inspect("engine_room").nextResultSequence, 1);
+	assert.match(manager.inspect("engine_room").setupDigest, /^[a-f0-9]{64}$/);
+	assert.match(manager.inspect("engine_room").initialStateDigest, /^[a-f0-9]{64}$/);
 	const stopped = await manager.stop("engine_room", "test_complete");
 	assert.equal(stopped.ok, true);
 	assert.equal(stopped.session.state, "stopped");

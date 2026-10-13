@@ -35,7 +35,8 @@ function canonicalize(value) {
 function prepareGameSetup(value) {
 	if (!value || Object.getPrototypeOf(value) !== Object.prototype || value.mode !== "xingBei" ||
 		!Array.isArray(value.seats) || value.seats.length < 2 || value.seats.length > 8 ||
-		!value.config || Object.getPrototypeOf(value.config) !== Object.prototype) {
+		!value.config || Object.getPrototypeOf(value.config) !== Object.prototype ||
+		![4, 6, 8].includes(value.config.playerCount) || value.config.playerCount !== value.seats.length) {
 		throw new TypeError("HOST_GAME_SETUP_INVALID");
 	}
 	const seats = value.seats.map((seat, position) => {

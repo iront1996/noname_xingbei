@@ -169,6 +169,15 @@ Read-only V3 research findings:
 - Existing managed-host authentication, stale-session fencing and exact result sequence protection remain in force. Player and administrator credentials still cannot attest readiness or submit a result.
 - This batch proves the state/authority gate with deterministic and supervised-process fixtures only. It does **not** claim real Game Ready until Chromium constructs and verifies the actual engine state in the next batch; Playable and M2+M3 four-player integration remain unimplemented.
 
+### M2 batch 8 — real Chromium Game Ready initialization
+
+- The managed Chromium now runs the repository's native `boot()` preparation, loads the actual Xingbei mode through `loadMode`, loads the imported character/card definitions with the engine's own loading functions, and then calls native `game.prepareArena` for the server-supplied seat count.
+- Server-supplied ordered seat IDs are bound to native `lib.element.Player` instances and registered in `lib.playerOL`. The initialization fails closed unless the mode, 2v2/3v3/4v4 mapping, native player count/positions, loaded card definitions and configured card list all match.
+- The initial authority checkpoint also proves `game.me === null` and zero player WebSocket bindings: the managed process has no human-host player. Its canonical digest is retained by hostSession before the `game_ready` transition.
+- The engine event loop remains deliberately stopped (`eventLoopStarted:false`), with no winner and no authoritative result emitted. This is **Game Ready** evidence for a validated pre-game native state, not **Playable** evidence.
+- The loopback fixture serves the real config/package/module files only to the isolated test Chromium. Chromium sandbox policy and the prior process-tree cleanup controls remain unchanged.
+- M2+M3 four-player disconnect/continuation acceptance remains unimplemented and is not implied by Game Ready.
+
 Minimal-difference sequence:
 
 1. Introduce an internal `hostSession` identity and authenticated HALL-to-host channel that cannot be acquired with any player, owner-resume or administrator token.
