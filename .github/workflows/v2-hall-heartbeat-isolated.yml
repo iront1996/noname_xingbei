@@ -1,0 +1,26 @@
+name: V2 HALL A1 isolated lifecycle
+on:
+  push:
+    branches:
+      - test/v2-a1-heartbeat-lifecycle-20261015
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  legacy-hall-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Static test validation
+        run: |
+          node --check tests/v2-hall-owner-lifecycle.cjs
+          node --check tests/v2-a1-heartbeat-lifecycle.cjs
+      - name: Real repository HALL source / fake sockets (no port binds)
+        run: |
+          node tests/v2-hall-owner-lifecycle.cjs game/server.js > /tmp/hall-lifecycle.json
+          cat /tmp/hall-lifecycle.json
+          node -e 'const r=require("/tmp/hall-lifecycle.json");if(r.findings.some(x=>x.status!=="PASS"))process.exit(1)'
