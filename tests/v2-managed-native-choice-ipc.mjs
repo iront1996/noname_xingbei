@@ -95,7 +95,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	assert.equal(controller.inspect(roomId, b.choiceId).resolution.kind, "trustee");
 	assert.equal(controller.inspect(roomId, d.choiceId).state, "resolved");
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
-		const probeMode = process.env.V2_NATIVE_START_PROBE_MODE === "managed_start" ? "managed_start" : "native_start";
+		const probeMode = ["managed_start", "managed_input_gate"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? process.env.V2_NATIVE_START_PROBE_MODE : "native_start";
 		assert.equal((await manager.diagnoseNativeStart(roomId, "controlled_block")).ok, true);
 		const controlled = await until(() => nativeDiagnostic.find(entry => entry?.stage === "controlled_block_outcome"), 5000,
 			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
@@ -115,7 +115,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.prepareArenaCalls, 1);
 			assert.equal(snapshot.hostPlayerAbsent, false);
 			assert.equal(snapshot.seats.length, 8);
-		} else {
+		} else if (probeMode === "managed_start") {
 			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
 			assert.equal(snapshot.waitForPlayerCalls, 1);
 			assert.equal(snapshot.randomMapOLCalls, 1);
@@ -130,6 +130,22 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.firstPhaseEventName, "phase");
 			assert.equal(snapshot.firstPhaseParentName, "phaseLoop");
 			assert.deepEqual(snapshot.eventStack.slice(0, 2), ["game", "phaseLoop"]);
+			assert.equal(snapshot.hostPlayerAbsent, true);
+			assert.equal(snapshot.seats.length, 4);
+			assert.deepEqual(snapshot.seats.map(seat => seat.handCount), [4, 4, 4, 4]);
+		} else {
+			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
+			assert.equal(snapshot.firstPhaseGate, null);
+			assert.equal(snapshot.gameStartCount, 1);
+			assert.equal(snapshot.gameDrawEntered, true);
+			assert.equal(snapshot.phaseLoopCreated, true);
+			assert.equal(snapshot.nativeInputGate?.eventName, "gongJiOrFaShu");
+			assert.equal(snapshot.nativeInputGate?.parentEventName, "xingDong");
+			assert.equal(snapshot.nativeInputGate?.seatId, snapshot.firstActSeatId);
+			assert.equal(snapshot.nativeInputGate?.gateBeforeContent, true);
+			assert.equal(snapshot.nativeInputGate?.offlineAiPrevented, true);
+			assert.equal(snapshot.nativeInputGate?.eventIsMine, false);
+			assert.equal(snapshot.nativeInputGate?.eventIsOnline, false);
 			assert.equal(snapshot.hostPlayerAbsent, true);
 			assert.equal(snapshot.seats.length, 4);
 			assert.deepEqual(snapshot.seats.map(seat => seat.handCount), [4, 4, 4, 4]);

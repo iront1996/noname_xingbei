@@ -395,7 +395,7 @@ function createHostSessionManager({
 
 	async function diagnoseNativeStart(roomId, mode = "native_start") {
 		const record = sessions.get(roomId);
-		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "controlled_block"].includes(mode) ||
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "controlled_block"].includes(mode) ||
 			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand) return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED");
 		try {
 			await record.handle.sendHostCommand({ type: "host_native_start_diagnostic", mode, kind: "managed_host", protocol: PROTOCOL,
