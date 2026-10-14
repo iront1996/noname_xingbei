@@ -559,7 +559,13 @@ async function runManagedNativeChoice() {
 }
 
 async function applyManagedChoice(message) {
-	if (interactiveChoice?.nativeInputGate?.controllerManaged) return applyManagedNativeActionDelivery(message);
+	// The native action gate can open while character-choice ACK retries are
+	// still in flight. Route by the authenticated native event identity, not by
+	// the mere presence of a controller-managed gate, so an older immutable
+	// character delivery cannot be mistaken for a card/action delivery.
+	if (interactiveChoice?.nativeInputGate?.controllerManaged && message?.nativeEventId === interactiveChoice.nativeInputGate.nativeEventId) {
+		return applyManagedNativeActionDelivery(message);
+	}
 	if (!interactiveChoice || !validHostCommand(message) || message.nativeEventId !== interactiveChoice.nativeEventId ||
 		typeof message.deliveryId !== "string" || typeof message.choiceId !== "string" || typeof message.seatId !== "string" ||
 		typeof message.resolution?.option !== "string" || !interactiveChoice.choices.has(message.seatId)) return;
