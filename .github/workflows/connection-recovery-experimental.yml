@@ -67,5 +67,23 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" node --test tests/v2-managed-chromium-host.mjs tests/v2-managed-engine-init.mjs tests/v2-managed-native-event.mjs tests/v2-managed-character-selection.mjs tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 opt-in native start event-stack diagnostics
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=native_start node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native start coordinator proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_start node --test tests/v2-managed-native-choice-ipc.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js

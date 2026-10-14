@@ -347,6 +347,14 @@ These are specification tests to add incrementally during M2–M4. They are not 
 
 ## Evidence ledger
 
+### M2-C3d native startup diagnosis (working batch)
+
+- The real-Chromium opt-in diagnostics distinguish a pending native root promise from CDP failure. The raw native `mode.start` probe remains pending while bounded CDP probes continue to respond; therefore the pending root promise is normal for a live game loop, not by itself evidence of starvation.
+- The raw path reproducibly reruns connect-mode `waitForPlayer` → `randomMapOL` → `prepareArena` after the managed four-seat selection is already complete. The original `randomMapOL` path creates another server-side `game.me` and expands the roster to eight. This is a concrete duplicate-initialization incompatibility, not a timeout inference.
+- A test-only coordinator probe calls the original root event and keeps the native event topology. It fails closed on duplicate `prepareArena`/`chooseCharacter`, admits the `waitForPlayer` callback only after verifying all four initialized seats and no WebSockets, and narrowly suppresses `randomMapOL` only after the same proof. It then observes one `gameStart`, native opening `gameDraw`, native `phaseLoop`, four native opening hands, and the first `phase` child parented by `phaseLoop`; it pauses at that boundary. `game.me` remains null and there are exactly four seats.
+- An intentional bounded 700ms JavaScript block yields a CDP command timeout classification. Native exception, Chromium exit, CDP timeout, pending Promise with responsive CDP, and undetermined outcomes are not conflated. Samples use a 128-entry in-page ring and bounded event reporting; no credential/secret fields are emitted.
+- C3d diagnosis: demonstrated locally with real Chromium. Startup/root handoff: test-only proof only. C3e first legal player operation and authority Events #3/#4: not implemented or verified. Full Playable, HALL routing, M3 and M4: incomplete. Linux CI evidence for this batch must be added after the pushed commit's workflow completes.
+
 - Base GitHub CI: run 38301778625 succeeded at `2baf366`.
 - M1 plus locally portable V2 regressions: 58/58 Node tests passed; the standalone B2 seat-registry suite also passed.
 - PR Linux CI: run 38304099421 `node-recovery-tests` succeeded for M1 implementation plus generated-HALL harness compatibility commits.

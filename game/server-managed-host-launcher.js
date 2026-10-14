@@ -97,7 +97,10 @@ function createManagedHostProcessLauncher({
 			});
 		};
 		handle.sendHostCommand = async command => {
-			if (exited || !child.connected || !command || !["host_choice_delivery", "host_choice_cancel"].includes(command.type) ||
+			const diagnosticCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
+				command?.type === "host_native_start_diagnostic" && ["native_start", "managed_start", "controlled_block"].includes(command.mode);
+			if (exited || !child.connected || !command ||
+				!(diagnosticCommand || ["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||
 				Object.getPrototypeOf(command) !== Object.prototype) throw new Error("HOST_COMMAND_REJECTED");
 			await new Promise((resolve, reject) => child.send(command, error => error ? reject(error) : resolve()));
 		};

@@ -19,6 +19,8 @@ let cdp = null;
 let interactiveChoice = null;
 let choiceCommandChain = Promise.resolve();
 let choiceDiagnosticTimer = null;
+const nativeStartDiagnosticRing = [];
+let nativeStartDiagnosticUnsubscribe = null;
 
 function createCdpSession(url) {
 	if (typeof url !== "string" || !/^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/[A-Za-z0-9-]+$/.test(url)) {
@@ -27,9 +29,16 @@ function createCdpSession(url) {
 	const socket = new WebSocket(url);
 	let sequence = 0;
 	const pending = new Map();
+	const listeners = new Set();
 	socket.addEventListener("message", event => {
 		let message;
 		try { message = JSON.parse(event.data); } catch { return; }
+		if (typeof message.method === "string") {
+			for (const listener of listeners) {
+				try { listener(message); } catch {}
+			}
+			return;
+		}
 		if (!Number.isInteger(message.id) || !pending.has(message.id)) return;
 		const entry = pending.get(message.id);
 		pending.delete(message.id);
@@ -47,7 +56,9 @@ function createCdpSession(url) {
 			});
 		},
 		send(method, params = {}, timeoutMs = WAIT_MS) {
-			if (!["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.navigate", "Runtime.evaluate"].includes(method) ||
+			const diagnosticMethod = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
+				["Runtime.enable", "Runtime.addBinding"].includes(method);
+			if (!(diagnosticMethod || ["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.navigate", "Runtime.evaluate"].includes(method)) ||
 				socket.readyState !== WebSocket.OPEN || !Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 60000) {
 				return Promise.reject(new Error("CHROMIUM_CDP_METHOD_DENIED"));
 			}
@@ -57,6 +68,11 @@ function createCdpSession(url) {
 				pending.set(id, { resolve, reject, timer });
 				socket.send(JSON.stringify({ id, method, params }));
 			});
+		},
+		onEvent(listener) {
+			if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || typeof listener !== "function") throw new Error("CDP_EVENT_OBSERVER_DENIED");
+			listeners.add(listener);
+			return () => listeners.delete(listener);
 		},
 		close() { socket.close(); },
 	};
@@ -596,6 +612,107 @@ async function emitManagedChoiceDiagnostic() {
 	} catch { process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: interactiveChoice.nativeEventId, deliveries: [], observed: null }); }
 }
 
+function emitNativeStartDiagnostic(observed) {
+	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !observed || typeof observed !== "object") return;
+	const entry = Object.freeze({ at: Date.now(), ...observed });
+	nativeStartDiagnosticRing.push(entry);
+	if (nativeStartDiagnosticRing.length > 128) nativeStartDiagnosticRing.shift();
+	process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: interactiveChoice?.nativeEventId || null,
+		observed: { kind: "native_start_diagnostic", ...entry } });
+}
+
+async function runNativeStartDiagnostic(message) {
+	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !interactiveChoice?.completed || !validHostCommand(message) ||
+		!cdp || !["native_start", "managed_start", "controlled_block"].includes(message.mode)) throw new Error("NATIVE_START_DIAGNOSTIC_REJECTED");
+	if (!nativeStartDiagnosticUnsubscribe) {
+		await cdp.send("Runtime.enable");
+		await cdp.send("Runtime.addBinding", { name: "__v2NativeStartTrace" });
+		nativeStartDiagnosticUnsubscribe = cdp.onEvent(event => {
+			if (event.method !== "Runtime.bindingCalled" || event.params?.name !== "__v2NativeStartTrace" ||
+				typeof event.params.payload !== "string" || event.params.payload.length > 8192) return;
+			try {
+				const payload = JSON.parse(event.params.payload);
+				if (payload?.kind !== "native_start_trace_v1" || typeof payload.stage !== "string" ||
+					!payload.snapshot || typeof payload.snapshot !== "object") return;
+				emitNativeStartDiagnostic({ stage: payload.stage, snapshot: payload.snapshot });
+			} catch {}
+		});
+	}
+	const install = `(()=>{
+	 const managedStart=${message.mode === "managed_start"};
+	 const managed=window.__v2ManagedEngine,{game,lib,_status}=managed.core,manager=_status.eventManager,Player=lib.element.Player;
+	 const state=window.__v2NativeStartDiagnosticState||{traceCount:0,lastSuccessfulEventStep:null,gameStartCount:0,drawCreated:false,drawEntered:false,phaseLoopCreated:false,prepareArenaCalls:0,waitForPlayerCalls:0,randomMapOLCalls:0,chooseCharacterCalls:0,phaseCalls:0,rootPromiseState:'not_started',failureCode:null};
+	 window.__v2NativeStartDiagnosticState=state;
+	 const snapshot=()=>{const current=_status.event,top=manager.eventStack.at(-1),phaseLoop=state.phaseLoop,phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct);return {eventName:current?.name||null,eventStep:Number.isSafeInteger(current?.step)?current.step:null,parentEventName:current?.parent?.name||null,rootEventName:manager.rootEvent?.name||null,eventStackDepth:manager.eventStack.length,eventStackTop:top?.name||null,eventStack:manager.eventStack.map(event=>event.name),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:state.gameStartCount>0,gameStartCount:state.gameStartCount,gameDrawCreated:state.drawCreated,gameDrawEntered:state.drawEntered,gameDrawParentName:state.drawParentName||null,phaseLoopCreated:state.phaseLoopCreated,phaseLoopParentName:state.phaseLoopParentName||null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:state.firstPhaseGate||null,prepareArenaCalls:state.prepareArenaCalls,waitForPlayerCalls:state.waitForPlayerCalls,randomMapOLCalls:state.randomMapOLCalls,chooseCharacterCalls:state.chooseCharacterCalls,phaseCalls:state.phaseCalls,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(current?.name||'')?current.name:null,pendingChoiceSeatId:current?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')})),lastSuccessfulEventStep:state.lastSuccessfulEventStep,rootPromiseState:state.rootPromiseState,failureCode:state.failureCode,traceCount:state.traceCount}};
+	 const ring=state.ring||(state.ring=[]);let emittedMilestones=0,emittedSteps=0,lastEventStepToken='';
+	 const emit=stage=>{state.traceCount++;const snap=snapshot();ring.push({stage,snapshot:snap});if(ring.length>128)ring.shift();const token=[snap.eventName,snap.eventStep].join(':');const milestone=new Set(['root_event_created','root_start_dispatched','wait_for_player_called','random_map_ol_called','prepare_arena_called','choose_character_called','game_start_trigger','game_draw_called','phase_loop_called','phase_called','root_promise_fulfilled','root_promise_rejected','wait_next_error']).has(stage);const changedStep=token!==lastEventStepToken;lastEventStepToken=token;if(milestone){if(emittedMilestones++>=64)return}else if(changedStep){if(emittedSteps++>=64)return}else return;const payload={kind:'native_start_trace_v1',stage,snapshot:snap};try{window.__v2NativeStartTrace(JSON.stringify(payload))}catch{}};
+	 if(!state.instrumented){
+	  state.instrumented=true;
+	  const GameEvent=lib.element.GameEvent,originalWaitNext=GameEvent.prototype.waitNext,originalTrigger=GameEvent.prototype.trigger,originalCreateEvent=game.createEvent,originalWaitForPlayer=game.waitForPlayer,originalPrepareArena=game.prepareArena,originalChooseCharacter=game.chooseCharacter,originalRandomMapOL=game.randomMapOL,originalDraw=game.gameDraw,originalPhaseLoop=game.phaseLoop,originalPhase=Player.prototype.phase;
+	  GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;emit('wait_next_begin');return originalWaitNext.apply(this,args).then(value=>{state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};emit('wait_next_end');return value},error=>{state.failureCode='NATIVE_WAIT_NEXT_REJECTED';emit('wait_next_error');throw error})};
+	  GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;emit(name==='gameStart'?'game_start_trigger':'event_trigger');return originalTrigger.call(this,name,...args)};
+	  game.createEvent=function(name,...args){const event=originalCreateEvent.call(this,name,...args);if(name==='gameDraw'){state.drawCreated=true;state.draw=event;state.drawParentName=event.parent?.name||null}if(name==='phaseLoop'){state.phaseLoopCreated=true;state.phaseLoop=event;state.phaseLoopParentName=event.parent?.name||null}emit('event_created');return event};
+	  const verifyCompletedRoom=()=>game.players.length===4&&game.players.every((player,index)=>player.playerid===window.__v2ManagedGame.setup.seats[index]?.seatId&&typeof player.name1==='string'&&!player.ws)&&game.me===null;
+	  game.prepareArena=function(...args){state.prepareArenaCalls++;emit('prepare_arena_called');if(managedStart)throw Error('DUPLICATE_PREPARE_ARENA_REJECTED');return originalPrepareArena.apply(this,args)};
+	  game.chooseCharacter=function(...args){state.chooseCharacterCalls++;emit('choose_character_called');if(managedStart)throw Error('DUPLICATE_CHARACTER_SELECTION_REJECTED');return originalChooseCharacter.apply(this,args)};
+	  game.randomMapOL=function(...args){state.randomMapOLCalls++;emit('random_map_ol_called');if(managedStart){if(!_status.connectMode||!verifyCompletedRoom())throw Error('COMPLETED_ROOM_ROSTER_INVALID');state.randomMapOLAdapter='verified_completed_room_noop';return;}return originalRandomMapOL.apply(this,args)};
+	  game.waitForPlayer=function(...args){state.waitForPlayerCalls++;emit('wait_for_player_called');if(managedStart){if(!_status.connectMode||!verifyCompletedRoom())throw Error('COMPLETED_ROOM_ROSTER_INVALID');state.waitForPlayerAdapter='verified_completed_room_callback';if(typeof args[0]==='function')args[0]();return;}return originalWaitForPlayer.apply(this,args)};
+	  Player.prototype.phase=function(...args){state.phaseCalls++;const next=originalPhase.apply(this,args);if(managedStart&&!state.firstPhaseGate&&this===_status.firstAct){state.firstPhaseGate={seatId:this.playerid,eventName:next.name,parentName:next.parent?.name||null};game.pause();emit('first_phase_gate');return next}emit('phase_called');return next};
+	  game.gameDraw=function(...args){state.drawCreated=true;emit('game_draw_called');return originalDraw.apply(this,args)};
+	  game.phaseLoop=function(...args){state.phaseLoopCreated=true;emit('phase_loop_called');return originalPhaseLoop.apply(this,args)};
+	 }
+	 if(state.probeStarted)return {started:false,reason:'DUPLICATE_START_PROBE',snapshot:snapshot()};
+	 if(game.me!==null||game.players.some(player=>player.ws)||manager.eventStack.length!==0||game.players.length!==4||game.players.some(player=>!player.name1))throw Error('NATIVE_START_DIAGNOSTIC_PRECONDITION_FAILED');
+		state.probeStarted=true;state.rootPromiseState='pending';state.root=game.createEvent('game',false).setContent(managed.mode.start);emit('root_event_created');
+	 const promise=state.root.start();promise.then(()=>{state.rootPromiseState='fulfilled';emit('root_promise_fulfilled')},error=>{state.rootPromiseState='rejected';state.failureCode='NATIVE_ROOT_PROMISE_REJECTED';emit('root_promise_rejected')});
+	 emit('root_start_dispatched');return {started:true,snapshot:snapshot()};
+	})()`;
+	if (message.mode === "controlled_block") {
+		try {
+			await cdp.send("Runtime.evaluate", { expression: `(()=>{const until=performance.now()+700;while(performance.now()<until){};return 'released'})()`, returnByValue: true }, 150);
+			emitNativeStartDiagnostic({ stage: "controlled_block_unexpectedly_responded", classification: "undetermined" });
+		} catch (error) {
+			emitNativeStartDiagnostic({ stage: "controlled_block_outcome", classification: error.message === "CHROMIUM_CDP_TIMEOUT" ? "cdp_command_timeout" : "undetermined",
+				chromiumAlive: chromium?.exitCode === null && chromium?.signalCode === null });
+		}
+		return;
+	}
+	try {
+		await cdp.send("Runtime.evaluate", { expression: install, returnByValue: true }, 1500);
+		emitNativeStartDiagnostic({ stage: "native_start_root_evaluation_returned", classification: "evaluation_returned" });
+	} catch (error) {
+		const chromiumAlive = chromium?.exitCode === null && chromium?.signalCode === null;
+		const classification = error.message === "CHROMIUM_CDP_TIMEOUT" && chromiumAlive ? "javascript_loop_starvation_suspected" :
+			chromiumAlive ? "undetermined" : "chromium_exit";
+		emitNativeStartDiagnostic({ stage: "native_start_root_evaluation_outcome", classification,
+			failureCode: error.message === "CHROMIUM_CDP_TIMEOUT" ? "CDP_COMMAND_TIMEOUT" : "NATIVE_START_DIAGNOSTIC_FAILED", chromiumAlive });
+		return;
+	}
+	try {
+		let value=null,lastProbeError=null;
+		const deadline=Date.now()+2500;
+		while(Date.now()<deadline){
+			try {
+				const probe=await cdp.send("Runtime.evaluate",{expression:`(()=>{const s=window.__v2NativeStartDiagnosticState,{game,_status}=window.__v2ManagedEngine.core,phaseLoop=s?.phaseLoop,phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct);return {rootPromiseState:s?.rootPromiseState||'unobserved',snapshot:{eventName:_status.event?.name||null,eventStep:Number.isSafeInteger(_status.event?.step)?_status.event.step:null,parentEventName:_status.event?.parent?.name||null,rootEventName:_status.eventManager.rootEvent?.name||null,eventStackDepth:_status.eventManager.eventStack.length,eventStackTop:_status.eventManager.eventStack.at(-1)?.name||null,eventStack:_status.eventManager.eventStack.map(event=>event.name),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:(s?.gameStartCount||0)>0,gameStartCount:s?.gameStartCount||0,gameDrawCreated:Boolean(s?.drawCreated),gameDrawEntered:Boolean(s?.drawEntered),gameDrawParentName:s?.drawParentName||null,phaseLoopCreated:Boolean(s?.phaseLoopCreated),phaseLoopParentName:s?.phaseLoopParentName||null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:s?.firstPhaseGate||null,prepareArenaCalls:s?.prepareArenaCalls||0,waitForPlayerCalls:s?.waitForPlayerCalls||0,randomMapOLCalls:s?.randomMapOLCalls||0,chooseCharacterCalls:s?.chooseCharacterCalls||0,phaseCalls:s?.phaseCalls||0,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(_status.event?.name||'')?_status.event.name:null,pendingChoiceSeatId:_status.event?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(p=>({seatId:p.playerid||null,characterInitialized:typeof p.name1==='string',handCount:p.countCards('h')})),lastSuccessfulEventStep:s?.lastSuccessfulEventStep||null,failureCode:s?.failureCode||null}}})()`,returnByValue:true},800);
+				if(probe.exceptionDetails) {lastProbeError=String(probe.exceptionDetails.text||"CDP_EVALUATION_EXCEPTION").slice(0,256);break;}
+				value=probe.result?.value||null;
+				if(value?.snapshot?.phaseLoopCreated||value?.snapshot?.failureCode)break;
+			} catch(error) { lastProbeError=error.message; break; }
+			await new Promise(resolve=>setTimeout(resolve,50));
+		}
+		const classification=lastProbeError==="CHROMIUM_CDP_TIMEOUT"&&chromium?.exitCode===null&&chromium?.signalCode===null ? "javascript_loop_starvation_suspected" :
+			lastProbeError ? "undetermined" : value?.rootPromiseState==="pending" ? "native_promise_pending_cdp_responsive" :
+			value?.rootPromiseState==="rejected" ? "native_exception_observed" : value?.rootPromiseState==="fulfilled" ? "native_root_fulfilled" : "undetermined";
+		emitNativeStartDiagnostic({ stage: "native_start_probe_outcome", classification,
+			failureCode: lastProbeError ? (lastProbeError==="CHROMIUM_CDP_TIMEOUT"?"CDP_COMMAND_TIMEOUT":"CDP_EVALUATION_EXCEPTION") : null,
+			snapshot: value?.snapshot || null });
+	} catch (error) {
+		const chromiumAlive = chromium?.exitCode === null && chromium?.signalCode === null;
+		emitNativeStartDiagnostic({ stage: "native_start_probe_outcome", classification: error.message === "CHROMIUM_CDP_TIMEOUT" && chromiumAlive ? "javascript_loop_starvation_suspected" : chromiumAlive ? "undetermined" : "chromium_exit",
+			failureCode: error.message === "CHROMIUM_CDP_TIMEOUT" ? "CDP_COMMAND_TIMEOUT" : "NATIVE_START_PROBE_FAILED", chromiumAlive });
+	}
+}
+
 process.on("message", message => {
 	// Bootstrap is the one private launch envelope.  Commands deliberately use
 	// `type`, so they can never be mistaken for a second bootstrap.
@@ -631,6 +748,11 @@ process.on("message", message => {
 				cleanup().finally(() => process.exit(1));
 			});
 		});
+		return;
+	}
+	if (message?.type === "host_native_start_diagnostic" && process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
+		runNativeStartDiagnostic(message).catch(error => emitNativeStartDiagnostic({ stage: "native_start_diagnostic_rejected",
+			classification: "explicit_exception", failureCode: String(error?.message || "NATIVE_START_DIAGNOSTIC_FAILED").slice(0, 96) }));
 		return;
 	}
 	if (message?.type === "host_choice_cancel") return;

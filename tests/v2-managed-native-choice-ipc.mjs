@@ -28,7 +28,7 @@ async function until(check, timeoutMs = 45000, diagnostic = () => null) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1" });
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
 	let manager, controller, sessionSecret, opened = [], candidatesSeen, dropAcks = true, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, deliveryCount = 0;
@@ -94,4 +94,50 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	assert.equal(controller.inspect(roomId, a.choiceId).resolution.option, a.options[1]);
 	assert.equal(controller.inspect(roomId, b.choiceId).resolution.kind, "trustee");
 	assert.equal(controller.inspect(roomId, d.choiceId).state, "resolved");
+	if (process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
+		const probeMode = process.env.V2_NATIVE_START_PROBE_MODE === "managed_start" ? "managed_start" : "native_start";
+		assert.equal((await manager.diagnoseNativeStart(roomId, "controlled_block")).ok, true);
+		const controlled = await until(() => nativeDiagnostic.find(entry => entry?.stage === "controlled_block_outcome"), 5000,
+			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
+		assert.equal(controlled.classification, "cdp_command_timeout");
+		assert.equal((await manager.diagnoseNativeStart(roomId, probeMode)).ok, true);
+		const outcome = await until(() => nativeDiagnostic.find(entry =>
+			["native_start_probe_outcome", "native_start_root_evaluation_outcome", "native_start_diagnostic_rejected"].includes(entry?.stage)), 5000,
+			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), failures: nativeDiagnostic.map(entry => entry?.failureCode), hostAlive: manager.inspect(roomId)?.state }));
+		assert.ok(["native_promise_pending_cdp_responsive", "native_exception_observed", "native_root_fulfilled", "explicit_exception",
+			"javascript_loop_starvation_suspected", "undetermined", "chromium_exit"].includes(outcome.classification));
+		const snapshot = outcome.snapshot;
+		assert.ok(snapshot, `native startup state was not observable: ${JSON.stringify(outcome)}`);
+		if (probeMode === "native_start") {
+			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
+			assert.equal(snapshot.waitForPlayerCalls, 1);
+			assert.equal(snapshot.randomMapOLCalls, 1);
+			assert.equal(snapshot.prepareArenaCalls, 1);
+			assert.equal(snapshot.hostPlayerAbsent, false);
+			assert.equal(snapshot.seats.length, 8);
+		} else {
+			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
+			assert.equal(snapshot.waitForPlayerCalls, 1);
+			assert.equal(snapshot.randomMapOLCalls, 1);
+			assert.equal(snapshot.prepareArenaCalls, 0);
+			assert.equal(snapshot.chooseCharacterCalls, 0);
+			assert.equal(snapshot.gameStartCount, 1);
+			assert.equal(snapshot.gameDrawEntered, true);
+			assert.equal(snapshot.gameDrawParentName, "game");
+			assert.equal(snapshot.phaseLoopCreated, true);
+			assert.equal(snapshot.phaseLoopParentName, "game");
+			assert.equal(snapshot.firstPhaseGate?.seatId, snapshot.firstActSeatId);
+			assert.equal(snapshot.firstPhaseEventName, "phase");
+			assert.equal(snapshot.firstPhaseParentName, "phaseLoop");
+			assert.deepEqual(snapshot.eventStack.slice(0, 2), ["game", "phaseLoop"]);
+			assert.equal(snapshot.hostPlayerAbsent, true);
+			assert.equal(snapshot.seats.length, 4);
+			assert.deepEqual(snapshot.seats.map(seat => seat.handCount), [4, 4, 4, 4]);
+		}
+		const trace = nativeDiagnostic.filter(entry => entry?.kind === "native_start_diagnostic");
+		t.diagnostic(`native start probe (${probeMode}): ${JSON.stringify({ controlledBlock: controlled.classification, outcome: outcome.classification,
+			traceStages: trace.map(entry => entry.stage), lastSnapshot: trace.filter(entry => entry.snapshot).at(-1)?.snapshot || null,
+			failureCode: outcome.failureCode || null })}`);
+		assert.equal((await manager.stop(roomId, "native_start_diagnostic_complete")).ok, true);
+	}
 });

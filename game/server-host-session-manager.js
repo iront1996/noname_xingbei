@@ -393,6 +393,17 @@ function createHostSessionManager({
 		} catch (_) { return failure("HOST_CHOICE_DELIVERY_REJECTED"); }
 	}
 
+	async function diagnoseNativeStart(roomId, mode = "native_start") {
+		const record = sessions.get(roomId);
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "controlled_block"].includes(mode) ||
+			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand) return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED");
+		try {
+			await record.handle.sendHostCommand({ type: "host_native_start_diagnostic", mode, kind: "managed_host", protocol: PROTOCOL,
+				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret });
+			return Object.freeze({ ok: true });
+		} catch (_) { return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED"); }
+	}
+
 	return Object.freeze({
 		start,
 		markBrowserReady,
@@ -401,6 +412,7 @@ function createHostSessionManager({
 		commitAuthorityEvent,
 		commitAuthoritativeResult,
 		sendChoiceDelivery,
+		diagnoseNativeStart,
 		stop,
 		inspect: roomId => publicView(sessions.get(roomId)),
 	});
