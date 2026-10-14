@@ -13,6 +13,26 @@ const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
 
 const sourcePath = process.argv[2] || path.resolve(__dirname, '../game/server.js');
+const clientSourcePath = path.resolve(__dirname, '../noname/library/index.js');
+function actualV2SelfcloseHandler(ws) {
+  const clientSource = fs.readFileSync(clientSourcePath, 'utf8');
+  const m = /selfclose:\\s*function\\s*\\(\\)\\s*\\{/.exec(clientSource);
+  assert.ok(m, 'V2 selfclose function missing');
+  const fnStart = m.index + m[0].indexOf('function');
+  const brace = clientSource.indexOf('{', fnStart);
+  let depth = 0, end = -1;
+  for (let i = brace; i < clientSource.length; i++) {
+    if (clientSource[i] === '{') depth++;
+    if (clientSource[i] === '}' && --depth === 0) { end = i + 1; break; }
+  }
+  assert.ok(end > brace, 'unbalanced V2 selfclose method');
+  const fn = vm.runInNewContext('(' + clientSource.slice(fnStart, end) + ')', {
+    game: { online: true, onlineroom: true, servermode: false, onlinehall: true,
+      saveConfig: () => {}, ws },
+    _status: { over: false },
+  }, { timeout: 1000 });
+  fn();
+}
 const source = fs.readFileSync(sourcePath, 'utf8');
 const hash = crypto.createHash('sha256').update(source).digest('hex');
 
@@ -132,10 +152,10 @@ test('guest_socket_close_code_without_status_is_1005', () => {
   guest.on('close', c => {closeCode=c});
   owner.close();
   assert.equal(guest.count('selfclose'), 1);
-  // Simulates the actual V2 selfclose handler's bare game.ws.close().
-  guest.close();
+  // Execute the exact V2 lib.message.client.selfclose handler from the checkout.
+  actualV2SelfcloseHandler(guest);
   assert.equal(closeCode,1005);
-  return { browser_selfclose_call_simulated:true, observed_close_code:closeCode };
+  return { actual_v2_selfclose_handler_executed:true, observed_close_code:closeCode };
 });
 test('owner_close_is_idempotent_under_normal_ws_close', () => {
   const e=environment(), {owner,guest}=e.room();
