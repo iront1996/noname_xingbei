@@ -574,7 +574,10 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 		  seats:game?.players?.map((player,index)=>({seatId:player.playerid,expectedSeatId:c?.setup?.seats?.[index]?.seatId,
 		   character:player.name1||null,side:player.side,expectedCharacter:${JSON.stringify(event2After.characters)},
 		   expectedSide:${JSON.stringify(event2After.sides)},connected:Boolean(player.ws)}))||[]}}})()`, returnByValue: true }, 2000);
-		if (response.exceptionDetails) throw new Error("OPENING_DRAW_READINESS_DIAGNOSTIC_FAILED");
+		if (response.exceptionDetails) {
+			const detail = response.exceptionDetails.exception?.description || response.exceptionDetails.text || "CDP_EVALUATION_EXCEPTION";
+			throw new Error(`OPENING_DRAW_READINESS_DIAGNOSTIC_FAILED:${String(detail).replaceAll(identity.secret, "[redacted]").slice(0, 1024)}`);
+		}
 		readiness = response.result?.value;
 		const rosterMatches = readiness?.seatCount === 4 && readiness.seats.every((seat, index) =>
 			seat.seatId === seat.expectedSeatId && seat.seatId === event2After.sides[index]?.seatId &&
