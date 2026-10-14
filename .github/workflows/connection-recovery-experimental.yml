@@ -166,6 +166,60 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller_fault_before_apply node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native result-set failure is fail-closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=before_native_result_set node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 dispatched CDP outcome ambiguity is fail-closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=cdp_result_unknown_after_dispatch node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native useResult exception is fail-closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=use_result_throws node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native useCard child failure is fail-closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=use_card_child_throws node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 same native action delivery retry while applying
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=retry_while_applying node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 stale native action delivery after completion is rejected
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=late_stale_delivery node --test tests/v2-managed-native-choice-ipc.mjs
       - name: V2 isolated managed room seat registry
         run: node --test tests/v2-managed-room-seat-registry.mjs
       - name: Guest-seat registry tests

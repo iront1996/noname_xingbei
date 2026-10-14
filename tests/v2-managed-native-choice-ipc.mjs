@@ -32,8 +32,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
+	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, dropAcks = true, dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, deliveryCount = 0;
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, dropAcks = true, dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false;
 	const launchedHandles = new Map();
 	const useSeatRegistry = process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry";
 	const seatRegistry = useSeatRegistry ? createManagedRoomSeatRegistry() : null;
@@ -116,6 +117,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 			} else if (type === "host_choice_ack") {
 				ackCount++;
+				if (nativeActionChoice?.choiceId === message.choiceId) nativeActionAckCount++;
 				if (dropAcks) { droppedAcks++; return; }
 				if (nativeActionChoice && message.choiceId === nativeActionChoice.choiceId) {
 					if (dropNativeActionAckOnce) { dropNativeActionAckOnce = false; nativeActionAckDropped = true; return; }
@@ -131,7 +133,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					else assert.equal(acked.ok, true, `choice ACK rejected: ${acked.code}`);
 				}
 			} else if (type === "host_choice_diagnostic") {
-			 nativeDiagnostic.push(message.observed);
+				 nativeDiagnostic.push(message.observed);
+				if (nativeFaultMode === "retry_while_applying" && message.observed?.stage === "native_useResult_entered" && !applyingRetryIssued && nativeActionChoice) {
+					applyingRetryIssued = true;
+					assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId)?.state, "delivery_pending");
+					assert.equal(controller.retryDelivery({ roomId, choiceId: nativeActionChoice.choiceId }).ok, true,
+						"same immutable delivery could not be retried during native applying");
+				}
 			}
 		},
 	});
@@ -202,6 +210,34 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		const snapshot = outcome.snapshot;
 		assert.ok(snapshot, `native startup state was not observable: ${JSON.stringify(outcome)}`);
 		t.diagnostic(`native startup pre-assert (${probeMode}): ${JSON.stringify(outcome)}`);
+		if (["before_native_result_set", "cdp_result_unknown_after_dispatch", "use_result_throws", "use_card_child_throws"].includes(nativeFaultMode)) {
+			await until(() => manager.inspect(roomId)?.state === "failed", 10000,
+				() => ({ session: manager.inspect(roomId), nativeDiagnostic: nativeDiagnostic.slice(-12) }));
+			const expectedFailure = nativeFaultMode === "use_result_throws" ? "NATIVE_USE_RESULT_FAILED" :
+				nativeFaultMode === "use_card_child_throws" ? "NATIVE_USE_CARD_CHILD_FAILED" : "NATIVE_ACTION_APPLY_UNCERTAIN";
+			assert.equal(manager.inspect(roomId).failureCode, expectedFailure, JSON.stringify(nativeDiagnostic.slice(-12)));
+			assert.equal(nativeActionAckCount, 0, "uncertain native operation must never be ACKed");
+			assert.ok(nativeActionChoice, "fault injection did not reach a controller-owned native choice");
+			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId), null, "failed host left its pending choice alive");
+			assert.ok(opened.slice(0, 4).every(choice => controller.inspect(roomId, choice.choiceId) === null));
+			const actionEntries = nativeDiagnostic.filter(entry => entry?.snapshot?.nativeAction?.eventId === nativeActionCandidate?.nativeEventId);
+			const useResultCount = Math.max(0, ...actionEntries.map(entry => entry.snapshot.nativeAction.useResultCount || 0));
+			assert.ok(useResultCount <= 1, `uncertain native action ran useResult ${useResultCount} times`);
+			if (nativeFaultMode === "before_native_result_set") assert.equal(useResultCount, 0);
+			if (["use_result_throws", "use_card_child_throws"].includes(nativeFaultMode)) assert.equal(useResultCount, 1);
+			if (nativeFaultMode === "use_card_child_throws") {
+				const childFailure = nativeDiagnostic.find(entry => entry?.stage === "native_useCard_child_exception");
+				assert.equal(childFailure?.snapshot?.nativeAction?.childEventName, "useCard", "fault was not injected at the native useCard child boundary");
+				assert.ok(Number.isSafeInteger(childFailure?.snapshot?.nativeAction?.childEventStep), "native useCard child step was not observed");
+				assert.equal(childFailure?.snapshot?.nativeAction?.cardInHandAtFailure, false, "fault did not occur after native card movement");
+				assert.equal(childFailure?.snapshot?.nativeAction?.nativeUseCardHistoryEntries, 1, "native useCard history must show exactly one completed child before uncertain settlement");
+			}
+			assert.equal(manager.inspect(roomId)?.authorityStateRevision, 2, "failed native action must not advance authority revision");
+			const failedHandle = launchedHandles.get(manager.inspect(roomId).sessionId);
+			await until(() => failedHandle.resources().length === 0, 10000, () => ({ resources: failedHandle.resources() }));
+			await failedHandle.waitForCleanup();
+			return;
+		}
 		if (probeMode === "native_start") {
 			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
 			assert.equal(snapshot.waitForPlayerCalls, 1);
@@ -260,8 +296,33 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				"native engine applied an option other than the controller resolution");
 			assert.equal(nativeActionAckDropped, true);
 			assert.ok(controller.inspect(roomId, nativeActionChoice.choiceId).deliveryAttempts >= 2, "ACK loss did not trigger an automatic stable-delivery retry");
+			assert.equal(nativeActionAckCount, 2, "the original ACK and its same-delivery retry must be the only native ACKs");
+			const duplicateProof = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_duplicate_delivery_verified"), 5000,
+				() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), host: manager.inspect(roomId) }));
+			assert.equal(duplicateProof.snapshot?.useResultCount, 1, "ACK retry re-executed native useResult");
+			assert.equal(duplicateProof.snapshot?.childWaitCompleted, true);
+			assert.equal(duplicateProof.snapshot?.cardInHand, false, "ACK retry did not prove native card movement");
 			assert.equal(manager.inspect(roomId)?.authorityStateRevision, 2, "B2 native operation must not masquerade as authority Event #4");
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).deliveryId, `delivery_${nativeActionChoice.choiceId}`);
+			if (nativeFaultMode === "retry_while_applying") {
+				assert.equal(applyingRetryIssued, true, "test did not redeliver while native useResult was executing");
+				assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1, "same delivery executed native useResult more than once");
+				assert.equal(nativeActionAckCount, 2, "one original ACK plus one lost-ACK retry should be observed, not an applying duplicate ACK");
+			}
+			if (nativeFaultMode === "late_stale_delivery") {
+				const beforeAckCount = nativeActionAckCount;
+				const late = controller.inspect(roomId, nativeActionChoice.choiceId);
+				assert.equal((await manager.sendChoiceDelivery(roomId, { ...late, nativeEventId: `${late.nativeEventId}_stale` })).ok, true);
+				await until(() => manager.inspect(roomId)?.state === "failed", 10000,
+					() => ({ session: manager.inspect(roomId), nativeDiagnostic: nativeDiagnostic.slice(-8) }));
+				assert.equal(manager.inspect(roomId).failureCode, "NATIVE_ACTION_STALE_DELIVERY_REJECTED");
+				assert.equal(nativeActionAckCount, beforeAckCount, "stale delivery produced an ACK");
+				assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1);
+				const lateHandle = launchedHandles.get(manager.inspect(roomId).sessionId);
+				await until(() => lateHandle.resources().length === 0, 10000, () => ({ resources: lateHandle.resources() }));
+				await lateHandle.waitForCleanup();
+				return;
+			}
 		} else if (probeMode === "managed_input_gate") {
 			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
 			assert.equal(snapshot.firstPhaseGate, null);
