@@ -21,6 +21,7 @@ let choiceCommandChain = Promise.resolve();
 let choiceDiagnosticTimer = null;
 const nativeStartDiagnosticRing = [];
 let nativeStartDiagnosticUnsubscribe = null;
+let nativeFailureReported = false;
 
 function createCdpSession(url) {
 	if (typeof url !== "string" || !/^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/[A-Za-z0-9-]+$/.test(url)) {
@@ -622,6 +623,10 @@ async function applyManagedNativeActionDelivery(message) {
 	// Reserve before touching the engine. An ambiguous CDP outcome is never replayed.
 	const record = { choiceId: message.choiceId, deliveryId: message.deliveryId, option: message.resolution.option, status: "applying" };
 	gate.actionDeliveries.set(gate.seatId, record);
+	if (process.env.V2_MANAGED_NATIVE_FAULT_INJECTION === "before_native_apply") {
+		record.status = "uncertain";
+		throw new Error("NATIVE_ACTION_APPLY_UNCERTAIN");
+	}
 	const expression = `(()=>{const s=window.__v2NativeStartDiagnosticState,g=s?.nativeInputResumeGate,o=window.__v2ManagedNativeActionOptions;
 	 const id=${JSON.stringify(gate.nativeEventId)},seat=${JSON.stringify(gate.seatId)},option=${JSON.stringify(message.resolution.option)};
 	 const {game,lib,get}=window.__v2ManagedEngine.core,e=g?.event,p=e?.player,m=o?.get(option);
@@ -653,7 +658,7 @@ async function emitManagedChoiceDiagnostic() {
 function emitNativeStartDiagnostic(observed) {
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !observed || typeof observed !== "object") return;
 	if (interactiveChoice && observed.stage === "native_input_wait_open" && observed.snapshot?.nativeInputGate?.nativeEventId) {
-		const controllerManaged = ["managed_input_controller", "managed_input_controller_trustee"].includes(process.env.V2_NATIVE_START_PROBE_MODE);
+		const controllerManaged = ["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply"].includes(process.env.V2_NATIVE_START_PROBE_MODE);
 		interactiveChoice.nativeInputGate = { nativeEventId: observed.snapshot.nativeInputGate.nativeEventId,
 			seatId: observed.snapshot.nativeInputGate.seatId, status: "waiting", controllerManaged,
 			optionIds: observed.snapshot.nativeInputGate.candidates.map(candidate => candidate.optionId),
@@ -683,6 +688,11 @@ function emitNativeStartDiagnostic(observed) {
 	if (nativeStartDiagnosticRing.length > 128) nativeStartDiagnosticRing.shift();
 	process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: interactiveChoice?.nativeEventId || null,
 		observed: { kind: "native_start_diagnostic", ...entry } });
+	if (!nativeFailureReported && observed.stage === "wait_next_error" && interactiveChoice?.nativeInputGate?.controllerManaged) {
+		nativeFailureReported = true;
+		const code = /^[A-Z0-9_]{3,96}$/.test(observed.snapshot?.failureCode || "") ? observed.snapshot.failureCode : "HOST_NATIVE_EVENT_UNCERTAIN";
+		process.send?.({ ...identity, type: "host_failure", code }, () => cleanup().finally(() => process.exit(1)));
+	}
 }
 
 async function resumeManagedNativeInput(message) {
@@ -731,7 +741,7 @@ async function cancelManagedNativeInput(message) {
 
 async function runNativeStartDiagnostic(message) {
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !interactiveChoice?.completed || !validHostCommand(message) ||
-		!cdp || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "controlled_block"].includes(message.mode)) throw new Error("NATIVE_START_DIAGNOSTIC_REJECTED");
+		!cdp || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "controlled_block"].includes(message.mode)) throw new Error("NATIVE_START_DIAGNOSTIC_REJECTED");
 	if (!nativeStartDiagnosticUnsubscribe) {
 		await cdp.send("Runtime.enable");
 		await cdp.send("Runtime.addBinding", { name: "__v2NativeStartTrace" });
@@ -748,10 +758,10 @@ async function runNativeStartDiagnostic(message) {
 	}
 	const install = `(()=>{
 	 const managedInputGate=${message.mode === "managed_input_gate"};
-	 const managedInputController=${["managed_input_controller", "managed_input_controller_trustee"].includes(message.mode)};
-	 const managedInputResume=${["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee"].includes(message.mode)};
+	 const managedInputController=${["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply"].includes(message.mode)};
+	 const managedInputResume=${["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply"].includes(message.mode)};
 	 const managedInputDeadlineMs=${message.mode === "managed_input_timeout" ? 1500 : 10000};
-	 const managedStart=${message.mode === "managed_start" || message.mode === "managed_input_gate" || ["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee"].includes(message.mode)};
+	 const managedStart=${message.mode === "managed_start" || message.mode === "managed_input_gate" || ["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply"].includes(message.mode)};
 	 const managed=window.__v2ManagedEngine,{game,lib,get,_status}=managed.core,manager=_status.eventManager,Player=lib.element.Player;
 	 const state=window.__v2NativeStartDiagnosticState||{traceCount:0,lastSuccessfulEventStep:null,gameStartCount:0,drawCreated:false,drawEntered:false,phaseLoopCreated:false,prepareArenaCalls:0,waitForPlayerCalls:0,randomMapOLCalls:0,chooseCharacterCalls:0,phaseCalls:0,rootPromiseState:'not_started',failureCode:null};
 	 window.__v2NativeStartDiagnosticState=state;
@@ -760,7 +770,7 @@ async function runNativeStartDiagnostic(message) {
 	 const emit=stage=>{state.traceCount++;const snap=snapshot();ring.push({stage,snapshot:snap});if(ring.length>128)ring.shift();const token=[snap.eventName,snap.eventStep].join(':');const milestone=new Set(['root_event_created','root_start_dispatched','wait_for_player_called','random_map_ol_called','prepare_arena_called','choose_character_called','game_start_trigger','game_draw_called','phase_loop_called','phase_called','native_input_gate','native_input_gate_waiting','native_input_wait_open','native_input_resume_accepted','native_input_resume_rejected','native_input_cancelled','native_input_cancel_rejected','native_input_gate_expired','native_useResult_entered','native_useResult_dispatched','native_action_child_wait_completed','root_promise_fulfilled','root_promise_rejected','wait_next_error']).has(stage);const criticalFailure=['native_input_gate_expired','native_input_resume_rejected','native_input_cancel_rejected','root_promise_rejected','wait_next_error'].includes(stage);const changedStep=token!==lastEventStepToken;lastEventStepToken=token;if(milestone){if(!criticalFailure&&emittedMilestones++>=64)return}else if(changedStep){if(emittedSteps++>=64)return}else return;const payload={kind:'native_start_trace_v1',stage,snapshot:snap};try{window.__v2NativeStartTrace(JSON.stringify(payload))}catch{}};
 	 if(!state.instrumented){
 	  state.instrumented=true;
-	  const GameEvent=lib.element.GameEvent,originalWaitNext=GameEvent.prototype.waitNext,originalLoop=GameEvent.prototype.loop,originalTrigger=GameEvent.prototype.trigger,originalCreateEvent=game.createEvent,originalWaitForPlayer=game.waitForPlayer,originalPrepareArena=game.prepareArena,originalChooseCharacter=game.chooseCharacter,originalRandomMapOL=game.randomMapOL,originalDraw=game.gameDraw,originalPhaseLoop=game.phaseLoop,originalPhase=Player.prototype.phase,originalUseResult=Player.prototype.useResult;
+	 const GameEvent=lib.element.GameEvent,originalWaitNext=GameEvent.prototype.waitNext,originalLoop=GameEvent.prototype.loop,originalTrigger=GameEvent.prototype.trigger,originalCreateEvent=game.createEvent,originalWaitForPlayer=game.waitForPlayer,originalPrepareArena=game.prepareArena,originalChooseCharacter=game.chooseCharacter,originalRandomMapOL=game.randomMapOL,originalDraw=game.gameDraw,originalPhaseLoop=game.phaseLoop,originalPhase=Player.prototype.phase,originalUseResult=Player.prototype.useResult;
 	  const observeNativeInputGate=event=>{
 	   const player=event.player,options=new Map(),seenOperations=new Map();let cardFilterPassed=0,targetFilterPassed=0,filterErrors=0,unsupportedCardShapes=0;
 	   const rangeIsOne=value=>Array.isArray(value)?value[0]===1&&value[1]===1:value===1;
@@ -792,7 +802,7 @@ async function runNativeStartDiagnostic(message) {
 	  game.randomMapOL=function(...args){state.randomMapOLCalls++;emit('random_map_ol_called');if(managedStart){if(!_status.connectMode||!verifyCompletedRoom())throw Error('COMPLETED_ROOM_ROSTER_INVALID');state.randomMapOLAdapter='verified_completed_room_noop';return;}return originalRandomMapOL.apply(this,args)};
 	  game.waitForPlayer=function(...args){state.waitForPlayerCalls++;emit('wait_for_player_called');if(managedStart){if(!_status.connectMode||!verifyCompletedRoom())throw Error('COMPLETED_ROOM_ROSTER_INVALID');state.waitForPlayerAdapter='verified_completed_room_callback';if(typeof args[0]==='function')args[0]();return;}return originalWaitForPlayer.apply(this,args)};
 	  Player.prototype.phase=function(...args){state.phaseCalls++;const next=originalPhase.apply(this,args);if(managedStart&&!managedInputGate&&!managedInputResume&&!state.firstPhaseGate&&this===_status.firstAct){state.firstPhaseGate={seatId:this.playerid,eventName:next.name,parentName:next.parent?.name||null};game.pause();emit('first_phase_gate');return next}emit('phase_called');return next};
-	  Player.prototype.useResult=function(result,event){if(event&&event===state.inputEvent){const action=state.nativeAction;if(!action||action.eventId!==event.__v2NativeEventId)throw Error('NATIVE_ACTION_GATE_BINDING_LOST');action.useResultCount++;state.nativeInputGate.useResultCount=action.useResultCount;action.status='native_useResult_entered';action.result={bool:result?.bool===true,cardName:result?.card?.name||null,cardsCount:Array.isArray(result?.cards)?result.cards.length:0,targetCount:Array.isArray(result?.targets)?result.targets.length:0};emit('native_useResult_entered');const next=originalUseResult.call(this,result,event);action.useResultChildName=next?.name||null;action.status='native_useResult_dispatched';emit('native_useResult_dispatched');return next}return originalUseResult.call(this,result,event)};
+	Player.prototype.useResult=function(result,event){if(event&&event===state.inputEvent){const action=state.nativeAction;if(!action||action.eventId!==event.__v2NativeEventId)throw Error('NATIVE_ACTION_GATE_BINDING_LOST');action.useResultCount++;state.nativeInputGate.useResultCount=action.useResultCount;action.status='native_useResult_entered';action.result={bool:result?.bool===true,cardName:result?.card?.name||null,cardsCount:Array.isArray(result?.cards)?result.cards.length:0,targetCount:Array.isArray(result?.targets)?result.targets.length:0};emit('native_useResult_entered');const next=originalUseResult.call(this,result,event);action.useResultChildName=next?.name||null;action.status='native_useResult_dispatched';emit('native_useResult_dispatched');return next}return originalUseResult.call(this,result,event)};
 	  game.gameDraw=function(...args){state.drawCreated=true;emit('game_draw_called');return originalDraw.apply(this,args)};
 	  game.phaseLoop=function(...args){state.phaseLoopCreated=true;emit('phase_loop_called');return originalPhaseLoop.apply(this,args)};
 	 }
@@ -831,7 +841,7 @@ async function runNativeStartDiagnostic(message) {
 				const probe=await cdp.send("Runtime.evaluate",{expression:`(()=>{const s=window.__v2NativeStartDiagnosticState,{game,_status}=window.__v2ManagedEngine.core,phaseLoop=s?.phaseLoop,phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct);return {rootPromiseState:s?.rootPromiseState||'unobserved',snapshot:{eventName:_status.event?.name||null,eventStep:Number.isSafeInteger(_status.event?.step)?_status.event.step:null,parentEventName:_status.event?.parent?.name||null,rootEventName:_status.eventManager.rootEvent?.name||null,eventStackDepth:_status.eventManager.eventStack.length,eventStackTop:_status.eventManager.eventStack.at(-1)?.name||null,eventStack:_status.eventManager.eventStack.map(event=>event.name),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:(s?.gameStartCount||0)>0,gameStartCount:s?.gameStartCount||0,gameDrawCreated:Boolean(s?.drawCreated),gameDrawEntered:Boolean(s?.drawEntered),gameDrawParentName:s?.drawParentName||null,phaseLoopCreated:Boolean(s?.phaseLoopCreated),phaseLoopParentName:s?.phaseLoopParentName||null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:s?.firstPhaseGate||null,nativeInputGate:s?.nativeInputGate||null,prepareArenaCalls:s?.prepareArenaCalls||0,waitForPlayerCalls:s?.waitForPlayerCalls||0,randomMapOLCalls:s?.randomMapOLCalls||0,chooseCharacterCalls:s?.chooseCharacterCalls||0,phaseCalls:s?.phaseCalls||0,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(_status.event?.name||'')?_status.event.name:null,pendingChoiceSeatId:_status.event?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(p=>({seatId:p.playerid||null,characterInitialized:typeof p.name1==='string',handCount:p.countCards('h')})),lastSuccessfulEventStep:s?.lastSuccessfulEventStep||null,failureCode:s?.failureCode||null}}})()`,returnByValue:true},800);
 				if(probe.exceptionDetails) {lastProbeError=String(probe.exceptionDetails.text||"CDP_EVALUATION_EXCEPTION").slice(0,256);break;}
 				value=probe.result?.value||null;
-				if((['managed_input_resume','managed_input_timeout','managed_input_cancel','managed_input_stop','managed_input_controller','managed_input_controller_trustee'].includes(message.mode) ? value?.snapshot?.nativeInputGate?.waiting : message.mode === "managed_input_gate" ? value?.snapshot?.nativeInputGate : value?.snapshot?.phaseLoopCreated)||value?.snapshot?.failureCode)break;
+				if((['managed_input_resume','managed_input_timeout','managed_input_cancel','managed_input_stop','managed_input_controller','managed_input_controller_trustee','managed_input_controller_registry','managed_input_controller_fault_before_apply'].includes(message.mode) ? value?.snapshot?.nativeInputGate?.waiting : message.mode === "managed_input_gate" ? value?.snapshot?.nativeInputGate : value?.snapshot?.phaseLoopCreated)||value?.snapshot?.failureCode)break;
 			} catch(error) { lastProbeError=error.message; break; }
 			await new Promise(resolve=>setTimeout(resolve,50));
 		}

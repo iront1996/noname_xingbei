@@ -390,3 +390,10 @@ These are specification tests to add incrementally during M2–M4. They are not 
 
 - C3e-B2-D1 follow-up (partial): bounded delivery exhaustion now has an explicit callback, and deterministic controller tests establish single-winner deadline/submission behavior plus terminal failure notification. The remaining native fault matrix will be recorded separately; no operation is considered applied without native evidence.
 - C3e-B2-D2: host-session termination now signals the exact room/session once, so a trusted integration can cancel only that session's pending choices and timers. Local tests cover unexpected exit, normal stop, stale prior-session exit and two-room isolation. This is fail-closed cleanup, not checkpoint recovery.
+
+### M2-C3e-B2-D/E current acceptance
+
+- The real-Chromium fault mode reaches the controller-managed child command, reserves its immutable resolution in applying state, then fails before native CDP application. The host is failed/cleaned without replay; this covers the explicitly uncertain-before-apply boundary only.
+- The isolated managed-room registry supplies ordinary-player seat credentials (256-bit random, hash-at-rest and timing-safe validation), a current-connection HMAC binding proof, stale-socket fencing and lifecycle APIs. Four issued seats are used in a real Chromium native Xingbei action path; wrong-seat/cross-room/rebound-old-socket operations are rejected while a valid action reaches native `useResult`/`useCard`, with `game.me === null`. This is not formal HALL routing.
+- Local: focused 25/25 Node tests; registry-backed Chromium 1/1; uncertain-before-apply Chromium 1/1; no skips. Linux CI pending.
+- D2 cleanup and E1 isolated registry/native-action integration are implemented. D1 remains partial pending useResult exception, post-dispatch CDP ambiguity, incomplete child, card-moved-before-ACK, and deterministic ACK/stop/cancel race injection. Choice sequence 4 is not an accepted authority sequence; authority revision is still 2 / next sequence 3. No Event #3/#4, Full Playable, HALL, M3, M4 or deployment is claimed.

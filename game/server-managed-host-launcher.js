@@ -98,7 +98,7 @@ function createManagedHostProcessLauncher({
 		};
 		handle.sendHostCommand = async command => {
 			const diagnosticCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
-				command?.type === "host_native_start_diagnostic" && ["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "controlled_block"].includes(command.mode);
+				command?.type === "host_native_start_diagnostic" && ["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "controlled_block"].includes(command.mode);
 			const inputResumeCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				command?.type === "host_native_input_resume" && typeof command.nativeEventId === "string" &&
 				typeof command.seatId === "string" && typeof command.optionId === "string" &&

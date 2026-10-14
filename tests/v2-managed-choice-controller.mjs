@@ -82,7 +82,7 @@ test("early deadline timer re-arms trustee and never strands native choice", () 
 	assert.equal(timers.size, 0);
 });
 
-test("choice/deadline boundary is single-winner and never redelivers an uncertain native result", () => {
+test("choice/deadline boundary is single-winner and delivery retries keep immutable identity", () => {
 	let clock = 1999, nextTimer = 0, onResolved = 0;
 	const timers = new Map();
 	const controller = createManagedChoiceController({

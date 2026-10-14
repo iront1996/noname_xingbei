@@ -148,5 +148,25 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller_trustee node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native card choice with managed room seat registry
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller_registry node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 fail-closed native useResult fault injection
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller_fault_before_apply node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 isolated managed room seat registry
+        run: node --test tests/v2-managed-room-seat-registry.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js
