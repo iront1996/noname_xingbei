@@ -95,7 +95,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	assert.equal(controller.inspect(roomId, b.choiceId).resolution.kind, "trustee");
 	assert.equal(controller.inspect(roomId, d.choiceId).state, "resolved");
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
-		const probeMode = ["managed_start", "managed_input_gate"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? process.env.V2_NATIVE_START_PROBE_MODE : "native_start";
+		const probeMode = ["managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? process.env.V2_NATIVE_START_PROBE_MODE : "native_start";
 		assert.equal((await manager.diagnoseNativeStart(roomId, "controlled_block")).ok, true);
 		const controlled = await until(() => nativeDiagnostic.find(entry => entry?.stage === "controlled_block_outcome"), 5000,
 			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
@@ -134,7 +134,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.hostPlayerAbsent, true);
 			assert.equal(snapshot.seats.length, 4);
 			assert.deepEqual(snapshot.seats.map(seat => seat.handCount), [4, 4, 4, 4]);
-		} else {
+		} else if (probeMode === "managed_input_gate") {
 			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
 			assert.equal(snapshot.firstPhaseGate, null);
 			assert.equal(snapshot.gameStartCount, 1);
@@ -154,11 +154,75 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.hostPlayerAbsent, true);
 			assert.equal(snapshot.seats.length, 4);
 			assert.ok(snapshot.seats.every(seat => Number.isSafeInteger(seat.handCount) && seat.handCount >= 0));
+		} else {
+			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
+			assert.equal(snapshot.nativeInputGate?.eventName, "gongJiOrFaShu");
+			assert.equal(snapshot.nativeInputGate?.parentEventName, "xingDong");
+			assert.equal(snapshot.nativeInputGate?.eventShapeSupported, true);
+			assert.equal(snapshot.nativeInputGate?.waiting, true);
+			assert.ok(snapshot.nativeInputGate?.candidates?.length > 0, "native input gate has no safe card/target candidates");
+			assert.equal(snapshot.nativeInputGate?.offlineAiPrevented, true);
+			assert.equal(snapshot.hostPlayerAbsent, true);
+			if (probeMode === "managed_input_resume") {
+				const candidate = snapshot.nativeInputGate.candidates[0];
+				assert.equal((await manager.resumeNativeInput(roomId, { nativeEventId: `${snapshot.nativeInputGate.nativeEventId}_stale`, seatId: snapshot.nativeInputGate.seatId, optionId: candidate.optionId })).ok, true);
+				assert.equal((await manager.resumeNativeInput(roomId, { nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: "wrong_seat", optionId: candidate.optionId })).ok, true);
+				assert.equal((await manager.resumeNativeInput(roomId, { nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: snapshot.nativeInputGate.seatId, optionId: "forged_option" })).ok, true);
+				assert.equal((await manager.resumeNativeInput(roomId, { nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: snapshot.nativeInputGate.seatId, optionId: candidate.optionId })).ok, true);
+				const applied = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_child_wait_completed" && entry.snapshot?.nativeAction?.nativeEventStepAfterWait >= 5), 15000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.filter(entry => entry?.snapshot).at(-1)?.snapshot || null, host: manager.inspect(roomId) }));
+				assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1);
+				assert.equal(applied.snapshot?.nativeAction?.useResultChildName, "useCard");
+				assert.equal(applied.snapshot?.nativeAction?.status, "native_child_wait_completed");
+				assert.equal(applied.snapshot?.nativeAction?.nativeEventInstanceMatches, true);
+				assert.ok(applied.snapshot?.nativeAction?.nativeEventStepAfterWait >= 5);
+				assert.equal(applied.snapshot?.nativeAction?.cardInHandAfterNativeWait, false);
+				assert.notEqual(applied.snapshot?.nativeAction?.cardPositionAfterNativeWait, "h");
+				assert.equal(applied.snapshot?.nativeInputGateStatus, "accepted");
+				assert.equal(applied.snapshot?.nativeInputGate?.nativeResumeCount, 1);
+				assert.equal(applied.snapshot?.nativeInputGate?.nativeSendCount, 1);
+				assert.equal(applied.snapshot?.hostPlayerAbsent, true);
+				assert.equal(applied.snapshot?.paused, false);
+				assert.equal((await manager.resumeNativeInput(roomId, { nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: snapshot.nativeInputGate.seatId, optionId: candidate.optionId })).ok, true);
+				const rejectedReplay = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_input_resume_rejected"), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
+				assert.equal(rejectedReplay.failureCode, "NATIVE_INPUT_RESUME_REJECTED");
+				assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1);
+				assert.equal(applied.snapshot?.nativeInputGate?.nativeResumeCount, 1);
+			} else if (probeMode === "managed_input_timeout") {
+				const expired = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_input_gate_expired"), 6000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
+				assert.equal(expired.snapshot?.nativeInputGateStatus, "expired");
+				assert.equal(expired.snapshot?.nativeInputGate?.failureCode, "NATIVE_INPUT_DEADLINE_EXPIRED");
+				assert.equal(expired.snapshot?.nativeInputGate?.engineResumeCount, 1);
+				assert.equal(expired.snapshot?.nativeAction, null);
+				assert.equal(expired.snapshot?.hostPlayerAbsent, true);
+				assert.equal((await manager.resumeNativeInput(roomId, { nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: snapshot.nativeInputGate.seatId, optionId: snapshot.nativeInputGate.candidates[0].optionId })).ok, true);
+				const rejectedLateInput = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_input_resume_rejected"), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
+				assert.equal(rejectedLateInput.failureCode, "NATIVE_INPUT_BINDING_REJECTED");
+			} else if (probeMode === "managed_input_cancel") {
+				assert.equal((await manager.cancelNativeInput(roomId, { nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: snapshot.nativeInputGate.seatId })).ok, true);
+				const cancelled = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_input_cancelled"), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
+				assert.equal(cancelled.snapshot?.eventName, "gongJiOrFaShu");
+				assert.equal(cancelled.snapshot?.parentEventName, "xingDong");
+				assert.equal(cancelled.snapshot?.useResultCount, 0);
+				assert.equal(cancelled.snapshot?.engineResumeCount, 1);
+				assert.equal(cancelled.snapshot?.gameMeAbsent, true);
+				assert.equal((await manager.resumeNativeInput(roomId, { nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: snapshot.nativeInputGate.seatId, optionId: snapshot.nativeInputGate.candidates[0].optionId })).ok, true);
+				const rejectedCancelled = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_input_resume_rejected"), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
+				assert.equal(rejectedCancelled.failureCode, "NATIVE_INPUT_RESUME_REJECTED");
+			} else {
+				assert.equal((await manager.stop(roomId, "pending_native_input_stop_test")).ok, true);
+				assert.equal(manager.inspect(roomId)?.state, "stopped");
+			}
 		}
 		const trace = nativeDiagnostic.filter(entry => entry?.kind === "native_start_diagnostic");
 		t.diagnostic(`native start probe (${probeMode}): ${JSON.stringify({ controlledBlock: controlled.classification, outcome: outcome.classification,
 			traceStages: trace.map(entry => entry.stage), lastSnapshot: trace.filter(entry => entry.snapshot).at(-1)?.snapshot || null,
 			failureCode: outcome.failureCode || null })}`);
-		assert.equal((await manager.stop(roomId, "native_start_diagnostic_complete")).ok, true);
+		if (probeMode !== "managed_input_stop") assert.equal((await manager.stop(roomId, "native_start_diagnostic_complete")).ok, true);
 	}
 });

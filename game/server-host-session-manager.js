@@ -395,13 +395,37 @@ function createHostSessionManager({
 
 	async function diagnoseNativeStart(roomId, mode = "native_start") {
 		const record = sessions.get(roomId);
-		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "controlled_block"].includes(mode) ||
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "controlled_block"].includes(mode) ||
 			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand) return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED");
 		try {
 			await record.handle.sendHostCommand({ type: "host_native_start_diagnostic", mode, kind: "managed_host", protocol: PROTOCOL,
 				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret });
 			return Object.freeze({ ok: true });
 		} catch (_) { return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED"); }
+	}
+
+	async function resumeNativeInput(roomId, input) {
+		const record = sessions.get(roomId);
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !record || record.state !== "playable_probe" || !record.handle?.sendHostCommand ||
+			!input || Object.getPrototypeOf(input) !== Object.prototype || Object.keys(input).some(key => !["nativeEventId", "seatId", "optionId"].includes(key)) ||
+			![input.nativeEventId, input.seatId, input.optionId].every(value => typeof value === "string" && value.length >= 1 && value.length <= 128)) {
+			return failure("NATIVE_INPUT_RESUME_REJECTED");
+		}
+		try {
+			await record.handle.sendHostCommand({ type: "host_native_input_resume", ...input });
+			return Object.freeze({ ok: true });
+		} catch (_) { return failure("NATIVE_INPUT_RESUME_REJECTED"); }
+	}
+
+	async function cancelNativeInput(roomId, input) {
+		const record = sessions.get(roomId);
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !record || record.state !== "playable_probe" || !record.handle?.sendHostCommand ||
+			!input || Object.getPrototypeOf(input) !== Object.prototype || Object.keys(input).some(key => !["nativeEventId", "seatId"].includes(key)) ||
+			![input.nativeEventId, input.seatId].every(value => typeof value === "string" && value.length >= 1 && value.length <= 128)) return failure("NATIVE_INPUT_CANCEL_REJECTED");
+		try {
+			await record.handle.sendHostCommand({ type: "host_native_input_cancel", ...input });
+			return Object.freeze({ ok: true });
+		} catch (_) { return failure("NATIVE_INPUT_CANCEL_REJECTED"); }
 	}
 
 	return Object.freeze({
@@ -413,6 +437,8 @@ function createHostSessionManager({
 		commitAuthoritativeResult,
 		sendChoiceDelivery,
 		diagnoseNativeStart,
+		resumeNativeInput,
+		cancelNativeInput,
 		stop,
 		inspect: roomId => publicView(sessions.get(roomId)),
 	});

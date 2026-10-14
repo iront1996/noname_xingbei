@@ -98,9 +98,16 @@ function createManagedHostProcessLauncher({
 		};
 		handle.sendHostCommand = async command => {
 			const diagnosticCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
-				command?.type === "host_native_start_diagnostic" && ["native_start", "managed_start", "managed_input_gate", "controlled_block"].includes(command.mode);
+				command?.type === "host_native_start_diagnostic" && ["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "controlled_block"].includes(command.mode);
+			const inputResumeCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
+				command?.type === "host_native_input_resume" && typeof command.nativeEventId === "string" &&
+				typeof command.seatId === "string" && typeof command.optionId === "string" &&
+				Object.keys(command).every(key => ["type", "nativeEventId", "seatId", "optionId"].includes(key));
+			const inputCancelCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" && command?.type === "host_native_input_cancel" &&
+				typeof command.nativeEventId === "string" && typeof command.seatId === "string" &&
+				Object.keys(command).every(key => ["type", "nativeEventId", "seatId"].includes(key));
 			if (exited || !child.connected || !command ||
-				!(diagnosticCommand || ["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||
+				!(diagnosticCommand || inputResumeCommand || inputCancelCommand || ["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||
 				Object.getPrototypeOf(command) !== Object.prototype) throw new Error("HOST_COMMAND_REJECTED");
 			await new Promise((resolve, reject) => child.send(command, error => error ? reject(error) : resolve()));
 		};

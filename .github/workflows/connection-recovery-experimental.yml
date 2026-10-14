@@ -94,5 +94,41 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_gate node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native input resume proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_resume node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native input deadline proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_timeout node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native input cancellation proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_cancel node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native input stop cleanup proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_stop node --test tests/v2-managed-native-choice-ipc.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js
