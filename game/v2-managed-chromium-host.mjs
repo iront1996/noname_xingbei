@@ -597,7 +597,11 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 	 if(state.root.name!=='game'||state.root.parent)throw Error('OPENING_ROOT_INVALID');
 	 Promise.resolve(state.root.start()).then(()=>{state.rootPromiseState='fulfilled'},error=>{state.rootPromiseState='rejected';state.failureCode='OPENING_ROOT_REJECTED'});
 	 return {started:true,rootName:state.root.name,event2Digest:digest2};})()`, returnByValue: true }, 15000);
-	if (started.exceptionDetails || started.result?.value?.started !== true) throw new Error("OPENING_DRAW_START_FAILED");
+	if (started.exceptionDetails || started.result?.value?.started !== true) {
+		const detail = started.exceptionDetails?.exception?.description || started.exceptionDetails?.text ||
+			JSON.stringify(started.result?.value || null);
+		throw new Error(`OPENING_DRAW_START_FAILED:${String(detail).replaceAll(identity.secret, "[redacted]").slice(0, 1024)}`);
+	}
 	let observed = null;
 	const deadline = Date.now() + 20000;
 	while (Date.now() < deadline) {
