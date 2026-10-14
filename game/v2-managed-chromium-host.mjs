@@ -589,6 +589,8 @@ function waitForAuthorityEventAck(eventSequence, stateRevision, afterDigest) {
 
 async function runManagedOpeningDraw(event2After, event2Digest) {
 	const nativeEventId = `native_${identity.sessionId.slice(3)}_opening_draw`;
+	const reportStage = (stage, details = {}) => process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId,
+		observed: { kind: "native_opening_draw_diagnostic_v1", stage, ...details } });
 	let readiness = null;
 	const idleDeadline = Date.now() + 10000;
 	while (Date.now() < idleDeadline) {
@@ -618,6 +620,7 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 		throw new Error(`OPENING_NATIVE_EVENT_STACK_DID_NOT_DRAIN:${JSON.stringify({ depth: readiness?.eventStackDepth,
 			stack: readiness?.eventStack, tempEventName: readiness?.tempEventName })}`);
 	}
+	reportStage("opening_draw_root_start_requested", { eventStackDepth: readiness.eventStackDepth, tempEventName: readiness.tempEventName });
 	const started = await cdp.send("Runtime.evaluate", { expression: `(()=>{
 	 const managed=window.__v2ManagedEngine,container=window.__v2ManagedGame,{game,lib,_status}=managed.core,manager=_status.eventManager;
 	 const event2=${JSON.stringify(event2After)},digest2=${JSON.stringify(event2Digest)};
@@ -659,8 +662,10 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 			JSON.stringify(started.result?.value || null);
 		throw new Error(`OPENING_DRAW_START_FAILED:${String(detail).replaceAll(identity.secret, "[redacted]").slice(0, 1024)}`);
 	}
+	reportStage("opening_draw_root_start_returned", { rootName: started.result.value.rootName });
 	let observed = null;
 	const deadline = Date.now() + 20000;
+	let lastObservationKey = null;
 	while (Date.now() < deadline) {
 		const response = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2ManagedOpeningDraw,m=window.__v2ManagedEngine?.core,game=m?.game,_status=m?._status;
 		 if(!s)return {ready:false,code:'OPENING_DRAW_STATE_MISSING'};
@@ -678,6 +683,22 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 			throw new Error(`OPENING_DRAW_OBSERVATION_FAILED:${String(detail).replaceAll(identity.secret, "[redacted]").slice(0, 1024)}`);
 		}
 		observed = response.result?.value;
+		const observationKey = JSON.stringify({ stack: observed?.eventStack, drawEntered: observed?.drawEntered,
+			drawCompleted: observed?.drawCompleted, phaseLoopCreated: observed?.phaseLoopCreated,
+			phaseLoopPaused: observed?.phaseLoopPaused, gameStartCount: observed?.gameStartCount,
+			rootPromiseState: observed?.rootPromiseState, failureCode: observed?.failureCode });
+		if (observationKey !== lastObservationKey) {
+			reportStage("opening_draw_native_state_observed", {
+				rootPromiseState: observed?.rootPromiseState, failureCode: observed?.failureCode,
+				eventStack: observed?.eventStack, drawEntered: observed?.drawEntered, drawCompleted: observed?.drawCompleted,
+				drawFinalStep: observed?.drawFinalStep, phaseLoopCreated: observed?.phaseLoopCreated,
+				phaseLoopStarted: observed?.phaseLoopStarted, phaseLoopPaused: observed?.phaseLoopPaused,
+				gameStartCount: observed?.gameStartCount, firstActSeatId: observed?.firstActSeatId,
+				gameMeNull: observed?.gameMeNull, connectedTransports: observed?.connectedTransports,
+				seatHandCounts: observed?.seats?.map(seat => ({ seatId: seat.seatId, handCount: seat.handCount })),
+			});
+			lastObservationKey = observationKey;
+		}
 		if (observed?.failureCode || observed?.rootPromiseState === "rejected") throw new Error(observed.failureCode || "OPENING_ROOT_REJECTED");
 		if (observed?.ready) break;
 		await new Promise(resolve => setTimeout(resolve, 50));
