@@ -553,13 +553,38 @@ async function runManagedNativeChoice() {
 	const beforeDigest = createHash("sha256").update(canonicalize(completed.before)).digest("hex");
 	const afterDigest = createHash("sha256").update(canonicalize(completed.after)).digest("hex");
 	if (beforeDigest === afterDigest) throw new Error("MANAGED_CHOICE_NO_PROGRESS");
+	const characterSelectionAck = process.env.V2_NATIVE_OPENING_DRAW_EVENT3 === "1" ?
+		waitForAuthorityEventAck(2, 2, afterDigest) : null;
 	process.send?.({ ...identity, type: "host_authority_event", proof: { kind: "native_authority_event_v1", checkpoint: null,
 		eventSequence: 2, stateRevisionBefore: 1, stateRevisionAfter: 2, beforeDigest, afterDigest,
 		event: { kind: "xingbei_character_selection_v1", name: "chooseCharacterOL", characters: completed.after.characters,
 			hostPlayerAbsent: true, connectedTransports: 0 } } });
 	if (process.env.V2_NATIVE_OPENING_DRAW_EVENT3 === "1") {
+		if (!await characterSelectionAck) throw new Error("CHARACTER_SELECTION_AUTHORITY_ACK_REJECTED");
+		const finalized = await cdp.send("Runtime.evaluate", { expression: `(()=>{const c=window.__v2ManagedGame,g=window.__v2ManagedEngine?.core?.game;
+		 const characters=${JSON.stringify(completed.after.characters)},sides=${JSON.stringify(completed.after.sides)};
+		 if(!c||!g||c.authorityState.revision!==1||g.me!==null||g.players.length!==characters.length||g.players.some((player,index)=>
+		  player.playerid!==characters[index]?.seatId||player.name1!==characters[index]?.character||player.side!==sides[index]?.side||player.ws))
+		  throw Error('CHARACTER_SELECTION_FINALIZE_REJECTED');
+		 c.authorityState.revision=2;return {revision:c.authorityState.revision}})()`, returnByValue: true });
+		if (finalized.exceptionDetails || finalized.result?.value?.revision !== 2) throw new Error("CHARACTER_SELECTION_FINALIZE_FAILED");
 		await runManagedOpeningDraw(completed.after, afterDigest);
 	}
+}
+
+function waitForAuthorityEventAck(eventSequence, stateRevision, afterDigest) {
+	if (![2, 3].includes(eventSequence) || stateRevision !== eventSequence || !/^[a-f0-9]{64}$/.test(afterDigest) ||
+		nativeAuthorityAckWaiters.has(eventSequence)) return Promise.reject(new Error("AUTHORITY_ACK_WAITER_INVALID"));
+	return new Promise((resolve, reject) => {
+		const timer = setTimeout(() => { nativeAuthorityAckWaiters.delete(eventSequence); reject(new Error("AUTHORITY_EVENT_ACK_TIMEOUT")); }, 15000);
+		nativeAuthorityAckWaiters.set(eventSequence, message => {
+			clearTimeout(timer);
+			nativeAuthorityAckWaiters.delete(eventSequence);
+			const valid = validHostCommand(message) && message.accepted === true && message.eventSequence === eventSequence &&
+				message.stateRevision === stateRevision && message.afterDigest === afterDigest;
+			resolve(valid);
+		});
+	});
 }
 
 async function runManagedOpeningDraw(event2After, event2Digest) {
@@ -676,14 +701,9 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 			rootEventName: observed.rootName, parentEventName: observed.drawParentName,
 			phaseLoopCreated: true, phaseLoopParentName: observed.phaseLoopParentName, phaseLoopPaused: true,
 			firstActSeatId: observed.firstActSeatId, seats: after.seats, gameMeNull: true, connectedTransports: 0 } };
-	const acknowledgement = new Promise((resolve, reject) => {
-		const timer = setTimeout(() => { nativeAuthorityAckWaiters.delete(3); reject(new Error("OPENING_DRAW_AUTHORITY_ACK_TIMEOUT")); }, 15000);
-		nativeAuthorityAckWaiters.set(3, message => { clearTimeout(timer); nativeAuthorityAckWaiters.delete(3); resolve(message); });
-	});
+	const acknowledgement = waitForAuthorityEventAck(3, 3, afterDigest);
 	process.send?.({ ...identity, type: "host_authority_event", proof });
-	const accepted = await acknowledgement;
-	if (!validHostCommand(accepted) || accepted.accepted !== true || accepted.eventSequence !== 3 ||
-		accepted.stateRevision !== 3 || !/^[a-f0-9]{64}$/.test(accepted.afterDigest) || accepted.afterDigest !== afterDigest) throw new Error("OPENING_DRAW_AUTHORITY_REJECTED");
+	if (!await acknowledgement) throw new Error("OPENING_DRAW_AUTHORITY_REJECTED");
 	const finalized = await cdp.send("Runtime.evaluate", { expression: `(()=>{const c=window.__v2ManagedGame,s=window.__v2ManagedOpeningDraw;
 	 if(!s?.phaseLoopPaused||s.phaseLoopStarted||c.authorityState.revision!==2)throw Error('OPENING_DRAW_FINALIZE_PRECONDITION_REJECTED');
 	 c.authorityState.revision=3;s.status='authority_committed';return {revision:c.authorityState.revision}})()`, returnByValue: true });
@@ -1050,7 +1070,8 @@ process.on("message", message => {
 		return;
 	}
 	if (message?.type === "host_authority_event_ack" && validHostCommand(message) &&
-		message.eventSequence === 3 && Number.isSafeInteger(message.stateRevision) && typeof message.afterDigest === "string") {
+		[2, 3].includes(message.eventSequence) && message.stateRevision === message.eventSequence &&
+		typeof message.afterDigest === "string" && /^[a-f0-9]{64}$/.test(message.afterDigest)) {
 		nativeAuthorityAckWaiters.get(message.eventSequence)?.(message);
 		return;
 	}

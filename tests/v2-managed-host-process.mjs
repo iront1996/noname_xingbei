@@ -55,16 +55,22 @@ test("managed child bootstraps once and choice commands cannot bootstrap it agai
 		await until(() => observed.some(message => message?.type === "host_game_ready"));
 		await handle.sendHostCommand({ type: "host_choice_delivery", choiceId: "choice_once", deliveryId: "delivery_once" });
 		await handle.sendHostCommand({ type: "host_choice_cancel", choiceId: "choice_once" });
-		await handle.sendHostCommand({ kind: "managed_host", type: "host_authority_event_ack", protocol: 1,
+		await handle.sendHostCommand({ kind: "managed_host", type: "host_authority_event_ack", accepted: true, protocol: 1,
+			roomId: bootstrap.roomId, sessionId: bootstrap.sessionId, secret: bootstrap.secret,
+			eventSequence: 2, stateRevision: 2, afterDigest: "a".repeat(64) });
+		await handle.sendHostCommand({ kind: "managed_host", type: "host_authority_event_ack", accepted: true, protocol: 1,
 			roomId: bootstrap.roomId, sessionId: bootstrap.sessionId, secret: bootstrap.secret,
 			eventSequence: 3, stateRevision: 3, afterDigest: "a".repeat(64) });
-		await until(() => observed.filter(message => message?.type === "host_command_observed").length === 3);
-		assert.deepEqual(observed.filter(message => message?.type === "host_command_observed").map(message => message.bootCount), [1, 1, 1]);
-		assert.equal(observed.filter(message => message?.command === "host_authority_event_ack").length, 1);
+		await until(() => observed.filter(message => message?.type === "host_command_observed").length === 4);
+		assert.deepEqual(observed.filter(message => message?.type === "host_command_observed").map(message => message.bootCount), [1, 1, 1, 1]);
+		assert.equal(observed.filter(message => message?.command === "host_authority_event_ack").length, 2);
 		assert.equal(observed.filter(message => message?.type === "host_game_ready").length, 1);
 		await assert.rejects(handle.sendHostCommand({ type: "host_session_bootstrap" }), /HOST_COMMAND_REJECTED/);
 		await assert.rejects(handle.sendHostCommand({ kind: "managed_host", type: "host_authority_event_ack", protocol: 1,
 			roomId: bootstrap.roomId, sessionId: bootstrap.sessionId, secret: "wrong", eventSequence: 3, stateRevision: 3 }), /HOST_COMMAND_REJECTED/);
+		await assert.rejects(handle.sendHostCommand({ kind: "managed_host", type: "host_authority_event_ack", protocol: 1,
+			roomId: bootstrap.roomId, sessionId: bootstrap.sessionId, secret: bootstrap.secret,
+			eventSequence: 2, stateRevision: 2, afterDigest: "a".repeat(64) }), /HOST_COMMAND_REJECTED/);
 	} finally {
 		await handle.stop("test_complete");
 	}

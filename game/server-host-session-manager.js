@@ -214,26 +214,26 @@ function createHostSessionManager({
 			record.handle = handle;
 			record.pid = handle.pid;
 			handle.once("exit", () => finish(record, "HOST_EXITED"));
-				handle.on("message", message => {
+			handle.on("message", message => {
 				if (message?.type === "host_browser_ready") markBrowserReady(message);
 				else if (message?.type === "host_engine_ready") markEngineReady(message);
 				else if (message?.type === "host_game_ready") markGameReady(message);
 				else if (message?.type === "host_authority_event") {
 					const committed = commitAuthorityEvent(message);
-					if (message.proof?.event?.kind === "xingbei_opening_draw_v1") {
+					if (["xingbei_character_selection_v1", "xingbei_opening_draw_v1"].includes(message.proof?.event?.kind)) {
 						if (!committed.ok) {
 							fail(record, committed.code);
 							Promise.resolve(record.handle?.stop("authority_event_rejected")).catch(() => {});
 						} else {
-						const eventAck = { kind: "managed_host", type: "host_authority_event_ack", protocol: PROTOCOL,
-							roomId: record.roomId, sessionId: record.sessionId, secret: record.secret,
-							eventSequence: message.proof.eventSequence, stateRevision: committed.session.authorityStateRevision,
-							afterDigest: message.proof.afterDigest };
-						Promise.resolve(record.handle?.sendHostCommand?.(eventAck)).catch(() => {
-							if (record.state !== "failed") fail(record, "HOST_AUTHORITY_ACK_DELIVERY_FAILED");
-							Promise.resolve(record.handle?.stop("authority_ack_delivery_failed")).catch(() => {});
-						});
-					}
+							const eventAck = { kind: "managed_host", type: "host_authority_event_ack", accepted: true, protocol: PROTOCOL,
+								roomId: record.roomId, sessionId: record.sessionId, secret: record.secret,
+								eventSequence: message.proof.eventSequence, stateRevision: committed.session.authorityStateRevision,
+								afterDigest: message.proof.afterDigest };
+							Promise.resolve(record.handle?.sendHostCommand?.(eventAck)).catch(() => {
+								if (record.state !== "failed") fail(record, "HOST_AUTHORITY_ACK_DELIVERY_FAILED");
+								Promise.resolve(record.handle?.stop("authority_ack_delivery_failed")).catch(() => {});
+							});
+						}
 				}
 				}
 				else if (message?.type === "host_failure" && authenticate(record, message)) {
