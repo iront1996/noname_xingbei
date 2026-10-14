@@ -1,12 +1,20 @@
 # V2 Codex engineering handoff
 
-## Normative final target
+## Architecture direction correction (normative)
 
-The final V2 server-authority design completely removes the human-host role. The creator is an ordinary player seat with a separate, scoped room-administrator capability. Only an authenticated server-managed game process may execute rules or commit authoritative state/results. Creator/admin disconnect is an ordinary player/control-plane event; managed-host failure is a separate M4 checkpoint-recovery event.
+The final integration target for the M2 server-authority core is **V3**, not formal V2. This branch's V2 naming and V2-oriented implementation are historical engineering context; formal V2 is permanently independent and must retain its current protocol, room lifecycle, gameplay flow, and deployment unchanged.
+
+When M2 is validated, move only the necessary verified core through a **new isolated branch based on V3**. Do not merge the whole `codex/v2-server-authority-m1` experiment branch into V3. PR #1 targets a V2 base and must remain open/unmerged. V3 production code and services remain read-only until the user explicitly approves a scoped change. No deployment is authorized.
+
+V3's intended end state is server-owned rooms and an independent server-managed game host. Every human, including the creator, is an ordinary player; room administration is separate from gameplay authority. A single player's disconnect must not close the room or stop its game process. Player disconnect and managed-host failure remain separate recovery classes.
+
+## Normative M2 core target (future V3 integration)
+
+The M2 server-authority core completely removes the human-host role for eventual V3 integration. The creator is an ordinary player seat with a separate, scoped room-administrator capability. Only an authenticated server-managed game process may execute rules or commit authoritative state/results. Creator/admin disconnect is an ordinary player/control-plane event; managed-host failure is a separate M4 checkpoint-recovery event. This specification does not authorize changing formal V2.
 
 Do not extend `room.owner`, `client.owner`, `ownerResumeToken`, `resumeowner`, `awaiting_host`, or `waiting_host_process` into M2/M3. They are tested M1 compatibility mechanisms for the current human-hosted engine and may remain version-gated while the new path is built.
 
-Current classification at PR #1 HEAD `c0968c40ae22d808f283cec7cca53613e7b7e9d5`:
+Historical initial classification at PR #1 HEAD `c0968c40ae22d808f283cec7cca53613e7b7e9d5` (superseded by the later progress record below):
 
 - **Already aligned/reusable:** server room record and bounded lifecycle cleanup; B2 cryptographic room-scoped seat credentials; stable seat identity; stale socket, duplicate takeover and replay defenses; existing V2-1–V2-9 security regressions.
 - **Transitional architecture only:** creator stored as `room.owner`; guest `client.owner` routing; browser-generated engine output; owner resume token and host pause/resume states; B2 eligibility coupled to a live human owner.

@@ -1,6 +1,14 @@
 # V2 server-authority plan and evidence
 
-## Final architecture contract (normative)
+## Architecture direction correction (normative)
+
+The final integration target for the M2 server-authority core is **V3**, not the formal V2 product. The `codex/v2-server-authority-m1` branch, its V2 naming, and the V2-oriented test harness are development history and isolation boundaries only; they do not authorize changing formal V2. Formal V2 must remain independent, with its existing protocol, room management, gameplay flow, and deployment unchanged.
+
+After M2 is validated, integrate or port only the required, verified server-authority core through a **new isolated integration branch based on V3**. Do not merge this entire V2 experiment branch into V3. PR #1 targets `feature/v2-connection-stability`, so it must remain open and unmerged. V3 production code and services stay read-only unless the user explicitly approves a scoped change; no production integration or deployment is authorized by this plan.
+
+The V3 end state is server-owned room lifecycle and a server-managed independent game host. Every human, including the room creator, is an ordinary player with the same seat/reconnect behavior; creator administration remains a separate control-plane capability. No single player's disconnect may close the room or stop its game process. Player transport failure and server/host-process failure remain separate recovery classes.
+
+## Normative M2 core architecture contract for future V3 integration
 
 The target is not a recoverable human host. It is the complete removal of every human browser from the game-host role.
 
