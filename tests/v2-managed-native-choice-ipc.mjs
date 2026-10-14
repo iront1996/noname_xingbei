@@ -145,7 +145,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.nativeInputGate?.parentEventName, "xingDong");
 			assert.equal(snapshot.nativeInputGate?.seatId, snapshot.firstActSeatId);
 			assert.equal(snapshot.nativeInputGate?.eventShapeSupported, true);
-			assert.equal(snapshot.nativeInputGate?.opaqueProbeOptionCount, snapshot.nativeInputGate?.nativeTargetFilterPassCount);
+			assert.equal(snapshot.nativeInputGate?.nativeCandidateMappingCount, snapshot.nativeInputGate?.nativeTargetFilterPassCount);
 			assert.equal(snapshot.nativeInputGate?.gateBeforeAiBranch, true);
 			assert.equal(snapshot.nativeInputGate?.nativeAiResultPending, false);
 			assert.equal(snapshot.nativeInputGate?.offlineAiPrevented, true);
