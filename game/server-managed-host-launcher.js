@@ -107,7 +107,12 @@ function createManagedHostProcessLauncher({
 				typeof command.nativeEventId === "string" && typeof command.seatId === "string" &&
 				Object.keys(command).every(key => ["type", "nativeEventId", "seatId"].includes(key));
 			if (exited || !child.connected || !command ||
-				!(diagnosticCommand || inputResumeCommand || inputCancelCommand || ["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||
+				!(diagnosticCommand || inputResumeCommand || inputCancelCommand ||
+					(command?.type === "host_authority_event_ack" && command.kind === "managed_host" &&
+						command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
+						command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret &&
+						command.eventSequence === 3 && command.stateRevision === 3 && /^[a-f0-9]{64}$/.test(command.afterDigest)) ||
+					["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||
 				Object.getPrototypeOf(command) !== Object.prototype) throw new Error("HOST_COMMAND_REJECTED");
 			await new Promise((resolve, reject) => child.send(command, error => error ? reject(error) : resolve()));
 		};

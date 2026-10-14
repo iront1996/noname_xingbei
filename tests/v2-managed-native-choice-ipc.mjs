@@ -29,7 +29,7 @@ async function until(check, timeoutMs = 45000, diagnostic = () => null) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -213,10 +213,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: c.hostSessionId, nativeEventId: c.nativeEventId, seatId: c.seatId, eventSequence: 2, choiceId: c.choiceId, connectionId: `new_${c.seatId}`, credential: credentialFor(c.seatId), option: c.options[0] }).ok, true);
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: d.hostSessionId, nativeEventId: d.nativeEventId, seatId: d.seatId, eventSequence: 2, choiceId: d.choiceId, connectionId: `conn_${d.seatId}`, credential: credentialFor(d.seatId), option: "forged" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: d.hostSessionId, nativeEventId: d.nativeEventId, seatId: d.seatId, eventSequence: 2, choiceId: d.choiceId, connectionId: `conn_${d.seatId}`, credential: credentialFor(d.seatId), option: d.options[0] }).ok, true);
+	const expectedAuthorityRevision = process.env.V2_NATIVE_OPENING_DRAW_EVENT3 === "1" ? 3 : 2;
 	const completed = await until(() => {
 		const session = manager.inspect(roomId);
 		if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks, nativeDiagnostic })}`);
-		return session?.authorityStateRevision === 2 && session;
+		return session?.authorityStateRevision === expectedAuthorityRevision && session;
 	}, 45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), deliveryCount, ackCount, droppedAcks, nativeDiagnostic }));
 	assert.ok(droppedAcks >= 4, `expected initial ACK loss plus bounded automatic retries, got ${droppedAcks}`);
 	// Simulate lost parent-side ACK processing. Retry uses the unchanged delivery
@@ -226,7 +227,28 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	for (const choice of opened) assert.equal(controller.retryDelivery({ roomId, choiceId: choice.choiceId }).ok, true);
 	await until(() => opened.every(choice => controller.inspect(roomId, choice.choiceId)?.state === "resolved"));
 	assert.equal(completed.state, "playable_probe");
-	assert.deepEqual(completed.lastAuthorityEvent, { sequence: 2, name: "chooseCharacterOL" });
+	if (expectedAuthorityRevision === 3) {
+		assert.deepEqual(completed.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+		assert.equal(completed.nextAuthorityEventSequence, 4);
+		assert.match(completed.authorityStateDigest, /^[a-f0-9]{64}$/);
+		const drawAccepted = await until(() => nativeDiagnostic.find(entry => entry?.stage === "opening_draw_event_3_accepted"), 5000,
+			() => ({ diagnostics: nativeDiagnostic.slice(-8), session: manager.inspect(roomId) }));
+		assert.equal(drawAccepted.kind, "native_authority_event_accepted_v1");
+		assert.equal(drawAccepted.eventSequence, 3);
+		assert.equal(drawAccepted.stateRevision, 3);
+		assert.equal(completed.authorityDigestChain.length, 3);
+		assert.equal(completed.authorityDigestChain[1].eventSequence, 2);
+		assert.equal(completed.authorityDigestChain[1].afterDigest, completed.authorityDigestChain[2].beforeDigest);
+		assert.equal(drawAccepted.beforeDigest, completed.authorityDigestChain[1].afterDigest);
+		assert.equal(drawAccepted.afterDigest, completed.authorityStateDigest);
+		assert.equal(drawAccepted.eventName, "gameDraw");
+		assert.equal(drawAccepted.parentEventName, "game");
+		assert.equal(drawAccepted.phaseLoopPaused, true);
+		assert.equal(drawAccepted.hostPlayerAbsent, true);
+		assert.equal(drawAccepted.connectedTransports, 0);
+		assert.equal(drawAccepted.checkpointAvailable, false);
+		assert.deepEqual(drawAccepted.seatHandCounts.map(entry => entry.handCount), [4, 4, 4, 4]);
+	} else assert.deepEqual(completed.lastAuthorityEvent, { sequence: 2, name: "chooseCharacterOL" });
 	assert.equal(controller.inspect(roomId, a.choiceId).resolution.option, a.options[1]);
 	assert.equal(controller.inspect(roomId, b.choiceId).resolution.kind, "trustee");
 	assert.equal(controller.inspect(roomId, d.choiceId).state, "resolved");

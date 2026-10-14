@@ -19,6 +19,7 @@ let cdp = null;
 let interactiveChoice = null;
 let choiceCommandChain = Promise.resolve();
 let choiceDiagnosticTimer = null;
+const nativeAuthorityAckWaiters = new Map();
 const nativeStartDiagnosticRing = [];
 let nativeStartDiagnosticUnsubscribe = null;
 let nativeFailureReported = false;
@@ -556,6 +557,107 @@ async function runManagedNativeChoice() {
 		eventSequence: 2, stateRevisionBefore: 1, stateRevisionAfter: 2, beforeDigest, afterDigest,
 		event: { kind: "xingbei_character_selection_v1", name: "chooseCharacterOL", characters: completed.after.characters,
 			hostPlayerAbsent: true, connectedTransports: 0 } } });
+	if (process.env.V2_NATIVE_OPENING_DRAW_EVENT3 === "1") {
+		await runManagedOpeningDraw(completed.after, afterDigest);
+	}
+}
+
+async function runManagedOpeningDraw(event2After, event2Digest) {
+	const nativeEventId = `native_${identity.sessionId.slice(3)}_opening_draw`;
+	const started = await cdp.send("Runtime.evaluate", { expression: `(()=>{
+	 const managed=window.__v2ManagedEngine,container=window.__v2ManagedGame,{game,lib,_status}=managed.core,manager=_status.eventManager;
+	 const event2=${JSON.stringify(event2After)},digest2=${JSON.stringify(event2Digest)};
+	 if(container.authorityState.revision!==2||game.me!==null||!_status.connectMode||game.players.length!==4||
+	  manager.eventStack.length!==0||!_status.firstAct||
+	  game.players.some((player,index)=>player.playerid!==container.setup.seats[index].seatId||!player.name1||
+	   player.side!==event2.sides[index]?.side||player.name1!==event2.characters[index]?.character||player.ws))
+	  throw Error('OPENING_DRAW_PRECONDITION_REJECTED');
+	 if(window.__v2ManagedOpeningDraw)throw Error('OPENING_DRAW_DUPLICATE_REJECTED');
+	 const state={nativeEventId:${JSON.stringify(nativeEventId)},status:'starting',gameStartCount:0,drawCreated:false,
+	  drawEntered:false,drawCompleted:false,phaseLoopCreated:false,phaseLoopStarted:false,phaseLoopPaused:false,
+	  waitForPlayerCalls:0,randomMapOLCalls:0,rootPromiseState:'pending',failureCode:null};
+	 window.__v2ManagedOpeningDraw=state;
+	 const GameEvent=lib.element.GameEvent,originalWaitNext=GameEvent.prototype.waitNext,originalStart=GameEvent.prototype.start;
+	 const originalCreateEvent=game.createEvent,originalWaitForPlayer=game.waitForPlayer,originalRandomMapOL=game.randomMapOL;
+	 const originalPrepareArena=game.prepareArena,originalChooseCharacter=game.chooseCharacter,originalInit=game.initSideAndPosition;
+	 const originalDraw=game.gameDraw,originalPhaseLoop=game.phaseLoop,originalTrigger=GameEvent.prototype.trigger;
+	 GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;return originalWaitNext.apply(this,args).then(value=>{if(event===state.draw){state.drawCompleted=true;state.drawFinalStep=event.step}return value},error=>{state.failureCode='OPENING_DRAW_CHILD_FAILED';throw error})};
+	 GameEvent.prototype.start=function(...args){if(this===state.phaseLoop)state.phaseLoopStarted=true;return originalStart.apply(this,args)};
+	 GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;return originalTrigger.call(this,name,...args)};
+	 game.createEvent=function(name,...args){const event=originalCreateEvent.call(this,name,...args);if(name==='gameDraw'){if(state.drawCreated)throw Error('OPENING_DRAW_DUPLICATE_EVENT');state.drawCreated=true;state.draw=event}
+	  if(name==='phaseLoop'){if(state.phaseLoopCreated)throw Error('OPENING_PHASE_LOOP_DUPLICATE');state.phaseLoopCreated=true;state.phaseLoop=event}return event};
+	 game.waitForPlayer=function(callback){state.waitForPlayerCalls++;if(state.waitForPlayerCalls!==1||!_status.connectMode||game.players.length!==container.setup.seats.length)throw Error('OPENING_WAIT_FOR_PLAYER_ADAPTER_REJECTED');if(typeof callback==='function')callback()};
+	 game.randomMapOL=function(){state.randomMapOLCalls++;if(state.randomMapOLCalls!==1||!_status.connectMode||game.players.some((player,index)=>player.playerid!==container.setup.seats[index].seatId||!player.name1))throw Error('OPENING_RANDOM_MAP_ADAPTER_REJECTED')};
+	 game.prepareArena=function(){throw Error('OPENING_DUPLICATE_ARENA_REJECTED')};game.chooseCharacter=function(){throw Error('OPENING_DUPLICATE_CHARACTER_SELECTION_REJECTED')};
+	 game.initSideAndPosition=function(){throw Error('OPENING_DUPLICATE_SIDE_ASSIGNMENT_REJECTED')};
+	 game.gameDraw=function(...args){if(state.drawCreated)throw Error('OPENING_DRAW_DUPLICATE_CALL');return originalDraw.apply(this,args)};
+	 game.phaseLoop=function(...args){if(state.phaseLoopCreated)throw Error('OPENING_PHASE_LOOP_DUPLICATE_CALL');const result=originalPhaseLoop.apply(this,args);
+	  if(state.phaseLoop?.parent!==state.root)throw Error('OPENING_PHASE_LOOP_PARENT_INVALID');state.phaseLoopPaused=true;state.status='phase_loop_paused';game.pause();return result};
+	 state.root=game.createEvent('game',false).setContent(managed.mode.start);
+	 if(state.root.name!=='game'||state.root.parent)throw Error('OPENING_ROOT_INVALID');
+	 Promise.resolve(state.root.start()).then(()=>{state.rootPromiseState='fulfilled'},error=>{state.rootPromiseState='rejected';state.failureCode='OPENING_ROOT_REJECTED'});
+	 return {started:true,rootName:state.root.name,event2Digest:digest2};})()`, returnByValue: true }, 15000);
+	if (started.exceptionDetails || started.result?.value?.started !== true) throw new Error("OPENING_DRAW_START_FAILED");
+	let observed = null;
+	const deadline = Date.now() + 20000;
+	while (Date.now() < deadline) {
+		const response = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2ManagedOpeningDraw,m=window.__v2ManagedEngine?.core,game=m?.game,_status=m?._status;
+		 if(!s)return {ready:false,code:'OPENING_DRAW_STATE_MISSING'};
+		 return {ready:s.drawCompleted&&s.phaseLoopCreated&&s.phaseLoopPaused&&s.gameStartCount===1,
+		  status:s.status,failureCode:s.failureCode,rootPromiseState:s.rootPromiseState,rootName:s.root?.name||null,
+		  rootParentName:s.root?.parent?.name||null,eventStack:_status?.eventManager?.eventStack?.map(event=>event.name)||[],
+		  drawName:s.draw?.name||null,drawParentName:s.draw?.parent?.name||null,drawEntered:s.drawEntered,drawCompleted:s.drawCompleted,
+		  drawFinalStep:s.drawFinalStep,phaseLoopName:s.phaseLoop?.name||null,phaseLoopParentName:s.phaseLoop?.parent?.name||null,
+		  phaseLoopStarted:s.phaseLoopStarted,phaseLoopPaused:s.phaseLoopPaused,gameStartCount:s.gameStartCount,
+		  firstActSeatId:_status?.firstAct?.playerid||null,gameMeNull:game?.me===null,connectedTransports:game?.players?.filter(player=>player.ws).length,
+		  seats:game?.players?.map(player=>({seatId:player.playerid,position:Number(player.dataset.position),character:player.name1||null,
+		   side:player.side,handCount:player.countCards('h'),startCardsCount:player._start_cards?.length||0,hand:player.getCards('h').map(card=>({name:card.name||null,suit:card.suit||null,number:card.number||null,nature:card.nature||null}))}))||[]}}})()`, returnByValue: true }, 2000);
+		if (response.exceptionDetails) throw new Error("OPENING_DRAW_OBSERVATION_FAILED");
+		observed = response.result?.value;
+		if (observed?.failureCode || observed?.rootPromiseState === "rejected") throw new Error(observed.failureCode || "OPENING_ROOT_REJECTED");
+		if (observed?.ready) break;
+		await new Promise(resolve => setTimeout(resolve, 50));
+	}
+	if (!observed?.ready || observed.drawName !== "gameDraw" || observed.drawParentName !== "game" ||
+		observed.rootName !== "game" || observed.rootParentName !== null || observed.phaseLoopName !== "phaseLoop" ||
+		observed.phaseLoopParentName !== "game" || observed.phaseLoopStarted !== false || observed.rootPromiseState !== "pending" ||
+		observed.firstActSeatId !== event2After.firstActSeatId || observed.gameMeNull !== true || observed.connectedTransports !== 0 ||
+		observed.seats?.length !== 4 || observed.seats.some((seat, index) => seat.seatId !== event2After.sides[index]?.seatId ||
+			seat.position !== index || seat.character !== event2After.characters[index]?.character ||
+			seat.side !== event2After.sides[index]?.side || seat.handCount !== 4 || seat.startCardsCount !== 4)) {
+		throw new Error(`NATIVE_OPENING_DRAW_NOT_VERIFIED:${JSON.stringify(observed)}`);
+	}
+	const seats = observed.seats.map(seat => ({ ...seat, handCommitment: createHash("sha256").update(canonicalize(seat.hand)).digest("hex") }));
+	for (const seat of seats) delete seat.hand;
+	const after = { revision: 3, firstActSeatId: observed.firstActSeatId,
+		seats: seats.map(({ seatId, position, character, side, handCount, handCommitment }) => ({ seatId, position, character, side, handCount, handCommitment })) };
+	const afterDigest = createHash("sha256").update(canonicalize(after)).digest("hex");
+	if (afterDigest === event2Digest) throw new Error("NATIVE_OPENING_DRAW_NO_STATE_CHANGE");
+	const proof = { kind: "native_authority_event_v1", checkpoint: null, eventSequence: 3,
+		stateRevisionBefore: 2, stateRevisionAfter: 3, beforeDigest: event2Digest, afterDigest,
+		event: { kind: "xingbei_opening_draw_v1", name: "gameDraw", nativeEventId,
+			nativeEventCompleted: true, nativeEventStep: observed.drawFinalStep, gameStartTriggered: true, gameStartCount: 1,
+			rootEventName: observed.rootName, parentEventName: observed.drawParentName,
+			phaseLoopCreated: true, phaseLoopParentName: observed.phaseLoopParentName, phaseLoopPaused: true,
+			firstActSeatId: observed.firstActSeatId, seats: after.seats, gameMeNull: true, connectedTransports: 0 } };
+	const acknowledgement = new Promise((resolve, reject) => {
+		const timer = setTimeout(() => { nativeAuthorityAckWaiters.delete(3); reject(new Error("OPENING_DRAW_AUTHORITY_ACK_TIMEOUT")); }, 15000);
+		nativeAuthorityAckWaiters.set(3, message => { clearTimeout(timer); nativeAuthorityAckWaiters.delete(3); resolve(message); });
+	});
+	process.send?.({ ...identity, type: "host_authority_event", proof });
+	const accepted = await acknowledgement;
+	if (!validHostCommand(accepted) || accepted.accepted !== true || accepted.eventSequence !== 3 ||
+		accepted.stateRevision !== 3 || !/^[a-f0-9]{64}$/.test(accepted.afterDigest) || accepted.afterDigest !== afterDigest) throw new Error("OPENING_DRAW_AUTHORITY_REJECTED");
+	const finalized = await cdp.send("Runtime.evaluate", { expression: `(()=>{const c=window.__v2ManagedGame,s=window.__v2ManagedOpeningDraw;
+	 if(!s?.phaseLoopPaused||s.phaseLoopStarted||c.authorityState.revision!==2)throw Error('OPENING_DRAW_FINALIZE_PRECONDITION_REJECTED');
+	 c.authorityState.revision=3;s.status='authority_committed';return {revision:c.authorityState.revision}})()`, returnByValue: true });
+	if (finalized.exceptionDetails || finalized.result?.value?.revision !== 3) throw new Error("OPENING_DRAW_FINALIZE_FAILED");
+	process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId,
+		observed: { kind: "native_authority_event_accepted_v1", stage: "opening_draw_event_3_accepted",
+			eventSequence: 3, stateRevision: 3, beforeDigest: event2Digest, afterDigest,
+			eventName: "gameDraw", parentEventName: "game", phaseLoopPaused: true,
+			firstActSeatId: observed.firstActSeatId, seatHandCounts: seats.map(seat => ({ seatId: seat.seatId, handCount: seat.handCount })),
+			hostPlayerAbsent: true, connectedTransports: 0, checkpointAvailable: false } });
 }
 
 async function applyManagedChoice(message) {
@@ -909,6 +1011,11 @@ process.on("message", message => {
 	}
 	if (message?.type === "host_stop") {
 		cleanup().finally(() => process.exit(0));
+		return;
+	}
+	if (message?.type === "host_authority_event_ack" && validHostCommand(message) &&
+		message.eventSequence === 3 && Number.isSafeInteger(message.stateRevision) && typeof message.afterDigest === "string") {
+		nativeAuthorityAckWaiters.get(message.eventSequence)?.(message);
 		return;
 	}
 	// Choice delivery is accepted only after the C2 IPC adapter validates the

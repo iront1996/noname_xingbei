@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 import test from "node:test";
@@ -10,6 +11,12 @@ const gameSetup = Object.freeze({
 	config: Object.freeze({ playerCount: 4 }),
 	seats: Object.freeze(Array.from({ length: 4 }, (_, position) => Object.freeze({ seatId: `seat_${position + 1}`, position }))),
 });
+
+function canonicalize(value) {
+	if (value === null || typeof value === "boolean" || typeof value === "string" || typeof value === "number") return JSON.stringify(value);
+	if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
+	return `{${Object.keys(value).sort().map(key => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(",")}}`;
+}
 
 function fixture(options = {}) {
 	const launches = [];
@@ -408,5 +415,64 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	assert.deepEqual(selected.session.lastAuthorityEvent, { sequence: 2, name: "chooseCharacterOL" });
 	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: characterSelection })).code,
 		"HOST_AUTHORITY_EVENT_REJECTED");
+	const openingDraw = {
+		...characterSelection,
+		eventSequence: 3,
+		stateRevisionBefore: 2,
+		stateRevisionAfter: 3,
+		beforeDigest: characterSelection.afterDigest,
+		afterDigest: "00".repeat(32),
+		event: {
+			kind: "xingbei_opening_draw_v1",
+			name: "gameDraw",
+			nativeEventId: "native_0123456789abcdef_opening_draw",
+			nativeEventCompleted: true,
+			nativeEventStep: 1,
+			gameStartTriggered: true,
+			gameStartCount: 1,
+			rootEventName: "game",
+			parentEventName: "game",
+			phaseLoopCreated: true,
+			phaseLoopParentName: "game",
+			phaseLoopPaused: true,
+			firstActSeatId: "seat_1",
+			seats: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, position: index,
+				character: `character_${index + 1}`, side: index < 2, handCount: 4, handCommitment: (index + 5).toString(16).padStart(2, "0").repeat(32) })),
+			gameMeNull: true,
+			connectedTransports: 0,
+		},
+	};
+	openingDraw.afterDigest = createHash("sha256").update(canonicalize({ revision: 3,
+		firstActSeatId: openingDraw.event.firstActSeatId,
+		seats: openingDraw.event.seats.map(({ seatId, position, character, side, handCount, handCommitment }) =>
+			({ seatId, position, character, side, handCount, handCommitment })) })).digest("hex");
+	for (const invalid of [
+		{ ...openingDraw, eventSequence: 4 },
+		{ ...openingDraw, beforeDigest: "fe".repeat(32) },
+		{ ...openingDraw, afterDigest: "aa".repeat(32) },
+		{ ...openingDraw, stateRevisionAfter: 4 },
+		{ ...openingDraw, event: { ...openingDraw.event, nativeEventCompleted: false } },
+		{ ...openingDraw, event: { ...openingDraw.event, gameStartCount: 2 } },
+		{ ...openingDraw, event: { ...openingDraw.event, phaseLoopPaused: false } },
+		{ ...openingDraw, event: { ...openingDraw.event, firstActSeatId: "seat_foreign" } },
+		{ ...openingDraw, event: { ...openingDraw.event, seats: openingDraw.event.seats.slice(1) } },
+		{ ...openingDraw, event: { ...openingDraw.event, seats: openingDraw.event.seats.map((seat, index) => index ? seat : { ...seat, handCount: 3 }) } },
+		{ ...openingDraw, event: { ...openingDraw.event, seats: openingDraw.event.seats.map((seat, index) => index ? seat : { ...seat, seatId: "seat_foreign" }) } },
+		{ ...openingDraw, event: { ...openingDraw.event, seats: openingDraw.event.seats.map((seat, index) => index ? seat : { ...seat, handCommitment: "not-a-digest" }) } },
+		{ ...openingDraw, event: { ...openingDraw.event, gameMeNull: false } },
+		{ ...openingDraw, event: { ...openingDraw.event, connectedTransports: 1 } },
+		{ ...openingDraw, event: { ...openingDraw.event, nativeEventId: "public-event-id" } },
+	]) {
+		assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: invalid })).code,
+			"HOST_AUTHORITY_EVENT_REJECTED");
+	}
+	const drawCommitted = f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: openingDraw }));
+	assert.equal(drawCommitted.ok, true);
+	assert.equal(drawCommitted.session.authorityStateRevision, 3);
+	assert.equal(drawCommitted.session.authorityStateDigest, openingDraw.afterDigest);
+	assert.equal(drawCommitted.session.nextAuthorityEventSequence, 4);
+	assert.deepEqual(drawCommitted.session.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: openingDraw })).code,
+		"HOST_AUTHORITY_EVENT_REJECTED", "native opening draw must be one-shot");
 	await f.manager.stop("native_progress_gate");
 });

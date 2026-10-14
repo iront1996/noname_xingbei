@@ -94,6 +94,7 @@ function createHostSessionManager({
 			nextAuthorityEventSequence: record.nextAuthorityEventSequence,
 			checkpointAvailable: false,
 			lastAuthorityEvent: record.lastAuthorityEvent,
+			authorityDigestChain: Object.freeze(record.authorityDigestChain.slice()),
 		});
 	}
 
@@ -189,6 +190,8 @@ function createHostSessionManager({
 			authorityStateDigest: null,
 			nextAuthorityEventSequence: 1,
 			lastAuthorityEvent: null,
+			xingbeiAuthorityContext: null,
+			authorityDigestChain: [],
 			endNotified: false,
 		};
 		sessions.set(roomId, record);
@@ -215,7 +218,24 @@ function createHostSessionManager({
 				if (message?.type === "host_browser_ready") markBrowserReady(message);
 				else if (message?.type === "host_engine_ready") markEngineReady(message);
 				else if (message?.type === "host_game_ready") markGameReady(message);
-				else if (message?.type === "host_authority_event") commitAuthorityEvent(message);
+				else if (message?.type === "host_authority_event") {
+					const committed = commitAuthorityEvent(message);
+					if (message.proof?.event?.kind === "xingbei_opening_draw_v1") {
+						if (!committed.ok) {
+							fail(record, committed.code);
+							Promise.resolve(record.handle?.stop("authority_event_rejected")).catch(() => {});
+						} else {
+						const eventAck = { kind: "managed_host", type: "host_authority_event_ack", protocol: PROTOCOL,
+							roomId: record.roomId, sessionId: record.sessionId, secret: record.secret,
+							eventSequence: message.proof.eventSequence, stateRevision: committed.session.authorityStateRevision,
+							afterDigest: message.proof.afterDigest };
+						Promise.resolve(record.handle?.sendHostCommand?.(eventAck)).catch(() => {
+							if (record.state !== "failed") fail(record, "HOST_AUTHORITY_ACK_DELIVERY_FAILED");
+							Promise.resolve(record.handle?.stop("authority_ack_delivery_failed")).catch(() => {});
+						});
+					}
+				}
+				}
 				else if (message?.type === "host_failure" && authenticate(record, message)) {
 					fail(record, typeof message.code === "string" && /^[A-Z0-9_]{3,96}$/.test(message.code) ? message.code : "HOST_MANAGED_EXECUTION_FAILED");
 				}
@@ -254,7 +274,7 @@ function createHostSessionManager({
 		return red === event.sides.length / 2 && blue === event.sides.length / 2 && firstActor?.side === true;
 	}
 
-	function validateAuthorityEvent(record, event) {
+	function validateAuthorityEvent(record, event, proof) {
 		// This dispatch is intentionally event-specific: later native events add a validator
 		// instead of weakening the common sequence/digest chain.
 		if (event?.kind === "xingbei_side_assignment_v1" && event.name === "initSideAndPosition") {
@@ -269,7 +289,29 @@ function createHostSessionManager({
 				event.characters.length !== record.seatIds.length || event.characters.some((entry, index) =>
 				entry?.seatId !== record.seatIds[index] || typeof entry.character !== "string" ||
 				entry.character.length < 1 || entry.character.length > 128)) return false;
-			return new Set(event.characters.map(entry => entry.character)).size === event.characters.length;
+			return new Set(event.characters.map(entry => entry.character)).size === event.characters.length &&
+				record.xingbeiAuthorityContext?.firstActSeatId && record.xingbeiAuthorityContext.sides?.length === record.seatIds.length;
+		}
+		if (event?.kind === "xingbei_opening_draw_v1" && event.name === "gameDraw") {
+			const context = record.xingbeiAuthorityContext;
+			if (record.state !== "playable_probe" || record.lastAuthorityEvent?.sequence !== 2 ||
+				record.lastAuthorityEvent?.name !== "chooseCharacterOL" || !context?.characters || !context?.sides ||
+				event.nativeEventCompleted !== true || event.gameStartTriggered !== true ||
+				!Number.isSafeInteger(event.nativeEventStep) || event.gameStartCount !== 1 ||
+				event.rootEventName !== "game" || event.parentEventName !== "game" ||
+				event.phaseLoopCreated !== true || event.phaseLoopParentName !== "game" || event.phaseLoopPaused !== true ||
+				event.gameMeNull !== true || event.connectedTransports !== 0 || event.firstActSeatId !== context.firstActSeatId ||
+				!/^native_[A-Za-z0-9_-]{16,96}$/.test(event.nativeEventId || "") ||
+				!Array.isArray(event.seats) || event.seats.length !== record.seatIds.length) return false;
+			const seatsValid = event.seats.every((seat, index) => seat && Object.keys(seat).sort().join(",") ===
+				"character,handCommitment,handCount,position,seatId,side" && seat.seatId === record.seatIds[index] &&
+				seat.position === index && seat.character === context.characters[index]?.character &&
+				seat.side === context.sides[index]?.side && seat.handCount === 4 && DIGEST.test(seat.handCommitment || ""));
+			if (!seatsValid) return false;
+			const canonicalAfter = { revision: 3, firstActSeatId: event.firstActSeatId,
+				seats: event.seats.map(({ seatId, position, character, side, handCount, handCommitment }) =>
+					({ seatId, position, character, side, handCount, handCommitment })) };
+			return crypto.createHash("sha256").update(canonicalize(canonicalAfter)).digest("hex") === proof?.afterDigest;
 		}
 		return false;
 	}
@@ -285,14 +327,23 @@ function createHostSessionManager({
 			!Number.isSafeInteger(proof.stateRevisionAfter) || proof.stateRevisionAfter !== proof.stateRevisionBefore + 1 ||
 			!DIGEST.test(proof.beforeDigest) || !DIGEST.test(proof.afterDigest) || proof.beforeDigest === proof.afterDigest ||
 			(record.authorityStateDigest !== null && proof.beforeDigest !== record.authorityStateDigest) ||
-			!validateAuthorityEvent(record, proof.event)) {
+			!validateAuthorityEvent(record, proof.event, proof)) {
 			return failure("HOST_AUTHORITY_EVENT_REJECTED");
 		}
 		record.authorityStateRevision = proof.stateRevisionAfter;
 		record.authorityStateDigest = proof.afterDigest;
+		record.authorityDigestChain.push(Object.freeze({ eventSequence: proof.eventSequence,
+			beforeDigest: proof.beforeDigest, afterDigest: proof.afterDigest }));
+		if (record.authorityDigestChain.length > 8) record.authorityDigestChain.shift();
 		record.nextAuthorityEventSequence++;
 		record.lastAuthorityEvent = Object.freeze({ sequence: proof.eventSequence, name: proof.event.name });
+		if (proof.event.kind === "xingbei_side_assignment_v1") {
+			record.xingbeiAuthorityContext = { firstActSeatId: proof.event.firstActSeatId, sides: proof.event.sides.map(side => ({ ...side })), characters: null };
+		} else if (proof.event.kind === "xingbei_character_selection_v1") {
+			record.xingbeiAuthorityContext.characters = proof.event.characters.map(entry => ({ ...entry }));
+		}
 		record.state = "playable_probe";
+		if (proof.event.kind === "xingbei_opening_draw_v1") record.xingbeiAuthorityContext.openingDrawCommitted = true;
 		return Object.freeze({ ok: true, session: publicView(record) });
 	}
 
@@ -335,6 +386,8 @@ function createHostSessionManager({
 		record.authorityStateDigest = null;
 		record.nextAuthorityEventSequence = 1;
 		record.lastAuthorityEvent = null;
+		record.xingbeiAuthorityContext = null;
+		record.authorityDigestChain = [];
 		record.state = "game_ready";
 		return Object.freeze({ ok: true, session: publicView(record) });
 	}
