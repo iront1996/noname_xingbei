@@ -16,7 +16,7 @@ const sourcePath = process.argv[2] || path.resolve(__dirname, '../game/server.js
 const clientSourcePath = path.resolve(__dirname, '../noname/library/index.js');
 function actualV2SelfcloseHandler(ws) {
   const clientSource = fs.readFileSync(clientSourcePath, 'utf8');
-  const m = /selfclose:\\s*function\\s*\\(\\)\\s*\\{/.exec(clientSource);
+  const m = /selfclose:\s*function\s*\(\)\s*\{/.exec(clientSource);
   assert.ok(m, 'V2 selfclose function missing');
   const fnStart = m.index + m[0].indexOf('function');
   const brace = clientSource.indexOf('{', fnStart);
