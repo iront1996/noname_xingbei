@@ -19,8 +19,12 @@ jobs:
         run: |
           node --check tests/v2-hall-owner-lifecycle.cjs
           node --check tests/v2-a1-heartbeat-lifecycle.cjs
+          node --check tests/experimental/a1-policy-candidate.cjs
+          node --check tests/experimental/test-a1-policy-candidate.cjs
       - name: Real repository HALL source / fake sockets (no port binds)
         run: |
           node tests/v2-hall-owner-lifecycle.cjs game/server.js > /tmp/hall-lifecycle.json
           cat /tmp/hall-lifecycle.json
           node -e 'const r=require("/tmp/hall-lifecycle.json");if(r.findings.some(x=>x.status!=="PASS"))process.exit(1)'
+      - name: Bounded application-stall policy candidate (NOT DEPLOYED)
+        run: node tests/experimental/test-a1-policy-candidate.cjs
