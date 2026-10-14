@@ -564,14 +564,43 @@ async function runManagedNativeChoice() {
 
 async function runManagedOpeningDraw(event2After, event2Digest) {
 	const nativeEventId = `native_${identity.sessionId.slice(3)}_opening_draw`;
+	let readiness = null;
+	const idleDeadline = Date.now() + 10000;
+	while (Date.now() < idleDeadline) {
+		const response = await cdp.send("Runtime.evaluate", { expression: `(()=>{const c=window.__v2ManagedGame,m=window.__v2ManagedEngine?.core,{game,_status}=m||{},manager=_status?.eventManager;
+		 return {authorityRevision:c?.authorityState?.revision??null,gameMeNull:game?.me===null,connectMode:Boolean(_status?.connectMode),
+		  seatCount:game?.players?.length??null,firstActSeatId:_status?.firstAct?.playerid||null,eventStackDepth:manager?.eventStack?.length??null,
+		  eventStack:manager?.eventStack?.map(event=>event.name)||[],tempEventName:manager?.tempEvent?.name||null,
+		  seats:game?.players?.map((player,index)=>({seatId:player.playerid,expectedSeatId:c?.setup?.seats?.[index]?.seatId,
+		   character:player.name1||null,side:player.side,expectedCharacter:${JSON.stringify(event2After.characters)},
+		   expectedSide:${JSON.stringify(event2After.sides)},connected:Boolean(player.ws)}))||[]}}})()`, returnByValue: true }, 2000);
+		if (response.exceptionDetails) throw new Error("OPENING_DRAW_READINESS_DIAGNOSTIC_FAILED");
+		readiness = response.result?.value;
+		const rosterMatches = readiness?.seatCount === 4 && readiness.seats.every((seat, index) =>
+			seat.seatId === seat.expectedSeatId && seat.seatId === event2After.sides[index]?.seatId &&
+			seat.character === event2After.characters[index]?.character && seat.side === event2After.sides[index]?.side && !seat.connected);
+		if (readiness?.authorityRevision !== 2 || readiness.gameMeNull !== true || !readiness.connectMode ||
+			!readiness.firstActSeatId || !rosterMatches) {
+			throw new Error(`OPENING_DRAW_READINESS_REJECTED:${JSON.stringify({ ...readiness, seats: readiness?.seats?.map(({ seatId, character, side, connected }) => ({ seatId, character, side, connected })) })}`);
+		}
+		if (readiness.eventStackDepth === 0 && readiness.tempEventName === null) break;
+		await new Promise(resolve => setTimeout(resolve, 25));
+	}
+	if (readiness?.eventStackDepth !== 0 || readiness.tempEventName !== null) {
+		throw new Error(`OPENING_NATIVE_EVENT_STACK_DID_NOT_DRAIN:${JSON.stringify({ depth: readiness?.eventStackDepth,
+			stack: readiness?.eventStack, tempEventName: readiness?.tempEventName })}`);
+	}
 	const started = await cdp.send("Runtime.evaluate", { expression: `(()=>{
 	 const managed=window.__v2ManagedEngine,container=window.__v2ManagedGame,{game,lib,_status}=managed.core,manager=_status.eventManager;
 	 const event2=${JSON.stringify(event2After)},digest2=${JSON.stringify(event2Digest)};
+	 const precondition={revision:container.authorityState.revision,gameMeNull:game.me===null,connectMode:Boolean(_status.connectMode),
+	  playerCount:game.players.length,eventStackDepth:manager.eventStack.length,tempEventName:manager.tempEvent?.name||null,
+	  firstActSeatId:_status.firstAct?.playerid||null};
 	 if(container.authorityState.revision!==2||game.me!==null||!_status.connectMode||game.players.length!==4||
-	  manager.eventStack.length!==0||!_status.firstAct||
+	  manager.eventStack.length!==0||manager.tempEvent||!_status.firstAct||
 	  game.players.some((player,index)=>player.playerid!==container.setup.seats[index].seatId||!player.name1||
 	   player.side!==event2.sides[index]?.side||player.name1!==event2.characters[index]?.character||player.ws))
-	  throw Error('OPENING_DRAW_PRECONDITION_REJECTED');
+	  throw Error('OPENING_DRAW_PRECONDITION_REJECTED:'+JSON.stringify(precondition));
 	 if(window.__v2ManagedOpeningDraw)throw Error('OPENING_DRAW_DUPLICATE_REJECTED');
 	 const state={nativeEventId:${JSON.stringify(nativeEventId)},status:'starting',gameStartCount:0,drawCreated:false,
 	  drawEntered:false,drawCompleted:false,phaseLoopCreated:false,phaseLoopStarted:false,phaseLoopPaused:false,
