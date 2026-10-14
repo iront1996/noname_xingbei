@@ -81,3 +81,49 @@ test("early deadline timer re-arms trustee and never strands native choice", () 
 	assert.equal(controller.expireChoice({ roomId, choiceId: opened.choice.choiceId, hostSessionId }).ok, false);
 	assert.equal(timers.size, 0);
 });
+
+test("choice/deadline boundary is single-winner and never redelivers an uncertain native result", () => {
+	let clock = 1999, nextTimer = 0, onResolved = 0;
+	const timers = new Map();
+	const controller = createManagedChoiceController({
+		now: () => clock, randomBytes: n => Buffer.alloc(n, ++nextTimer),
+		isHostSessionActive: (room, session) => room === roomId && session === hostSessionId,
+		authorizeManagedHost: message => message.hostProof === hostSessionId,
+		authenticateSeat: message => message.credential === seatId,
+		authorizeSeatBinding: message => message.serverProof === message.connectionId,
+		schedule: (fn, delay) => { const id = ++nextTimer; timers.set(id, { fn, at: clock + delay }); return id; },
+		cancel: id => timers.delete(id), onResolved: () => { onResolved++; throw Error("ambiguous native delivery"); },
+	});
+	const opened = controller.openChoice({ protocol: 1, roomId, hostSessionId, seatId, nativeEventId,
+		eventSequence: 2, options: ["a", "b"], trusteeOption: "b", deadlineAt: 2000, hostProof: hostSessionId });
+	assert.equal(opened.ok, true);
+	const connectionId = "conn_race";
+	assert.equal(controller.bindSeatConnection({ roomId, seatId, connectionId, serverProof: connectionId }).ok, true);
+	clock = 2000;
+	const request = { protocol: 1, roomId, hostSessionId, nativeEventId, seatId, eventSequence: 2,
+		choiceId: opened.choice.choiceId, connectionId, credential: seatId, option: "a" };
+	assert.equal(controller.submitChoice(request).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+	const deadlineResult = controller.expireChoice({ roomId, choiceId: opened.choice.choiceId, hostSessionId });
+	assert.equal(deadlineResult.ok, true);
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId).state, "delivery_pending");
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId).resolution.kind, "trustee");
+	assert.equal(onResolved, 1);
+	assert.equal(controller.retryDelivery({ roomId, choiceId: opened.choice.choiceId }).ok, true);
+	assert.equal(onResolved, 2, "same immutable delivery may retry, but native host must dedupe by deliveryId");
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId).deliveryId, `delivery_${opened.choice.choiceId}`);
+	controller.cleanupHostSession(roomId, hostSessionId);
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId), null);
+	assert.equal(timers.size, 0);
+});
+
+test("delivery retry exhaustion invokes fail-closed host hook exactly once", async () => {
+	let attempts = 0, failures = 0;
+	const f = fixture({ maxDeliveryAttempts: 1, onResolved: () => { attempts++; return true; }, onDeliveryFailed: failure => {
+		failures++; assert.equal(failure.deliveryFailureCode, "MANAGED_CHOICE_ACK_RETRY_EXHAUSTED");
+	} });
+	const opened = f.open(); f.bind(); f.submit(opened.choice.choiceId);
+	await Promise.resolve(); await Promise.resolve();
+	assert.equal(attempts, 1);
+	assert.equal(f.c.inspect(roomId, opened.choice.choiceId).state, "delivery_failed");
+	assert.equal(failures, 1);
+});

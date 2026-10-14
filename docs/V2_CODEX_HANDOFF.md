@@ -227,3 +227,5 @@ M1 continuation on the same PR:
 - `289d082` adds a Linux CI scenario that runs the production B2 patcher over the current M1 HALL and starts the generated server. It covers paused reclaim denial, owner recovery, stable-seat rebinding, resumed bidirectional traffic, duplicate takeover fencing and invalid credential rejection.
 - Linux CI run 38306224205 passed. Its dedicated `V2 generated B2 and M1 same-process integration` step and all other 18 substantive setup/test steps completed successfully.
 - M1 is not yet declared complete: the generated-server integration is process-level evidence, while real-browser concentrated acceptance and exact deployed-source offline compatibility remain outstanding.
+
+- C3e-B2-D1 follow-up (partial): the controller now exposes a bounded delivery-exhaustion hook; deterministic tests cover the deadline/submission boundary and exactly-once terminal delivery failure. Native fault injection and full applying/ACK races are recorded with D/E follow-up below.

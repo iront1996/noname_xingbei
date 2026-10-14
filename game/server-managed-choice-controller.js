@@ -29,13 +29,14 @@ function createManagedChoiceController({
 	schedule = (callback, delay) => setTimeout(callback, delay),
 	cancel = handle => clearTimeout(handle),
 	onResolved = () => {},
+	onDeliveryFailed = () => {},
 	maxPendingChoices = 128,
 	maxResolvedChoices = 256,
 	deliveryRetryMs = 1000,
 	maxDeliveryAttempts = 5,
 } = {}) {
 	if ([now, isHostSessionActive, authenticateSeat, authorizeManagedHost, authorizeSeatBinding, randomBytes, schedule, cancel, onResolved]
-		.some(value => typeof value !== "function") || !Number.isSafeInteger(maxPendingChoices) || maxPendingChoices < 1 || maxPendingChoices > 1024 || !Number.isSafeInteger(maxResolvedChoices) || maxResolvedChoices < 1 || !Number.isSafeInteger(deliveryRetryMs) || deliveryRetryMs < 100 || deliveryRetryMs > 60000 || !Number.isSafeInteger(maxDeliveryAttempts) || maxDeliveryAttempts < 1 || maxDeliveryAttempts > 100) {
+		.some(value => typeof value !== "function") || typeof onDeliveryFailed !== "function" || !Number.isSafeInteger(maxPendingChoices) || maxPendingChoices < 1 || maxPendingChoices > 1024 || !Number.isSafeInteger(maxResolvedChoices) || maxResolvedChoices < 1 || maxResolvedChoices > 1024 || !Number.isSafeInteger(deliveryRetryMs) || deliveryRetryMs < 100 || deliveryRetryMs > 60000 || !Number.isSafeInteger(maxDeliveryAttempts) || maxDeliveryAttempts < 1 || maxDeliveryAttempts > 100) {
 		throw new TypeError("MANAGED_CHOICE_CONFIG_INVALID");
 	}
 	const choices = new Map();
@@ -139,7 +140,9 @@ function createManagedChoiceController({
 		const current = choices.get(key(record?.roomId, record?.choiceId));
 		if (!current || current.state !== "delivery_pending" || current.deliveryId !== record.deliveryId || current.deliveryTimer) return;
 		if ((current.deliveryAttempts || 0) >= maxDeliveryAttempts) {
-			choices.set(key(current.roomId, current.choiceId), Object.freeze({ ...current, state: "delivery_failed", deliveryTimer: null, deliveryFailureCode: "MANAGED_CHOICE_ACK_RETRY_EXHAUSTED" }));
+			const failed = Object.freeze({ ...current, state: "delivery_failed", deliveryTimer: null, deliveryFailureCode: "MANAGED_CHOICE_ACK_RETRY_EXHAUSTED" });
+			choices.set(key(current.roomId, current.choiceId), failed);
+			try { onDeliveryFailed(publicChoice(failed)); } catch (_) {}
 			return;
 		}
 		const timer = schedule(() => {
