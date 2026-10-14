@@ -229,3 +229,4 @@ M1 continuation on the same PR:
 - M1 is not yet declared complete: the generated-server integration is process-level evidence, while real-browser concentrated acceptance and exact deployed-source offline compatibility remain outstanding.
 
 - C3e-B2-D1 follow-up (partial): the controller now exposes a bounded delivery-exhaustion hook; deterministic tests cover the deadline/submission boundary and exactly-once terminal delivery failure. Native fault injection and full applying/ACK races are recorded with D/E follow-up below.
+- C3e-B2-D2: host-session termination now signals the exact room/session once, allowing controller cleanup to cancel deadline and delivery timers without touching another room or a replacement session. Local two-room lifecycle test passes; managed-host failure is not being represented as M4 restoration.

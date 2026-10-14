@@ -65,12 +65,13 @@ function createHostSessionManager({
 	gameReadyTimeoutMs = 15000,
 	onAuthoritativeResult = () => {},
 	onManagedChoiceMessage = () => {},
+	onSessionEnd = () => {},
 } = {}) {
 	if (typeof launch !== "function" || typeof randomBytes !== "function" ||
 		!Number.isSafeInteger(browserReadyTimeoutMs) || browserReadyTimeoutMs < 100 || browserReadyTimeoutMs > 60000 ||
 		!Number.isSafeInteger(engineReadyTimeoutMs) || engineReadyTimeoutMs < 100 || engineReadyTimeoutMs > 60000 ||
 		!Number.isSafeInteger(gameReadyTimeoutMs) || gameReadyTimeoutMs < 100 || gameReadyTimeoutMs > 60000 ||
-		typeof onAuthoritativeResult !== "function" || typeof onManagedChoiceMessage !== "function") {
+		typeof onAuthoritativeResult !== "function" || typeof onManagedChoiceMessage !== "function" || typeof onSessionEnd !== "function") {
 		throw new TypeError("HOST_SESSION_CONFIG_INVALID");
 	}
 
@@ -106,8 +107,7 @@ function createHostSessionManager({
 		clearPhaseTimer(record);
 		record.phaseTimer = setTimeout(() => {
 			if (record.state !== expectedState) return;
-			record.state = "failed";
-			record.failureCode = failureCode;
+			fail(record, failureCode);
 			Promise.resolve(record.handle?.stop(stopReason)).catch(() => {});
 		}, timeoutMs);
 		if (record.phaseTimer.unref) record.phaseTimer.unref();
@@ -115,13 +115,31 @@ function createHostSessionManager({
 
 	function finish(record, code) {
 		clearPhaseTimer(record);
+		let ended = false;
 		if (record.state === "stopping") {
 			record.state = "stopped";
 			record.failureCode = null;
+			ended = true;
 		} else if (["starting", "browser_ready", "engine_ready", "game_ready", "playable_probe"].includes(record.state)) {
 			record.state = "failed";
 			record.failureCode = code || "HOST_EXITED";
+			ended = true;
 		}
+		if (ended) notifySessionEnd(record);
+	}
+
+	function notifySessionEnd(record) {
+		if (record.endNotified) return;
+		record.endNotified = true;
+		try { onSessionEnd(Object.freeze({ roomId: record.roomId, sessionId: record.sessionId, state: record.state, code: record.failureCode })); } catch (_) {}
+	}
+
+	function fail(record, code) {
+		if (!record || !ACTIVE_STATES.has(record.state)) return;
+		clearPhaseTimer(record);
+		record.state = "failed";
+		record.failureCode = code;
+		notifySessionEnd(record);
 	}
 
 	function authenticate(record, message) {
@@ -171,6 +189,7 @@ function createHostSessionManager({
 			authorityStateDigest: null,
 			nextAuthorityEventSequence: 1,
 			lastAuthorityEvent: null,
+			endNotified: false,
 		};
 		sessions.set(roomId, record);
 
@@ -198,9 +217,7 @@ function createHostSessionManager({
 				else if (message?.type === "host_game_ready") markGameReady(message);
 				else if (message?.type === "host_authority_event") commitAuthorityEvent(message);
 				else if (message?.type === "host_failure" && authenticate(record, message)) {
-					clearPhaseTimer(record);
-					record.state = "failed";
-					record.failureCode = typeof message.code === "string" && /^[A-Z0-9_]{3,96}$/.test(message.code) ? message.code : "HOST_MANAGED_EXECUTION_FAILED";
+					fail(record, typeof message.code === "string" && /^[A-Z0-9_]{3,96}$/.test(message.code) ? message.code : "HOST_MANAGED_EXECUTION_FAILED");
 				}
 					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
 					else if (["host_choice_candidates", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates"].includes(message?.type) && authenticate(record, message)) {
@@ -208,9 +225,7 @@ function createHostSessionManager({
 						// silently lose a candidate/ACK and leave the native event paused forever.
 						Promise.resolve(onManagedChoiceMessage(Object.freeze({ type: message.type, roomId: record.roomId, sessionId: record.sessionId, message }))).catch(() => {
 							if (!ACTIVE_STATES.has(record.state)) return;
-							record.state = "failed";
-							record.failureCode = "HOST_CHOICE_IPC_HANDLER_FAILED";
-							clearPhaseTimer(record);
+							fail(record, "HOST_CHOICE_IPC_HANDLER_FAILED");
 							Promise.resolve(record.handle?.stop("choice_ipc_handler_failed")).catch(() => {});
 						});
 					}
@@ -222,8 +237,7 @@ function createHostSessionManager({
 			return Object.freeze({ ok: true, session: publicView(record) });
 		} catch (_) {
 			if (record.handle) Promise.resolve(record.handle.stop("launch_failed")).catch(() => {});
-			record.state = "failed";
-			record.failureCode = "HOST_LAUNCH_FAILED";
+			fail(record, "HOST_LAUNCH_FAILED");
 			return failure("HOST_LAUNCH_FAILED");
 		}
 	}
@@ -373,8 +387,7 @@ function createHostSessionManager({
 			if (record.state === "stopping") finish(record);
 			return Object.freeze({ ok: true, session: publicView(record) });
 		} catch (_) {
-			record.state = "failed";
-			record.failureCode = "HOST_STOP_FAILED";
+			fail(record, "HOST_STOP_FAILED");
 			return failure("HOST_STOP_FAILED");
 		}
 	}
@@ -395,7 +408,7 @@ function createHostSessionManager({
 
 	async function diagnoseNativeStart(roomId, mode = "native_start") {
 		const record = sessions.get(roomId);
-		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "controlled_block"].includes(mode) ||
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "controlled_block"].includes(mode) ||
 			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand) return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED");
 		try {
 			await record.handle.sendHostCommand({ type: "host_native_start_diagnostic", mode, kind: "managed_host", protocol: PROTOCOL,

@@ -37,6 +37,7 @@ function fixture(options = {}) {
 		engineReadyTimeoutMs: options.engineReadyTimeoutMs || 1000,
 		gameReadyTimeoutMs: options.gameReadyTimeoutMs || 1000,
 		onAuthoritativeResult: result => results.push(result),
+		onSessionEnd: options.onSessionEnd || (() => {}),
 	});
 	return { launches, manager, results };
 }
@@ -234,6 +235,74 @@ test("invalid server game setup never launches a managed host", async () => {
 		assert.equal((await f.manager.start("invalid_setup", setup)).code, "HOST_GAME_SETUP_INVALID");
 	}
 	assert.equal(f.launches.length, 0);
+});
+
+test("hostSession terminal lifecycle notifies exact room/session once for cleanup", async () => {
+	const ended = [];
+	const f = fixture({ onSessionEnd: event => ended.push(event) });
+	await f.manager.start("lifecycle_a", gameSetup);
+	await f.manager.start("lifecycle_b", gameSetup);
+	const first = f.launches[0].bootstrap;
+	f.launches[0].handle.emit("exit", 17, null);
+	assert.deepEqual(ended, [{ roomId: "lifecycle_a", sessionId: first.sessionId, state: "failed", code: "HOST_EXITED" }]);
+	assert.equal(f.manager.inspect("lifecycle_b").state, "starting", "one host failure must not affect another room");
+	const next = await f.manager.start("lifecycle_a", gameSetup);
+	assert.equal(next.ok, true);
+	const second = f.launches.at(-1).bootstrap;
+	assert.notEqual(second.sessionId, first.sessionId);
+	// A late exit/error from the old process can only notify its own session once.
+	f.launches[0].handle.emit("exit", 18, null);
+	assert.equal(ended.length, 1);
+	await f.manager.stop("lifecycle_a");
+	assert.equal(ended.length, 2);
+	assert.deepEqual(ended[1], { roomId: "lifecycle_a", sessionId: second.sessionId, state: "stopped", code: null });
+	await f.manager.stop("lifecycle_b");
+});
+
+test("host termination cleanup is session-scoped, cancels pending choices and isolates other rooms", async () => {
+	const timers = new Map(); let timerId = 0;
+	let manager;
+	const controller = require("../game/server-managed-choice-controller.js").createManagedChoiceController({
+		isHostSessionActive: (roomId, sessionId) => manager?.inspect(roomId)?.sessionId === sessionId && manager.inspect(roomId)?.state === "playable_probe",
+		authorizeManagedHost: message => message.hostProof === "test-host-proof",
+		schedule: (fn, delay) => { const id = ++timerId; timers.set(id, { fn, delay }); return id; },
+		cancel: id => timers.delete(id),
+	});
+	const lifecycle = fixture({ onSessionEnd: event => controller.cleanupHostSession(event.roomId, event.sessionId) });
+	manager = lifecycle.manager;
+	const makeReady = async (roomId, digest) => {
+		await manager.start(roomId, gameSetup);
+		const bootstrap = lifecycle.launches.at(-1).bootstrap;
+		manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready"));
+		manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready"));
+		manager.markGameReady(hostMessage(bootstrap, "host_game_ready", { proof: gameReadyProof(bootstrap, digest) }));
+		const side = { kind: "native_authority_event_v1", checkpoint: null, eventSequence: 1, stateRevisionBefore: 0,
+			stateRevisionAfter: 1, beforeDigest: "01".repeat(32), afterDigest: "02".repeat(32),
+			event: { kind: "xingbei_side_assignment_v1", name: "initSideAndPosition", firstActSeatId: "seat_1",
+				sides: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, side: index < 2 })), hostPlayerAbsent: true, connectedTransports: 0 } };
+		manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: side }));
+		const characters = { ...side, eventSequence: 2, stateRevisionBefore: 1, stateRevisionAfter: 2, beforeDigest: side.afterDigest,
+			afterDigest: "03".repeat(32), event: { kind: "xingbei_character_selection_v1", name: "chooseCharacterOL",
+				characters: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, character: `c_${index}` })), hostPlayerAbsent: true, connectedTransports: 0 } };
+		manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: characters }));
+		return bootstrap;
+	};
+	const a = await makeReady("cleanup_room_a", "11".repeat(32));
+	const b = await makeReady("cleanup_room_b", "12".repeat(32));
+	const open = (bootstrap, suffix) => controller.openChoice({ protocol: 1, roomId: bootstrap.roomId, hostSessionId: bootstrap.sessionId,
+		seatId: "seat_1", nativeEventId: `native_cleanup_${suffix}_0001`, eventSequence: 9, options: ["x", "y"], trusteeOption: "y",
+		deadlineAt: Date.now() + 60000, hostProof: "test-host-proof" });
+	const ca = open(a, "room_a_0001"), cb = open(b, "room_b_0001");
+	assert.equal(ca.ok, true); assert.equal(cb.ok, true);
+	assert.equal(timers.size, 2);
+	lifecycle.launches.find(item => item.bootstrap.sessionId === a.sessionId).handle.emit("exit", 9, null);
+	assert.equal(controller.inspect(a.roomId, ca.choice.choiceId), null);
+	assert.notEqual(controller.inspect(b.roomId, cb.choice.choiceId), null);
+	assert.equal(timers.size, 1);
+	assert.equal(manager.inspect(b.roomId).state, "playable_probe");
+	await manager.stop(b.roomId);
+	assert.equal(controller.inspect(b.roomId, cb.choice.choiceId), null);
+	assert.equal(timers.size, 0);
 });
 
 test("authority event chain requires authenticated balanced native Xingbei side assignment", async () => {

@@ -389,3 +389,4 @@ These are specification tests to add incrementally during M2–M4. They are not 
 - Deployment or live service changes: none.
 
 - C3e-B2-D1 follow-up (partial): bounded delivery exhaustion now has an explicit callback, and deterministic controller tests establish single-winner deadline/submission behavior plus terminal failure notification. The remaining native fault matrix will be recorded separately; no operation is considered applied without native evidence.
+- C3e-B2-D2: host-session termination now signals the exact room/session once, so a trusted integration can cancel only that session's pending choices and timers. Local tests cover unexpected exit, normal stop, stale prior-session exit and two-room isolation. This is fail-closed cleanup, not checkpoint recovery.
