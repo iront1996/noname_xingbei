@@ -11,6 +11,7 @@ const vm = require('node:vm');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
 const { EventEmitter } = require('node:events');
+const { classify } = require('./experimental/a1-policy-candidate.cjs');
 
 const sourcePath = process.argv[2] || path.resolve(__dirname, '../game/server.js');
 const clientSourcePath = path.resolve(__dirname, '../noname/library/index.js');
@@ -183,6 +184,34 @@ test('reconnected_guest_old_socket_close_does_not_directly_close_new_guest', () 
   return {different_socket_ids:guest.wsid!==replacement.wsid, replacement_open:true,
     limit:'does not verify authenticated seat takeover, which legacy HALL lacks'};
 });
+
+test('candidate_fresh_pong_owner_grace_avoids_room_cascade', () => {
+  const e=environment(), {owner,guest}=e.room();
+  const action=classify({
+    isCurrentSocket:true, readyState:owner.readyState,
+    now:1000000, pendingSince:940000, lastAppResponseAt:940000,
+    lastProbeAt:970000, lastPongAt:990000,
+  }).action;
+  if (action === 'TERMINATE_SOCKET') owner.terminate();
+  assert.equal(action,'APPLICATION_STALL_GRACE');
+  assert.equal(owner.readyState,1);
+  assert.equal(guest.count('selfclose'),0);
+  return {candidate_grace:true,guest_remains_connected:true,
+    limit:'Candidate logic only; NOT production A1 integration'};
+});
+test('candidate_no_pong_owner_timeout_still_cascades', () => {
+  const e=environment(), {owner,guest}=e.room();
+  const action=classify({
+    isCurrentSocket:true, readyState:owner.readyState,
+    now:1000000, pendingSince:940000, lastAppResponseAt:940000,
+    lastProbeAt:970000, lastPongAt:0,
+  }).action;
+  if (action === 'TERMINATE_SOCKET') owner.terminate();
+  assert.equal(action,'TERMINATE_SOCKET');
+  assert.equal(guest.count('selfclose'),1);
+  return {candidate_transport_failure_still_closes:true};
+});
+
 const summary = {
   audit:'legacy HALL actual-source isolated VM; fake WebSocketServer and socket events',
   source:path.basename(sourcePath), sha256:hash,
