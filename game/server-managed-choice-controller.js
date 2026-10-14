@@ -32,9 +32,10 @@ function createManagedChoiceController({
 	maxPendingChoices = 128,
 	maxResolvedChoices = 256,
 	deliveryRetryMs = 1000,
+	maxDeliveryAttempts = 5,
 } = {}) {
 	if ([now, isHostSessionActive, authenticateSeat, authorizeManagedHost, authorizeSeatBinding, randomBytes, schedule, cancel, onResolved]
-		.some(value => typeof value !== "function") || !Number.isSafeInteger(maxPendingChoices) || maxPendingChoices < 1 || maxPendingChoices > 1024 || !Number.isSafeInteger(maxResolvedChoices) || maxResolvedChoices < 1 || !Number.isSafeInteger(deliveryRetryMs) || deliveryRetryMs < 100 || deliveryRetryMs > 60000) {
+		.some(value => typeof value !== "function") || !Number.isSafeInteger(maxPendingChoices) || maxPendingChoices < 1 || maxPendingChoices > 1024 || !Number.isSafeInteger(maxResolvedChoices) || maxResolvedChoices < 1 || !Number.isSafeInteger(deliveryRetryMs) || deliveryRetryMs < 100 || deliveryRetryMs > 60000 || !Number.isSafeInteger(maxDeliveryAttempts) || maxDeliveryAttempts < 1 || maxDeliveryAttempts > 100) {
 		throw new TypeError("MANAGED_CHOICE_CONFIG_INVALID");
 	}
 	const choices = new Map();
@@ -59,6 +60,8 @@ function createManagedChoiceController({
 			state: record.state,
 			deliveryId: record.deliveryId || null,
 			resolution: record.resolution ? Object.freeze({ ...record.resolution }) : null,
+			deliveryAttempts: record.deliveryAttempts || 0,
+			deliveryFailureCode: record.deliveryFailureCode || null,
 		});
 	}
 
@@ -109,7 +112,7 @@ function createManagedChoiceController({
 	function resolve(record, resolution) {
 		if (record.state !== "pending") return failure("MANAGED_CHOICE_RESOLUTION_REJECTED");
 		if (record.timer) cancel(record.timer);
-		const resolved = Object.freeze({ ...record, timer: null, deliveryTimer: null, state: "delivery_pending", resolution: Object.freeze(resolution), deliveryId: `delivery_${record.choiceId}`, resolvedAt: now() });
+		const resolved = Object.freeze({ ...record, timer: null, deliveryTimer: null, deliveryAttempts: 0, state: "delivery_pending", resolution: Object.freeze(resolution), deliveryId: `delivery_${record.choiceId}`, resolvedAt: now() });
 		choices.set(key(record.roomId, record.choiceId), resolved);
 		return deliver(resolved);
 	}
@@ -119,16 +122,26 @@ function createManagedChoiceController({
 	}
 	function deliver(record) {
 		if (!record || record.state !== "delivery_pending") return failure("MANAGED_CHOICE_DELIVERY_REJECTED");
+		const current = choices.get(key(record.roomId, record.choiceId));
+		if (!current || current.state !== "delivery_pending" || current.deliveryId !== record.deliveryId) return failure("MANAGED_CHOICE_DELIVERY_REJECTED");
+		const attempting = Object.freeze({ ...current, deliveryAttempts: (current.deliveryAttempts || 0) + 1 });
+		choices.set(key(record.roomId, record.choiceId), attempting);
 		let outcome;
-		try { outcome = onResolved(publicChoice(record)); } catch (_) { scheduleDeliveryRetry(record); return Object.freeze({ ok: true, delivery: "pending", choice: publicChoice(record) }); }
+		try { outcome = onResolved(publicChoice(attempting)); } catch (_) { scheduleDeliveryRetry(attempting); return Object.freeze({ ok: true, delivery: "pending", choice: publicChoice(attempting) }); }
 		if (outcome && typeof outcome.then === "function") {
-			Promise.resolve(outcome).then(value => { if (value === false) scheduleDeliveryRetry(record); }, () => scheduleDeliveryRetry(record));
+			Promise.resolve(outcome).then(() => scheduleDeliveryRetry(attempting), () => scheduleDeliveryRetry(attempting));
+		} else {
+			scheduleDeliveryRetry(attempting);
 		}
-		return Object.freeze({ ok: true, delivery: "sent", choice: publicChoice(record) });
+		return Object.freeze({ ok: true, delivery: "sent", choice: publicChoice(attempting) });
 	}
 	function scheduleDeliveryRetry(record) {
 		const current = choices.get(key(record?.roomId, record?.choiceId));
 		if (!current || current.state !== "delivery_pending" || current.deliveryId !== record.deliveryId || current.deliveryTimer) return;
+		if ((current.deliveryAttempts || 0) >= maxDeliveryAttempts) {
+			choices.set(key(current.roomId, current.choiceId), Object.freeze({ ...current, state: "delivery_failed", deliveryTimer: null, deliveryFailureCode: "MANAGED_CHOICE_ACK_RETRY_EXHAUSTED" }));
+			return;
+		}
 		const timer = schedule(() => {
 			const latest = choices.get(key(record.roomId, record.choiceId));
 			if (!latest || latest.state !== "delivery_pending" || latest.deliveryId !== record.deliveryId) return;

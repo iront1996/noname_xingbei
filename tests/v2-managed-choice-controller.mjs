@@ -10,6 +10,39 @@ test("capacity bounds pending native choices",()=>{const f=fixture({maxPendingCh
 test("failed delivery stays pending until authenticated current-host ACK",()=>{let attempts=0;const delivered=[];const f=fixture({onResolved:choice=>{attempts++;if(attempts===1)throw Error("ipc");delivered.push(choice.deliveryId)},maxResolvedChoices:1});const x=f.open();f.bind();const first=f.submit(x.choice.choiceId);assert.equal(first.delivery,"pending");const record=f.c.inspect(roomId,x.choice.choiceId);assert.equal(record.state,"delivery_pending");const retried=f.c.retryDelivery({roomId,choiceId:x.choice.choiceId});assert.equal(retried.delivery,"sent");assert.deepEqual(delivered,[record.deliveryId]);const ack={protocol:1,kind:"managed_host",roomId,choiceId:x.choice.choiceId,hostSessionId,deliveryId:record.deliveryId,hostProof:hostSessionId};for(const bad of [{...ack,kind:"player"},{...ack,kind:"room_administrator"},{...ack,hostProof:"forged"},{...ack,roomId:"other_room"},{...ack,hostSessionId:`hs_${"b".repeat(32)}`},{...ack,deliveryId:"wrong"}])assert.equal(f.c.acknowledgeDelivery(bad).code,"MANAGED_CHOICE_ACK_REJECTED");assert.equal(f.c.acknowledgeDelivery(ack).ok,true);assert.equal(f.c.acknowledgeDelivery(ack).code,"MANAGED_CHOICE_ACK_REJECTED")});
 test("async IPC delivery failure schedules the same immutable retry",async()=>{let attempts=0;const f=fixture({deliveryRetryMs:100,onResolved:()=>{attempts++;return attempts===1?Promise.reject(Error("ipc")):true}}),x=f.open();f.bind();f.submit(x.choice.choiceId);await Promise.resolve();f.advance(1100);assert.equal(attempts,2);const record=f.c.inspect(roomId,x.choice.choiceId);assert.equal(record.state,"delivery_pending");assert.equal(record.deliveryId,`delivery_${x.choice.choiceId}`)});
 
+test("successful IPC without ACK retries same immutable delivery and stops after ACK", async () => {
+	let attempts = 0;
+	const sent = [];
+	const f = fixture({ deliveryRetryMs: 100, onResolved: choice => { attempts++; sent.push(choice); return true; } });
+	const opened = f.open(); f.bind(); f.submit(opened.choice.choiceId);
+	await Promise.resolve(); await Promise.resolve();
+	f.advance(1100);
+	assert.equal(attempts, 2);
+	assert.equal(sent[0].deliveryId, sent[1].deliveryId);
+	assert.equal(sent[0].choiceId, sent[1].choiceId);
+	assert.deepEqual(sent[0].resolution, sent[1].resolution);
+	const latest = f.c.inspect(roomId, opened.choice.choiceId);
+	assert.equal(f.c.acknowledgeDelivery({ protocol: 1, kind: "managed_host", roomId, choiceId: latest.choiceId,
+		hostSessionId, deliveryId: latest.deliveryId, hostProof: hostSessionId }).ok, true);
+	f.advance(5000);
+	assert.equal(attempts, 2);
+	assert.equal(f.c.inspect(roomId, opened.choice.choiceId).state, "resolved");
+});
+
+test("unacknowledged result delivery has bounded retries and an explicit terminal state", async () => {
+	let attempts = 0;
+	const f = fixture({ deliveryRetryMs: 100, maxDeliveryAttempts: 2, onResolved: () => { attempts++; return true; } });
+	const opened = f.open(); f.bind(); f.submit(opened.choice.choiceId);
+	await Promise.resolve(); await Promise.resolve();
+	f.advance(1100);
+	assert.equal(attempts, 2);
+	const record = f.c.inspect(roomId, opened.choice.choiceId);
+	assert.equal(record.state, "delivery_failed");
+	assert.equal(record.deliveryFailureCode, "MANAGED_CHOICE_ACK_RETRY_EXHAUSTED");
+	assert.equal(f.c.acknowledgeDelivery({ protocol: 1, kind: "managed_host", roomId, choiceId: record.choiceId,
+		hostSessionId, deliveryId: record.deliveryId, hostProof: hostSessionId }).code, "MANAGED_CHOICE_ACK_REJECTED");
+});
+
 test("early deadline timer re-arms trustee and never strands native choice", () => {
 	let clock = 1000, nextTimer = 0;
 	const timers = new Map(), delivered = [];
@@ -43,6 +76,8 @@ test("early deadline timer re-arms trustee and never strands native choice", () 
 	assert.deepEqual(choice.resolution, { kind: "trustee", option: "b" });
 	assert.equal(choice.deliveryId, `delivery_${opened.choice.choiceId}`);
 	assert.equal(delivered.length, 1);
+	assert.equal(controller.acknowledgeDelivery({ protocol: 1, kind: "managed_host", roomId, choiceId: choice.choiceId,
+		hostSessionId, deliveryId: choice.deliveryId, hostProof: hostSessionId }).ok, true);
 	assert.equal(controller.expireChoice({ roomId, choiceId: opened.choice.choiceId, hostSessionId }).ok, false);
 	assert.equal(timers.size, 0);
 });
