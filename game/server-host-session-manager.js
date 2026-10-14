@@ -299,7 +299,7 @@ function createHostSessionManager({
 				event.nativeEventCompleted !== true || event.gameStartTriggered !== true ||
 				!Number.isSafeInteger(event.nativeEventStep) || event.gameStartCount !== 1 ||
 				event.rootEventName !== "game" || event.parentEventName !== "game" ||
-				event.phaseLoopCreated !== true || event.phaseLoopParentName !== "game" || event.phaseLoopPaused !== true ||
+				event.phaseLoopCreated !== true || event.phaseLoopStartRequested !== true || event.phaseLoopParentName !== "game" || event.phaseLoopPaused !== true ||
 				event.gameMeNull !== true || event.connectedTransports !== 0 || event.firstActSeatId !== context.firstActSeatId ||
 				!/^native_[A-Za-z0-9_-]{16,96}$/.test(event.nativeEventId || "") ||
 				!Array.isArray(event.seats) || event.seats.length !== record.seatIds.length) return false;

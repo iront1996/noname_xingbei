@@ -634,15 +634,21 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 	  throw Error('OPENING_DRAW_PRECONDITION_REJECTED:'+JSON.stringify(precondition));
 	 if(window.__v2ManagedOpeningDraw)throw Error('OPENING_DRAW_DUPLICATE_REJECTED');
 	 const state={nativeEventId:${JSON.stringify(nativeEventId)},status:'starting',gameStartCount:0,drawCreated:false,
-	  drawEntered:false,drawCompleted:false,phaseLoopCreated:false,phaseLoopStarted:false,phaseLoopPaused:false,
+	  drawEntered:false,drawCompleted:false,phaseLoopCreated:false,phaseLoopStartRequested:false,
+	  phaseLoopStarted:false,phaseLoopPaused:false,phaseLoopGate:null,
 	  waitForPlayerCalls:0,randomMapOLCalls:0,rootPromiseState:'pending',failureCode:null};
+	 let releasePhaseLoop;state.phaseLoopGate=new Promise(resolve=>{releasePhaseLoop=resolve});state.releasePhaseLoop=releasePhaseLoop;
 	 window.__v2ManagedOpeningDraw=state;
 	 const GameEvent=lib.element.GameEvent,originalWaitNext=GameEvent.prototype.waitNext,originalStart=GameEvent.prototype.start;
 	 const originalCreateEvent=game.createEvent,originalWaitForPlayer=game.waitForPlayer,originalRandomMapOL=game.randomMapOL;
 	 const originalPrepareArena=game.prepareArena,originalChooseCharacter=game.chooseCharacter,originalInit=game.initSideAndPosition;
 	 const originalDraw=game.gameDraw,originalPhaseLoop=game.phaseLoop,originalTrigger=GameEvent.prototype.trigger;
 	 GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;return originalWaitNext.apply(this,args).then(value=>{if(event===state.draw){state.drawCompleted=true;state.drawFinalStep=event.step}return value},error=>{state.failureCode='OPENING_DRAW_CHILD_FAILED';throw error})};
-	 GameEvent.prototype.start=function(...args){if(this===state.phaseLoop)state.phaseLoopStarted=true;return originalStart.apply(this,args)};
+	 GameEvent.prototype.start=function(...args){if(this===state.phaseLoop){if(state.phaseLoopStartRequested)throw Error('OPENING_PHASE_LOOP_START_DUPLICATE');
+	  state.phaseLoopStartRequested=true;state.phaseLoopPaused=true;state.status='phase_loop_gated';
+	  return state.phaseLoopGate.then(()=>{if(state.phaseLoopStarted)throw Error('OPENING_PHASE_LOOP_START_DUPLICATE');
+	   state.phaseLoopStarted=true;state.phaseLoopPaused=false;return originalStart.apply(this,args)})}
+	  return originalStart.apply(this,args)};
 	 GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;return originalTrigger.call(this,name,...args)};
 	 game.createEvent=function(name,...args){const event=originalCreateEvent.call(this,name,...args);if(name==='gameDraw'){if(state.drawCreated)throw Error('OPENING_DRAW_DUPLICATE_EVENT');state.drawCreated=true;state.draw=event}
 	  if(name==='phaseLoop'){if(state.phaseLoopCreated)throw Error('OPENING_PHASE_LOOP_DUPLICATE');state.phaseLoopCreated=true;state.phaseLoop=event}return event};
@@ -652,7 +658,7 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 	 game.initSideAndPosition=function(){throw Error('OPENING_DUPLICATE_SIDE_ASSIGNMENT_REJECTED')};
 	 game.gameDraw=function(...args){if(state.drawCreated)throw Error('OPENING_DRAW_DUPLICATE_CALL');return originalDraw.apply(this,args)};
 	 game.phaseLoop=function(...args){if(state.phaseLoopCreated)throw Error('OPENING_PHASE_LOOP_DUPLICATE_CALL');const result=originalPhaseLoop.apply(this,args);
-	  if(state.phaseLoop?.parent!==state.root)throw Error('OPENING_PHASE_LOOP_PARENT_INVALID');state.phaseLoopPaused=true;state.status='phase_loop_paused';game.pause();return result};
+	  if(state.phaseLoop?.parent!==state.root)throw Error('OPENING_PHASE_LOOP_PARENT_INVALID');state.phaseLoopPaused=true;return result};
 	 state.root=game.createEvent('game',false).setContent(managed.mode.start);
 	 if(state.root.name!=='game'||state.root.parent)throw Error('OPENING_ROOT_INVALID');
 	 Promise.resolve(state.root.start()).then(()=>{state.rootPromiseState='fulfilled'},error=>{state.rootPromiseState='rejected';state.failureCode='OPENING_ROOT_REJECTED'});
@@ -669,12 +675,12 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 	while (Date.now() < deadline) {
 		const response = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2ManagedOpeningDraw,m=window.__v2ManagedEngine?.core,game=m?.game,_status=m?._status;
 		 if(!s)return {ready:false,code:'OPENING_DRAW_STATE_MISSING'};
-		 return {ready:s.drawCompleted&&s.phaseLoopCreated&&s.phaseLoopPaused&&s.gameStartCount===1,
+		 return {ready:s.drawCompleted&&s.phaseLoopCreated&&s.phaseLoopStartRequested&&s.phaseLoopPaused&&s.gameStartCount===1,
 		  status:s.status,failureCode:s.failureCode,rootPromiseState:s.rootPromiseState,rootName:s.root?.name||null,
 		  rootParentName:s.root?.parent?.name||null,eventStack:_status?.eventManager?.eventStack?.map(event=>event.name)||[],
 		  drawName:s.draw?.name||null,drawParentName:s.draw?.parent?.name||null,drawEntered:s.drawEntered,drawCompleted:s.drawCompleted,
 		  drawFinalStep:s.drawFinalStep,phaseLoopName:s.phaseLoop?.name||null,phaseLoopParentName:s.phaseLoop?.parent?.name||null,
-		  phaseLoopStarted:s.phaseLoopStarted,phaseLoopPaused:s.phaseLoopPaused,gameStartCount:s.gameStartCount,
+		  phaseLoopStartRequested:s.phaseLoopStartRequested,phaseLoopStarted:s.phaseLoopStarted,phaseLoopPaused:s.phaseLoopPaused,gameStartCount:s.gameStartCount,
 		  firstActSeatId:_status?.firstAct?.playerid||null,gameMeNull:game?.me===null,connectedTransports:game?.players?.filter(player=>player.ws).length,
 		  seats:game?.players?.map(player=>({seatId:player.playerid,position:Number(player.dataset.position),character:player.name1||null,
 		   side:player.side,handCount:player.countCards('h'),startCardsCount:player._start_cards?.length||0,hand:player.getCards('h').map(card=>({name:card.name||null,suit:card.suit||null,number:card.number||null,nature:card.nature||null}))}))||[]}})()`, returnByValue: true }, 2000);
@@ -685,13 +691,15 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 		observed = response.result?.value;
 		const observationKey = JSON.stringify({ stack: observed?.eventStack, drawEntered: observed?.drawEntered,
 			drawCompleted: observed?.drawCompleted, phaseLoopCreated: observed?.phaseLoopCreated,
-			phaseLoopPaused: observed?.phaseLoopPaused, gameStartCount: observed?.gameStartCount,
+			phaseLoopStartRequested: observed?.phaseLoopStartRequested, phaseLoopPaused: observed?.phaseLoopPaused,
+			gameStartCount: observed?.gameStartCount,
 			rootPromiseState: observed?.rootPromiseState, failureCode: observed?.failureCode });
 		if (observationKey !== lastObservationKey) {
 			reportStage("opening_draw_native_state_observed", {
 				rootPromiseState: observed?.rootPromiseState, failureCode: observed?.failureCode,
 				eventStack: observed?.eventStack, drawEntered: observed?.drawEntered, drawCompleted: observed?.drawCompleted,
 				drawFinalStep: observed?.drawFinalStep, phaseLoopCreated: observed?.phaseLoopCreated,
+				phaseLoopStartRequested: observed?.phaseLoopStartRequested,
 				phaseLoopStarted: observed?.phaseLoopStarted, phaseLoopPaused: observed?.phaseLoopPaused,
 				gameStartCount: observed?.gameStartCount, firstActSeatId: observed?.firstActSeatId,
 				gameMeNull: observed?.gameMeNull, connectedTransports: observed?.connectedTransports,
@@ -723,7 +731,7 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 		event: { kind: "xingbei_opening_draw_v1", name: "gameDraw", nativeEventId,
 			nativeEventCompleted: true, nativeEventStep: observed.drawFinalStep, gameStartTriggered: true, gameStartCount: 1,
 			rootEventName: observed.rootName, parentEventName: observed.drawParentName,
-			phaseLoopCreated: true, phaseLoopParentName: observed.phaseLoopParentName, phaseLoopPaused: true,
+		phaseLoopCreated: true, phaseLoopStartRequested: true, phaseLoopParentName: observed.phaseLoopParentName, phaseLoopPaused: true,
 			firstActSeatId: observed.firstActSeatId, seats: after.seats, gameMeNull: true, connectedTransports: 0 } };
 	const acknowledgement = waitForAuthorityEventAck(3, 3, afterDigest);
 	process.send?.({ ...identity, type: "host_authority_event", proof });
