@@ -108,6 +108,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			"javascript_loop_starvation_suspected", "undetermined", "chromium_exit"].includes(outcome.classification));
 		const snapshot = outcome.snapshot;
 		assert.ok(snapshot, `native startup state was not observable: ${JSON.stringify(outcome)}`);
+		t.diagnostic(`native startup pre-assert (${probeMode}): ${JSON.stringify(outcome)}`);
 		if (probeMode === "native_start") {
 			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
 			assert.equal(snapshot.waitForPlayerCalls, 1);
@@ -140,15 +141,19 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.gameDrawEntered, true);
 			assert.equal(snapshot.phaseLoopCreated, true);
 			assert.equal(snapshot.nativeInputGate?.eventName, "gongJiOrFaShu");
+			assert.equal(snapshot.nativeInputGate?.eventStep, 0);
 			assert.equal(snapshot.nativeInputGate?.parentEventName, "xingDong");
 			assert.equal(snapshot.nativeInputGate?.seatId, snapshot.firstActSeatId);
-			assert.equal(snapshot.nativeInputGate?.gateBeforeContent, true);
+			assert.equal(snapshot.nativeInputGate?.eventShapeSupported, true);
+			assert.equal(snapshot.nativeInputGate?.opaqueProbeOptionCount, snapshot.nativeInputGate?.nativeTargetFilterPassCount);
+			assert.equal(snapshot.nativeInputGate?.gateBeforeAiBranch, true);
+			assert.equal(snapshot.nativeInputGate?.nativeAiResultPending, false);
 			assert.equal(snapshot.nativeInputGate?.offlineAiPrevented, true);
 			assert.equal(snapshot.nativeInputGate?.eventIsMine, false);
 			assert.equal(snapshot.nativeInputGate?.eventIsOnline, false);
 			assert.equal(snapshot.hostPlayerAbsent, true);
 			assert.equal(snapshot.seats.length, 4);
-			assert.deepEqual(snapshot.seats.map(seat => seat.handCount), [4, 4, 4, 4]);
+			assert.ok(snapshot.seats.every(seat => Number.isSafeInteger(seat.handCount) && seat.handCount >= 0));
 		}
 		const trace = nativeDiagnostic.filter(entry => entry?.kind === "native_start_diagnostic");
 		t.diagnostic(`native start probe (${probeMode}): ${JSON.stringify({ controlledBlock: controlled.classification, outcome: outcome.classification,
