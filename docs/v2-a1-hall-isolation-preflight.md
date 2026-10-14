@@ -38,6 +38,27 @@ A1 backend or monitor deployment have been modified by this work.
 4. **Real local Chromium** with loopback WebSocket: a received \`selfclose\`
    followed by code-less \`ws.close()\` gave close code **1005 at both ends**.
 
+## Two-browser loopback comparison (additional evidence)
+
+Using **two real Chromium pages** (one owner and one guest), a synthetic server
+reproduced original HALL/A1 decisions with scaled-down timing; owner JS was
+deliberately blocked for 2.4 seconds. The result is saved outside GitHub as
+\`V2_A1_OWNER_GUEST_CHROMIUM_RESULT.json\` and the reproducer is
+\`tests/v2-a1-owner-guest-chromium-comparison.py\`.
+
+- Both experiments received four WebSocket Pong responses while owner JS was
+  stalled; no text ACK was received before the simulated deadline.
+- **Original decision**: synthetic terminate aborted the owner socket (1006);
+  synthetic HALL room close delivered selfclose to the guest; guest closed (1005).
+- **Bounded grace candidate**: retained transport after fresh Pong; owner
+  application recovered and sent ACK; owner and guest sockets remained OPEN.
+- The experiment deliberately simulates policy and HALL notification and
+  does **not** execute the original deployed HALL server.js or A1 source.
+
+An independent one-browser loopback case with real Chromium established that
+a bare ws.close() on selfclose produces 1005 at both ends.
+Do not infer real Oct 14 browser stalls or declare this a production fix.
+
 ## Experimental mitigation candidate (not wired or deployed)
 
 \`tests/experimental/a1-policy-candidate.cjs\` is a **pure decision prototype**,
