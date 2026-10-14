@@ -58,6 +58,8 @@ jobs:
         run: node --test tests/v2-b2-m1-process-integration.mjs
       - name: V2 M2 managed host-session lifecycle and authority boundary
         run: node --test tests/v2-host-session-manager.mjs tests/v2-managed-host-process.mjs tests/v2-managed-choice-controller.mjs
+      - name: V2 M2 deterministic choice and host-session race barriers
+        run: node --test tests/v2-managed-choice-races.mjs
       - name: V2 M2 real Chromium off-board lifecycle proof
         shell: bash
         run: |
@@ -220,6 +222,24 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=late_stale_delivery node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native cancel and resume race is single-winner
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_cancel_resume_race node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed host stop fences a blocked native delivery
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=delivery_stop_barrier node --test tests/v2-managed-native-choice-ipc.mjs
       - name: V2 isolated managed room seat registry
         run: node --test tests/v2-managed-room-seat-registry.mjs
       - name: Guest-seat registry tests
