@@ -150,7 +150,7 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller_trustee node --test tests/v2-managed-native-choice-ipc.mjs
-      - name: V2 M2 native card choice with managed room seat registry
+      - name: V2 M2 F3 native action rebind with managed Seat Registry
         shell: bash
         run: |
           browser=""
@@ -240,7 +240,7 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=delivery_stop_barrier node --test tests/v2-managed-native-choice-ipc.mjs
-      - name: V2 isolated managed room seat registry
+      - name: V2 F3 managed room Seat Registry credential and session isolation
         run: node --test tests/v2-managed-room-seat-registry.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js

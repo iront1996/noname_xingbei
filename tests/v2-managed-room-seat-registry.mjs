@@ -41,7 +41,12 @@ test("managed room registry uses room-scoped credentials, a single current socke
 	const playerMessage = { protocol: 1, roomId: "managed_room_a", hostSessionId, seatId: "seat_A", nativeEventId: opened.choice.nativeEventId,
 		eventSequence: 7, choiceId: opened.choice.choiceId, connectionId: "socket_seat_A", credential: credentials.seat_A, option: "option_2" };
 	assert.equal(controller.submitChoice({ ...playerMessage, credential: credentials.seat_B }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+	const { credential: omittedCredential, ...withoutCredential } = playerMessage;
+	assert.equal(typeof omittedCredential, "string");
+	assert.equal(controller.submitChoice(withoutCredential).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "missing credentials must fail closed");
+	assert.equal(controller.submitChoice({ ...playerMessage, credential: "f".repeat(64) }).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "forged credential must fail closed");
 	assert.equal(controller.submitChoice({ ...playerMessage, roomId: "managed_room_b" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+	assert.equal(controller.submitChoice({ ...playerMessage, hostSessionId: `hs_${"b".repeat(32)}` }).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "stale host session must not submit for the active choice");
 	for (const seatId of ["seat_B", "seat_C", "seat_D"]) {
 		const choice = controller.openChoice({ protocol: 1, roomId: "managed_room_a", hostSessionId, seatId,
 			nativeEventId: `native_registry_${seatId}_0001`, eventSequence: 7, options: ["left", "right"], trusteeOption: "left",
@@ -62,7 +67,15 @@ test("managed room registry uses room-scoped credentials, a single current socke
 	assert.ok(rebound);
 	assert.equal(controller.bindSeatConnection(rebound).ok, true);
 	assert.equal(controller.submitChoice(playerMessage).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "old socket must be fenced after takeover");
-	assert.equal(controller.submitChoice({ ...playerMessage, connectionId: "seat_A_rebound" }).ok, true);
+	const accepted = { ...playerMessage, connectionId: "seat_A_rebound" };
+	assert.equal(controller.submitChoice(accepted).ok, true, "the pending choice must survive a valid rebind");
+	const delivery = controller.inspect("managed_room_a", opened.choice.choiceId);
+	assert.equal(delivery.state, "delivery_pending");
+	const staleAck = { protocol: 1, kind: "managed_host", roomId: "managed_room_a", hostSessionId: `hs_${"b".repeat(32)}`,
+		choiceId: delivery.choiceId, deliveryId: delivery.deliveryId, hostProof: "trusted_managed_host" };
+	assert.equal(controller.acknowledgeDelivery(staleAck).code, "MANAGED_CHOICE_ACK_REJECTED", "stale host ACK must not confirm delivery");
+	assert.equal(controller.inspect("managed_room_a", opened.choice.choiceId).state, "delivery_pending");
+	assert.equal(controller.acknowledgeDelivery({ ...staleAck, hostSessionId, hostProof: "trusted_managed_host" }).ok, true);
 	assert.equal(registry.authorizeSeatBinding({ ...rebound, connectionId: "socket_seat_A" }), false);
 	assert.equal(registry.authorizeSeatBinding(rebound), true);
 	assert.equal(registry.revoke("managed_room_a", "seat_A"), true);
@@ -70,6 +83,40 @@ test("managed room registry uses room-scoped credentials, a single current socke
 		{ roomId: "managed_room_a", seatId: "seat_A" }), false);
 	controller.cleanupRoom("managed_room_a");
 	assert.equal(registry.clearRoom("managed_room_a"), true);
+});
+
+test("managed seat rebind remains fenced across hostSession replacement, including delivery ACK", () => {
+	let activeSession = `hs_${"a".repeat(32)}`;
+	const roomId = "seat_session_room", seatId = "seat_one", connectionId = "seat_one_socket";
+	const registry = createManagedRoomSeatRegistry({ randomBytes: n => Buffer.alloc(n, 7) });
+	assert.equal(registry.createRoom(roomId, [seatId, "seat_two"]), true);
+	const credential = registry.issueSeat(roomId, seatId).credential;
+	const binding = registry.bindConnection({ roomId, seatId, credential, socket: { kind: "player", roomId, seatId, connectionId } });
+	assert.ok(binding);
+	const controller = createManagedChoiceController({
+		isHostSessionActive: (candidateRoom, sessionId) => candidateRoom === roomId && sessionId === activeSession,
+		authorizeManagedHost: message => message.hostProof === "private_host_proof",
+		authenticateSeat: (message, record) => registry.authenticateSeat(message, record),
+		authorizeSeatBinding: message => registry.authorizeSeatBinding(message),
+		onResolved: () => true,
+	});
+	assert.equal(controller.bindSeatConnection(binding).ok, true);
+	const opened = controller.openChoice({ protocol: 1, roomId, hostSessionId: activeSession, seatId,
+		nativeEventId: "native_rebind_session_0001", eventSequence: 4, options: ["native_a", "native_b"], trusteeOption: "native_a",
+		deadlineAt: Date.now() + 60000, hostProof: "private_host_proof" });
+	assert.equal(opened.ok, true);
+	const submission = { protocol: 1, roomId, hostSessionId: activeSession, seatId, nativeEventId: opened.choice.nativeEventId,
+		eventSequence: 4, choiceId: opened.choice.choiceId, connectionId, credential, option: "native_b" };
+	assert.equal(controller.submitChoice(submission).ok, true);
+	const pending = controller.inspect(roomId, opened.choice.choiceId);
+	assert.equal(pending.state, "delivery_pending");
+	activeSession = `hs_${"c".repeat(32)}`;
+	assert.equal(controller.submitChoice(submission).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+	assert.equal(controller.acknowledgeDelivery({ protocol: 1, kind: "managed_host", roomId, hostSessionId: opened.choice.hostSessionId,
+		choiceId: pending.choiceId, deliveryId: pending.deliveryId, hostProof: "private_host_proof" }).code, "MANAGED_CHOICE_ACK_REJECTED");
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId).state, "delivery_pending", "replacement session cannot inherit old-session delivery authority");
+	controller.cleanupHostSession(roomId, opened.choice.hostSessionId);
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId), null);
 });
 
 test("managed registry fails closed on malformed or duplicate rooms and seats", () => {

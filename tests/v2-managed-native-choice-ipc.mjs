@@ -92,6 +92,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(new Set(message.options).size, message.options.length);
 				assert.ok(message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)));
 				nativeActionCandidate = message;
+				if (seatRegistry) {
+					const staleHostSessionId = `hs_${"b".repeat(32)}`;
+					assert.equal(controller.openChoice({ protocol: 1, roomId, hostSessionId: staleHostSessionId, nativeEventId: message.nativeEventId,
+						seatId: message.seatId, eventSequence: message.eventSequence, options: message.options, trusteeOption: message.trusteeOption,
+						deadlineAt: Date.now() + 5000, hostProof: message.secret }).code, "MANAGED_CHOICE_OPEN_REJECTED",
+					"stale host session must not register a real native action choice");
+				}
 				const openedChoice = controller.openChoice({ protocol: 1, roomId, hostSessionId: message.sessionId, nativeEventId: message.nativeEventId,
 					seatId: message.seatId, eventSequence: message.eventSequence, options: message.options, trusteeOption: message.trusteeOption,
 					deadlineAt: Date.now() + Math.min(5000, message.deadlineMs), hostProof: message.secret });
@@ -108,18 +115,46 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(controller.submitChoice({ ...request, nativeEventId: `${message.nativeEventId}_stale` }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 				assert.equal(controller.submitChoice({ ...request, eventSequence: message.eventSequence + 1 }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 				assert.equal(controller.submitChoice({ ...request, option: "forged_native_option" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
-				assert.equal(bindSeat(message.seatId, connectionId).ok, true);
+				if (seatRegistry) {
+					const priorSession = manager.inspect(roomId);
+					const priorConnectionId = seatSockets.get(message.seatId);
+					assert.ok(priorConnectionId);
+					assert.equal(seatRegistry.disconnect({ roomId, seatId: message.seatId, connectionId: priorConnectionId }), true,
+						"ordinary player disconnect must release only its seat binding");
+					assert.equal(seatRegistry.bindConnection({ roomId, seatId: message.seatId, credential: credentialFor(message.seatId),
+						socket: { kind: "room_administrator", roomId, seatId: message.seatId, connectionId: "admin_action_socket" } }), null,
+					"administrator socket must not take a player seat");
+					assert.equal(seatRegistry.bindConnection({ roomId, seatId: message.seatId, credential: "f".repeat(64),
+						socket: { kind: "player", roomId, seatId: message.seatId, connectionId: "forged_action_socket" } }), null,
+					"forged credential must not bind a player seat");
+					const rebound = seatRegistry.bindConnection({ roomId, seatId: message.seatId, credential: credentialFor(message.seatId),
+						socket: { kind: "player", roomId, seatId: message.seatId, connectionId } });
+					assert.ok(rebound, "valid credential must reclaim the disconnected seat");
+					seatSockets.set(message.seatId, connectionId);
+					assert.equal(controller.bindSeatConnection(rebound).ok, true);
+					assert.equal(manager.inspect(roomId)?.sessionId, priorSession?.sessionId, "player rebind must not replace the host session");
+					assert.equal(manager.inspect(roomId)?.pid, priorSession?.pid, "player rebind must not restart the managed host");
+					assert.equal(manager.inspect(roomId)?.state, priorSession?.state, "player disconnect/rebind must leave host state active");
+				} else assert.equal(bindSeat(message.seatId, connectionId).ok, true);
 				assert.equal(controller.submitChoice(request).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+				assert.equal(controller.submitChoice({ ...request, hostSessionId: `hs_${"b".repeat(32)}`, connectionId,
+					credential: credentialFor(message.seatId) }).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "stale host session must not commit player input");
 				if (process.env.V2_NATIVE_START_PROBE_MODE !== "managed_input_controller_trustee") {
-					const accepted = { ...request, connectionId };
+					const accepted = { ...request, connectionId, credential: credentialFor(message.seatId), option: message.options.at(-1) };
 					assert.equal(controller.submitChoice(accepted).ok, true);
-					assert.equal(controller.submitChoice(accepted).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+					assert.equal(controller.submitChoice(accepted).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "duplicate native action input must be rejected");
 				}
 			} else if (type === "host_choice_ack") {
 				ackCount++;
 				if (nativeActionChoice?.choiceId === message.choiceId) nativeActionAckCount++;
 				if (dropAcks) { droppedAcks++; return; }
 				if (nativeActionChoice && message.choiceId === nativeActionChoice.choiceId) {
+					if (seatRegistry) {
+						const beforeStaleAck = controller.inspect(roomId, message.choiceId);
+						assert.equal(controller.acknowledgeDelivery({ ...message, hostSessionId: `hs_${"b".repeat(32)}`, hostProof: sessionSecret }).code,
+							"MANAGED_CHOICE_ACK_REJECTED", "stale host session ACK must not confirm the Chromium-applied native result");
+						assert.equal(controller.inspect(roomId, message.choiceId)?.state, beforeStaleAck?.state);
+					}
 					if (dropNativeActionAckOnce) { dropNativeActionAckOnce = false; nativeActionAckDropped = true; return; }
 					assert.equal(message.nativeApplied, true, "native action ACK lacked post-child-wait evidence");
 					const beforeAck = controller.inspect(roomId, message.choiceId);
