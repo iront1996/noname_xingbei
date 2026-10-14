@@ -673,7 +673,10 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 		  firstActSeatId:_status?.firstAct?.playerid||null,gameMeNull:game?.me===null,connectedTransports:game?.players?.filter(player=>player.ws).length,
 		  seats:game?.players?.map(player=>({seatId:player.playerid,position:Number(player.dataset.position),character:player.name1||null,
 		   side:player.side,handCount:player.countCards('h'),startCardsCount:player._start_cards?.length||0,hand:player.getCards('h').map(card=>({name:card.name||null,suit:card.suit||null,number:card.number||null,nature:card.nature||null}))}))||[]}}})()`, returnByValue: true }, 2000);
-		if (response.exceptionDetails) throw new Error("OPENING_DRAW_OBSERVATION_FAILED");
+		if (response.exceptionDetails) {
+			const detail = response.exceptionDetails.exception?.description || response.exceptionDetails.text || "CDP_EVALUATION_EXCEPTION";
+			throw new Error(`OPENING_DRAW_OBSERVATION_FAILED:${String(detail).replaceAll(identity.secret, "[redacted]").slice(0, 1024)}`);
+		}
 		observed = response.result?.value;
 		if (observed?.failureCode || observed?.rootPromiseState === "rejected") throw new Error(observed.failureCode || "OPENING_ROOT_REJECTED");
 		if (observed?.ready) break;
