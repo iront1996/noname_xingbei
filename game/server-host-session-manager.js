@@ -94,6 +94,7 @@ function createHostSessionManager({
 			nextAuthorityEventSequence: record.nextAuthorityEventSequence,
 			checkpointAvailable: false,
 			lastAuthorityEvent: record.lastAuthorityEvent,
+			authorityFailureReason: record.authorityFailureReason,
 			authorityDigestChain: Object.freeze(record.authorityDigestChain.slice()),
 		});
 	}
@@ -220,7 +221,7 @@ function createHostSessionManager({
 				else if (message?.type === "host_game_ready") markGameReady(message);
 				else if (message?.type === "host_authority_event") {
 					const committed = commitAuthorityEvent(message);
-					if (["xingbei_character_selection_v1", "xingbei_opening_draw_v1"].includes(message.proof?.event?.kind)) {
+					if (["xingbei_character_selection_v1", "xingbei_opening_draw_v1", "xingbei_native_card_action_v1"].includes(message.proof?.event?.kind)) {
 						if (!committed.ok) {
 							fail(record, committed.code);
 							Promise.resolve(record.handle?.stop("authority_event_rejected")).catch(() => {});
@@ -313,6 +314,62 @@ function createHostSessionManager({
 					({ seatId, position, character, side, handCount, handCommitment })) };
 			return crypto.createHash("sha256").update(canonicalize(canonicalAfter)).digest("hex") === proof?.afterDigest;
 		}
+		if (event?.kind === "xingbei_native_card_action_v1" && event.name === "gongJiOrFaShu") {
+			const reject = reason => { record.authorityFailureReason = reason; return false; };
+			const context = record.xingbeiAuthorityContext;
+			const before = context?.openingSummary;
+			if (record.state !== "playable_probe" || record.authorityStateRevision !== 3 || record.nextAuthorityEventSequence !== 4 ||
+				record.lastAuthorityEvent?.sequence !== 3 || record.lastAuthorityEvent?.name !== "gameDraw" ||
+				!context?.openingDrawCommitted || !before) return reject("CARD_ACTION_PHASE");
+			if (event.nativeEventCompleted !== true || event.nativeEventName !== "gongJiOrFaShu" ||
+				!/^[A-Za-z0-9_-]{1,128}$/.test(event.nativeEventId || "")) return reject("CARD_ACTION_EVENT_IDENTITY");
+			if (!record.seatIds.includes(event.seatId) || event.seatId !== before.firstActSeatId) return reject("CARD_ACTION_ACTOR");
+			if (typeof event.cardName !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(event.cardName) ||
+				!record.seatIds.includes(event.targetSeatId) ||
+				typeof event.optionId !== "string" || !/^native_option_[a-f0-9]{32}$/.test(event.optionId)) return reject("CARD_ACTION_SELECTION");
+			if (!Number.isSafeInteger(event.nativeEventStep) || event.nativeEventStep < 5) return reject("CARD_ACTION_NATIVE_STEP");
+			if (event.useResultCount !== 1) return reject("CARD_ACTION_USE_RESULT_COUNT");
+			if (event.useCardChildName !== "useCard" || !Number.isSafeInteger(event.useCardChildStep)) return reject("CARD_ACTION_CHILD_IDENTITY");
+			if (event.nativeUseCardChildCompleted !== true) return reject("CARD_ACTION_CHILD_INCOMPLETE");
+			if (!["d", "x"].includes(event.usedCardPosition)) return reject("CARD_ACTION_CARD_POSITION");
+			if (event.nativeChildWaitCompleted !== true) return reject("CARD_ACTION_PARENT_WAIT");
+			if (event.nativeEventInstanceMatches !== true) return reject("CARD_ACTION_EVENT_INSTANCE");
+			if (event.gameMeNull !== true || event.connectedTransports !== 0) return reject("CARD_ACTION_HOST_BOUNDARY");
+			if (!proof.beforeSummary || Object.getPrototypeOf(proof.beforeSummary) !== Object.prototype) return reject("CARD_ACTION_BEFORE_BINDING");
+			try {
+				if (canonicalize(proof.beforeSummary) !== canonicalize(before)) return reject("CARD_ACTION_BEFORE_BINDING");
+			} catch (_) { return reject("CARD_ACTION_BEFORE_BINDING"); }
+			const beforeDigest = crypto.createHash("sha256").update(canonicalize(before)).digest("hex");
+			if (beforeDigest !== proof.beforeDigest || canonicalize(before) !== canonicalize({
+				revision: 3, firstActSeatId: before.firstActSeatId,
+				seats: before.seats.map(({ seatId, position, character, side, handCount, handCommitment }) =>
+					({ seatId, position, character, side, handCount, handCommitment })),
+			})) return reject("CARD_ACTION_BEFORE_SUMMARY");
+			const after = proof.afterSummary;
+			if (!after || Object.keys(after).sort().join(",") !== "action,firstActSeatId,revision,seats" ||
+				after.revision !== 4 || after.firstActSeatId !== before.firstActSeatId ||
+				!Array.isArray(after.seats) || after.seats.length !== record.seatIds.length ||
+				!after.action || Object.keys(after.action).sort().join(",") !==
+				"cardName,nativeEventId,nativeEventName,optionId,seatId,targetSeatId,usedCardPosition" ||
+				after.action.nativeEventId !== event.nativeEventId || after.action.nativeEventName !== "gongJiOrFaShu" ||
+				after.action.seatId !== event.seatId || after.action.cardName !== event.cardName ||
+				after.action.targetSeatId !== event.targetSeatId || after.action.optionId !== event.optionId ||
+				! ["d", "x"].includes(after.action.usedCardPosition)) return reject("CARD_ACTION_AFTER_SUMMARY");
+			const seatsValid = after.seats.every((seat, index) => {
+				const previous = before.seats[index];
+				if (!seat || Object.keys(seat).sort().join(",") !== "character,handCommitment,handCount,position,seatId,side" ||
+					seat.seatId !== record.seatIds[index] || seat.seatId !== previous.seatId ||
+					seat.position !== previous.position || seat.character !== previous.character || seat.side !== previous.side ||
+					!Number.isSafeInteger(seat.handCount) || seat.handCount < 0 || seat.handCount > 32 ||
+					!DIGEST.test(seat.handCommitment || "")) return false;
+				if (seat.handCount !== previous.handCount && seat.handCommitment === previous.handCommitment) return false;
+				if (seat.seatId === event.seatId) return seat.handCommitment !== previous.handCommitment;
+				return true;
+			});
+			if (!seatsValid) return reject("CARD_ACTION_SEAT_TRANSITION");
+			if (crypto.createHash("sha256").update(canonicalize(after)).digest("hex") !== proof.afterDigest) return reject("CARD_ACTION_AFTER_DIGEST");
+			return true;
+		}
 		return false;
 	}
 
@@ -331,6 +388,7 @@ function createHostSessionManager({
 			return failure("HOST_AUTHORITY_EVENT_REJECTED");
 		}
 		record.authorityStateRevision = proof.stateRevisionAfter;
+		record.authorityFailureReason = null;
 		record.authorityStateDigest = proof.afterDigest;
 		record.authorityDigestChain.push(Object.freeze({ eventSequence: proof.eventSequence,
 			beforeDigest: proof.beforeDigest, afterDigest: proof.afterDigest }));
@@ -343,7 +401,12 @@ function createHostSessionManager({
 			record.xingbeiAuthorityContext.characters = proof.event.characters.map(entry => ({ ...entry }));
 		}
 		record.state = "playable_probe";
-		if (proof.event.kind === "xingbei_opening_draw_v1") record.xingbeiAuthorityContext.openingDrawCommitted = true;
+		if (proof.event.kind === "xingbei_opening_draw_v1") {
+			record.xingbeiAuthorityContext.openingDrawCommitted = true;
+			record.xingbeiAuthorityContext.openingSummary = Object.freeze({ revision: 3,
+				firstActSeatId: proof.event.firstActSeatId,
+				seats: proof.event.seats.map(seat => Object.freeze({ ...seat })) });
+		}
 		return Object.freeze({ ok: true, session: publicView(record) });
 	}
 
@@ -461,9 +524,9 @@ function createHostSessionManager({
 
 	async function diagnoseNativeStart(roomId, mode = "native_start") {
 		const record = sessions.get(roomId);
-		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "controlled_block"].includes(mode) ||
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "controlled_block"].includes(mode) ||
 			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand ||
-			(mode === "managed_opening_root_action" && (record.authorityStateRevision !== 3 ||
+			(["managed_opening_root_action", "managed_opening_root_action_event4"].includes(mode) && (record.authorityStateRevision !== 3 ||
 				record.lastAuthorityEvent?.sequence !== 3 || record.lastAuthorityEvent?.name !== "gameDraw"))) return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED");
 		try {
 			await record.handle.sendHostCommand({ type: "host_native_start_diagnostic", mode, kind: "managed_host", protocol: PROTOCOL,

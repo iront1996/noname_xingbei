@@ -491,5 +491,56 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	assert.equal(sentCommands[0].mode, "managed_opening_root_action");
 	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: openingDraw })).code,
 		"HOST_AUTHORITY_EVENT_REJECTED", "native opening draw must be one-shot");
+	const beforeSummary = { revision: 3, firstActSeatId: openingDraw.event.firstActSeatId,
+		seats: openingDraw.event.seats.map(seat => ({ ...seat })) };
+	const afterSeats = beforeSummary.seats.map((seat, index) => index === 0 ? { ...seat, handCount: 3,
+		handCommitment: "ab".repeat(32) } : { ...seat });
+	const cardAction = {
+		kind: "native_authority_event_v1", checkpoint: null, eventSequence: 4,
+		stateRevisionBefore: 3, stateRevisionAfter: 4, beforeDigest: openingDraw.afterDigest,
+		beforeSummary, afterSummary: { revision: 4, firstActSeatId: beforeSummary.firstActSeatId, seats: afterSeats,
+			action: { nativeEventId: "native_event_0123456789abcdef0123456789abcdef", nativeEventName: "gongJiOrFaShu",
+				seatId: "seat_1", cardName: "sha", targetSeatId: "seat_2", optionId: "native_option_0123456789abcdef0123456789abcdef", usedCardPosition: "d" } },
+		afterDigest: "00".repeat(32),
+		event: { kind: "xingbei_native_card_action_v1", name: "gongJiOrFaShu", nativeEventName: "gongJiOrFaShu",
+			nativeEventId: "native_event_0123456789abcdef0123456789abcdef", nativeEventCompleted: true,
+			seatId: "seat_1", cardName: "sha", targetSeatId: "seat_2", optionId: "native_option_0123456789abcdef0123456789abcdef",
+			nativeEventStep: 6, useResultCount: 1, useCardChildName: "useCard", useCardChildStep: 3,
+			nativeUseCardChildCompleted: true, usedCardPosition: "d",
+			nativeChildWaitCompleted: true, nativeEventInstanceMatches: true,
+			gameMeNull: true, connectedTransports: 0 },
+	};
+	cardAction.afterDigest = createHash("sha256").update(canonicalize(cardAction.afterSummary)).digest("hex");
+	for (const invalid of [
+		{ ...cardAction, beforeDigest: "fe".repeat(32) },
+		{ ...cardAction, beforeSummary: { ...beforeSummary, revision: 2 } },
+		{ ...cardAction, eventSequence: 5 },
+		{ ...cardAction, stateRevisionAfter: 5 },
+		{ ...cardAction, afterDigest: "cd".repeat(32) },
+		{ ...cardAction, event: { ...cardAction.event, seatId: "seat_2" } },
+		{ ...cardAction, event: { ...cardAction.event, targetSeatId: "seat_1" } },
+		{ ...cardAction, event: { ...cardAction.event, nativeEventStep: 4 } },
+		{ ...cardAction, event: { ...cardAction.event, useResultCount: 2 } },
+		{ ...cardAction, event: { ...cardAction.event, nativeUseCardChildCompleted: false } },
+		{ ...cardAction, event: { ...cardAction.event, nativeChildWaitCompleted: false } },
+		{ ...cardAction, event: { ...cardAction.event, nativeEventInstanceMatches: false } },
+		{ ...cardAction, event: { ...cardAction.event, connectedTransports: 1 } },
+		{ ...cardAction, event: { ...cardAction.event, gameMeNull: false } },
+		{ ...cardAction, afterSummary: { ...cardAction.afterSummary,
+			seats: cardAction.afterSummary.seats.map((seat, index) => index === 0 ? { ...seat, handCount: 4 } : seat) } },
+		{ ...cardAction, afterSummary: { ...cardAction.afterSummary,
+			seats: cardAction.afterSummary.seats.map((seat, index) => index === 1 ? { ...seat, handCount: 3 } : seat) } },
+	]) {
+		assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: invalid })).code,
+			"HOST_AUTHORITY_EVENT_REJECTED");
+	}
+	const cardCommitted = f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: cardAction }));
+	assert.equal(cardCommitted.ok, true);
+	assert.equal(cardCommitted.session.authorityStateRevision, 4);
+	assert.equal(cardCommitted.session.nextAuthorityEventSequence, 5);
+	assert.deepEqual(cardCommitted.session.lastAuthorityEvent, { sequence: 4, name: "gongJiOrFaShu" });
+	assert.equal(cardCommitted.session.authorityStateDigest, cardAction.afterDigest);
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: cardAction })).code,
+		"HOST_AUTHORITY_EVENT_REJECTED", "native card action must be one-shot");
 	await f.manager.stop("native_progress_gate");
 });

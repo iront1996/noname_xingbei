@@ -98,7 +98,7 @@ function createManagedHostProcessLauncher({
 		};
 		handle.sendHostCommand = async command => {
 			const diagnosticCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
-				command?.type === "host_native_start_diagnostic" && ["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "controlled_block"].includes(command.mode);
+				command?.type === "host_native_start_diagnostic" && ["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "controlled_block"].includes(command.mode);
 			const inputResumeCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				command?.type === "host_native_input_resume" && typeof command.nativeEventId === "string" &&
 				typeof command.seatId === "string" && typeof command.optionId === "string" &&
@@ -112,7 +112,7 @@ function createManagedHostProcessLauncher({
 						command.accepted === true &&
 						command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
 						command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret &&
-						[2, 3].includes(command.eventSequence) && command.stateRevision === command.eventSequence &&
+						[2, 3, 4].includes(command.eventSequence) && command.stateRevision === command.eventSequence &&
 						/^[a-f0-9]{64}$/.test(command.afterDigest)) ||
 					["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||
 				Object.getPrototypeOf(command) !== Object.prototype) throw new Error("HOST_COMMAND_REJECTED");
