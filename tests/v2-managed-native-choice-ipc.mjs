@@ -35,6 +35,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
 	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, event3Proof = null, dropAcks = true, dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0;
+	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
 	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
 	const launchedHandles = new Map();
@@ -70,6 +71,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			const handle = await createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 })(bootstrap);
 			launchedHandles.set(bootstrap.sessionId, handle);
 			handle.on("message", message => {
+				if (message?.type === "host_authority_event") {
+					authoritySubmissions.push({ roomId: message.roomId, sessionId: message.sessionId, proof: message.proof,
+						resourcePids: handle.resources().map(resource => resource.pid) });
+				}
 				if (message?.type === "host_authority_event" && message.proof?.event?.kind === "xingbei_opening_draw_v1") event3Proof = message.proof;
 				if (message?.type === "host_authority_event" && message.proof?.event?.kind === "xingbei_native_card_action_v1") {
 					event4SubmissionCount++;
@@ -544,6 +549,49 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(nativeActionAckCount >= 2, true, "choice ACK waits for authority acceptance after retry");
 					assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1, "overlapping delivery retry cannot re-run native useResult");
 				}
+			}
+			if (process.env.V2_NATIVE_C3_FULL_CHAIN === "1" && probeMode === "managed_opening_root_action_event4") {
+				const session = manager.inspect(roomId);
+				assert.equal(session.authorityStateRevision, 4);
+				assert.equal(session.nextAuthorityEventSequence, 5);
+				assert.equal(session.checkpointAvailable, false);
+				assert.deepEqual(authoritySubmissions.map(entry => entry.proof.eventSequence), [1, 2, 3, 4],
+					"one managed-host run must submit exactly authority events 1 through 4");
+				assert.ok(authoritySubmissions.every(entry => entry.roomId === roomId && entry.sessionId === session.sessionId),
+					"authority events must use the same room and managed host session");
+				for (let index = 0; index < authoritySubmissions.length; index++) {
+					const { proof, resourcePids } = authoritySubmissions[index];
+					assert.equal(proof.stateRevisionBefore, index);
+					assert.equal(proof.stateRevisionAfter, index + 1);
+					assert.equal(proof.eventSequence, index + 1);
+					assert.equal(proof.checkpoint, null);
+					if (index) assert.equal(proof.beforeDigest, authoritySubmissions[index - 1].proof.afterDigest,
+						`authority digest discontinuity before event ${index + 1}`);
+					assert.ok(resourcePids.length >= 1, "Chromium resource identity was not registered before authority submission");
+					assert.ok(resourcePids.every(pid => pid === resourcePids[0]), "more than one Chromium PID appeared during the match");
+				}
+				const chromiumPids = new Set(authoritySubmissions.flatMap(entry => entry.resourcePids));
+				assert.equal(chromiumPids.size, 1, "the complete event chain must stay in one Chromium process");
+				const chain = session.authorityDigestChain;
+				assert.deepEqual(chain.map(entry => entry.eventSequence), [1, 2, 3, 4]);
+				assert.equal(session.authorityStateDigest, authoritySubmissions[3].proof.afterDigest,
+					"server authority tip must match the final native proof");
+				assert.equal(session.authorityStateRevision, 4);
+				const publicViewJson = JSON.stringify(session);
+				const diagnosticJson = JSON.stringify(nativeDiagnostic);
+				assert.equal(publicViewJson.includes("handCommitment"), false, "server public view must not expose hidden-hand commitments");
+				assert.equal(diagnosticJson.includes("handCommitment"), false, "native diagnostics must not expose hidden-hand commitments");
+				assert.equal(publicViewJson.includes(sessionSecret), false, "server public view leaked the managed-host secret");
+				assert.equal(diagnosticJson.includes(sessionSecret), false, "native diagnostics leaked the managed-host secret");
+				for (const credential of seatCredentials.values()) {
+					assert.equal(publicViewJson.includes(credential), false, "server public view leaked a seat credential");
+					assert.equal(diagnosticJson.includes(credential), false, "native diagnostics leaked a seat credential");
+				}
+				const handle = launchedHandles.get(session.sessionId);
+				assert.ok(handle);
+				assert.ok(handle.pid > 0, "supervised host PID must remain available for the full match");
+				assert.equal(handle.resources().length, 1, "the managed match must retain exactly one Chromium resource until cleanup");
+				assert.equal(handle.resources()[0].pid, [...chromiumPids][0]);
 			}
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).deliveryId, `delivery_${nativeActionChoice.choiceId}`);
 			if (nativeFaultMode === "retry_while_applying") {

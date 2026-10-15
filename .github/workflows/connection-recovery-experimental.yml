@@ -98,6 +98,15 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 C3 authority Event 1-4 same-session and Chromium-chain audit
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
       - name: V2 M2 rejected opening draw cannot release native phase loop
         shell: bash
         run: |
