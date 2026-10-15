@@ -34,7 +34,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, ackTrace = [];
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, ackTrace = [];
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -141,6 +141,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.ok(Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 64);
 				assert.equal(new Set(message.options).size, message.options.length);
 				assert.ok(message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)));
+				if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_response_probe") {
+					assert.ok(message.optionKinds && Object.keys(message.optionKinds).length === message.options.length);
+					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === "gongJi");
+					assert.ok(nativeActionOptionId, "native event produced no legal gongJi action candidate for the response topology probe");
+				} else nativeActionOptionId = message.options.at(-1);
 				nativeActionCandidate = message;
 				if (seatRegistry) {
 					const staleHostSessionId = `hs_${"b".repeat(32)}`;
@@ -160,7 +165,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(bindSeat(message.seatId, oldConnectionId).ok, true);
 				const request = { protocol: 1, roomId, hostSessionId: message.sessionId, nativeEventId: message.nativeEventId,
 					seatId: message.seatId, eventSequence: message.eventSequence, choiceId: openedChoice.choice.choiceId, connectionId: oldConnectionId,
-					credential: credentialFor(message.seatId), option: message.options.at(-1) };
+					credential: credentialFor(message.seatId), option: nativeActionOptionId };
 				assert.equal(controller.submitChoice({ ...request, seatId: "wrong_seat" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 				assert.equal(controller.submitChoice({ ...request, nativeEventId: `${message.nativeEventId}_stale` }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 				assert.equal(controller.submitChoice({ ...request, eventSequence: message.eventSequence + 1 }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
@@ -190,7 +195,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(controller.submitChoice({ ...request, hostSessionId: `hs_${"b".repeat(32)}`, connectionId,
 					credential: credentialFor(message.seatId) }).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "stale host session must not commit player input");
 				if (!["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(process.env.V2_NATIVE_START_PROBE_MODE)) {
-					const accepted = { ...request, connectionId, credential: credentialFor(message.seatId), option: message.options.at(-1) };
+					const accepted = { ...request, connectionId, credential: credentialFor(message.seatId), option: nativeActionOptionId };
 					assert.equal(controller.submitChoice(accepted).ok, true);
 					assert.equal(controller.submitChoice(accepted).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "duplicate native action input must be rejected");
 				}
@@ -410,7 +415,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	assert.equal(controller.inspect(roomId, b.choiceId).resolution.kind, "trustee");
 	assert.equal(controller.inspect(roomId, d.choiceId).state, "resolved");
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
-		const probeMode = ["managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? process.env.V2_NATIVE_START_PROBE_MODE : "native_start";
+		const probeMode = ["managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? process.env.V2_NATIVE_START_PROBE_MODE : "native_start";
 		assert.equal((await manager.diagnoseNativeStart(roomId, "controlled_block")).ok, true);
 		const controlled = await until(() => nativeDiagnostic.find(entry => entry?.stage === "controlled_block_outcome"), 5000,
 			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
@@ -477,7 +482,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.hostPlayerAbsent, true);
 			assert.equal(snapshot.seats.length, 4);
 			assert.deepEqual(snapshot.seats.map(seat => seat.handCount), [4, 4, 4, 4]);
-		} else if (["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(probeMode)) {
+		} else if (["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(probeMode)) {
 			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
 			assert.equal(snapshot.nativeInputGate?.eventName, "gongJiOrFaShu");
 			assert.equal(snapshot.nativeInputGate?.parentEventName, "xingDong");
@@ -485,7 +490,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.nativeInputGate?.gameMeAbsent, true);
 			assert.ok(nativeActionChoice);
 			assert.ok(nativeActionCandidate?.options.length > 1);
-			if (["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(probeMode)) {
+			if (["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(probeMode)) {
 				assert.ok(expectedAuthorityRevision >= 3, "opening-root action must start from accepted Event #3");
 				assert.equal(snapshot.gameStartCount, 1);
 				assert.equal(snapshot.gameDrawEntered, true);
@@ -526,12 +531,36 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(applied.snapshot?.nativeInputGate?.nativeResumeCount || 0, 0, "controller path must not use the test-only direct resume command");
 			assert.equal(applied.snapshot?.hostPlayerAbsent, true);
 			assert.equal(applied.snapshot?.seats?.length, 4);
+			if (probeMode === "managed_native_response_probe") {
+				const rootProbe = nativeDiagnostic.find(entry => entry?.stage === "native_start_probe_outcome");
+				const responseStarted = nativeDiagnostic.find(entry => entry?.stage === "native_response_started" && entry?.snapshot?.eventName === "yingZhan");
+				const responseCompleted = nativeDiagnostic.find(entry => entry?.stage === "native_response_completed" && entry?.snapshot?.eventName === "yingZhan");
+				assert.ok(rootProbe, `native start root evidence missing: ${JSON.stringify(nativeDiagnostic.slice(-20))}`);
+				assert.ok(responseStarted, `native attack did not enter the _yingZhan child event: ${JSON.stringify(nativeDiagnostic.slice(-20))}`);
+				assert.ok(responseCompleted, "native yingZhan child event did not complete before parent action wait resumed");
+				assert.equal(responseStarted.snapshot.nativeChooseToUseContent, true,
+					"Player.yingZhan must retain the native chooseToUse content contract");
+				assert.equal(responseStarted.snapshot.rootEventName, "game");
+				assert.equal(responseStarted.snapshot.rootObjectMatches, true,
+					"native response must reference the same event-manager root object");
+				assert.equal(responseStarted.snapshot.rootInstanceId, rootProbe.snapshot?.rootInstanceId,
+					"native response and start probe must identify the same original root instance");
+				assert.ok(responseStarted.snapshot.parentChain.includes("useCard"),
+					"yingZhan must stay nested below the real incoming native useCard event");
+				assert.ok(responseStarted.snapshot.parentChain.includes("phaseLoop"),
+					"native response must remain nested in the original Xingbei phase path");
+				assert.notEqual(responseStarted.snapshot.seatId, nativeActionCandidate.seatId,
+					"the response event must belong to the attacked ordinary seat, not the attacking seat");
+				assert.equal(responseCompleted.snapshot.gameMeAbsent, true);
+				assert.equal(typeof responseCompleted.snapshot.resultBool, "boolean",
+					"native chooseToUse must produce an actual response/decline result");
+			}
 			await until(() => controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved", 15000,
 				() => ({ choice: controller.inspect(roomId, nativeActionChoice.choiceId), host: manager.inspect(roomId), stages: nativeDiagnostic.map(entry => entry?.stage) }));
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.kind,
 				["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(probeMode) ? "trustee" : "player");
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.option,
-				["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(probeMode) ? nativeActionCandidate.trusteeOption : nativeActionCandidate.options.at(-1));
+				["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(probeMode) ? nativeActionCandidate.trusteeOption : nativeActionOptionId);
 			assert.equal(applied.snapshot?.nativeAction?.optionId, controller.inspect(roomId, nativeActionChoice.choiceId).resolution.option,
 				"native engine applied an option other than the controller resolution");
 			assert.equal(nativeActionAckDropped, true);
