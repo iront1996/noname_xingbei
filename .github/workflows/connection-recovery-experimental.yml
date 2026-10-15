@@ -68,7 +68,7 @@ jobs:
             if [ -x "$candidate" ]; then browser="$candidate"; break; fi
           done
           test -n "$browser"
-          env V2_CHROMIUM="$browser" node --test --test-concurrency=1 tests/v2-managed-chromium-host.mjs tests/v2-managed-engine-init.mjs tests/v2-managed-native-event.mjs tests/v2-managed-character-selection.mjs tests/v2-managed-native-choice-ipc.mjs
+          env V2_CHROMIUM="$browser" V2_CHROMIUM_START_DIAGNOSTICS=1 node --test --test-concurrency=1 tests/v2-managed-chromium-host.mjs tests/v2-managed-engine-init.mjs tests/v2-managed-native-event.mjs tests/v2-managed-character-selection.mjs tests/v2-managed-native-choice-ipc.mjs
       - name: V2 M2 native Xingbei opening draw authority Event 3
         shell: bash
         run: |

@@ -27,6 +27,17 @@ const nativeAuthorityAckWaiters = new Map();
 const nativeStartDiagnosticRing = [];
 let nativeStartDiagnosticUnsubscribe = null;
 let nativeFailureReported = false;
+const chromiumStartupStderr = [];
+
+function safeChromiumStartupDiagnostics() {
+	return chromiumStartupStderr.slice(-16).map(line => line
+		.replaceAll(profile || "\u0000", "[managed-profile]")
+		.replaceAll(identity?.secret || "\u0000", "[redacted]")
+		.replace(/\b(token|password|credential|secret)(?:=|:)\s*\S+/gi, "$1=[redacted]")
+		.replace(/\/home\/[^/\s]+/g, "/home/[user]")
+		.replace(/\\Users\\[^\\\s]+/gi, "\\Users\\[user]")
+		.slice(0, 512));
+}
 
 function createCdpSession(url) {
 	if (typeof url !== "string" || !/^ws:\/\/127\.0\.0\.1:\d+\/devtools\/page\/[A-Za-z0-9-]+$/.test(url)) {
@@ -154,7 +165,18 @@ async function boot(message) {
 		"--remote-debugging-port=0",
 		`--user-data-dir=${profile}`,
 		"about:blank",
-	], { stdio: "ignore", windowsHide: true, detached: process.platform !== "win32" });
+	], { stdio: ["ignore", "ignore", process.env.V2_CHROMIUM_START_DIAGNOSTICS === "1" ? "pipe" : "ignore", "ipc"],
+		windowsHide: true, detached: process.platform !== "win32" });
+	if (process.env.V2_CHROMIUM_START_DIAGNOSTICS === "1") {
+		chromium.stderr?.setEncoding("utf8");
+		chromium.stderr?.on("data", chunk => {
+			for (const line of String(chunk).split(/\r?\n/)) {
+				if (!line) continue;
+				chromiumStartupStderr.push(line.slice(0, 1024));
+				if (chromiumStartupStderr.length > 64) chromiumStartupStderr.shift();
+			}
+		});
+	}
 	chromium.once("error", () => { spawnError = new Error("CHROMIUM_SPAWN_FAILED"); });
 	if (!Number.isSafeInteger(chromium.pid) || chromium.pid <= 0) {
 		throw new Error("CHROMIUM_SPAWN_FAILED");
@@ -176,7 +198,8 @@ async function boot(message) {
 				.finally(() => process.exit(20));
 		}
 	});
-	const deadline = Date.now() + CHROMIUM_BOOT_WAIT_MS;
+	const startupStartedAt = Date.now();
+	const deadline = startupStartedAt + CHROMIUM_BOOT_WAIT_MS;
 	let port = null;
 	while (Date.now() < deadline) {
 		if (spawnError) throw spawnError;
@@ -194,7 +217,15 @@ async function boot(message) {
 		}
 		await new Promise(resolve => setTimeout(resolve, 40));
 	}
-	if (!port) throw new Error("CHROMIUM_BOOT_TIMEOUT");
+	if (!port) {
+		if (process.env.V2_CHROMIUM_START_DIAGNOSTICS === "1") {
+			const details = { elapsedMs: Date.now() - startupStartedAt, pid: chromium.pid,
+				exitCode: chromium.exitCode, signalCode: chromium.signalCode, profileActivePortPresent: false,
+				stderr: safeChromiumStartupDiagnostics() };
+			throw new Error(`CHROMIUM_BOOT_TIMEOUT:${JSON.stringify(details)}`);
+		}
+		throw new Error("CHROMIUM_BOOT_TIMEOUT");
+	}
 	const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
 		signal: AbortSignal.timeout(CHROMIUM_BOOT_WAIT_MS),
 	});
