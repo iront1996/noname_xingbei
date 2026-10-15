@@ -34,7 +34,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, event3Proof = null, dropAcks = true, dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [];
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, event3Proof = null, dropAcks = true, dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0;
+	let releaseEvent4AckBarrier;
+	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
 	const launchedHandles = new Map();
 	const useSeatRegistry = process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry";
 	const seatRegistry = useSeatRegistry ? createManagedRoomSeatRegistry() : null;
@@ -83,7 +85,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			}
 			if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_opening_root_action_event4_ack_loss" &&
 				command?.type === "host_authority_event_ack" && command.eventSequence === 4 && event4AckDropCount === 1) {
-				await new Promise(resolve => setTimeout(resolve, 3200));
+				event4AckBarrierWaitCount++;
+				await event4AckBarrier;
 			}
 			return sendHostCommand(command);
 			};
@@ -189,6 +192,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 			} else if (type === "host_choice_diagnostic") {
 				 nativeDiagnostic.push(message.observed);
+				if (message.observed?.stage === "native_action_delivery_joined_authority_commit") {
+					event4AuthorityJoinCount++;
+					if (!event4AckBarrierReleased) {
+						event4AckBarrierReleased = true;
+						releaseEvent4AckBarrier();
+					}
+				}
 				if (nativeFaultMode === "retry_while_applying" && message.observed?.stage === "native_useResult_entered" && !applyingRetryIssued && nativeActionChoice) {
 					applyingRetryIssued = true;
 					assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId)?.state, "delivery_pending");
@@ -525,13 +535,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1, "Event #4 delivery retry must not re-run useResult");
 				if (probeMode === "managed_opening_root_action_event4_ack_loss") {
 					assert.equal(event4AckDropCount, 1, "test must drop the first authority Event #4 ACK");
-					assert.equal(event4SubmissionCount, 3, "host must retry the same Event #4 proof while ACKs are delayed/lost");
+					assert.ok(event4SubmissionCount >= 2, "host must retry the same Event #4 proof after the dropped ACK");
 					assert.ok(event4ProofSubmissions.every(proof => proof === event4ProofSubmissions[0]), "authority retry must preserve the immutable Event #4 proof");
+					assert.ok(event4AckBarrierWaitCount >= 1, "the retried authority ACK must be held at the explicit test barrier");
+					assert.equal(event4AuthorityJoinCount, 1, "ACK barrier releases only after the controller retry joined the pending commit");
+					assert.equal(event4AckBarrierReleased, true);
 					assert.equal(completed.authorityDigestChain.length, 4, "ACK replay must not append Event #4 twice");
 					assert.equal(nativeActionAckCount >= 2, true, "choice ACK waits for authority acceptance after retry");
 					assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1, "overlapping delivery retry cannot re-run native useResult");
-					assert.ok(nativeDiagnostic.some(entry => entry?.stage === "native_action_delivery_joined_authority_commit"),
-						"controller retry during pending authority ACK must join the immutable commit instead of failing/reapplying");
 				}
 			}
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).deliveryId, `delivery_${nativeActionChoice.choiceId}`);
