@@ -242,7 +242,7 @@ function createHostSessionManager({
 					fail(record, typeof message.code === "string" && /^[A-Z0-9_]{3,96}$/.test(message.code) ? message.code : "HOST_MANAGED_EXECUTION_FAILED");
 				}
 					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
-					else if (["host_choice_candidates", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates", "host_native_response_candidates"].includes(message?.type) && authenticate(record, message)) {
+					else if (["host_choice_candidates", "host_choice_delivery_started", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates", "host_native_response_candidates"].includes(message?.type) && authenticate(record, message)) {
 						// A trusted-host IPC consumer is part of the authority path.  Do not
 						// silently lose a candidate/ACK and leave the native event paused forever.
 						Promise.resolve(onManagedChoiceMessage(Object.freeze({ type: message.type, roomId: record.roomId, sessionId: record.sessionId, message }))).catch(() => {
@@ -580,7 +580,7 @@ function createHostSessionManager({
 
 	async function diagnoseNativeStart(roomId, mode = "native_start") {
 		const record = sessions.get(roomId);
-		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "controlled_block"].includes(mode) ||
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "controlled_block"].includes(mode) ||
 			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand ||
 			(["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(mode) && (record.authorityStateRevision !== 3 ||
 				record.lastAuthorityEvent?.sequence !== 3 || record.lastAuthorityEvent?.name !== "gameDraw"))) return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED");
@@ -589,6 +589,17 @@ function createHostSessionManager({
 				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret });
 			return Object.freeze({ ok: true });
 		} catch (_) { return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED"); }
+	}
+
+	async function snapshotNativeStart(roomId, mode = "managed_opening_root_action_event4") {
+		const record = sessions.get(roomId);
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || mode !== "managed_opening_root_action_event4" ||
+			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand) return failure("HOST_NATIVE_SNAPSHOT_REJECTED");
+		try {
+			await record.handle.sendHostCommand({ type: "host_native_start_snapshot", mode, kind: "managed_host", protocol: PROTOCOL,
+				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret });
+			return Object.freeze({ ok: true });
+		} catch (_) { return failure("HOST_NATIVE_SNAPSHOT_REJECTED"); }
 	}
 
 	async function resumeNativeInput(roomId, input) {
@@ -624,6 +635,7 @@ function createHostSessionManager({
 		commitAuthoritativeResult,
 		sendChoiceDelivery,
 		diagnoseNativeStart,
+		snapshotNativeStart,
 		resumeNativeInput,
 		cancelNativeInput,
 		stop,

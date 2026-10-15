@@ -48,7 +48,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, ackTrace = [];
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, ackTrace = [];
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -89,7 +89,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			}
 			return manager.sendChoiceDelivery(roomId, choice).then(result => result.ok);
 		},
-		onDeliveryFailed: choice => { void manager.stop(choice.roomId, "choice_delivery_failed"); },
+		onDeliveryFailed: choice => { deliveryFailures.push({ choiceId: choice.choiceId, nativeEventId: choice.nativeEventId,
+			seatId: choice.seatId, deliveryAttempts: choice.deliveryAttempts, code: choice.deliveryFailureCode }); void manager.stop(choice.roomId, "choice_delivery_failed"); },
 	});
 	manager = createHostSessionManager({
 		launch: async bootstrap => {
@@ -134,9 +135,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			return handle;
 		},
 		browserReadyTimeoutMs: 20000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000,
-		onSessionEnd: event => controller.cleanupHostSession(event.roomId, event.sessionId),
+		onSessionEnd: event => { sessionEnds.push({ roomId: event.roomId, sessionId: event.sessionId, state: event.state, code: event.code });
+			controller.cleanupHostSession(event.roomId, event.sessionId); },
 		onManagedChoiceMessage: ({ type, message }) => {
-			if (type === "host_choice_candidates") {
+			if (type === "host_choice_delivery_started") {
+				const marked = controller.markDeliveryApplying({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret });
+				assert.equal(marked.ok, true, `authenticated native delivery receipt rejected: ${marked.code}`);
+				applyingReceipts.push({ choiceId: message.choiceId, deliveryId: message.deliveryId, nativeEventId: message.nativeEventId });
+			} else if (type === "host_choice_candidates") {
 				sessionSecret = message.secret;
 				candidatesSeen = message.choices;
 				for (const candidate of message.choices) {
@@ -421,11 +427,35 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		await failedHandle.waitForCleanup();
 		return;
 	}
-	completed = await until(() => {
-		const session = manager.inspect(roomId);
-		if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, authorityFailureReason: session.authorityFailureReason, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks, responseAuthority: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response_authority")).slice(-4), responseSummary: nativeDiagnostic.filter(entry => entry?.stage === "native_response_action_summary").slice(-3), responseStages: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response")).slice(-8).map(entry => entry?.stage) })}`);
-		return session?.authorityStateRevision === expectedAuthorityRevision && session;
-	}, 45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), deliveryCount, ackCount, droppedAcks, nativeDiagnostic }));
+	try {
+		completed = await until(() => {
+			const session = manager.inspect(roomId);
+			if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, authorityFailureReason: session.authorityFailureReason, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks, responseAuthority: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response_authority")).slice(-4), responseSummary: nativeDiagnostic.filter(entry => entry?.stage === "native_response_action_summary").slice(-3), responseStages: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response")).slice(-8).map(entry => entry?.stage) })}`);
+			return session?.authorityStateRevision === expectedAuthorityRevision && session;
+		}, 45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), deliveryCount, ackCount, droppedAcks, nativeDiagnostic }));
+	} catch (error) {
+		// This diagnostic is deliberately requested even when the host has not
+		// failed: a live native child wait is distinct from a dead process. It
+		// reports only event/seat/status/count metadata and never card identities,
+		// credentials, or private hand commitments.
+		const prior = nativeDiagnostic.length;
+		const requested = await manager.snapshotNativeStart(roomId, "managed_opening_root_action_event4");
+		if (requested.ok) {
+			try { await until(() => nativeDiagnostic.slice(prior).some(entry => entry?.stage === "native_start_live_snapshot" || entry?.stage === "native_start_live_snapshot_failed"), 3000,
+				() => ({ requested, session: manager.inspect(roomId) })); } catch { /* bounded best-effort diagnostic only */ }
+		}
+		const responses = nativeResponseChoices.map(({ choice, candidate }) => {
+			const current = controller.inspect(roomId, choice.choiceId);
+			return { nativeEventId: candidate.nativeEventId, seatId: candidate.seatId, choiceId: choice.choiceId,
+				state: current?.state || null, deliveryAttempts: current?.deliveryAttempts || 0,
+				acknowledged: current?.acknowledged === true };
+		});
+		const live = nativeDiagnostic.slice(prior).filter(entry => entry?.stage === "native_start_live_snapshot" || entry?.stage === "native_start_live_snapshot_failed").at(-1) || null;
+		error.message += `; liveResponseDiagnostic=${JSON.stringify({ requested, session: manager.inspect(roomId), responses,
+			responseAckCount: nativeResponseAckCount, recentResponseStages: safeNativeDiagnostic(nativeDiagnostic
+				.filter(entry => String(entry?.stage || "").includes("response")).slice(-12)), live: safeNativeDiagnostic(live) })}`;
+		throw error;
+	}
 	assert.ok(droppedAcks >= 4, `expected initial ACK loss plus bounded automatic retries, got ${droppedAcks}`);
 	// Simulate lost parent-side ACK processing. Retry uses the unchanged delivery
 	// IDs; Chromium must acknowledge the already-applied native result without
@@ -484,7 +514,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		const controlled = await until(() => nativeDiagnostic.find(entry => entry?.stage === "controlled_block_outcome"), 5000,
 			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
 		assert.equal(controlled.classification, "cdp_command_timeout");
-		if (!actionDiagnosticDispatched) assert.equal((await manager.diagnoseNativeStart(roomId, probeMode)).ok, true);
+		if (!actionDiagnosticDispatched) {
+			const requested = await manager.diagnoseNativeStart(roomId, probeMode);
+			assert.equal(requested.ok, true, `native diagnostic command rejected for ${probeMode}: ${JSON.stringify(requested)}`);
+		}
 		if (["before_native_result_set", "cdp_result_unknown_after_dispatch", "use_result_throws", "use_card_child_throws"].includes(nativeFaultMode)) {
 			await until(() => manager.inspect(roomId)?.state === "failed", 10000,
 				() => ({ session: manager.inspect(roomId), nativeDiagnostic: nativeDiagnostic.slice(-12) }));
@@ -552,7 +585,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.nativeInputGate?.parentEventName, "xingDong");
 			assert.equal(snapshot.nativeInputGate?.waiting, true);
 			assert.equal(snapshot.nativeInputGate?.gameMeAbsent, true);
-			assert.ok(nativeActionChoice);
+			assert.ok(nativeActionChoice, `native action candidate/controller callback did not complete: ${JSON.stringify({
+				host: manager.inspect(roomId), candidateReceived: Boolean(nativeActionCandidate),
+				openedChoiceCount: opened.length, diagnosticStages: nativeDiagnostic.map(entry => entry?.stage),
+				latestDiagnostic: nativeDiagnostic.filter(entry => entry?.snapshot).at(-1)?.snapshot || null,
+			})}`);
 			assert.ok(nativeActionCandidate?.options.length > 1);
 			if (["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(probeMode)) {
 				assert.ok(expectedAuthorityRevision >= 3, "opening-root action must start from accepted Event #3");
@@ -580,14 +617,37 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				await stoppedHandle.waitForCleanup();
 				return;
 			}
-			const applied = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_child_wait_completed"), 15000,
-				() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), choice: nativeActionChoice && controller.inspect(roomId, nativeActionChoice.choiceId), latest: nativeDiagnostic.filter(entry => entry?.snapshot).at(-1)?.snapshot || null }));
+			let applied;
+			try {
+				applied = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_event_completed"), 15000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), choice: nativeActionChoice && controller.inspect(roomId, nativeActionChoice.choiceId), latest: nativeDiagnostic.filter(entry => entry?.snapshot).at(-1)?.snapshot || null }));
+			} catch (error) {
+				// Ask the live supervised host for a fresh bounded snapshot before the
+				// test cleanup stops Chromium. The root Promise may remain pending while
+				// CDP is still responsive, so buffered milestones alone are insufficient
+				// to distinguish a native child wait from an IPC/authority failure.
+				const before = nativeDiagnostic.length;
+				const sessionBeforeDiagnostic = manager.inspect(roomId);
+				const requested = await manager.diagnoseNativeStart(roomId, probeMode);
+				if (requested.ok) {
+					try { await until(() => nativeDiagnostic.slice(before).some(entry => ["native_start_diagnostic", "native_start_diagnostic_rejected"].includes(entry?.stage)), 3000,
+						() => ({ requested, session: manager.inspect(roomId) })); } catch {}
+				}
+				const latest = nativeDiagnostic.slice(before).filter(entry => ["native_start_diagnostic", "native_start_diagnostic_rejected"].includes(entry?.stage)).at(-1);
+				const responseState = nativeResponseChoices.map(({ choice, candidate }) => ({ choiceId: choice.choiceId,
+					nativeEventId: candidate.nativeEventId, seatId: candidate.seatId, optionCount: candidate.options?.length || 0,
+					state: controller.inspect(roomId, choice.choiceId)?.state || null,
+					deliveryAttempts: controller.inspect(roomId, choice.choiceId)?.deliveryAttempts || 0 }));
+				error.message += `; diagnostic request=${JSON.stringify(requested)}; session=${JSON.stringify(sessionBeforeDiagnostic)}; deliveryFailures=${JSON.stringify(deliveryFailures)}; sessionEnds=${JSON.stringify(sessionEnds)}; nativeResponseChoices=${JSON.stringify(responseState)}; responseAckCount=${nativeResponseAckCount}; recentNativeMilestones=${JSON.stringify(safeNativeDiagnostic(nativeDiagnostic.slice(-10).map(entry => ({ stage: entry?.stage, snapshot: entry?.snapshot || null })) ))}; live native snapshot=${JSON.stringify(safeNativeDiagnostic(latest?.snapshot || null))}`;
+				throw error;
+			}
 			assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1);
 			assert.equal(applied.snapshot?.nativeAction?.useResultChildName, "useCard");
 			assert.equal(applied.snapshot?.nativeAction?.nativeChildWaitCompleted, true);
 			assert.equal(applied.snapshot?.nativeAction?.nativeEventInstanceMatches, true);
 			assert.equal(applied.snapshot?.nativeAction?.cardInHandAfterNativeWait, false);
 			assert.notEqual(applied.snapshot?.nativeAction?.cardPositionAfterNativeWait, "h");
+			assert.equal(applied.snapshot?.eventFinished, true, "authority action proof must follow the completed native GameEvent, not an intermediate child wait");
 			assert.equal(applied.snapshot?.nativeAction?.result?.cardsCount, 1);
 			assert.equal(applied.snapshot?.nativeAction?.result?.targetCount, 1);
 			assert.equal(applied.snapshot?.nativeAction?.result?.cardName, applied.snapshot?.nativeAction?.cardName);
@@ -622,6 +682,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
 				assert.ok(nativeResponseChoice, `no server-managed native response choice was registered: ${JSON.stringify(nativeDiagnostic.filter(entry => String(entry?.stage).includes("response")).slice(-12))}`);
 				assert.ok(nativeResponseCandidate);
+				const responseWaitOpen = nativeDiagnostic.find(entry => entry?.stage === "native_response_wait_open" &&
+					entry?.snapshot?.nativeEventId === nativeResponseCandidate.nativeEventId);
+				assert.ok(responseWaitOpen, "managed response must expose its event-local native wait gate");
+				assert.equal(responseWaitOpen.snapshot?.waitEventName, "managedNativeResponseWait");
+				assert.equal(responseWaitOpen.snapshot?.waitEventParentName, "yingZhan");
+				assert.equal(responseWaitOpen.snapshot?.paused, false,
+					"managed response waiting must suspend only its native parent/child path, never globally pause the event manager");
 				assert.notEqual(nativeResponseCandidate.seatId, nativeActionCandidate.seatId,
 					"the response seat must be distinct from the active attacker seat");
 				const nativeApplied = nativeDiagnostic.find(entry => entry?.stage === "native_response_applied" && entry?.snapshot?.nativeEventId === nativeResponseCandidate.nativeEventId);
@@ -749,6 +816,18 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					const actionGate = nativeDiagnostic.find(entry => entry?.stage === "native_start_probe_outcome")?.snapshot;
 					assert.equal(actionGate?.rootObjectMatches, true);
 					assert.equal(actionGate?.rootInstanceId, rootIds[0]);
+					if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
+						const beforeSnapshot = nativeDiagnostic.length;
+						assert.equal((await manager.snapshotNativeStart(roomId, "managed_opening_root_action_event4")).ok, true,
+							"authenticated live snapshot must not restart/re-instrument the continuing native root");
+						const liveSnapshot = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot"), 3000,
+							() => ({ session: manager.inspect(roomId), diagnostics: nativeDiagnostic.slice(beforeSnapshot) }));
+						assert.equal(liveSnapshot.rootObjectMatches, true);
+						assert.equal(liveSnapshot.rootInstanceId, rootIds[0]);
+						assert.equal(liveSnapshot.hostPlayerAbsent, true);
+						assert.equal(liveSnapshot.responseGates.every(gate => gate.status === "applied"), true,
+							"the read-only snapshot must expose no stranded managed response gate after Event #4");
+					}
 				}
 				for (let index = 0; index < authoritySubmissions.length; index++) {
 					const { proof, resourcePids } = authoritySubmissions[index];
@@ -846,7 +925,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				await rejectNativeInput({ nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: "wrong_seat", optionId: candidate.optionId });
 				await rejectNativeInput({ nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: snapshot.nativeInputGate.seatId, optionId: "forged_option" });
 				assert.equal((await manager.resumeNativeInput(roomId, { nativeEventId: snapshot.nativeInputGate.nativeEventId, seatId: snapshot.nativeInputGate.seatId, optionId: candidate.optionId })).ok, true);
-				const applied = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_child_wait_completed" && entry.snapshot?.nativeAction?.nativeEventStepAfterWait >= 5), 15000,
+				const applied = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_event_completed" && entry.snapshot?.eventFinished === true), 15000,
 					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.filter(entry => entry?.snapshot).at(-1)?.snapshot || null, host: manager.inspect(roomId) }));
 				assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1);
 				assert.equal(applied.snapshot?.nativeAction?.useResultChildName, "useCard");

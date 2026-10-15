@@ -489,6 +489,16 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	assert.equal(sentCommands.length, 1);
 	assert.equal(sentCommands[0].type, "host_native_start_diagnostic");
 	assert.equal(sentCommands[0].mode, "managed_opening_root_action");
+	assert.equal((await f.manager.diagnoseNativeStart("native_progress_gate", "managed_native_response_probe")).ok, true,
+		"the opt-in response-event probe must pass the host manager's diagnostic allowlist");
+	assert.equal(sentCommands.length, 2);
+	assert.equal(sentCommands[1].mode, "managed_native_response_probe");
+	assert.equal((await f.manager.snapshotNativeStart("native_progress_gate")).ok, true,
+		"an authenticated snapshot request must be available without restarting or re-instrumenting the native root");
+	assert.equal(sentCommands.length, 3);
+	assert.equal(sentCommands[2].type, "host_native_start_snapshot");
+	assert.equal((await f.manager.snapshotNativeStart("native_progress_gate", "native_start")).ok, false,
+		"live snapshots must remain restricted to the managed Event #4 diagnostic mode");
 	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: openingDraw })).code,
 		"HOST_AUTHORITY_EVENT_REJECTED", "native opening draw must be one-shot");
 	const beforeSummary = { revision: 3, firstActSeatId: openingDraw.event.firstActSeatId,
