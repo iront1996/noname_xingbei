@@ -34,7 +34,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, event3Proof = null, dropAcks = true, dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0;
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, event3Proof = null, dropAcks = true, dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, ackTrace = [];
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
 	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
@@ -185,6 +185,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			} else if (type === "host_choice_ack") {
 				ackCount++;
 				if (nativeActionChoice?.choiceId === message.choiceId) nativeActionAckCount++;
+				ackTrace.push({ nativeAction: nativeActionChoice?.choiceId === message.choiceId, dropAcks,
+					choiceState: controller.inspect(roomId, message.choiceId)?.state || null,
+					nativeApplied: message.nativeApplied === true, authorityEventSequence: message.authorityEventSequence || null });
 				if (dropAcks) { droppedAcks++; return; }
 				if (nativeActionChoice && message.choiceId === nativeActionChoice.choiceId) {
 					if (seatRegistry) {
@@ -197,11 +200,15 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(message.nativeApplied, true, "native action ACK lacked post-child-wait evidence");
 					const beforeAck = controller.inspect(roomId, message.choiceId);
 					const acked = controller.acknowledgeDelivery({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret });
+					ackTrace.at(-1).ackResult = acked.code || "ok";
+					ackTrace.at(-1).choiceStateAfter = controller.inspect(roomId, message.choiceId)?.state || null;
 					if (beforeAck?.state === "resolved") assert.equal(acked.code, "MANAGED_CHOICE_ACK_REJECTED");
 					else assert.equal(acked.ok, true, `native action ACK rejected: ${acked.code}`);
 				} else {
 					const beforeAck = controller.inspect(roomId, message.choiceId);
 					const acked = controller.acknowledgeDelivery({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret });
+					ackTrace.at(-1).ackResult = acked.code || "ok";
+					ackTrace.at(-1).choiceStateAfter = controller.inspect(roomId, message.choiceId)?.state || null;
 					if (beforeAck?.state === "resolved") assert.equal(acked.code, "MANAGED_CHOICE_ACK_REJECTED");
 					else assert.equal(acked.ok, true, `choice ACK rejected: ${acked.code}`);
 				}
@@ -343,7 +350,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		(!nativeActionChoice || manager.inspect(roomId)?.authorityStateRevision !== 4 || controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved"),
 		15000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state || null),
 			actionChoice: nativeActionChoice && controller.inspect(roomId, nativeActionChoice.choiceId), deliveryCount, ackCount, nativeActionAckCount,
-			event4AckDropCount, event4SubmissionCount, diagnostics: nativeDiagnostic.slice(-12).map(entry => entry?.stage) }));
+			event4AckDropCount, event4SubmissionCount, diagnostics: nativeDiagnostic.slice(-12).map(entry => entry?.stage), ackTrace: ackTrace.slice(-12) }));
 	assert.equal(completed.state, "playable_probe");
 	if (expectedAuthorityRevision >= 3) {
 		if (expectedAuthorityRevision === 3) {

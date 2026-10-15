@@ -29,6 +29,36 @@ test("successful IPC without ACK retries same immutable delivery and stops after
 	assert.equal(f.c.inspect(roomId, opened.choice.choiceId).state, "resolved");
 });
 
+test("manual retry cancels the scheduled timer and joins an in-flight IPC delivery", async () => {
+	let attempts = 0, releaseFirst;
+	const timers = new Map();
+	let timerId = 0;
+	const f = fixture({
+		deliveryRetryMs: 100,
+		schedule: (fn, delay) => { const id = ++timerId; timers.set(id, { fn, at: 1000 + delay }); return id; },
+		cancel: id => timers.delete(id),
+		onResolved: () => {
+			attempts++;
+			if (attempts === 1) return new Promise(resolve => { releaseFirst = resolve; });
+			return true;
+		},
+	});
+	const opened = f.open(); f.bind(); f.submit(opened.choice.choiceId);
+	assert.equal(attempts, 1);
+	assert.equal(f.c.retryDelivery({ roomId, choiceId: opened.choice.choiceId }).delivery, "pending");
+	assert.equal(attempts, 1, "a concurrent retry must join, not duplicate an in-flight IPC send");
+	releaseFirst(true);
+	await Promise.resolve(); await Promise.resolve();
+	assert.equal(timers.size, 1);
+	const retry = f.c.retryDelivery({ roomId, choiceId: opened.choice.choiceId });
+	assert.equal(retry.delivery, "sent");
+	assert.equal(attempts, 2);
+	assert.equal(timers.has(2), false, "manual retry must cancel the prior scheduled retry timer");
+	assert.equal(timers.has(3), true, "the new attempt must own exactly one replacement timer");
+	assert.equal(timers.size, 1);
+	f.c.cleanupHostSession(roomId, hostSessionId);
+});
+
 test("unacknowledged result delivery has bounded retries and an explicit terminal state", async () => {
 	let attempts = 0;
 	const f = fixture({ deliveryRetryMs: 100, maxDeliveryAttempts: 2, onResolved: () => { attempts++; return true; } });
