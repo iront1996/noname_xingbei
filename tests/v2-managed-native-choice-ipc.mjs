@@ -48,7 +48,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -170,6 +170,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === process.env.V2_NATIVE_ACTION_KIND);
 					assert.ok(nativeActionOptionId,
 						`native event produced no legal ${process.env.V2_NATIVE_ACTION_KIND} action candidate`);
+				} else if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1" && process.env.V2_NATIVE_RESPONSE_NO_OPTIONS === "1") {
+					assert.ok(Array.isArray(message.responseProbeOptions), "native response eligibility evidence was not supplied");
+					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === "gongJi" && !message.responseProbeOptions.includes(option));
+					nativeNoOptionCandidateAvailable = Boolean(nativeActionOptionId);
+					nativeActionOptionId ||= message.options.find(option => message.optionKinds[option] === "gongJi");
+					assert.ok(nativeActionOptionId, "seeded native opening did not produce a legal native gongJi action candidate");
 				} else if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
 					assert.ok(Array.isArray(message.responseProbeOptions) && message.responseProbeOptions.length > 0,
 						"test could not select a native attack whose target has a card accepted by the native yingZhan response predicate");
@@ -699,6 +705,22 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					"native chooseToUse must produce an actual response/decline result");
 			}
 			if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
+				if (process.env.V2_NATIVE_RESPONSE_NO_OPTIONS === "1") {
+					assert.equal(nativeNoOptionCandidateAvailable, true,
+						"seeded opening did not yield a gongJi target excluded by the response-candidate probe; inspect whether the native response set is complete");
+					assert.equal(nativeResponseChoices.length, 0, "no-option native response must not register a controller choice");
+					assert.equal(nativeResponseAckCount, 0, "no-option native response must not emit a managed-choice ACK");
+					const responseStarted = nativeDiagnostic.find(entry => entry?.stage === "native_response_started" && entry?.snapshot?.eventName === "yingZhan");
+					const responseCompleted = nativeDiagnostic.find(entry => entry?.stage === "native_response_completed" && entry?.snapshot?.eventName === "yingZhan");
+					assert.ok(responseStarted, `native no-option attack did not enter the original yingZhan event: ${JSON.stringify(nativeDiagnostic.filter(entry => String(entry?.stage).includes("response")).slice(-10))}`);
+					assert.ok(responseCompleted, "native no-option yingZhan event did not complete");
+					assert.equal(responseCompleted.snapshot.resultBool, false,
+						"native chooseToUse must resolve a no-option response as an actual decline through its original AI path");
+					assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_response_wait_open"), false,
+						"the server adapter must not open an event-local choice gate when the original native filters expose no legal response");
+					assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_response_applied"), false,
+						"no-option fallback must not fabricate a managed response application");
+				} else {
 				assert.ok(nativeResponseChoice, `no server-managed native response choice was registered: ${JSON.stringify(nativeDiagnostic.filter(entry => String(entry?.stage).includes("response")).slice(-12))}`);
 				assert.ok(nativeResponseCandidate);
 				const responseWaitOpen = nativeDiagnostic.find(entry => entry?.stage === "native_response_wait_open" &&
@@ -746,6 +768,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.ok(nativeResponseAckResults.find(ack => ack.choiceId === nativeResponseChoice.choiceId)?.accepted,
 						"response ACK loss did not trigger stable managed-choice redelivery");
 				}
+				}
 			}
 			await until(() => controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved", 15000,
 				() => ({ choice: controller.inspect(roomId, nativeActionChoice.choiceId), host: manager.inspect(roomId), stages: nativeDiagnostic.map(entry => entry?.stage) }));
@@ -778,7 +801,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(released.snapshot?.gameStartCount, 1);
 				assert.equal(released.snapshot?.gameDrawEntered, true);
 				assert.equal(released.snapshot?.hostPlayerAbsent, true);
-				const nativeGate = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open"), 5000,
+				const nativeGate = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open" &&
+					entry?.snapshot?.rootEventName === "game" && entry?.snapshot?.phaseLoopParentName === "game" &&
+					entry?.snapshot?.eventStack?.slice(0, 4).join("/") === "game/phaseLoop/phase/xingDong"), 5000,
 					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
 				assert.equal(nativeGate.snapshot?.rootEventName, "game");
 				assert.equal(nativeGate.snapshot?.phaseLoopParentName, "game");
