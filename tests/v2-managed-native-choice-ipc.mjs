@@ -318,9 +318,22 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					seatId: message.seatId, eventSequence: message.eventSequence, choiceId: openedChoice.choice.choiceId, connectionId,
 					credential: credentialFor(message.seatId), option: submittedResponseOption };
 					assert.equal(controller.submitChoice({ ...request, option: "forged_native_option" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
-					if (yinYangManaged) assert.equal(controller.submitChoice({ ...request, option: "yinYangZhanHuan" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED",
-						"player skill identifiers must not substitute for server-issued opaque options");
-				assert.equal(controller.submitChoice({ ...request, seatId: setup.seats.find(seat => seat.seatId !== message.seatId).seatId }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+					if (yinYangManaged) {
+						assert.equal(controller.submitChoice({ ...request, option: "yinYangZhanHuan" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED",
+							"player skill identifiers must not substitute for server-issued opaque options");
+						assert.equal(controller.submitChoice({ ...request, option: nativeActionOptionId }).code, "MANAGED_CHOICE_SUBMIT_REJECTED",
+							"an option issued for the parent card action cannot be replayed as a native skill response");
+						assert.equal(controller.submitChoice({ ...request, nativeEventId: `${message.nativeEventId}_stale` }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+						assert.equal(controller.submitChoice({ ...request, eventSequence: message.eventSequence + 1 }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+						assert.equal(controller.submitChoice({ ...request, roomId: `${roomId}_other` }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+						const otherSeat = setup.seats.find(seat => seat.seatId !== message.seatId);
+						assert.ok(otherSeat);
+						assert.equal(controller.submitChoice({ ...request, credential: credentialFor(otherSeat.seatId) }).code,
+							"MANAGED_CHOICE_SUBMIT_REJECTED", "another ordinary seat's credential cannot submit this skill response");
+						assert.equal(controller.inspect(roomId, openedChoice.choice.choiceId)?.state, "pending",
+							"rejected skill-response packets must not resolve the native choice");
+					}
+					assert.equal(controller.submitChoice({ ...request, seatId: setup.seats.find(seat => seat.seatId !== message.seatId).seatId }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 				if (firstManagedResponse && responseTrusteeProbe) {
 					assert.equal(controller.inspect(roomId, openedChoice.choice.choiceId)?.state, "pending");
 				} else if (firstManagedResponse && process.env.V2_NATIVE_RESPONSE_REBIND === "1") {
@@ -1014,16 +1027,24 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(accepted.checkpointAvailable, false);
 				if (process.env.V2_NATIVE_MANAGED_YINYANG === "1") {
 					const acceptedProof = authoritySubmissions.find(entry => entry.proof?.eventSequence === 4)?.proof;
-					const skillResponse = acceptedProof?.afterSummary?.responses?.find(response => response.kind === "view_as_skill");
-					assert.ok(skillResponse, "Event #4 must include the completed native YinYang response in its canonical summary");
-					assert.equal(skillResponse.skillId, "yinYangZhanHuan");
-					assert.equal(skillResponse.physicalMaterialConsumed, true);
-					assert.equal(skillResponse.xiBieApplied, true);
-					assert.ok(["an", "di", "feng", "guang", "huo", "lei", "shui"].includes(skillResponse.resolvedXiBie));
-					assert.ok(Number.isSafeInteger(skillResponse.guiHuoDelta) && skillResponse.guiHuoDelta >= 1 && skillResponse.guiHuoDelta <= 3,
-						"native skill and eligible character triggers must produce a bounded, recorded guiHuo transition");
-					assert.equal(Object.hasOwn(skillResponse, "materialCard"), false, "authority summary must not reveal hidden material identity");
-					assert.equal(acceptedProof.event.responseActions.some(response => response.kind === "view_as_skill"), true);
+					const responses = acceptedProof?.afterSummary?.responses || [];
+					if (process.env.V2_NATIVE_RESPONSE_TRUSTEE === "1") {
+						assert.equal(responses.some(response => response.kind === "view_as_skill"), false,
+							"trustee decline must not claim a YinYang skill effect");
+						assert.equal(responses.some(response => response.kind === "decline"), true,
+							"Event #4 must record the native optional-decline result selected by the timeout trustee");
+					} else {
+						const skillResponse = responses.find(response => response.kind === "view_as_skill");
+						assert.ok(skillResponse, "Event #4 must include the completed native YinYang response in its canonical summary");
+						assert.equal(skillResponse.skillId, "yinYangZhanHuan");
+						assert.equal(skillResponse.physicalMaterialConsumed, true);
+						assert.equal(skillResponse.xiBieApplied, true);
+						assert.ok(["an", "di", "feng", "guang", "huo", "lei", "shui"].includes(skillResponse.resolvedXiBie));
+						assert.ok(Number.isSafeInteger(skillResponse.guiHuoDelta) && skillResponse.guiHuoDelta >= 1 && skillResponse.guiHuoDelta <= 3,
+							"native skill and eligible character triggers must produce a bounded, recorded guiHuo transition");
+						assert.equal(Object.hasOwn(skillResponse, "materialCard"), false, "authority summary must not reveal hidden material identity");
+						assert.equal(acceptedProof.event.responseActions.some(response => response.kind === "view_as_skill"), true);
+					}
 				}
 				assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1, "Event #4 delivery retry must not re-run useResult");
 				if (probeMode === "managed_opening_root_action_event4_ack_loss") {
