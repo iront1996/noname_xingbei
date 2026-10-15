@@ -74,7 +74,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		return controller.bindSeatConnection(binding);
 	};
 	controller = createManagedChoiceController({
-		deliveryRetryMs: process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1" ? 250 : 3000,
+		// Keep production retry cadence under this test. A short (250ms) test-only
+		// retry interval races the four opening-seat deliveries on slower runners,
+		// before the response ACK-loss scenario has even begun.
+		deliveryRetryMs: 3000,
 		isHostSessionActive: (candidateRoom, sessionId) => manager?.inspect(candidateRoom)?.sessionId === sessionId && manager.inspect(candidateRoom)?.state === "playable_probe",
 		authorizeManagedHost: message => message.hostProof === sessionSecret,
 		authorizeSeatBinding: message => seatRegistry ? seatRegistry.authorizeSeatBinding(message) : message.serverProof === message.connectionId,
@@ -420,6 +423,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	await until(() => {
 		const current = manager.inspect(roomId);
 		if (current?.state === "failed") throw new Error(`native choice host failed: ${current.failureCode}:${JSON.stringify({ nativeDiagnostic: nativeDiagnostic.slice(-18), authoritySubmissions: authoritySubmissions.map(entry => ({ sequence: entry.proof?.eventSequence, kind: entry.proof?.event?.kind })), opened: opened.map(choice => choice.choiceId) })}`);
+		if (current && ["stopped", "stopping"].includes(current.state)) throw new Error(`native choice host stopped before opening choices:${JSON.stringify({
+			state: current.state, code: sessionEnds.at(-1)?.code || null, failureCode: current.failureCode,
+			authoritySubmissions: authoritySubmissions.map(entry => ({ sequence: entry.proof?.eventSequence, kind: entry.proof?.event?.kind })),
+			openedCount: opened.length, choiceStates: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state || null),
+			deliveryFailures: deliveryFailures.map(({ deliveryAttempts, code }) => ({ deliveryAttempts, code })),
+			engineReady: engineReadyProof ? { browserReady: engineReadyProof.browserReady, engineReady: engineReadyProof.engineReady, mode: engineReadyProof.mode } : null,
+			hostResources: launchedHandles.get(current.sessionId)?.resources().length ?? null,
+		})}`);
 		return opened.length === 4;
 	}, 15000);
 	assert.ok(candidatesSeen.every(choice => choice.options.length >= 2));
