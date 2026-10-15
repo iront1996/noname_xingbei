@@ -254,6 +254,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.ok(message.options.every(option => ["native_single_target_card", "native_notarget_card", "native_optional_decline"].includes(message.optionShapes[option])));
 				const firstManagedResponse = nativeResponseChoices.length === 0;
 				const targetlessProbe = process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1";
+				const responseTrusteeProbe = process.env.V2_NATIVE_RESPONSE_TRUSTEE === "1";
 				const submittedResponseOption = firstManagedResponse ? message.options.find(option => message.optionKinds[option] === "card" &&
 					(!targetlessProbe || message.optionShapes[option] === "native_notarget_card")) : message.trusteeOption;
 				if (firstManagedResponse) {
@@ -262,6 +263,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"the native yingZhan event exposed no legal physical-card response candidate");
 					if (targetlessProbe) assert.equal(message.optionShapes[nativeResponseOptionId], "native_notarget_card");
 					nativeResponseCandidate = message;
+					if (responseTrusteeProbe) assert.equal(message.optionKinds[message.trusteeOption], "decline",
+						"response timeout must use the native optional-decline candidate as trustee");
 				} else assert.equal(message.optionKinds[submittedResponseOption], "decline", "nested response trustee should decline through the native optional-choice contract");
 				const openedChoice = controller.openChoice({ protocol: 1, roomId, hostSessionId: message.sessionId, nativeEventId: message.nativeEventId,
 					seatId: message.seatId, eventSequence: message.eventSequence, options: message.options, trusteeOption: message.trusteeOption,
@@ -276,8 +279,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					credential: credentialFor(message.seatId), option: submittedResponseOption };
 				assert.equal(controller.submitChoice({ ...request, option: "forged_native_option" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 				assert.equal(controller.submitChoice({ ...request, seatId: setup.seats.find(seat => seat.seatId !== message.seatId).seatId }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
-				const submitted = controller.submitChoice(request);
-				assert.equal(submitted.ok, true, `authenticated ordinary seat could not submit its native response: ${submitted.code}`);
+				if (firstManagedResponse && responseTrusteeProbe) {
+					assert.equal(controller.inspect(roomId, openedChoice.choice.choiceId)?.state, "pending");
+				} else {
+					const submitted = controller.submitChoice(request);
+					assert.equal(submitted.ok, true, `authenticated ordinary seat could not submit its native response: ${submitted.code}`);
+				}
 			} else if (type === "host_choice_ack") {
 				ackCount++;
 				if (nativeActionChoice?.choiceId === message.choiceId) nativeActionAckCount++;
@@ -732,23 +739,35 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					"managed response waiting must suspend only its native parent/child path, never globally pause the event manager");
 				assert.notEqual(nativeResponseCandidate.seatId, nativeActionCandidate.seatId,
 					"the response seat must be distinct from the active attacker seat");
-				const nativeApplied = nativeDiagnostic.find(entry => entry?.stage === "native_response_applied" && entry?.snapshot?.nativeEventId === nativeResponseCandidate.nativeEventId);
-				assert.ok(nativeApplied, "managed response did not complete through the native yingZhan event");
+				const nativeApplied = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_response_applied" && entry?.snapshot?.nativeEventId === nativeResponseCandidate.nativeEventId), 5000,
+					() => ({ responseChoices: nativeResponseChoices.map(entry => controller.inspect(roomId, entry.choice.choiceId)),
+						responseStages: nativeDiagnostic.filter(entry => String(entry?.stage).includes("response")).slice(-12), host: manager.inspect(roomId) }));
 				assert.equal(nativeApplied.snapshot?.rootObjectMatches, true);
 				assert.equal(nativeApplied.snapshot?.rootInstanceId, nativeDiagnostic.find(entry => entry?.stage === "native_start_probe_outcome")?.snapshot?.rootInstanceId);
 				assert.equal(nativeApplied.snapshot?.gameMeAbsent, true);
-				assert.equal(nativeApplied.snapshot?.selectedKind, "card");
-				assert.equal(nativeApplied.snapshot?.targetCount, process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1" ? 0 : 1,
-					"managed response must preserve the actual native card target shape");
-				assert.equal(nativeApplied.snapshot?.useCardChildrenStarted, 1);
-				assert.equal(nativeApplied.snapshot?.useCardChildrenCompleted, 1);
+				if (process.env.V2_NATIVE_RESPONSE_TRUSTEE === "1") {
+					assert.equal(nativeApplied.snapshot?.selectedKind, "decline");
+					assert.equal(nativeApplied.snapshot?.bool, false, "deadline trustee must return the native optional-decline result");
+					assert.equal(nativeApplied.snapshot?.useCardChildrenStarted, 0, "trustee decline must not create a useCard child");
+					assert.equal(nativeApplied.snapshot?.useCardChildrenCompleted, 0);
+				} else {
+					assert.equal(nativeApplied.snapshot?.selectedKind, "card");
+					assert.equal(nativeApplied.snapshot?.targetCount, process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1" ? 0 : 1,
+						"managed response must preserve the actual native card target shape");
+					assert.equal(nativeApplied.snapshot?.useCardChildrenStarted, 1);
+					assert.equal(nativeApplied.snapshot?.useCardChildrenCompleted, 1);
+				}
 				assert.equal(nativeApplied.snapshot?.nativeEventId, nativeResponseCandidate.nativeEventId);
 				assert.equal(Object.hasOwn(nativeApplied.snapshot || {}, "cardName"), false,
 					"private response card names must not enter host diagnostics");
 				assert.equal(Object.hasOwn(nativeApplied.snapshot || {}, "selectedCardName"), false,
 					"private response selections must not enter host diagnostics");
-				assert.equal(controller.inspect(roomId, nativeResponseChoice.choiceId)?.resolution?.kind, "player");
-				assert.equal(controller.inspect(roomId, nativeResponseChoice.choiceId)?.resolution?.option, nativeResponseOptionId);
+				assert.equal(controller.inspect(roomId, nativeResponseChoice.choiceId)?.resolution?.kind,
+					process.env.V2_NATIVE_RESPONSE_TRUSTEE === "1" ? "trustee" : "player");
+				assert.equal(controller.inspect(roomId, nativeResponseChoice.choiceId)?.resolution?.option,
+					process.env.V2_NATIVE_RESPONSE_TRUSTEE === "1" ? nativeResponseCandidate.trusteeOption : nativeResponseOptionId);
+				await until(() => controller.inspect(roomId, nativeResponseChoice.choiceId)?.state === "resolved", 5000,
+					() => ({ choice: controller.inspect(roomId, nativeResponseChoice.choiceId), ackTrace: ackTrace.slice(-8), host: manager.inspect(roomId) }));
 				assert.ok(nativeResponseChoices.length >= 1);
 				assert.ok(nativeResponseChoices.length > 0);
 				if (process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1") {

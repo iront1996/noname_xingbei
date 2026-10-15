@@ -1458,7 +1458,8 @@ function emitNativeStartDiagnostic(observed) {
 		process.send?.({ ...identity, type: "host_native_response_candidates", eventName: "yingZhan",
 			eventSequence: 4, nativeEventId: snapshot.nativeEventId, seatId: snapshot.seatId,
 			options: [...snapshot.optionIds], optionKinds: snapshot.optionKinds, optionShapes: snapshot.optionShapes,
-			trusteeOption: snapshot.declineOptionId || snapshot.optionIds[0], deadlineMs: 5000 });
+			trusteeOption: snapshot.declineOptionId || snapshot.optionIds[0],
+			deadlineMs: process.env.V2_NATIVE_RESPONSE_TRUSTEE === "1" ? 750 : 5000 });
 	}
 	if (observed.stage === "native_input_wait_open") dispatchManagedNativeActionCandidates(observed.snapshot);
 	if (interactiveChoice?.nativeInputGate?.controllerManaged && observed.stage === "native_action_event_completed") {
@@ -1705,8 +1706,14 @@ async function runNativeStartDiagnostic(message) {
 	       shape==='native_notarget_card'&&selected?.target===null&&get.info(get.autoViewAs(selected.card))?.notarget===true&&Array.isArray(event.result?.targets)&&event.result.targets.length===0;
 	      const valid=event.result?.bool===true&&selected?.kind==='card'?event.result.cards?.includes(selected.card)&&
 	       !event.player.getCards(event.position||'hs').includes(selected.card)&&gate.useCardChildrenStarted===1&&gate.useCardChildrenCompleted===1&&targetProof:
-	       event.result?.bool===false&&selected?.kind==='decline'&&event.forced!==true&&gate.useCardChildrenStarted===0&&Array.isArray(event.result?.targets||[])&&event.result.targets.length===0;
-	      if(!valid)throw Error('NATIVE_RESPONSE_COMPLETION_PROOF_REJECTED');
+	       event.result?.bool===false&&selected?.kind==='decline'&&event.forced!==true&&gate.useCardChildrenStarted===0&&
+	       (event.result?.targets===undefined||(Array.isArray(event.result.targets)&&event.result.targets.length===0));
+	      if(!valid){const proof={nativeEventId:gate.nativeEventId,seatId:gate.seatId,resultBool:event.result?.bool===true?true:event.result?.bool===false?false:null,
+	       resultTargetsIsArray:Array.isArray(event.result?.targets),resultTargetCount:Array.isArray(event.result?.targets)?event.result.targets.length:null,
+	       forced:event.forced===true,selectedKind:selected?.kind||null,useCardChildrenStarted:gate.useCardChildrenStarted,useCardChildrenCompleted:gate.useCardChildrenCompleted,
+	       targetProof:Boolean(targetProof),gameMeAbsent:game.me===null};
+	       try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_completion_proof_rejected',snapshot:proof}))}catch{}
+	       emit('native_response_completion_proof_rejected',proof);throw Error('NATIVE_RESPONSE_COMPLETION_PROOF_REJECTED')}
 	      gate.status='applied';gate.delivery.status='applied';gate.completedResult={bool:event.result.bool,selectedKind:selected.kind,
 	       cardName:selected.card?.name||null,targetSeatId:selected.target?.playerid||null,targetCount:event.result?.targets?.length||0,
 	       useCardChildrenStarted:gate.useCardChildrenStarted,useCardChildrenCompleted:gate.useCardChildrenCompleted};

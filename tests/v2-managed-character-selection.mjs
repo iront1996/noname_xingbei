@@ -44,17 +44,37 @@ test("managed Chromium uses native Xingbei selection without a human local playe
 		if (previousSelection === undefined) delete process.env.V2_CHARACTER_SELECTION_PROBE;
 		else process.env.V2_CHARACTER_SELECTION_PROBE = previousSelection;
 	});
+	const startupDiagnostics = [];
 	const manager = createHostSessionManager({
 		launch: createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 }),
 		browserReadyTimeoutMs: 25000,
 		engineReadyTimeoutMs: 30000,
 		gameReadyTimeoutMs: 30000,
+		onManagedChoiceMessage: ({ type, message }) => {
+			if (type !== "host_choice_diagnostic" || message?.observed?.failureCode !== "HOST_BOOT_FAILED" ||
+				typeof message.observed.detail !== "string") return;
+			const match = message.observed.detail.match(/CHROMIUM_BOOT_TIMEOUT:(\{[^\n]*\})/);
+			if (!match) return;
+			try {
+				const details = JSON.parse(match[1]);
+				const stderr = Array.isArray(details.stderr) ? details.stderr.slice(-16).map(line => String(line)
+					.replace(/\b(token|password|credential|secret)(?:=|:)\s*\S+/gi, "$1=[redacted]")
+					.replace(/\/home\/[^/\s]+/g, "/home/[user]")
+					.replace(/\\Users\\[^\\\s]+/gi, "\\Users\\[user]")
+					.slice(0, 512)) : [];
+				startupDiagnostics.push({ elapsedMs: Number.isSafeInteger(details.elapsedMs) ? details.elapsedMs : null,
+					pid: Number.isSafeInteger(details.pid) ? details.pid : null,
+					exitCode: Number.isInteger(details.exitCode) ? details.exitCode : null,
+					signalCode: typeof details.signalCode === "string" ? details.signalCode.slice(0, 32) : null,
+					profileActivePortPresent: details.profileActivePortPresent === true, stderr });
+			} catch (_) { startupDiagnostics.push({ malformedStartupDiagnostic: true }); }
+		},
 	});
 	t.after(() => manager.stop("character_selection_room", "test_cleanup"));
 	assert.equal((await manager.start("character_selection_room", setup)).ok, true);
 	const session = await until(() => {
 		const current = manager.inspect("character_selection_room");
-		if (current?.state === "failed") throw new Error(`character_selection_room:${current.failureCode}`);
+		if (current?.state === "failed") throw new Error(`character_selection_room:${current.failureCode}:startupDiagnostics=${JSON.stringify(startupDiagnostics)}`);
 		return current?.authorityStateRevision === 2 && current;
 	});
 	assert.equal(session.state, "playable_probe");
