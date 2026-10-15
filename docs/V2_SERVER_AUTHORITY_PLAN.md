@@ -513,3 +513,41 @@ These are specification tests to add incrementally during M2–M4. They are not 
 - Commit `794acbf`; Linux CI `38717082603` is green: 59/59 workflow steps, 53 TAP summaries, 173 passed, 0 failed, 0 skipped. The run includes the unified-root Event #1–#4 test, Event #4 authority ACK-loss/retry, rejected Event #3, C3 security, fault-isolation and cleanup coverage.
 - Real Chromium verified one native `mode.start` root / host session / room / process through `game → phaseLoop → phase → xingDong → gongJiOrFaShu`; authority sequences 1–4 and revisions 0–4 were continuous with adjacent digests, and one native `useResult`/`useCard` occurred while `game.me === null`. Three local consecutive unified-root runs plus the focused ACK-loss and rejection tests passed with zero skips.
 - C3-A/B/C are accepted. Full Playable, HALL production routing, M3 seat recovery, M4 recoverable checkpoint, and the separate V3-based integration remain unverified. PR #1 stays open/unmerged; formal V2 and all live services remain untouched.
+## M2 Full Playable — FP-R1 investigation checkpoint
+
+The current M2 authority chain is accepted through native Event #4, but that is not Full Playable. The next work begins with native response topology and terminal semantics; do not widen the existing one-card/one-target action probe by assumption.
+
+### Native response topology and coverage design
+
+- `mode/xingBei.js` defines `_yingZhan` as a `lastDo` trigger on `shouDaoGongJi`. It conditionally constructs `player.yingZhan(...)`, which creates a native `yingZhan` GameEvent with native `chooseToUse` content. Its filters constrain response attack cards by `canYingZhan`, `canAnMie`, and the incoming card's XiBie; spell response requires `canShengGuang` and `shengGuang`. Targets exclude the attack source and same-side players and must pass `targetEnabled`; cards must pass `cardEnabled`. If the child reports a successful response, the parent attack continues through `weiMingZhong()` only after the response event returns.
+- `chooseToRespond` is another native content path with a distinct result/filter/AI contract. It must be inspected and tested separately, not aliased to `yingZhan` or turn-action data. Skills may introduce further native child GameEvents (skill, target, button/control, use/result); server choice identity must bind the specific active event instance and seat, while the root/parent event remains suspended naturally. No global pause or fabricated resume is allowed.
+- Existing managed `gongJiOrFaShu` handling proves only a bounded shape: one physical card and one target. It rejects complex/dynamic selection contracts in the current probe. Those exclusions are implementation scope, not Xingbei rule restrictions. Future adapters must obtain legal options from the live native event and represent structured results with opaque server option IDs; no arbitrary client strings enter native result objects.
+
+| Native decision | Event source | Must prove before support |
+|---|---|---|
+| Turn action | `gongJiOrFaShu` | Native card/skill candidate and target set, result shape, all nested effects complete, one authority event after completion |
+| Attack response | `_yingZhan` → `yingZhan` → `chooseToUse` | Incoming attack flags/card, response card filters, legal targets, accepted response and parent attack continuation |
+| Other response | `chooseToRespond` | Its own enable/skill/filter/decline semantics, nested event order and parent continuation |
+| Skill subchoices | Native child events | Choice instance identity, legal structured values, timeout/trustee legality, children settled before ACK/authority commit |
+| Decline/no choice | Native `bool`/forced/filter rules | Distinguish optional decline from forced action and from no legal options; parent continuation must be native |
+
+### Terminal-rule audit and unresolved simultaneous condition
+
+The native `checkResult` formulas are:
+
+- Red wins if `lanShiQi <= 0` **or** `hongXingBei >= xingBeiMax`.
+- Blue wins if `hongShiQi <= 0` **or** `lanXingBei >= xingBeiMax`.
+
+Current implementation is perspective-bound: `checkResult` reads `game.me._trueMe || game.me`; for a red local side it checks the blue-loss predicate first, then red's own win predicate in `else if`, and for blue reverses the perspective. Thus simultaneous red and blue predicates have no server-independent interpretation in the current mode code; outcome can depend on which local side is present. `checkOnlineResult` and `submitMatchResult` also depend on `game.me`. Native `changeShiQi`/`changeXingBei` content updates counters and calls `game.checkResult()` before after-triggers. The public rules wording says a side ends the game when the opponent's morale reaches zero or it completes the cup threshold; it does not specify a simultaneous-condition tie-break. No legal native sequence has yet established whether both sides can simultaneously satisfy terminal predicates. Keep terminal authority fail-closed and this rule undecided until a reproducible real-engine case or authoritative rule clarification exists. Do not invent a draw, first-achiever, or priority rule.
+
+`submitMatchData` performs an external match-record POST and contains an embedded bearer credential in source. No such call was made and no credential value is recorded here. Before any terminal-path testing, the managed-host test boundary must guarantee zero network egress for that endpoint and prove it with a request-denial/assertion. Do not emit the credential in diagnostics. Credential rotation or external service changes are out of scope absent separate authorization.
+
+### Acceptance plan (FP-R1)
+
+1. Real Chromium, same native root: trace the actual `shouDaoGongJi → _yingZhan → yingZhan/chooseToUse → nested native selection/use events → parent continuation`; assert native parent/child identity, current seat and event instance, one-shot resume and no global event-manager pause.
+2. Separately trace `chooseToRespond`, including valid response, valid decline, no legal response, forced semantics and its native parent continuation.
+3. Generate legal candidates inside native events; test response card category/XiBie/`anMie`/`shengGuang`, targets (source/ally/enemy), native filters, timeout trustee, reconnect fencing, stale/duplicate packets, nested child exceptions, ACK loss/retry, and hidden-option isolation.
+4. With external networking denied, exercise actual native terminal updates at each threshold, test whether simultaneous predicates are legally reachable, and record exact native check order and `game.over` input. If reachability/rule semantics remain unresolved, do not implement terminal mapping or claim completion; continue independent response/event work.
+5. Keep terminal result model separate from per-player result views. Only after rules are established may an event-specific managed-host terminal proof be added; external match recording remains disabled in tests.
+
+Status: FP-R1 source investigation/design documented; the response adapter, simultaneous-terminal reachability test, server terminal authority, broader card/skill/reaction loop, Full Playable, HALL, M3, M4 and V3-based isolated integration remain pending. M2 is future V3 integration work; formal V2 stays permanently independent; PR #1 must remain Open/unmerged.
