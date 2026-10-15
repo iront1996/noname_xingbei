@@ -572,11 +572,11 @@ async function runManagedNativeChoice() {
 	}
 }
 
-function waitForAuthorityEventAck(eventSequence, stateRevision, afterDigest) {
+function waitForAuthorityEventAck(eventSequence, stateRevision, afterDigest, timeoutMs = 15000) {
 	if (![2, 3, 4].includes(eventSequence) || stateRevision !== eventSequence || !/^[a-f0-9]{64}$/.test(afterDigest) ||
-		nativeAuthorityAckWaiters.has(eventSequence)) return Promise.reject(new Error("AUTHORITY_ACK_WAITER_INVALID"));
+		!Number.isSafeInteger(timeoutMs) || timeoutMs < 250 || timeoutMs > 15000 || nativeAuthorityAckWaiters.has(eventSequence)) return Promise.reject(new Error("AUTHORITY_ACK_WAITER_INVALID"));
 	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => { nativeAuthorityAckWaiters.delete(eventSequence); reject(new Error("AUTHORITY_EVENT_ACK_TIMEOUT")); }, 15000);
+		const timer = setTimeout(() => { nativeAuthorityAckWaiters.delete(eventSequence); reject(new Error("AUTHORITY_EVENT_ACK_TIMEOUT")); }, timeoutMs);
 		nativeAuthorityAckWaiters.set(eventSequence, message => {
 			clearTimeout(timer);
 			nativeAuthorityAckWaiters.delete(eventSequence);
@@ -738,7 +738,8 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 		phaseLoopCreated: true, phaseLoopStartRequested: true, phaseLoopParentName: observed.phaseLoopParentName, phaseLoopPaused: true,
 			firstActSeatId: observed.firstActSeatId, seats: after.seats, gameMeNull: true, connectedTransports: 0 } };
 	const acknowledgement = waitForAuthorityEventAck(3, 3, afterDigest);
-	process.send?.({ ...identity, type: "host_authority_event", proof });
+	const submittedProof = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 === "1" ? { ...proof, afterDigest: "ee".repeat(32) } : proof;
+	process.send?.({ ...identity, type: "host_authority_event", proof: submittedProof });
 	if (!await acknowledgement) throw new Error("OPENING_DRAW_AUTHORITY_REJECTED");
 	 const finalized = await cdp.send("Runtime.evaluate", { expression: `(()=>{const c=window.__v2ManagedGame,s=window.__v2ManagedOpeningDraw;
 	 if(!s?.phaseLoopPaused||s.phaseLoopStarted||c.authorityState.revision!==2)throw Error('OPENING_DRAW_FINALIZE_PRECONDITION_REJECTED');
@@ -818,6 +819,15 @@ async function applyManagedNativeActionDelivery(message) {
 			throw new Error("NATIVE_ACTION_DELIVERY_CONFLICT");
 		}
 		if (prior.status === "applying") return;
+		// A choice-controller retry may arrive while the native child is already
+		// applied but the authority Event #4 ACK is still in flight. Join the same
+		// immutable commit promise; never fail the host or re-run useResult/useCard.
+		if (prior.status === "native_applied_authority_pending" && prior.authorityCommitPromise) {
+			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
+				observed: { kind: "native_action_authority_pending_retry_v1", stage: "native_action_delivery_joined_authority_commit",
+					choiceId: prior.choiceId, deliveryId: prior.deliveryId } });
+			await prior.authorityCommitPromise;
+		}
 		if (prior.status !== "authority_committed" && prior.status !== "applied") throw new Error("NATIVE_ACTION_DELIVERY_UNCERTAIN");
 		const proofResponse = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2NativeStartDiagnosticState,a=s?.nativeAction,o=window.__v2ManagedNativeActionOptions?.get(${JSON.stringify(prior.option)}),p=o?.event?.player;return {eventId:a?.eventId||null,seatId:a?.seatId||null,optionId:a?.optionId||null,useResultCount:a?.useResultCount||0,childWaitCompleted:a?.nativeChildWaitCompleted===true,eventInstanceMatches:a?.nativeEventInstanceMatches===true,nativeEventStepAfterWait:a?.nativeEventStepAfterWait??null,cardInHand:Boolean(o&&p?.getCards('h').includes(o.card)),hostPlayerAbsent:window.__v2ManagedEngine?.core?.game?.me===null}})()`, returnByValue: true }, 1500);
 		const proof = proofResponse.result?.value;
@@ -884,7 +894,7 @@ async function emitManagedChoiceDiagnostic() {
 async function commitNativeCardActionAuthority(gate, record) {
 	if (record.authorityCommitPromise) return record.authorityCommitPromise;
 	record.authorityCommitPromise = (async () => {
-		if (process.env.V2_NATIVE_START_PROBE_MODE !== "managed_opening_root_action_event4") {
+		if (!process.env.V2_NATIVE_START_PROBE_MODE?.startsWith("managed_opening_root_action_event4")) {
 			record.status = "applied";
 			gate.status = "applied";
 			process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: record.choiceId,
@@ -941,11 +951,25 @@ async function commitNativeCardActionAuthority(gate, record) {
 				nativeChildWaitCompleted: observed.nativeChildWaitCompleted,
 				nativeEventInstanceMatches: observed.nativeEventInstanceMatches, gameMeNull: observed.gameMeNull,
 				connectedTransports: observed.connectedTransports } };
-		const acknowledgement = waitForAuthorityEventAck(4, 4, afterDigest);
-		if (!process.send?.({ ...identity, type: "host_authority_event", proof }, error => { if (error) record.authoritySendError = true; })) {
-			throw new Error("NATIVE_ACTION_AUTHORITY_SEND_FAILED");
+		const acknowledgement = waitForAuthorityEventAck(4, 4, afterDigest, 8000);
+		const acknowledged = acknowledgement.then(accepted => ({ done: true, accepted }), error => ({ done: true, error }));
+		let ackResult = null;
+		for (let attempt = 0; attempt < 3 && !ackResult; attempt++) {
+			try {
+				await new Promise((resolve, reject) => {
+					if (!process.send) return reject(new Error("NATIVE_ACTION_AUTHORITY_SEND_FAILED"));
+					process.send({ ...identity, type: "host_authority_event", proof }, error => error ? reject(error) : resolve());
+				});
+			} catch (error) {
+				if (attempt === 2) throw new Error("NATIVE_ACTION_AUTHORITY_SEND_FAILED", { cause: error });
+			}
+			if (attempt < 2) ackResult = await Promise.race([acknowledged, new Promise(resolve => setTimeout(() => resolve(null), 500))]);
 		}
-		if (!await acknowledgement || record.authoritySendError) throw new Error("NATIVE_ACTION_AUTHORITY_REJECTED");
+		if (!ackResult) ackResult = await acknowledged;
+		if (ackResult.error) throw ackResult.error;
+		// waitForAuthorityEventAck resolves to a boolean only after validating the
+		// private host identity and the exact sequence/revision/digest tuple.
+		if (ackResult.accepted !== true) throw new Error("NATIVE_ACTION_AUTHORITY_REJECTED");
 		const finalized = await cdp.send("Runtime.evaluate", { expression: `(()=>{const c=window.__v2ManagedGame,s=window.__v2ManagedOpeningDraw;if(c?.authorityState?.revision!==3||s?.authorityDigest!==${JSON.stringify(proof.beforeDigest)})return {ok:false};c.authorityState.revision=4;s.authoritySummary=${JSON.stringify(after)};s.authorityDigest=${JSON.stringify(afterDigest)};return {ok:true,revision:c.authorityState.revision}})()`, returnByValue: true }, 1500);
 		if (finalized.exceptionDetails || finalized.result?.value?.ok !== true || finalized.result.value.revision !== 4) throw new Error("NATIVE_ACTION_AUTHORITY_FINALIZE_FAILED");
 		record.status = "authority_committed";
@@ -964,7 +988,7 @@ async function commitNativeCardActionAuthority(gate, record) {
 function emitNativeStartDiagnostic(observed) {
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !observed || typeof observed !== "object") return;
 	if (interactiveChoice && observed.stage === "native_input_wait_open" && observed.snapshot?.nativeInputGate?.nativeEventId) {
-		const controllerManaged = ["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4"].includes(process.env.V2_NATIVE_START_PROBE_MODE);
+		const controllerManaged = ["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(process.env.V2_NATIVE_START_PROBE_MODE);
 		interactiveChoice.nativeInputGate = { nativeEventId: observed.snapshot.nativeInputGate.nativeEventId,
 			seatId: observed.snapshot.nativeInputGate.seatId, status: "waiting", controllerManaged,
 			optionIds: observed.snapshot.nativeInputGate.candidates.map(candidate => candidate.optionId),
@@ -972,7 +996,7 @@ function emitNativeStartDiagnostic(observed) {
 		if (controllerManaged) {
 			process.send?.({ ...identity, type: "host_native_action_candidates", nativeEventId: observed.snapshot.nativeInputGate.nativeEventId,
 				eventSequence: 4, seatId: observed.snapshot.nativeInputGate.seatId, options: interactiveChoice.nativeInputGate.optionIds,
-				trusteeOption: interactiveChoice.nativeInputGate.optionIds[0], deadlineMs: process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_trustee" ? 750 : 5000, eventName: "gongJiOrFaShu" });
+				trusteeOption: interactiveChoice.nativeInputGate.optionIds[0], deadlineMs: ["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? 750 : 5000, eventName: "gongJiOrFaShu" });
 		}
 	}
 	if (interactiveChoice?.nativeInputGate?.controllerManaged && observed.stage === "native_action_child_wait_completed") {
@@ -983,7 +1007,7 @@ function emitNativeStartDiagnostic(observed) {
 			proof?.optionId === record.option && proof?.useResultCount === 1 && proof?.nativeChildWaitCompleted === true &&
 			proof?.nativeEventInstanceMatches === true && proof?.cardInHandAfterNativeWait === false &&
 			proof?.nativeEventStepAfterWait >= 5 && observed.snapshot?.hostPlayerAbsent === true) {
-			if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_opening_root_action_event4") {
+			if (process.env.V2_NATIVE_START_PROBE_MODE?.startsWith("managed_opening_root_action_event4")) {
 				record.status = "native_applied_authority_pending";
 				commitNativeCardActionAuthority(gate, record).catch(error => {
 					const code = /^[A-Z0-9_]{3,96}$/.test(error?.message || "") ? error.message : "NATIVE_ACTION_AUTHORITY_UNCERTAIN";
@@ -993,7 +1017,7 @@ function emitNativeStartDiagnostic(observed) {
 				record.status = "applied";
 				gate.status = "applied";
 			}
-			if (process.env.V2_NATIVE_START_PROBE_MODE !== "managed_opening_root_action_event4" && process.env.V2_MANAGED_NATIVE_FAULT_INJECTION !== "cdp_result_unknown_after_dispatch") {
+			if (!process.env.V2_NATIVE_START_PROBE_MODE?.startsWith("managed_opening_root_action_event4") && process.env.V2_MANAGED_NATIVE_FAULT_INJECTION !== "cdp_result_unknown_after_dispatch") {
 				process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: record.choiceId,
 					deliveryId: record.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true });
 			}
@@ -1057,7 +1081,7 @@ async function cancelManagedNativeInput(message) {
 
 async function runNativeStartDiagnostic(message) {
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !interactiveChoice?.completed || !validHostCommand(message) ||
-		!cdp || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "controlled_block"].includes(message.mode)) throw new Error("NATIVE_START_DIAGNOSTIC_REJECTED");
+		!cdp || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "controlled_block"].includes(message.mode)) throw new Error("NATIVE_START_DIAGNOSTIC_REJECTED");
 	if (!nativeStartDiagnosticUnsubscribe) {
 		await cdp.send("Runtime.enable");
 		await cdp.send("Runtime.addBinding", { name: "__v2NativeStartTrace" });
@@ -1074,11 +1098,11 @@ async function runNativeStartDiagnostic(message) {
 	}
 	const install = `(()=>{
 	 const managedInputGate=${message.mode === "managed_input_gate"};
-	 const reuseOpeningRoot=${["managed_opening_root_action", "managed_opening_root_action_event4"].includes(message.mode)};
-	 const managedInputController=${["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4"].includes(message.mode)};
-	 const managedInputResume=${["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4"].includes(message.mode)};
+	 const reuseOpeningRoot=${["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(message.mode)};
+	 const managedInputController=${["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(message.mode)};
+	 const managedInputResume=${["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(message.mode)};
 	 const managedInputDeadlineMs=${message.mode === "managed_input_timeout" ? 1500 : 10000};
-	 const managedStart=${message.mode === "managed_start" || message.mode === "managed_input_gate" || ["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4"].includes(message.mode)};
+	 const managedStart=${message.mode === "managed_start" || message.mode === "managed_input_gate" || ["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(message.mode)};
 	 const managed=window.__v2ManagedEngine,{game,lib,get,_status}=managed.core,manager=_status.eventManager,Player=lib.element.Player;
 	 const state=reuseOpeningRoot?window.__v2ManagedOpeningDraw:(window.__v2NativeStartDiagnosticState||{traceCount:0,lastSuccessfulEventStep:null,gameStartCount:0,drawCreated:false,drawEntered:false,phaseLoopCreated:false,prepareArenaCalls:0,waitForPlayerCalls:0,randomMapOLCalls:0,chooseCharacterCalls:0,phaseCalls:0,rootPromiseState:'not_started',failureCode:null});
 	 window.__v2NativeStartDiagnosticState=state;

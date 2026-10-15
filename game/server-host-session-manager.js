@@ -192,6 +192,7 @@ function createHostSessionManager({
 			nextAuthorityEventSequence: 1,
 			lastAuthorityEvent: null,
 			xingbeiAuthorityContext: null,
+			acceptedNativeCardActionProofDigest: null,
 			authorityDigestChain: [],
 			endNotified: false,
 		};
@@ -376,6 +377,17 @@ function createHostSessionManager({
 	function commitAuthorityEvent(message) {
 		const record = sessions.get(message?.roomId);
 		const proof = message?.proof;
+		if (message?.type === "host_authority_event" && authenticate(record, message) &&
+			proof?.event?.kind === "xingbei_native_card_action_v1" && proof.eventSequence === 4 &&
+			record.state === "playable_probe" && record.authorityStateRevision === 4 && record.nextAuthorityEventSequence === 5 &&
+			record.lastAuthorityEvent?.sequence === 4 && record.acceptedNativeCardActionProofDigest) {
+			try {
+				const proofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
+				if (proofDigest === record.acceptedNativeCardActionProofDigest && proof.afterDigest === record.authorityStateDigest) {
+					return Object.freeze({ ok: true, idempotent: true, session: publicView(record) });
+				}
+			} catch (_) { return failure("HOST_AUTHORITY_EVENT_REJECTED"); }
+		}
 		if (message?.type !== "host_authority_event" || !authenticate(record, message) ||
 			!['game_ready', 'playable_probe'].includes(record.state) || !proof ||
 			proof.kind !== "native_authority_event_v1" || proof.checkpoint !== null ||
@@ -395,6 +407,9 @@ function createHostSessionManager({
 		if (record.authorityDigestChain.length > 8) record.authorityDigestChain.shift();
 		record.nextAuthorityEventSequence++;
 		record.lastAuthorityEvent = Object.freeze({ sequence: proof.eventSequence, name: proof.event.name });
+		if (proof.event.kind === "xingbei_native_card_action_v1") {
+			record.acceptedNativeCardActionProofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
+		}
 		if (proof.event.kind === "xingbei_side_assignment_v1") {
 			record.xingbeiAuthorityContext = { firstActSeatId: proof.event.firstActSeatId, sides: proof.event.sides.map(side => ({ ...side })), characters: null };
 		} else if (proof.event.kind === "xingbei_character_selection_v1") {
@@ -524,9 +539,9 @@ function createHostSessionManager({
 
 	async function diagnoseNativeStart(roomId, mode = "native_start") {
 		const record = sessions.get(roomId);
-		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "controlled_block"].includes(mode) ||
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "controlled_block"].includes(mode) ||
 			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand ||
-			(["managed_opening_root_action", "managed_opening_root_action_event4"].includes(mode) && (record.authorityStateRevision !== 3 ||
+			(["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee"].includes(mode) && (record.authorityStateRevision !== 3 ||
 				record.lastAuthorityEvent?.sequence !== 3 || record.lastAuthorityEvent?.name !== "gameDraw"))) return failure("HOST_DIAGNOSTIC_COMMAND_REJECTED");
 		try {
 			await record.handle.sendHostCommand({ type: "host_native_start_diagnostic", mode, kind: "managed_host", protocol: PROTOCOL,

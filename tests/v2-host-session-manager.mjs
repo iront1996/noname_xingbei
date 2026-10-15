@@ -534,13 +534,28 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 		assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: invalid })).code,
 			"HOST_AUTHORITY_EVENT_REJECTED");
 	}
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage({ ...bootstrap, sessionId: `hs_${"b".repeat(32)}` },
+		"host_authority_event", { proof: cardAction })).code, "HOST_AUTHORITY_EVENT_REJECTED", "old host session cannot commit Event #4");
+	assert.equal(f.manager.commitAuthorityEvent({ kind: "player", protocol: 1, roomId: bootstrap.roomId,
+		sessionId: bootstrap.sessionId, type: "host_authority_event", proof: cardAction }).code,
+		"HOST_AUTHORITY_EVENT_REJECTED", "ordinary player cannot submit Event #4");
+	assert.equal(f.manager.commitAuthorityEvent({ kind: "room_administrator", protocol: 1, roomId: bootstrap.roomId,
+		sessionId: bootstrap.sessionId, type: "host_authority_event", proof: cardAction }).code,
+		"HOST_AUTHORITY_EVENT_REJECTED", "room administrator cannot submit Event #4");
 	const cardCommitted = f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: cardAction }));
 	assert.equal(cardCommitted.ok, true);
 	assert.equal(cardCommitted.session.authorityStateRevision, 4);
 	assert.equal(cardCommitted.session.nextAuthorityEventSequence, 5);
 	assert.deepEqual(cardCommitted.session.lastAuthorityEvent, { sequence: 4, name: "gongJiOrFaShu" });
 	assert.equal(cardCommitted.session.authorityStateDigest, cardAction.afterDigest);
-	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: cardAction })).code,
-		"HOST_AUTHORITY_EVENT_REJECTED", "native card action must be one-shot");
+	const replayed = f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: cardAction }));
+	assert.equal(replayed.ok, true, "identical Event #4 retransmission must replay its ACK idempotently");
+	assert.equal(replayed.idempotent, true);
+	assert.equal(replayed.session.authorityStateRevision, 4);
+	assert.equal(replayed.session.nextAuthorityEventSequence, 5);
+	assert.equal(replayed.session.authorityDigestChain.length, 4, "idempotent ACK replay must not append an authority event");
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", {
+		proof: { ...cardAction, afterDigest: "cd".repeat(32) },
+	})).code, "HOST_AUTHORITY_EVENT_REJECTED", "a changed Event #4 retransmission is not idempotent");
 	await f.manager.stop("native_progress_gate");
 });
