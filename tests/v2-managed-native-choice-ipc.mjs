@@ -202,9 +202,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					nativeApplied: message.nativeApplied === true, authorityEventSequence: message.authorityEventSequence || null });
 				if (dropAcks) {
 					const isNativeActionAck = nativeActionChoice?.choiceId === message.choiceId;
-					if (isNativeActionAck || !droppedChoiceAckIds.has(message.choiceId)) {
+					if (!isNativeActionAck && !droppedChoiceAckIds.has(message.choiceId)) {
 						droppedAcks++;
-						if (!isNativeActionAck) droppedChoiceAckIds.add(message.choiceId);
+						droppedChoiceAckIds.add(message.choiceId);
 						return;
 					}
 				}
