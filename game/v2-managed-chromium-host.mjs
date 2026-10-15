@@ -1572,7 +1572,6 @@ async function runNativeStartDiagnostic(message) {
 	      currentPhaseSeatId:_status.currentPhase?.playerid||null,
 	      handCounts:game.players.map(player=>({seatId:player.playerid||null,count:player.countCards("h")}))});
 	     if(state.nativeEventTrail.length>48)state.nativeEventTrail.shift();
-	     emit('native_event_step');
 	    }
 	   }
 	   if(managedNativeResponse&&this.name==='yingZhan'){if(!this.__v2ManagedResponseGate)prepareManagedNativeResponseGate(this);bindManagedResponseContext(this)}
