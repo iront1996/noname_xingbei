@@ -1536,11 +1536,31 @@ async function runNativeStartDiagnostic(message) {
 		await cdp.send("Runtime.addBinding", { name: "__v2NativeStartTrace" });
 		nativeStartDiagnosticUnsubscribe = cdp.onEvent(event => {
 			if (event.method !== "Runtime.bindingCalled" || event.params?.name !== "__v2NativeStartTrace" ||
-				typeof event.params.payload !== "string" || event.params.payload.length > 8192) return;
+				typeof event.params.payload !== "string" || event.params.payload.length > 65536) return;
 			try {
 				const payload = JSON.parse(event.params.payload);
 				if (payload?.kind !== "native_start_trace_v1" || typeof payload.stage !== "string" ||
 					!payload.snapshot || typeof payload.snapshot !== "object") return;
+				if (event.params.payload.length > 8192) {
+					const criticalStages = new Set(["native_useResult_exception", "native_useCard_child_exception", "wait_next_error", "root_promise_rejected"]);
+					if (!criticalStages.has(payload.stage)) return;
+					const snapshot = payload.snapshot;
+					const action = snapshot.nativeAction || {};
+					emitNativeStartDiagnostic({ stage: payload.stage, snapshot: {
+						eventName: snapshot.eventName || null, eventStep: Number.isSafeInteger(snapshot.eventStep) ? snapshot.eventStep : null,
+						parentEventName: snapshot.parentEventName || null, rootEventName: snapshot.rootEventName || null,
+						rootObjectMatches: snapshot.rootObjectMatches === true, nativeEventId: snapshot.nativeInputGate?.nativeEventId || null,
+						seatId: action.seatId || snapshot.nativeInputGate?.seatId || null,
+						failureCode: typeof snapshot.failureCode === "string" ? snapshot.failureCode : null,
+							nativeAction: { eventId: action.eventId || null, seatId: action.seatId || null,
+								status: typeof action.status === "string" ? action.status : null,
+								useResultCount: Number.isSafeInteger(action.useResultCount) ? action.useResultCount : 0,
+								nativeUseCardHistoryEntries: Number.isSafeInteger(action.nativeUseCardHistoryEntries) ? action.nativeUseCardHistoryEntries : null,
+								cardInHandAtFailure: typeof action.cardInHandAtFailure === "boolean" ? action.cardInHandAtFailure : null },
+						gameMeAbsent: snapshot.gameMeAbsent === true,
+					} });
+					return;
+				}
 				emitNativeStartDiagnostic({ stage: payload.stage, snapshot: payload.snapshot });
 			} catch {}
 		});
