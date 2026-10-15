@@ -10,6 +10,10 @@ const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SESSION_ID = /^hs_[a-f0-9]{32}$/;
 const SECRET = /^[a-f0-9]{64}$/;
 const WAIT_MS = 15000;
+// Cold Chromium process startup can exceed the per-command CDP budget before
+// DevToolsActivePort exists. This budget applies only to browser bootstrap;
+// gameplay and CDP command deadlines remain WAIT_MS.
+const CHROMIUM_BOOT_WAIT_MS = 20000;
 
 let chromium = null;
 let profile = null;
@@ -172,7 +176,7 @@ async function boot(message) {
 				.finally(() => process.exit(20));
 		}
 	});
-	const deadline = Date.now() + WAIT_MS;
+	const deadline = Date.now() + CHROMIUM_BOOT_WAIT_MS;
 	let port = null;
 	while (Date.now() < deadline) {
 		if (spawnError) throw spawnError;
@@ -192,7 +196,7 @@ async function boot(message) {
 	}
 	if (!port) throw new Error("CHROMIUM_BOOT_TIMEOUT");
 	const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
-		signal: AbortSignal.timeout(WAIT_MS),
+		signal: AbortSignal.timeout(CHROMIUM_BOOT_WAIT_MS),
 	});
 	if (!response.ok) throw new Error("CHROMIUM_CDP_DISCOVERY_FAILED");
 	const targets = await response.json();

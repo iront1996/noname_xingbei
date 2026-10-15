@@ -1,5 +1,10 @@
 # V2 server-authority plan and evidence
 
+## FP-R2 follow-up: zero-target response and browser bootstrap diagnosis
+
+- The native response adapter now carries a distinct no-target physical-card shape, admitted only when the live Xingbei event has `notarget === true` and exact `[0,0]` target bounds. Original `chooseToUse`/use-card processing remains authoritative; the host verifies zero targets and native child completion before ACK. Local real Chromium passed the same-root four-seat chain; no broader response or Full Playable claim follows.
+- Linux CI `38772900533` failed twice in the earlier cold `character_selection_room` launch, before `DevToolsActivePort` appeared within the launcher's 15 s startup budget; downstream warm Chromium cases passed. The no-target Linux step was not reached. Only the process bootstrap budget was changed to 20 s, with that test's Browser Ready watchdog at 25 s; CDP and gameplay deadlines remain 15 s. Local Chrome passed the selection test 1/1 with zero skips. Replacement Linux CI is pending.
+
 ## Architecture direction correction (normative)
 
 The final integration target for the M2 server-authority core is **V3**, not the formal V2 product. The `codex/v2-server-authority-m1` branch, its V2 naming, and the V2-oriented test harness are development history and isolation boundaries only; they do not authorize changing formal V2. Formal V2 must remain independent, with its existing protocol, room management, gameplay flow, and deployment unchanged.

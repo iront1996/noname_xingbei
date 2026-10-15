@@ -1,5 +1,12 @@
 # V2 Codex engineering handoff
 
+## FP-R2 follow-up: native no-target response and Chromium cold-start CI
+
+- Added a distinct fail-closed native no-target physical response shape. It is admitted only when the live Xingbei event declares `notarget === true` and exact target range `[0,0]`; delivery is revalidated against that native event and resumed with no targets. This is a narrow real-engine response slice, not general response support.
+- Linux CI `38772900533` failed twice before reaching the new no-target step: the pre-existing cold `character_selection_room` Chromium launch did not produce `DevToolsActivePort` within the launcher's 15 s startup budget. Other Chromium cases immediately afterward passed; this is process bootstrap evidence, not a native-response failure.
+- Follow-up isolates the browser bootstrap allowance at 20 s and gives that test's outer Browser Ready watchdog 25 s; CDP command/gameplay deadlines remain 15 s and assertions are unchanged. Local Windows Chrome passed the previously failing character-selection test 1/1 with zero skips (~12.3 s). Linux CI for this correction is pending.
+- Current verified scope is limited to physical `yingZhan → chooseToUse` response shapes (single target, explicit zero target) and optional decline. General `chooseToRespond`, skills/multi-card/multi-target dynamics, terminal authority, Full Playable, HALL, M3/M4, and future V3 integration remain incomplete. Formal V2/live systems remain untouched; PR #1 remains Open/unmerged.
+
 ## Architecture direction correction (normative)
 
 The final integration target for the M2 server-authority core is **V3**, not formal V2. This branch's V2 naming and V2-oriented implementation are historical engineering context; formal V2 is permanently independent and must retain its current protocol, room lifecycle, gameplay flow, and deployment unchanged.

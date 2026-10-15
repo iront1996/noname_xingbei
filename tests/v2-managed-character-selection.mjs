@@ -46,7 +46,7 @@ test("managed Chromium uses native Xingbei selection without a human local playe
 	});
 	const manager = createHostSessionManager({
 		launch: createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 }),
-		browserReadyTimeoutMs: 20000,
+		browserReadyTimeoutMs: 25000,
 		engineReadyTimeoutMs: 30000,
 		gameReadyTimeoutMs: 30000,
 	});
