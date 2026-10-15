@@ -1559,12 +1559,16 @@ async function runNativeStartDiagnostic(message) {
 	 GameEvent.prototype.loop=function(...args){
 	   if(managedStart){
 	    const event=this,step=Number.isSafeInteger(event.step)?event.step:null,seatId=event.player?.playerid||null;
-	    const eventToken=[event.name||null,step,event.parent?.name||null,seatId].join(":");
+	    const safeLabel=value=>typeof value==="string"&&/^[A-Za-z0-9_-]{1,96}$/.test(value)?value:null;
+	    const skillId=safeLabel(event.skill),triggerName=safeLabel(event.triggername);
+	    const parentPath=[];for(let parent=event.parent,count=0;parent&&count<6;parent=parent.parent,count++)parentPath.push({
+	     eventName:safeLabel(parent.name),skillId:safeLabel(parent.skill),triggerName:safeLabel(parent.triggername)});
+	    const eventToken=[event.name||null,step,event.parent?.name||null,seatId,skillId,triggerName].join(":");
 	    if(eventToken!==state.lastNativeEventToken){
 	     state.lastNativeEventToken=eventToken;
 	     state.nativeEventTrail??=[];
-	     state.nativeEventTrail.push({eventName:event.name||null,eventStep:step,parentEventName:event.parent?.name||null,
-	      seatId,phaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:null,
+	     state.nativeEventTrail.push({eventName:safeLabel(event.name),eventStep:step,parentEventName:safeLabel(event.parent?.name),
+	      seatId,skillId,triggerName,parentPath,phaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:null,
 	      currentPhaseSeatId:_status.currentPhase?.playerid||null,
 	      handCounts:game.players.map(player=>({seatId:player.playerid||null,count:player.countCards("h")}))});
 	     if(state.nativeEventTrail.length>48)state.nativeEventTrail.shift();
