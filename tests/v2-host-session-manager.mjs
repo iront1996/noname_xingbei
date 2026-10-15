@@ -525,6 +525,27 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 			gameMeNull: true, connectedTransports: 0, responseActions: [nativeResponse] },
 	};
 	cardAction.afterDigest = createHash("sha256").update(canonicalize(cardAction.afterSummary)).digest("hex");
+	const skillResponse = { ...nativeResponse, kind: "view_as_skill", optionShape: "native_single_target_view_as_skill",
+		skillId: "yinYangZhanHuan", physicalMaterialConsumed: true, xiBieApplied: true, resolvedXiBie: "an", guiHuoDelta: 2 };
+	const proofWithResponses = responses => {
+		const proof = { ...cardAction, afterSummary: { ...cardAction.afterSummary, responses },
+			event: { ...cardAction.event, responseActions: responses } };
+		proof.afterDigest = createHash("sha256").update(canonicalize(proof.afterSummary)).digest("hex");
+		return proof;
+	};
+	for (const invalidResponse of [
+		{ ...skillResponse, optionShape: "native_single_target_card" },
+		{ ...skillResponse, skillId: "forgedSkill" },
+		{ ...skillResponse, physicalMaterialConsumed: false },
+		{ ...skillResponse, xiBieApplied: false },
+		{ ...skillResponse, resolvedXiBie: "invalid" },
+		{ ...skillResponse, guiHuoDelta: 0 },
+		{ ...skillResponse, guiHuoDelta: 4 },
+	]) {
+		assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", {
+			proof: proofWithResponses([invalidResponse]),
+		})).code, "HOST_AUTHORITY_EVENT_REJECTED", "malformed native viewAs skill evidence must fail closed");
+	}
 	for (const invalid of [
 		{ ...cardAction, beforeDigest: "fe".repeat(32) },
 		{ ...cardAction, beforeSummary: { ...beforeSummary, revision: 2 } },

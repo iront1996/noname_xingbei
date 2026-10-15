@@ -1231,6 +1231,21 @@ async function applyManagedNativeResponseDelivery(message) {
 	  event.result={bool:false};g.waitResolved=true;g.resolveWait();return {ok:true,kind:'decline',globalPaused:Boolean(core._status?.paused)};
 	 }
 	 const {card,target}=o,shape=g.optionShapes[${JSON.stringify(optionId)}];
+		 if(o.kind==='view_as_skill'){
+	  const previousStatusEvent=core._status?.event;try{if(core._status)core._status.event=event;
+	  const info=core.lib.skill?.[o.skillId],material=o.material,virtual=info?.viewAs?.call(info,[material],player),
+	   checks={skillBound:o.skillId==='yinYangZhanHuan'&&o.kind==='view_as_skill',skillOwned:Boolean(info&&player.hasSkill(o.skillId)),skillEnabled:Boolean(info&&core.lib.filter.filterEnable(event,player,o.skillId)===true),
+	    skillFilter:Boolean(info&&info.filter?.call(info,event,player)===true),eventBound:o.event===event&&o.seatId===player.playerid,materialInHand:Boolean(material&&player.getCards('h').includes(material)),
+	    materialFilter:Boolean(info&&info.filterCard?.call(info,material,player)===true),virtualMatches:Boolean(virtual&&virtual.name===o.virtualCard?.name&&virtual.xiBie===o.virtualCard?.xiBie&&virtual.isCard===true),
+	    eventCardFilter:Boolean(virtual&&event.filterCard?.(virtual,player,event)),cardEnabled:Boolean(virtual&&core.lib.filter.cardEnabled(virtual,player,'forceEnable')),
+	    targetFilter:Boolean(virtual&&target&&event.filterTarget?.(virtual,player,target)),targetEnabled:Boolean(virtual&&target&&core.lib.filter.targetEnabled(virtual,player,target))};
+	  const legal=Object.values(checks).every(Boolean);
+	  if(!legal||g.status!=='waiting'||g.useCardChildrenStarted!==0)return {ok:false,code:'NATIVE_VIEWAS_REVALIDATION_REJECTED',checks};
+	  g.status='applying';g.delivery={choiceId:${JSON.stringify(message.choiceId)},deliveryId:${JSON.stringify(message.deliveryId)},optionId:${JSON.stringify(optionId)},status:'applying'};
+	  event.result={bool:true,card:virtual,cards:[material],targets:[target],skill:o.skillId};g.waitResolved=true;g.resolveWait();
+	  return {ok:true,kind:'view_as_skill',skillId:o.skillId,physicalMaterialCount:1,targetCount:1,globalPaused:Boolean(core._status?.paused)};
+	  }finally{if(core._status)core._status.event=previousStatusEvent}
+	 }
 	 let legal=false;const previousStatusEvent=core._status?.event;
 	 try{if(core._status)core._status.event=event;legal=o.kind==='card'&&player.getCards(event.position||'hs').includes(card)&&event.filterCard?.(card,player,event)&&
 	  (shape==='native_notarget_card'?target===null&&(()=>{const info=core.get.info(core.get.autoViewAs(card)),range=info?.selectTarget===undefined?(info?.filterTarget===undefined?[0,0]:[1,1]):core.get.select(info.selectTarget);return info?.notarget===true&&(Array.isArray(range)?range[0]===0&&range[1]===0:range===0)})():
@@ -1244,6 +1259,10 @@ async function applyManagedNativeResponseDelivery(message) {
 	const value = applied.result?.value;
 	if (applied.exceptionDetails || value?.ok !== true) {
 		delivery.status = "uncertain";
+		if (value?.checks && Object.keys(value.checks).every(key => /^[A-Za-z]{1,32}$/.test(key)) && Object.values(value.checks).every(item => typeof item === "boolean")) {
+			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
+				observed: { kind: "native_viewas_revalidation_v1", stage: "native_viewas_revalidation_rejected", failedChecks: Object.keys(value.checks).filter(key => !value.checks[key]).slice(0, 12) } });
+		}
 		throw new Error(value?.code || "NATIVE_RESPONSE_APPLY_UNCERTAIN");
 	}
 	delivery.status = "dispatched";
@@ -1397,6 +1416,12 @@ async function commitNativeCardActionAuthority(gate, record) {
 					result.useCardChildrenCompleted === 1 && (responseGate.optionShapes[result.optionId] === "native_single_target_card" ?
 						typeof result.targetSeatId === "string" && result.targetCount === 1 :
 						responseGate.optionShapes[result.optionId] === "native_notarget_card" && result.targetSeatId === null && result.targetCount === 0) :
+					result.kind === "view_as_skill" ? result.forced === false && responseGate.optionShapes[result.optionId] === "native_single_target_view_as_skill" &&
+						result.skillId === "yinYangZhanHuan" && result.physicalMaterialConsumed === true && result.xiBieApplied === true &&
+						["an", "di", "feng", "guang", "huo", "lei", "shui"].includes(result.resolvedXiBie) &&
+						Number.isSafeInteger(result.guiHuoDelta) && result.guiHuoDelta >= 1 && result.guiHuoDelta <= 3 &&
+						result.useCardChildrenStarted === 1 && result.useCardChildrenCompleted === 1 &&
+						typeof result.targetSeatId === "string" && result.targetCount === 1 :
 					result.kind === "decline" && result.forced === false && result.useCardChildrenStarted === 0 &&
 					result.useCardChildrenCompleted === 0 && result.targetSeatId === null && result.targetCount === 0)) {
 				process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
@@ -1419,6 +1444,8 @@ async function commitNativeCardActionAuthority(gate, record) {
 				kind: result.kind, optionId: result.optionId, targetSeatId: result.targetSeatId, forced: result.forced,
 				targetCount: result.targetCount, optionShape: responseGate.optionShapes[result.optionId],
 				useCardChildrenStarted: result.useCardChildrenStarted, useCardChildrenCompleted: result.useCardChildrenCompleted,
+				...(result.kind === "view_as_skill" ? { skillId: result.skillId, physicalMaterialConsumed: result.physicalMaterialConsumed,
+					xiBieApplied: result.xiBieApplied, resolvedXiBie: result.resolvedXiBie, guiHuoDelta: result.guiHuoDelta } : {}),
 				rootInstanceId: result.rootInstanceId };
 		});
 		const after = { revision: 4, firstActSeatId: base.firstActSeatId, seats, responses: responseActions,
@@ -1490,11 +1517,15 @@ function emitNativeStartDiagnostic(observed) {
 		const nativeCompletionValid = proof?.nativeEventId === gate.nativeEventId && proof?.seatId === gate.seatId &&
 			proof?.eventName === "yingZhan" && proof?.rootObjectMatches === true &&
 			(!gate.rootInstanceId || proof?.rootInstanceId === gate.rootInstanceId) && proof?.gameMeAbsent === true &&
-			(selectedKind === "card" ? proof?.bool === true && proof?.selectedKind === "card" &&
+			(selectedKind === "view_as_skill" ? proof?.bool === true && proof?.selectedKind === "view_as_skill" &&
+				proof?.skillId === "yinYangZhanHuan" && proof?.physicalMaterialConsumed === true && proof?.xiBieApplied === true &&
+				Number.isSafeInteger(proof?.guiHuoDelta) && proof.guiHuoDelta > 0 && proof?.targetCount === 1 && typeof proof?.targetSeatId === "string" &&
+				proof?.useCardChildrenStarted === 1 && proof?.useCardChildrenCompleted === 1 :
+			selectedKind === "card" ? proof?.bool === true && proof?.selectedKind === "card" &&
 				typeof proof?.cardName === "string" && proof.cardName.length > 0 && proof?.useCardChildrenStarted === 1 && proof?.useCardChildrenCompleted === 1 &&
 				(gate.optionShapes?.[delivery?.optionId] === "native_single_target_card" ? proof?.targetCount === 1 && typeof proof?.targetSeatId === "string" :
 					gate.optionShapes?.[delivery?.optionId] === "native_notarget_card" && proof?.targetCount === 0 && proof?.targetSeatId === null) :
-				selectedKind === "decline" && proof?.bool === false && proof?.selectedKind === "decline" &&
+			selectedKind === "decline" && proof?.bool === false && proof?.selectedKind === "decline" &&
 				proof?.targetCount === 0 && proof?.useCardChildrenStarted === 0 && proof?.useCardChildrenCompleted === 0);
 		if (delivery && (delivery.status === "applying" || delivery.status === "dispatched") && nativeCompletionValid) {
 			gate.status = "applied";
@@ -1504,6 +1535,8 @@ function emitNativeStartDiagnostic(observed) {
 				optionId: delivery.optionId, optionShape: gate.optionShapes[delivery.optionId], targetSeatId: proof.targetSeatId || null,
 				targetCount: proof.targetCount, forced: gate.forced,
 				useCardChildrenStarted: proof.useCardChildrenStarted, useCardChildrenCompleted: proof.useCardChildrenCompleted,
+				...(proof.selectedKind === "view_as_skill" ? { skillId: proof.skillId, physicalMaterialConsumed: proof.physicalMaterialConsumed,
+					xiBieApplied: proof.xiBieApplied, resolvedXiBie: proof.resolvedXiBie, guiHuoDelta: proof.guiHuoDelta } : {}),
 				rootInstanceId: proof.rootInstanceId });
 			if (!delivery.ackSent) {
 				delivery.ackSent = true;
@@ -1526,6 +1559,7 @@ function emitNativeStartDiagnostic(observed) {
 		const optionMetadataValid = Array.isArray(ids) && ids.length > 0 && ids.length <= 64 && kinds && shapes &&
 			Object.keys(kinds).length === ids.length && Object.keys(shapes).length === ids.length &&
 			ids.every(id => (kinds[id] === "card" && ["native_single_target_card", "native_notarget_card"].includes(shapes[id])) ||
+				(kinds[id] === "view_as_skill" && shapes[id] === "native_single_target_view_as_skill") ||
 				(kinds[id] === "decline" && shapes[id] === "native_optional_decline"));
 		if (!optionMetadataValid) {
 			process.send?.({ ...identity, type: "host_failure", code: "NATIVE_RESPONSE_OPTION_SHAPE_REJECTED" });
@@ -1797,9 +1831,19 @@ async function runNativeStartDiagnostic(message) {
 	     if(!rangeIsOne(targetRange))continue}catch{continue}
 	    for(const target of game.players){try{if(!event.filterTarget(card,player,target)||!lib.filter.targetEnabled(card,player,target))continue;let targets=seen.get(card);if(!targets){targets=new Set();seen.set(card,targets)}if(targets.has(target))continue;targets.add(target);const bytes=crypto.getRandomValues(new Uint8Array(16)),optionId='native_option_'+Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');options.set(optionId,Object.freeze({kind:'card',event,seatId:player.playerid,card,target}));optionKinds[optionId]='card';optionShapes[optionId]='native_single_target_card';if(nestedResponseProbe)optionCanTriggerNestedResponse[optionId]=get.type(card,player)==='gongJi'&&canTriggerNestedResponse(card,target,player)}catch{}}
 	   }
+	   if(${JSON.stringify(process.env.V2_NATIVE_MANAGED_YINYANG === "1")}&&${JSON.stringify(process.env.V2_NATIVE_YINYANG_FIXTURE === "1")}&&player.playerid===state.yinyangFixtureSeatId&&event.canYingZhan===true){
+	    const skillId='yinYangZhanHuan',skill=lib.skill[skillId];let skillCandidateCount=0;
+	    if(skill&&player.hasSkill(skillId)&&lib.filter.filterEnable(event,player,skillId)===true&&skill.filter?.call(skill,event,player)===true){
+	     for(const material of player.getCards('h')){try{if(skill.filterCard.call(skill,material,player)!==true)continue;const virtual=skill.viewAs.call(skill,[material],player),info=virtual&&get.info(get.autoViewAs(virtual));if(!virtual||virtual.isCard!==true||virtual.xiBie!==get.xiBie(event.card)||!event.filterCard(virtual,player,event)||!lib.filter.cardEnabled(virtual,player,'forceEnable')||!info||info.complexSelect||info.complexTarget||info.multitarget||info.singleCard||typeof info.selectTarget==='function')continue;const targetRange=info.selectTarget===undefined?(info.filterTarget===undefined?[0,0]:[1,1]):get.select(info.selectTarget);if(!rangeIsOne(targetRange))continue;
+	      for(const target of game.players){try{if(!event.filterTarget(virtual,player,target)||!lib.filter.targetEnabled(virtual,player,target))continue;const bytes=crypto.getRandomValues(new Uint8Array(16)),optionId='native_option_'+Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');options.set(optionId,Object.freeze({kind:'view_as_skill',skillId,event,seatId:player.playerid,material,virtualCard:Object.freeze({name:virtual.name,xiBie:virtual.xiBie,isCard:virtual.isCard}),card:virtual,target}));optionKinds[optionId]='view_as_skill';optionShapes[optionId]='native_single_target_view_as_skill';skillCandidateCount++}catch{}}
+	     }catch{}}
+	    }
+	    if(skillCandidateCount===0)throw Error('YINYANG_NATIVE_VIEWAS_CANDIDATE_MISSING');
+	   }
 	   if(options.size===0)return null;let declineOptionId=null;if(event.forced!==true){const bytes=crypto.getRandomValues(new Uint8Array(16));declineOptionId='native_option_'+Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');options.set(declineOptionId,Object.freeze({kind:'decline',event,seatId:player.playerid}));optionKinds[declineOptionId]='decline';optionShapes[declineOptionId]='native_optional_decline';if(nestedResponseProbe)optionCanTriggerNestedResponse[declineOptionId]=false}
 	   if(options.size>64)throw Error('NATIVE_RESPONSE_OPTION_CAPACITY_REJECTED');const bytes=crypto.getRandomValues(new Uint8Array(16)),nativeEventId='native_event_'+Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');
-	   const gate={nativeEventId,event,seatId:player.playerid,eventName:event.name,nativeContentName:nativeResponseContentNames.get(event)||null,status:'prepared',options,optionIds:[...options.keys()],optionKinds,optionShapes,optionCanTriggerNestedResponse,declineOptionId,useCardChildrenStarted:0,useCardChildrenCompleted:0,delivery:null,waitPromise:null,resolveWait:null,waitEvent:null,waitResolved:false};gate.waitPromise=new Promise(resolve=>{gate.resolveWait=resolve});event.__v2NativeEventId=nativeEventId;event.__v2ManagedResponseGate=gate;
+	   const yinYangBaseline={guiHuo:player.countZhiShiWu('guiHuo')};
+	   const gate={nativeEventId,event,seatId:player.playerid,eventName:event.name,nativeContentName:nativeResponseContentNames.get(event)||null,status:'prepared',options,optionIds:[...options.keys()],optionKinds,optionShapes,optionCanTriggerNestedResponse,declineOptionId,useCardChildrenStarted:0,useCardChildrenCompleted:0,yinYangBaseline,delivery:null,waitPromise:null,resolveWait:null,waitEvent:null,waitResolved:false};gate.waitPromise=new Promise(resolve=>{gate.resolveWait=resolve});event.__v2NativeEventId=nativeEventId;event.__v2ManagedResponseGate=gate;
 	   state.managedNativeResponseGates??=new Map();state.managedNativeResponseGates.set(nativeEventId,gate);
 	   event.isOnline=()=>true;event.send=function(){if(this!==event||gate.status!=='prepared'||gate.waitEvent||gate.waitResolved)throw Error('NATIVE_RESPONSE_SEND_DUPLICATE_REJECTED');gate.status='waiting';const waitEvent=game.createEvent('managedNativeResponseWait',false,event);if(waitEvent.parent!==event)throw Error('NATIVE_RESPONSE_WAIT_PARENT_REJECTED');waitEvent.setContent(async()=>{await gate.waitPromise});gate.waitEvent=waitEvent;state.managedNativeResponseGate=gate;state.nativeResponseGate={nativeEventId,seatId:player.playerid,eventName:'yingZhan',eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,parentChain:(()=>{const chain=[];for(let parent=event.parent,count=0;parent&&count<8;parent=parent.parent,count++)chain.push(parent.name||null);return chain})(),optionIds:gate.optionIds,optionKinds,optionShapes,...(${JSON.stringify(process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1")} ? {optionCanTriggerNestedResponse} : {}),declineOptionId,waiting:true,status:gate.status,waitEventName:waitEvent.name,waitEventParentName:waitEvent.parent?.name||null,paused:Boolean(_status.paused),gameMeAbsent:game.me===null};try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_wait_open',snapshot:{...state.nativeResponseGate,rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null}}))}catch{}return this};
 	   return gate;
@@ -1815,26 +1859,46 @@ async function runNativeStartDiagnostic(message) {
 	    const eligible=skill.filter.call(skill,event,event.player);state.yinyangSkillProbe.nativeSkillPredicateAccepted=eligible===true;if(!eligible)throw Error('YINYANG_NATIVE_SKILL_FILTER_REJECTED_FIXTURE');
 	   }prepareManagedNativeResponseGate(event);recordNativeResponse(event,'started')}
 	   return originalStart.apply(this,args).then(value=>{
-	    if(responseChildOwner)responseChildOwner.useCardChildrenCompleted++;
+	    if(responseChildOwner){responseChildOwner.useCardChildrenCompleted++;const selected=responseChildOwner.options.get(responseChildOwner.delivery?.optionId);if(selected?.kind==='view_as_skill')responseChildOwner.nativeSkillEffectProof={childName:event.name,skillId:event.skill||null,cardName:event.card?.name||null,xiBie:get.xiBie(event.card),materialIsSource:Array.isArray(event.cards)&&event.cards.length===1&&event.cards[0]===selected.material,materialStillInHand:event.player?.getCards('h').includes(selected.material)===true,guiHuoBefore:responseChildOwner.yinYangBaseline.guiHuo,guiHuoAfter:event.player?.countZhiShiWu('guiHuo')??null,targetCount:Array.isArray(event.targets)?event.targets.length:null,targetSeatId:event.targets?.[0]?.playerid||null,gameMeAbsent:game.me===null}}
 	    if(responseEvent){
 	     const gate=event.__v2ManagedResponseGate;recordNativeResponse(event,'completed');
 	     if(gate?.delivery?.status==='applying'){
 	      const selected=gate.options.get(gate.delivery.optionId),shape=gate.optionShapes[gate.delivery.optionId];
 	      const targetProof=shape==='native_single_target_card'?Array.isArray(event.result?.targets)&&event.result.targets.length===1&&event.result.targets[0]===selected?.target:
 	       shape==='native_notarget_card'&&selected?.target===null&&get.info(get.autoViewAs(selected.card))?.notarget===true&&Array.isArray(event.result?.targets)&&event.result.targets.length===0;
-	      const valid=event.result?.bool===true&&selected?.kind==='card'?event.result.cards?.includes(selected.card)&&
+	      const valid=event.result?.bool===true&&selected?.kind==='view_as_skill'?event.result.skill==='yinYangZhanHuan'&&
+	       Array.isArray(event.result.cards)&&event.result.cards.length===1&&event.result.cards[0]===selected.material&&
+	       event.result.card?.name===selected.virtualCard.name&&event.result.card?.xiBie===selected.virtualCard.xiBie&&event.result.card?.isCard===true&&
+	       Array.isArray(event.result.targets)&&event.result.targets.length===1&&event.result.targets[0]===selected.target&&
+	       !event.player.getCards(event.position||'hs').includes(selected.material)&&gate.useCardChildrenStarted===1&&gate.useCardChildrenCompleted===1&&
+	       gate.nativeSkillEffectProof?.childName==='useCard'&&gate.nativeSkillEffectProof.skillId==='yinYangZhanHuan'&&
+	       gate.nativeSkillEffectProof.materialIsSource===true&&gate.nativeSkillEffectProof.materialStillInHand===false&&
+	       gate.nativeSkillEffectProof.cardName===selected.virtualCard.name&&gate.nativeSkillEffectProof.xiBie===get.xiBie(selected.material)&&
+	       Number.isSafeInteger(gate.nativeSkillEffectProof.guiHuoAfter)&&gate.nativeSkillEffectProof.guiHuoAfter>gate.nativeSkillEffectProof.guiHuoBefore&&
+	       gate.nativeSkillEffectProof.targetCount===1&&gate.nativeSkillEffectProof.targetSeatId===selected.target.playerid&&gate.nativeSkillEffectProof.gameMeAbsent===true:
+	       event.result?.bool===true&&selected?.kind==='card'?event.result.cards?.includes(selected.card)&&
 	       !event.player.getCards(event.position||'hs').includes(selected.card)&&gate.useCardChildrenStarted===1&&gate.useCardChildrenCompleted===1&&targetProof:
 	       event.result?.bool===false&&selected?.kind==='decline'&&event.forced!==true&&gate.useCardChildrenStarted===0&&
 	       (event.result?.targets===undefined||(Array.isArray(event.result.targets)&&event.result.targets.length===0));
-	      if(!valid){const proof={nativeEventId:gate.nativeEventId,seatId:gate.seatId,resultBool:event.result?.bool===true?true:event.result?.bool===false?false:null,
+	      if(!valid){const skillProof=selected?.kind==='view_as_skill'?{skillId:event.result?.skill||null,physicalMaterialMatches:Array.isArray(event.result?.cards)&&event.result.cards.length===1&&event.result.cards[0]===selected.material,
+	       virtualNameMatches:event.result?.card?.name===selected.virtualCard.name,virtualXiBieMatchesNativeViewAs:event.result?.card?.xiBie===selected.virtualCard.xiBie,virtualIsCard:event.result?.card?.isCard===true,
+	       materialConsumed:!event.player.getCards(event.position||'hs').includes(selected.material),nativeChildName:gate.nativeSkillEffectProof?.childName||null,
+	       nativeChildSkillMatches:gate.nativeSkillEffectProof?.skillId==='yinYangZhanHuan',nativeChildMaterialMatches:gate.nativeSkillEffectProof?.materialIsSource===true,
+	       nativeChildMaterialConsumed:gate.nativeSkillEffectProof?.materialStillInHand===false,nativeChildXiBieMatches:gate.nativeSkillEffectProof?.xiBie===get.xiBie(selected.material),
+	       guiHuoIncreased:Number.isSafeInteger(gate.nativeSkillEffectProof?.guiHuoAfter)&&gate.nativeSkillEffectProof.guiHuoAfter>gate.nativeSkillEffectProof.guiHuoBefore,
+	       nativeTargetMatches:gate.nativeSkillEffectProof?.targetSeatId===selected.target.playerid,nativeGameMeAbsent:gate.nativeSkillEffectProof?.gameMeAbsent===true}:null;
+	       const proof={nativeEventId:gate.nativeEventId,seatId:gate.seatId,resultBool:event.result?.bool===true?true:event.result?.bool===false?false:null,
 	       resultTargetsIsArray:Array.isArray(event.result?.targets),resultTargetCount:Array.isArray(event.result?.targets)?event.result.targets.length:null,
 	       forced:event.forced===true,selectedKind:selected?.kind||null,useCardChildrenStarted:gate.useCardChildrenStarted,useCardChildrenCompleted:gate.useCardChildrenCompleted,
-	       targetProof:Boolean(targetProof),gameMeAbsent:game.me===null};
+	       targetProof:Boolean(targetProof),...(skillProof?{skillProof}:{}),gameMeAbsent:game.me===null};
 	       try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_completion_proof_rejected',snapshot:proof}))}catch{}
 	       emit('native_response_completion_proof_rejected',proof);throw Error('NATIVE_RESPONSE_COMPLETION_PROOF_REJECTED')}
 	      gate.status='applied';gate.delivery.status='applied';gate.completedResult={bool:event.result.bool,selectedKind:selected.kind,
-	       cardName:selected.card?.name||null,targetSeatId:selected.target?.playerid||null,targetCount:event.result?.targets?.length||0,
-	       useCardChildrenStarted:gate.useCardChildrenStarted,useCardChildrenCompleted:gate.useCardChildrenCompleted};
+	       ...(selected.kind==='card'?{cardName:selected.card?.name||null}:{}),targetSeatId:selected.target?.playerid||null,targetCount:event.result?.targets?.length||0,
+	       useCardChildrenStarted:gate.useCardChildrenStarted,useCardChildrenCompleted:gate.useCardChildrenCompleted,
+	       ...(selected.kind==='view_as_skill'?{skillId:selected.skillId,physicalMaterialConsumed:gate.nativeSkillEffectProof.materialStillInHand===false,
+	        xiBieApplied:gate.nativeSkillEffectProof.xiBie===get.xiBie(selected.material),resolvedXiBie:gate.nativeSkillEffectProof.xiBie,
+	        guiHuoDelta:gate.nativeSkillEffectProof.guiHuoAfter-gate.nativeSkillEffectProof.guiHuoBefore}: {})};
 	      try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_applied',snapshot:{nativeEventId:gate.nativeEventId,
 	       seatId:gate.seatId,eventName:event.name,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,
 	       ...gate.completedResult,gameMeAbsent:game.me===null}}))}catch{}
