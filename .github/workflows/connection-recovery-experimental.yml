@@ -160,7 +160,7 @@ jobs:
             if [ -x "$candidate" ]; then browser="$candidate"; break; fi
           done
           test -n "$browser"
-          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESPONSE_NO_OPTIONS=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESPONSE_NO_OPTIONS=1 V2_NATIVE_TEST_RANDOM_SEED=2 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
       - name: V2 M2 C3 authority proof and public-data disclosure regression
         shell: bash
         run: node --test tests/v2-host-session-manager.mjs
