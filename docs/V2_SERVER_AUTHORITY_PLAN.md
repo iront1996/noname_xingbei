@@ -1,10 +1,17 @@
 # V2 server-authority plan and evidence
 
-## FP-R2: nested native response chain (Linux CI pending)
+## FP-R1/R2: nested native response chain and terminal-rule audit
 
 - The response integration test adds an opt-in seeded nested-chain scenario. A server-local native eligibility probe identifies an actual physical `gongJi` response option whose legal target can answer under Xingbei's original response predicates; only that option ID plus the boolean native-derived proof is sent through the isolated test IPC. No hand/card metadata is published to clients or ordinary logs.
 - Windows real-Chromium test passed 3/3 consecutively with seed 3, plus the non-nested response regression 1/1. Evidence: one managed root and four ordinary seats; two sequential native `yingZhan → chooseToUse` events; the second event's observed parent chain contains the first `yingZhan`; both choices traverse controller and native completion/ACK; no transport is attached and `game.me` remains null. Seed 1/2 did not produce a legal second-layer response target and correctly failed the opt-in probe instead of manufacturing one.
-- CI adds a serialized Chromium step pinned to this deterministic seed. Until that Linux run passes, classify the nested-path proof as local-only. General response skills, generic `chooseToRespond`, other card/target shapes, full turn cycling, terminal authority and Full Playable remain incomplete.
+- Linux CI `38789132978` accepted the nested path: 64 workflow steps, 184/184 TAP tests passed, zero failures/skips. General response skills, generic `chooseToRespond`, other card/target shapes, full turn cycling, terminal authority and Full Playable remain incomplete.
+
+### FP-W1 source-backed result findings (server terminal authority still open)
+
+- `mode/xingBei.js` states the win conditions as opponent morale reaching 0 or own Star Cups reaching the configured cap. Existing `checkResult()` dereferences `game.me._trueMe || game.me`, so it is not valid in hosted mode with `game.me === null`. Red-view evaluation checks blue conditions first; blue-view evaluation checks red first.
+- Native `changeShiQi` and `changeXingBei` GameEvent content each mutates one counter and invokes `checkResult()` immediately after that mutation. `_heCheng_backup` performs cup change followed by morale change as separate child events. `game.over()` locks the first result using `_status.over`, but GameEvent loop does not globally stop on that flag; a parent skill may finish additional steps after the result edge. A hosted result must preserve the first native result edge, not recalculate from later state.
+- No reproducible native test currently shows both opposing predicate sets true at the same `checkResult()` boundary, and the available source/rule text gives no tie-break. Keep that case unresolved and fail-closed; do not invent a draw or side priority. A true native skill/engine scenario is required before deciding terminal semantics.
+- Legacy `submitMatchResult → submitMatchData` in `mode/xingBei.js` sends an external match-record POST with embedded authorization. No test in this batch invoked it and no external service was contacted. Isolated end-of-game tests must block/stub this route. Removing/rotating the legacy authorization or changing the service requires separate approval and was not done.
 
 ## FP-R2 follow-up: zero-target response and browser bootstrap diagnosis
 
