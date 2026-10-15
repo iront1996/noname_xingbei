@@ -320,7 +320,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 				if (nativeFaultMode === "retry_while_applying" && message.observed?.stage === "native_useResult_entered" && !applyingRetryIssued && nativeActionChoice) {
 					applyingRetryIssued = true;
-					assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId)?.state, "delivery_pending");
+					assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId)?.state, "applying",
+						"the controller must fence a redelivery after the supervised host has begun applying the native action");
 					assert.equal(controller.retryDelivery({ roomId, choiceId: nativeActionChoice.choiceId }).ok, true,
 						"same immutable delivery could not be retried during native applying");
 				}
