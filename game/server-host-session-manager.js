@@ -369,8 +369,6 @@ function createHostSessionManager({
 			try {
 				if (canonicalize(event.responseActions) !== canonicalize(after.responses)) return reject("CARD_ACTION_RESPONSE_BINDING");
 			} catch (_) { return reject("CARD_ACTION_RESPONSE_BINDING"); }
-			const sideBySeat = new Map(before.seats.map(seat => [seat.seatId, seat.side]));
-			if (sideBySeat.get(event.seatId) === sideBySeat.get(event.targetSeatId)) return reject("CARD_ACTION_TARGET_SIDE");
 			const responseEventIds = new Set(), responseOptionIds = new Set(), possibleSources = new Set([event.seatId]);
 			const seatsWithCardConsumption = new Set([event.seatId]);
 			const seatsTouchedByNativeCardTree = new Set([event.seatId, event.targetSeatId]);
@@ -384,8 +382,7 @@ function createHostSessionManager({
 					response.seatId === response.sourceSeatId || !possibleSources.has(response.sourceSeatId) ||
 					!/^native_option_[a-f0-9]{32}$/.test(response.optionId || "") || responseOptionIds.has(response.optionId) ||
 					typeof response.forced !== "boolean" ||
-					(response.kind === "card" ? !record.seatIds.includes(response.targetSeatId) || response.targetSeatId === response.sourceSeatId ||
-						sideBySeat.get(response.seatId) === sideBySeat.get(response.targetSeatId) || response.forced !== false ||
+					(response.kind === "card" ? !record.seatIds.includes(response.targetSeatId) || response.forced !== false ||
 						response.useCardChildrenStarted !== 1 || response.useCardChildrenCompleted !== 1 :
 						response.kind !== "decline" || response.targetSeatId !== null || response.forced !== false ||
 						response.useCardChildrenStarted !== 0 || response.useCardChildrenCompleted !== 0)) return reject("CARD_ACTION_RESPONSE_EVIDENCE");

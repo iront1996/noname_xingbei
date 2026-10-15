@@ -497,17 +497,17 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 		handCommitment: "ef".repeat(32) } : index === 2 ? { ...seat, handCount: 3, handCommitment: "ab".repeat(32) } : { ...seat });
 	const nativeResponse = { nativeEventId: "native_abcdef0123456789abcdef0123456789", actionEventId: "native_event_0123456789abcdef0123456789abcdef",
 		seatId: "seat_3", sourceSeatId: "seat_1", kind: "card", optionId: "native_option_abcdef0123456789abcdef0123456789",
-		targetSeatId: "seat_2", forced: false, useCardChildrenStarted: 1, useCardChildrenCompleted: 1, rootInstanceId: null };
+		targetSeatId: "seat_1", forced: false, useCardChildrenStarted: 1, useCardChildrenCompleted: 1, rootInstanceId: null };
 	const cardAction = {
 		kind: "native_authority_event_v1", checkpoint: null, eventSequence: 4,
 		stateRevisionBefore: 3, stateRevisionAfter: 4, beforeDigest: openingDraw.afterDigest,
 		beforeSummary, afterSummary: { revision: 4, firstActSeatId: beforeSummary.firstActSeatId, seats: afterSeats, responses: [nativeResponse],
 			action: { nativeEventId: "native_event_0123456789abcdef0123456789abcdef", nativeEventName: "gongJiOrFaShu",
-				seatId: "seat_1", cardName: "sha", targetSeatId: "seat_3", optionId: "native_option_0123456789abcdef0123456789abcdef", usedCardPosition: "d" } },
+				seatId: "seat_1", cardName: "sha", targetSeatId: "seat_2", optionId: "native_option_0123456789abcdef0123456789abcdef", usedCardPosition: "d" } },
 		afterDigest: "00".repeat(32),
 		event: { kind: "xingbei_native_card_action_v1", name: "gongJiOrFaShu", nativeEventName: "gongJiOrFaShu",
 			nativeEventId: "native_event_0123456789abcdef0123456789abcdef", nativeEventCompleted: true,
-			seatId: "seat_1", cardName: "sha", targetSeatId: "seat_3", optionId: "native_option_0123456789abcdef0123456789abcdef",
+			seatId: "seat_1", cardName: "sha", targetSeatId: "seat_2", optionId: "native_option_0123456789abcdef0123456789abcdef",
 			nativeEventStep: 6, useResultCount: 1, useCardChildName: "useCard", useCardChildStep: 3,
 			nativeUseCardChildCompleted: true, usedCardPosition: "d",
 			nativeChildWaitCompleted: true, nativeEventInstanceMatches: true,
@@ -521,7 +521,7 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 		{ ...cardAction, stateRevisionAfter: 5 },
 		{ ...cardAction, afterDigest: "cd".repeat(32) },
 		{ ...cardAction, event: { ...cardAction.event, seatId: "seat_2" } },
-		{ ...cardAction, event: { ...cardAction.event, targetSeatId: "seat_1" } },
+		{ ...cardAction, event: { ...cardAction.event, targetSeatId: "seat_missing" } },
 		{ ...cardAction, event: { ...cardAction.event, nativeEventStep: 4 } },
 		{ ...cardAction, event: { ...cardAction.event, useResultCount: 2 } },
 		{ ...cardAction, event: { ...cardAction.event, nativeUseCardChildCompleted: false } },
@@ -534,6 +534,8 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 			event: { ...cardAction.event, responseActions: [{ ...nativeResponse, sourceSeatId: "seat_3" }] } },
 		{ ...cardAction, afterSummary: { ...cardAction.afterSummary, responses: [{ ...nativeResponse, forced: true }] },
 			event: { ...cardAction.event, responseActions: [{ ...nativeResponse, forced: true }] } },
+		{ ...cardAction, afterSummary: { ...cardAction.afterSummary, responses: [{ ...nativeResponse, targetSeatId: "seat_missing" }] },
+			event: { ...cardAction.event, responseActions: [{ ...nativeResponse, targetSeatId: "seat_missing" }] } },
 		{ ...cardAction, afterSummary: { ...cardAction.afterSummary,
 			seats: cardAction.afterSummary.seats.map((seat, index) => index === 2 ? { ...seat, handCommitment: beforeSummary.seats[index].handCommitment } : seat) } },
 		{ ...cardAction, afterSummary: { ...cardAction.afterSummary,
