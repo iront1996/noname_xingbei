@@ -54,7 +54,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	let releaseEvent4AckBarrier;
 	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
 	const launchedHandles = new Map();
-	const useSeatRegistry = process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry";
+	const useSeatRegistry = process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
+		process.env.V2_NATIVE_RESPONSE_REBIND === "1";
 	const seatRegistry = useSeatRegistry ? createManagedRoomSeatRegistry() : null;
 	const seatCredentials = new Map(), seatSockets = new Map();
 	if (seatRegistry) {
@@ -281,6 +282,21 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(controller.submitChoice({ ...request, seatId: setup.seats.find(seat => seat.seatId !== message.seatId).seatId }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 				if (firstManagedResponse && responseTrusteeProbe) {
 					assert.equal(controller.inspect(roomId, openedChoice.choice.choiceId)?.state, "pending");
+				} else if (firstManagedResponse && process.env.V2_NATIVE_RESPONSE_REBIND === "1") {
+					const activeHost = manager.inspect(roomId);
+					const replacementConnectionId = `response_rebound_${message.seatId}`;
+					assert.equal(controller.inspect(roomId, openedChoice.choice.choiceId)?.state, "pending");
+					assert.equal(bindSeat(message.seatId, replacementConnectionId).ok, true,
+						"valid seat credential should rebind while the native response remains pending");
+					assert.equal(controller.inspect(roomId, openedChoice.choice.choiceId)?.state, "pending",
+						"transport loss must retain the native response choice");
+					assert.equal(controller.submitChoice(request).code, "MANAGED_CHOICE_SUBMIT_REJECTED",
+						"old response connection must be fenced after the seat rebind");
+					assert.equal(manager.inspect(roomId)?.sessionId, activeHost?.sessionId);
+					assert.equal(manager.inspect(roomId)?.pid, activeHost?.pid,
+						"seat disconnect/rebind must not restart or replace the managed game host");
+					const rebound = controller.submitChoice({ ...request, connectionId: replacementConnectionId });
+					assert.equal(rebound.ok, true, `rebound ordinary seat could not submit its native response: ${rebound.code}`);
 				} else {
 					const submitted = controller.submitChoice(request);
 					assert.equal(submitted.ok, true, `authenticated ordinary seat could not submit its native response: ${submitted.code}`);
