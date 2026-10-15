@@ -242,7 +242,7 @@ function createHostSessionManager({
 					fail(record, typeof message.code === "string" && /^[A-Z0-9_]{3,96}$/.test(message.code) ? message.code : "HOST_MANAGED_EXECUTION_FAILED");
 				}
 					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
-					else if (["host_choice_candidates", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates"].includes(message?.type) && authenticate(record, message)) {
+					else if (["host_choice_candidates", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates", "host_native_response_candidates"].includes(message?.type) && authenticate(record, message)) {
 						// A trusted-host IPC consumer is part of the authority path.  Do not
 						// silently lose a candidate/ACK and leave the native event paused forever.
 						Promise.resolve(onManagedChoiceMessage(Object.freeze({ type: message.type, roomId: record.roomId, sessionId: record.sessionId, message }))).catch(() => {
@@ -355,15 +355,49 @@ function createHostSessionManager({
 					({ seatId, position, character, side, handCount, handCommitment })),
 			})) return reject("CARD_ACTION_BEFORE_SUMMARY");
 			const after = proof.afterSummary;
-			if (!after || Object.keys(after).sort().join(",") !== "action,firstActSeatId,revision,seats" ||
+			if (!after || Object.keys(after).sort().join(",") !== "action,firstActSeatId,responses,revision,seats" ||
 				after.revision !== 4 || after.firstActSeatId !== before.firstActSeatId ||
 				!Array.isArray(after.seats) || after.seats.length !== record.seatIds.length ||
+				!Array.isArray(after.responses) || after.responses.length > 16 ||
+				!Array.isArray(event.responseActions) ||
 				!after.action || Object.keys(after.action).sort().join(",") !==
 				"cardName,nativeEventId,nativeEventName,optionId,seatId,targetSeatId,usedCardPosition" ||
 				after.action.nativeEventId !== event.nativeEventId || after.action.nativeEventName !== "gongJiOrFaShu" ||
 				after.action.seatId !== event.seatId || after.action.cardName !== event.cardName ||
 				after.action.targetSeatId !== event.targetSeatId || after.action.optionId !== event.optionId ||
 				! ["d", "x"].includes(after.action.usedCardPosition)) return reject("CARD_ACTION_AFTER_SUMMARY");
+			try {
+				if (canonicalize(event.responseActions) !== canonicalize(after.responses)) return reject("CARD_ACTION_RESPONSE_BINDING");
+			} catch (_) { return reject("CARD_ACTION_RESPONSE_BINDING"); }
+			const sideBySeat = new Map(before.seats.map(seat => [seat.seatId, seat.side]));
+			if (sideBySeat.get(event.seatId) === sideBySeat.get(event.targetSeatId)) return reject("CARD_ACTION_TARGET_SIDE");
+			const responseEventIds = new Set(), responseOptionIds = new Set(), possibleSources = new Set([event.seatId]);
+			const seatsWithCardConsumption = new Set([event.seatId]);
+			const seatsTouchedByNativeCardTree = new Set([event.seatId, event.targetSeatId]);
+			for (const response of after.responses) {
+				if (!response || Object.keys(response).sort().join(",") !==
+					"actionEventId,forced,kind,nativeEventId,optionId,rootInstanceId,seatId,sourceSeatId,targetSeatId,useCardChildrenCompleted,useCardChildrenStarted" ||
+					response.actionEventId !== event.nativeEventId || response.rootInstanceId !== context.rootInstanceId ||
+					!/^native_[A-Za-z0-9_-]{16,96}$/.test(response.nativeEventId || "") || responseEventIds.has(response.nativeEventId) ||
+					!/^[A-Za-z0-9_-]{1,128}$/.test(response.seatId || "") || !record.seatIds.includes(response.seatId) ||
+					!/^[A-Za-z0-9_-]{1,128}$/.test(response.sourceSeatId || "") || !record.seatIds.includes(response.sourceSeatId) ||
+					response.seatId === response.sourceSeatId || !possibleSources.has(response.sourceSeatId) ||
+					!/^native_option_[a-f0-9]{32}$/.test(response.optionId || "") || responseOptionIds.has(response.optionId) ||
+					typeof response.forced !== "boolean" ||
+					(response.kind === "card" ? !record.seatIds.includes(response.targetSeatId) || response.targetSeatId === response.sourceSeatId ||
+						sideBySeat.get(response.seatId) === sideBySeat.get(response.targetSeatId) || response.forced !== false ||
+						response.useCardChildrenStarted !== 1 || response.useCardChildrenCompleted !== 1 :
+						response.kind !== "decline" || response.targetSeatId !== null || response.forced !== false ||
+						response.useCardChildrenStarted !== 0 || response.useCardChildrenCompleted !== 0)) return reject("CARD_ACTION_RESPONSE_EVIDENCE");
+				responseEventIds.add(response.nativeEventId);
+				responseOptionIds.add(response.optionId);
+				if (response.kind === "card") {
+					possibleSources.add(response.seatId);
+					seatsWithCardConsumption.add(response.seatId);
+					seatsTouchedByNativeCardTree.add(response.seatId);
+					seatsTouchedByNativeCardTree.add(response.targetSeatId);
+				}
+			}
 			const seatsValid = after.seats.every((seat, index) => {
 				const previous = before.seats[index];
 				if (!seat || Object.keys(seat).sort().join(",") !== "character,handCommitment,handCount,position,seatId,side" ||
@@ -372,8 +406,9 @@ function createHostSessionManager({
 					!Number.isSafeInteger(seat.handCount) || seat.handCount < 0 || seat.handCount > 32 ||
 					!DIGEST.test(seat.handCommitment || "")) return false;
 				if (seat.handCount !== previous.handCount && seat.handCommitment === previous.handCommitment) return false;
-				if (seat.seatId === event.seatId) return seat.handCommitment !== previous.handCommitment;
-				return true;
+				if (seatsWithCardConsumption.has(seat.seatId)) return seat.handCommitment !== previous.handCommitment;
+				if (seatsTouchedByNativeCardTree.has(seat.seatId)) return true;
+				return seat.handCount === previous.handCount && seat.handCommitment === previous.handCommitment;
 			});
 			if (!seatsValid) return reject("CARD_ACTION_SEAT_TRANSITION");
 			if (crypto.createHash("sha256").update(canonicalize(after)).digest("hex") !== proof.afterDigest) return reject("CARD_ACTION_AFTER_DIGEST");
