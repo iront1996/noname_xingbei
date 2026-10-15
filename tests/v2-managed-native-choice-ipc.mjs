@@ -202,6 +202,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"test could not select a native attack whose target has a card accepted by the native yingZhan response predicate");
 					nativeActionOptionId = message.responseProbeOptions.find(option => message.optionKinds[option] === "gongJi");
 					assert.ok(nativeActionOptionId, "response-capable target candidate must be an attack card");
+				} else if (process.env.V2_NATIVE_YINYANG_FIXTURE === "1" && process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_response_probe") {
+					assert.ok(message.optionTargetSeatIds && message.optionYinYangEligible,
+						"YinYang native probe must bind candidates to real native target/material eligibility");
+					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === "gongJi" &&
+						message.optionTargetSeatIds[option] === nativeYinYangFixtureSeatId && message.optionYinYangEligible[option] === true);
+					assert.ok(nativeActionOptionId, "probe must choose an actual native attack targeting the eligible YinYang ordinary seat");
 				} else if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_response_probe") {
 					assert.ok(message.optionKinds && Object.keys(message.optionKinds).length === message.options.length);
 					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === "gongJi");
