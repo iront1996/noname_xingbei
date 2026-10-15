@@ -334,6 +334,11 @@ async function boot(message) {
 		},
 	});
 
+	if (process.env.V2_NATIVE_C3_UNIFIED_ROOT === "1") {
+		await runManagedUnifiedRoot();
+		return;
+	}
+
 	if (process.env.V2_PLAYABLE_PROOF !== "1") return;
 	const progressed = await cdp.send("Runtime.evaluate", {
 		expression: `(async()=>{
@@ -572,8 +577,240 @@ async function runManagedNativeChoice() {
 	}
 }
 
+async function runManagedUnifiedRoot() {
+	if (process.env.V2_PLAYABLE_PROOF !== "1" || process.env.V2_MANAGED_CHOICE_IPC !== "1" ||
+		process.env.V2_NATIVE_OPENING_DRAW_EVENT3 !== "1" || process.env.V2_NATIVE_START_DIAGNOSTICS !== "1") {
+		throw new Error("UNIFIED_ROOT_TEST_CONTRACT_REQUIRED");
+	}
+	const initialized = await cdp.send("Runtime.evaluate", { expression: `(()=>{
+	 const managed=window.__v2ManagedEngine,container=window.__v2ManagedGame,{game,lib,_status}=managed.core,manager=_status.eventManager;
+	 if(!container||container.authorityState.revision!==0||container.checkpoint!==null||!_status.connectMode||game.me!==null||
+	  game.players.length!==container.setup.seats.length||game.players.some((player,index)=>player.playerid!==container.setup.seats[index].seatId||
+	   player.name1||typeof player.side!=='undefined'||player.ws)||manager.eventStack.length!==0)throw Error('UNIFIED_ROOT_PRECONDITION_REJECTED');
+	 if(window.__v2ManagedUnifiedRoot)throw Error('UNIFIED_ROOT_DUPLICATE_REJECTED');
+	 lib.configOL.chooseSide=false;lib.configOL.choose_mode='多选1';lib.configOL.choose_number='2';
+	 lib.configOL.team_sequence='near';lib.configOL.phaseswap=false;
+	 const state={status:'starting',instrumented:false,rootPromiseState:'pending',failureCode:null,
+	  waitForPlayerCalls:0,randomMapOLCalls:0,prepareArenaCalls:0,chooseCharacterCalls:0,sideAssignmentCalls:0,
+	  dialogBroadcasts:0,trusteeTimerCaptured:false,selectionEventCount:0,sideEventCount:0,gameStartCount:0,
+	  drawCreated:false,drawCompleted:false,phaseLoopCreated:false,phaseLoopStartRequested:false,
+	  phaseLoopStarted:false,phaseLoopPaused:false,phaseLoopReleased:false,phaseLoopGate:null,
+	  event1Ready:false,event1Released:false,event2Ready:false,event2Released:false,event3Ready:false};
+	 let releaseEvent1,releaseEvent2,releasePhaseLoop;
+	 state.event1Gate=new Promise(resolve=>{releaseEvent1=resolve});state.releaseEvent1=()=>{if(state.event1Released)throw Error('UNIFIED_EVENT1_RELEASE_DUPLICATE');state.event1Released=true;releaseEvent1()};
+	 state.event2Gate=new Promise(resolve=>{releaseEvent2=resolve});state.releaseEvent2=()=>{if(state.event2Released)throw Error('UNIFIED_EVENT2_RELEASE_DUPLICATE');state.event2Released=true;releaseEvent2()};
+	 state.phaseLoopGateSettled=false;state.phaseLoopGate=new Promise(resolve=>{releasePhaseLoop=resolve});state.releasePhaseLoop=()=>{if(state.phaseLoopGateSettled)throw Error('UNIFIED_PHASE_LOOP_RELEASE_DUPLICATE');state.phaseLoopGateSettled=true;state.phaseLoopReleased=true;releasePhaseLoop()};
+	 state.beforeEvent1={revision:0,firstActSeatId:null,sides:game.players.map(player=>({seatId:player.playerid,side:null}))};
+	 window.__v2ManagedUnifiedRoot=state;window.__v2ManagedOpeningDraw=state;
+	 const GameEvent=lib.element.GameEvent,originalStart=GameEvent.prototype.start,originalWaitNext=GameEvent.prototype.waitNext,
+	  originalTrigger=GameEvent.prototype.trigger,originalCreateEvent=game.createEvent,originalWaitForPlayer=game.waitForPlayer,
+	  originalRandomMapOL=game.randomMapOL,originalPrepareArena=game.prepareArena,originalChooseCharacterOL=game.chooseCharacterOL,
+	  originalInitSide=game.initSideAndPosition,originalBroadcastAll=game.broadcastAll,originalPause=game.pause,
+	  originalSetTimeout=globalThis.setTimeout,originalGameDraw=game.gameDraw,originalPhaseLoop=game.phaseLoop;
+	 state.originals={GameEvent,originalStart,originalWaitNext,originalTrigger,originalCreateEvent,originalWaitForPlayer,
+	  originalRandomMapOL,originalPrepareArena,originalChooseCharacterOL,originalInitSide,originalBroadcastAll,originalPause,
+	  originalSetTimeout,originalGameDraw,originalPhaseLoop};
+	 game.waitForPlayer=function(callback){state.waitForPlayerCalls++;if(state.waitForPlayerCalls!==1||!_status.connectMode||
+	  game.me!==null||game.players.length!==container.setup.seats.length||game.players.some((player,index)=>player.ws||
+	   player.playerid!==container.setup.seats[index].seatId))throw Error('UNIFIED_WAIT_FOR_PLAYER_ADAPTER_REJECTED');
+	  if(typeof callback==='function')callback()};
+	 game.prepareArena=function(){state.prepareArenaCalls++;throw Error('UNIFIED_DUPLICATE_PREPARE_ARENA_REJECTED')};
+	 game.randomMapOL=function(){state.randomMapOLCalls++;if(state.randomMapOLCalls!==1||!_status.connectMode||game.me!==null||
+	  game.players.length!==container.setup.seats.length||game.players.some((player,index)=>player.ws||
+	   player.playerid!==container.setup.seats[index].seatId||player.name1))throw Error('UNIFIED_MANAGED_SEAT_MAPPING_REJECTED');
+	  state.randomMapOLAdapter='verified_managed_seat_mapping';if(typeof game.chooseCharacterOL!=='function')throw Error('UNIFIED_NATIVE_CHARACTER_ENTRY_MISSING');
+	  game.chooseCharacterOL()};
+	 game.chooseCharacterOL=function(...args){state.chooseCharacterCalls++;if(state.chooseCharacterCalls!==1)throw Error('UNIFIED_CHARACTER_ENTRY_DUPLICATE');
+	  return originalChooseCharacterOL.apply(this,args)};
+	 game.initSideAndPosition=function(...args){state.sideAssignmentCalls++;if(state.sideAssignmentCalls!==1)throw Error('UNIFIED_SIDE_ASSIGNMENT_DUPLICATE');
+	  return originalInitSide.apply(this,args)};
+	 game.broadcastAll=function(callback,...args){const current=manager.eventStack.at(-1);
+	  if(current===state.selectionEvent&&current.step===1){if(state.dialogBroadcasts!==0||typeof callback!=='function'||args.length!==2||
+	    !Number.isSafeInteger(args[0])||!args[1]||Object.keys(args[1]).length!==game.players.length||
+	    game.players.some(player=>!Array.isArray(args[1][player.playerid])||args[1][player.playerid].length<2))
+	    throw Error('UNIFIED_CHARACTER_DIALOG_CONTRACT_REJECTED');state.dialogBroadcasts++;state.nativeCandidates=args[1];return;}
+	  return originalBroadcastAll.call(this,callback,...args)};
+	 globalThis.setTimeout=function(callback,delay,...args){const current=manager.eventStack.at(-1);
+	  if(!state.trusteeTimerCaptured&&current===state.selectionEvent&&current.step===1&&current.ai_targets?.length===game.players.length&&
+	   Number(delay)===6000){state.trusteeTimerCaptured=true;state.trusteeTimerSuppressed=true;return 0}
+	  return originalSetTimeout(callback,delay,...args)};
+	 game.pause=function(...args){const current=manager.eventStack.at(-1);
+	  if(current===state.selectionEvent&&current.ai_targets?.length===game.players.length){
+	   if(state.dialogBroadcasts!==1||!state.trusteeTimerCaptured||!state.nativeCandidates)throw Error('UNIFIED_CHOICE_GATE_PRECONDITION_REJECTED');
+	   state.choiceReady=true;state.choiceEventId='native_'+${JSON.stringify(identity.sessionId.slice(3))}+'_character_selection';}
+	  return originalPause.apply(this,args)};
+	 GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;return originalTrigger.call(this,name,...args)};
+	 game.createEvent=function(name,...args){const event=originalCreateEvent.call(this,name,...args);
+	  if(name==='chooseCharacterOL'){state.selectionEventCount++;if(state.selectionEventCount!==1)throw Error('UNIFIED_SELECTION_EVENT_DUPLICATE');state.selectionEvent=event;event.__v2NativeEventId='native_'+${JSON.stringify(identity.sessionId.slice(3))}+'_character_selection'}
+	  if(name==='initSideAndPosition'){state.sideEventCount++;if(state.sideEventCount!==1)throw Error('UNIFIED_SIDE_EVENT_DUPLICATE');state.sideEvent=event}
+	  if(name==='gameDraw'){if(state.drawCreated)throw Error('UNIFIED_DRAW_DUPLICATE');state.drawCreated=true;state.draw=event}
+	  if(name==='phaseLoop'){if(state.phaseLoopCreated)throw Error('UNIFIED_PHASE_LOOP_DUPLICATE');state.phaseLoopCreated=true;state.phaseLoop=event}
+	  return event};
+	 GameEvent.prototype.start=function(...args){const event=this;
+	  if(event===state.phaseLoop){if(state.phaseLoopStartRequested)throw Error('UNIFIED_PHASE_LOOP_START_DUPLICATE');
+	   state.phaseLoopStartRequested=true;state.phaseLoopPaused=true;state.status='phase_loop_gated';
+	   if(!state.drawCompleted||event.parent!==state.root)throw Error('UNIFIED_PHASE_LOOP_PRECONDITION_REJECTED');state.event3Ready=true;
+	   return state.phaseLoopGate.then(()=>{if(state.phaseLoopStarted)throw Error('UNIFIED_PHASE_LOOP_START_DUPLICATE');state.phaseLoopStarted=true;
+	    state.phaseLoopPaused=false;return originalStart.apply(this,args)})}
+	  return originalStart.apply(this,args).then(value=>{if(event===state.sideEvent){state.sideEventCompleted=true;state.event1After={revision:1,
+	    firstActSeatId:_status.firstAct?.playerid||null,sides:game.players.map(player=>({seatId:player.playerid,side:player.side}))}}
+	   if(event===state.selectionEvent){state.selectionEventCompleted=true;state.event2After={revision:2,
+	    firstActSeatId:_status.firstAct?.playerid||null,sides:game.players.map(player=>({seatId:player.playerid,side:player.side})),
+	    characters:game.players.map(player=>({seatId:player.playerid,character:player.name1||null}))}}
+	   if(event===state.draw){state.drawCompleted=true;state.drawFinalStep=Number.isSafeInteger(event.step)?event.step:null;
+	    state.event3Seats=game.players.map((player,index)=>({seatId:player.playerid,position:Number(player.dataset.position),
+	     character:player.name1||null,side:player.side,handCount:player.countCards('h'),
+	     hand:player.getCards('h').map(card=>({name:card.name||null,suit:card.suit||null,number:card.number||null,nature:card.nature||null}))}))}
+	   return value})};
+	 GameEvent.prototype.waitNext=function(...args){const parent=this;if(parent===state.draw){state.drawEntered=true;state.drawParentName=parent.parent?.name||null}return originalWaitNext.apply(this,args).then(async value=>{
+	   if(parent===state.selectionEvent&&state.sideEventCompleted&&!state.event1Released){state.event1Ready=true;await state.event1Gate}
+	   if(parent===state.root&&state.selectionEventCompleted&&!state.event2Released){state.event2Ready=true;await state.event2Gate}
+	   return value})};
+	 game.gameDraw=function(...args){if(state.drawCreated)throw Error('UNIFIED_DRAW_DUPLICATE_CALL');return originalGameDraw.apply(this,args)};
+	 game.phaseLoop=function(...args){if(state.phaseLoopCreated)throw Error('UNIFIED_PHASE_LOOP_DUPLICATE_CALL');const result=originalPhaseLoop.apply(this,args);
+	  if(state.phaseLoop?.parent!==state.root)throw Error('UNIFIED_PHASE_LOOP_PARENT_INVALID');return result};
+	 state.root=game.createEvent('game',false).setContent(managed.mode.start);state.rootInstanceId='native_root_'+${JSON.stringify(identity.sessionId.slice(3))};
+	 if(state.root.name!=='game'||state.root.parent)throw Error('UNIFIED_ROOT_INVALID');
+	 const promise=state.root.start();promise.then(()=>{state.rootPromiseState='fulfilled';state.status='root_fulfilled'},error=>{
+	  state.rootPromiseState='rejected';state.failureCode='UNIFIED_ROOT_REJECTED';state.failureDetail=String(error?.message||error).slice(0,160)});
+	 return {started:true,rootName:state.root.name,rootEventId:state.root.id||null,hostPlayerAbsent:game.me===null};})()`,
+		returnByValue: true }, 5000);
+	if (initialized.exceptionDetails || initialized.result?.value?.started !== true || initialized.result.value.hostPlayerAbsent !== true) {
+		throw new Error(`UNIFIED_ROOT_START_FAILED:${initialized.exceptionDetails?.text || JSON.stringify(initialized.result?.value || null)}`);
+	}
+	const evaluateState = async () => {
+		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2ManagedUnifiedRoot,m=window.__v2ManagedEngine.core,{game,_status}=m;
+		 return s?{status:s.status,failureCode:s.failureCode,failureDetail:s.failureDetail||null,rootPromiseState:s.rootPromiseState,
+		  rootInstanceId:s.rootInstanceId,selectionParentName:s.selectionEvent?.parent?.name||null,sideEventParentName:s.sideEvent?.parent?.name||null,
+		  selectionEventName:s.selectionEvent?.name||null,sideEventName:s.sideEvent?.name||null,
+		  rootEventName:_status.eventManager.rootEvent?.name||null,rootMatches:s.root===_status.eventManager.rootEvent,
+		  eventStack:_status.eventManager.eventStack.map(event=>event.name),event1Ready:s.event1Ready,event2Ready:s.event2Ready,event3Ready:s.event3Ready,
+		  event1After:s.event1After||null,event2After:s.event2After||null,choiceReady:Boolean(s.choiceReady),nativeEventId:s.choiceEventId||null,
+		  choices:s.nativeCandidates?Object.entries(s.nativeCandidates).map(([seatId,options])=>({seatId,options:[...options]})):null,
+		  drawCompleted:s.drawCompleted,drawFinalStep:s.drawFinalStep,phaseLoopStartRequested:s.phaseLoopStartRequested,
+		  phaseLoopParentName:s.phaseLoop?.parent?.name||null,phaseLoopPaused:s.phaseLoopPaused,
+		  event3Seats:s.event3Seats||null,gameMeNull:game.me===null,connectedTransports:game.players.filter(player=>player.ws).length,
+		  sideAssignmentCalls:s.sideAssignmentCalls,selectionEventCount:s.selectionEventCount,gameStartCount:s.gameStartCount,
+		  prepareArenaCalls:s.prepareArenaCalls,waitForPlayerCalls:s.waitForPlayerCalls,randomMapOLCalls:s.randomMapOLCalls,
+		  dialogBroadcasts:s.dialogBroadcasts,trusteeTimerCaptured:s.trusteeTimerCaptured}:null})()`, returnByValue: true }, 1500);
+		if (result.exceptionDetails || !result.result?.value) throw new Error("UNIFIED_ROOT_STATE_UNAVAILABLE");
+		return result.result.value;
+	};
+	const waitFor = async (predicate, code, timeoutMs = 20000) => {
+		const deadline = Date.now() + timeoutMs;
+		while (Date.now() < deadline) {
+			const state = await evaluateState();
+			if (state.failureCode) throw new Error(`${code}:${JSON.stringify(state)}`);
+			if (predicate(state)) return state;
+			await new Promise(resolve => setTimeout(resolve, 20));
+		}
+		throw new Error(`${code}:${JSON.stringify(await evaluateState())}`);
+	};
+	const release = async name => {
+		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2ManagedUnifiedRoot;
+		 if(!s||typeof s['release'+${JSON.stringify(name)}]!=='function')throw Error('UNIFIED_RELEASE_GATE_MISSING');
+		 s['release'+${JSON.stringify(name)}]();return true})()`, returnByValue: true });
+		if (result.exceptionDetails || result.result?.value !== true) throw new Error("UNIFIED_RELEASE_GATE_FAILED");
+	};
+	const submit = async proof => {
+		const ack = waitForAuthorityEventAck(proof.eventSequence, proof.stateRevisionAfter, proof.afterDigest);
+		process.send?.({ ...identity, type: "host_authority_event", proof });
+		if (!await ack) throw new Error(`UNIFIED_AUTHORITY_EVENT_${proof.eventSequence}_REJECTED`);
+	};
+	const finalizeRevision = async (revision, expression) => {
+		const finalized = await cdp.send("Runtime.evaluate", { expression, returnByValue: true });
+		if (finalized.exceptionDetails || finalized.result?.value !== true) throw new Error(`UNIFIED_EVENT_${revision}_FINALIZE_FAILED`);
+	};
+	const event1 = await waitFor(state => state.event1Ready, "UNIFIED_EVENT1_GATE_TIMEOUT");
+	if (event1.rootEventName !== "game" || !event1.rootMatches || event1.eventStack.join(">") !== "game>chooseCharacterOL" ||
+		event1.event1After?.sides?.length !== gameSetupSeatCount() || !event1.event1After.firstActSeatId || event1.gameMeNull !== true || event1.connectedTransports !== 0) {
+		throw new Error(`UNIFIED_EVENT1_TOPOLOGY_INVALID:${JSON.stringify(event1)}`);
+	}
+	const before1 = { revision: 0, firstActSeatId: null, sides: event1.event1After.sides.map(entry => ({ seatId: entry.seatId, side: null })) };
+	const before1Digest = createHash("sha256").update(canonicalize(before1)).digest("hex");
+	const after1Digest = createHash("sha256").update(canonicalize(event1.event1After)).digest("hex");
+	await submit({ kind: "native_authority_event_v1", checkpoint: null, eventSequence: 1, stateRevisionBefore: 0,
+		stateRevisionAfter: 1, beforeDigest: before1Digest, afterDigest: after1Digest,
+		event: { kind: "xingbei_side_assignment_v1", name: "initSideAndPosition", firstActSeatId: event1.event1After.firstActSeatId,
+			sides: event1.event1After.sides, hostPlayerAbsent: true, connectedTransports: 0, rootInstanceId: event1.rootInstanceId,
+			rootEventName: "game", rootParentName: null, selectionEventName: event1.selectionEventName,
+			selectionParentName: event1.selectionParentName, sideEventParentName: event1.sideEventParentName } });
+	await finalizeRevision(1, `(()=>{const c=window.__v2ManagedGame,s=window.__v2ManagedUnifiedRoot;
+	 if(c.authorityState.revision!==0||!s.event1Ready||s.event1Released)throw Error('UNIFIED_EVENT1_FINALIZE_REJECTED');c.authorityState.revision=1;return true})()`);
+	await release("Event1");
+	const choiceReady = await waitFor(state => state.choiceReady, "UNIFIED_CHOICE_CANDIDATES_TIMEOUT");
+	const nativeEventId = choiceReady.nativeEventId;
+	if (choiceReady.choices?.length !== 4 || choiceReady.choices.some(choice => choice.options.length < 2) ||
+		choiceReady.dialogBroadcasts !== 1 || !choiceReady.trusteeTimerCaptured || choiceReady.eventStack.join(">") !== "game>chooseCharacterOL" ||
+		choiceReady.gameMeNull !== true || choiceReady.connectedTransports !== 0) throw new Error(`UNIFIED_CHOICE_CANDIDATES_INVALID:${JSON.stringify(choiceReady)}`);
+	const choiceState = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2ManagedUnifiedRoot;
+	 if(!s?.selectionEvent||s.choiceEventId!==${JSON.stringify(nativeEventId)}||s.selectionEvent.parent!==s.root)throw Error('UNIFIED_CHOICE_EVENT_BINDING_INVALID');
+	 window.__v2ManagedChoiceState={event:s.selectionEvent,nativeEventId:s.choiceEventId,applied:new Set()};return true})()`, returnByValue: true });
+	if (choiceState.exceptionDetails || choiceState.result?.value !== true) throw new Error("UNIFIED_CHOICE_STATE_INSTALL_FAILED");
+	interactiveChoice = { nativeEventId, before: event1.event1After, choices: new Map(choiceReady.choices.map(choice => [choice.seatId, choice])),
+		deliveries: new Map(), completed: null, resolve: null, reject: null };
+	choiceDiagnosticTimer = setTimeout(() => emitManagedChoiceDiagnostic(), 5000);
+	process.send?.({ ...identity, type: "host_choice_candidates", nativeEventId, eventSequence: 2, choices: choiceReady.choices, deadlineMs: 3000 });
+	const completed = await new Promise((resolve, reject) => { interactiveChoice.resolve = resolve; interactiveChoice.reject = reject; });
+	const event2 = await waitFor(state => state.event2Ready, "UNIFIED_EVENT2_GATE_TIMEOUT");
+	if (event2.rootEventName !== "game" || !event2.rootMatches || event2.eventStack.join(">") !== "game" ||
+		event2.event2After?.characters?.length !== 4 || event2.event2After.characters.some(entry => !entry.character) ||
+		completed.after.characters.some((entry,index)=>entry.seatId!==event2.event2After.characters[index].seatId||entry.character!==event2.event2After.characters[index].character) ||
+		event2.gameMeNull !== true || event2.connectedTransports !== 0) throw new Error(`UNIFIED_EVENT2_TOPOLOGY_INVALID:${JSON.stringify(event2)}`);
+	const before2Digest = createHash("sha256").update(canonicalize(event1.event1After)).digest("hex");
+	const after2Digest = createHash("sha256").update(canonicalize(event2.event2After)).digest("hex");
+	if (before2Digest !== after1Digest || before2Digest === after2Digest) throw new Error("UNIFIED_EVENT2_DIGEST_CHAIN_INVALID");
+	await submit({ kind: "native_authority_event_v1", checkpoint: null, eventSequence: 2, stateRevisionBefore: 1,
+		stateRevisionAfter: 2, beforeDigest: before2Digest, afterDigest: after2Digest,
+			event: { kind: "xingbei_character_selection_v1", name: "chooseCharacterOL", characters: event2.event2After.characters,
+				hostPlayerAbsent: true, connectedTransports: 0, rootInstanceId: event2.rootInstanceId, rootEventName: "game",
+				rootParentName: null, selectionEventName: event2.selectionEventName, selectionParentName: event2.selectionParentName } });
+	await finalizeRevision(2, `(()=>{const c=window.__v2ManagedGame,s=window.__v2ManagedUnifiedRoot;
+	 if(c.authorityState.revision!==1||!s.event2Ready||s.event2Released)throw Error('UNIFIED_EVENT2_FINALIZE_REJECTED');c.authorityState.revision=2;return true})()`);
+	interactiveChoice.openingAuthoritySummary = event2.event2After;
+	interactiveChoice.openingAuthorityDigest = after2Digest;
+	await release("Event2");
+	const event3 = await waitFor(state => state.event3Ready, "UNIFIED_EVENT3_GATE_TIMEOUT");
+	if (event3.rootEventName !== "game" || !event3.rootMatches || event3.eventStack.join(">") !== "game" ||
+		event3.gameStartCount !== 1 || event3.drawCompleted !== true || event3.phaseLoopStartRequested !== true ||
+		event3.phaseLoopParentName !== "game" || event3.phaseLoopPaused !== true || event3.gameMeNull !== true ||
+		event3.connectedTransports !== 0 || event3.event3Seats?.length !== 4 || event3.event3Seats.some(seat => seat.handCount !== 4)) {
+		throw new Error(`UNIFIED_EVENT3_GATE_INVALID:${JSON.stringify(event3)}`);
+	}
+	const seats = event3.event3Seats.map(seat => ({ ...seat, handCommitment: createHash("sha256").update(canonicalize(seat.hand)).digest("hex") }));
+	for (const seat of seats) delete seat.hand;
+	const after3 = { revision: 3, firstActSeatId: event2.event2After.firstActSeatId,
+		seats: seats.map(({ seatId, position, character, side, handCount, handCommitment }) =>
+			({ seatId, position, character, side, handCount, handCommitment })) };
+	const after3Digest = createHash("sha256").update(canonicalize(after3)).digest("hex");
+	await submit({ kind: "native_authority_event_v1", checkpoint: null, eventSequence: 3, stateRevisionBefore: 2,
+		stateRevisionAfter: 3, beforeDigest: after2Digest, afterDigest: after3Digest,
+			event: { kind: "xingbei_opening_draw_v1", name: "gameDraw", nativeEventId: `native_${identity.sessionId.slice(3)}_opening_draw`,
+			rootInstanceId: event3.rootInstanceId,
+			nativeEventCompleted: true, nativeEventStep: event3.drawFinalStep, gameStartTriggered: true, gameStartCount: 1,
+			rootEventName: "game", parentEventName: "game", phaseLoopCreated: true, phaseLoopStartRequested: true,
+			phaseLoopParentName: "game", phaseLoopPaused: true, firstActSeatId: after3.firstActSeatId,
+			seats: after3.seats, gameMeNull: true, connectedTransports: 0 } });
+	await finalizeRevision(3, `(()=>{const c=window.__v2ManagedGame,s=window.__v2ManagedUnifiedRoot;
+	 if(c.authorityState.revision!==2||!s.event3Ready||s.phaseLoopReleased)throw Error('UNIFIED_EVENT3_FINALIZE_REJECTED');
+	 c.authorityState.revision=3;s.status='authority_committed';s.authoritySummary=${JSON.stringify(after3)};s.authorityDigest=${JSON.stringify(after3Digest)};return true})()`);
+	interactiveChoice.openingAuthoritySummary = after3;
+	interactiveChoice.openingAuthorityDigest = after3Digest;
+	interactiveChoice.nativeRootInstanceId = event3.rootInstanceId;
+	process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: `native_${identity.sessionId.slice(3)}_opening_draw`,
+		observed: { kind: "native_authority_event_accepted_v1", stage: "opening_draw_event_3_accepted", eventSequence: 3,
+			stateRevision: 3, beforeDigest: after2Digest, afterDigest: after3Digest, eventName: "gameDraw", parentEventName: "game",
+			rootEventName: "game", phaseLoopPaused: true, seatHandCounts: seats.map(seat => ({ seatId: seat.seatId, handCount: seat.handCount })),
+			hostPlayerAbsent: true, connectedTransports: 0, checkpointAvailable: false } });
+	await runNativeStartDiagnostic({ ...identity, type: "host_native_start_diagnostic", mode: "managed_opening_root_action_event4" });
+}
+
+function gameSetupSeatCount() {
+	return 4;
+}
+
 function waitForAuthorityEventAck(eventSequence, stateRevision, afterDigest, timeoutMs = 15000) {
-	if (![2, 3, 4].includes(eventSequence) || stateRevision !== eventSequence || !/^[a-f0-9]{64}$/.test(afterDigest) ||
+	if (![1, 2, 3, 4].includes(eventSequence) || stateRevision !== eventSequence || !/^[a-f0-9]{64}$/.test(afterDigest) ||
 		!Number.isSafeInteger(timeoutMs) || timeoutMs < 250 || timeoutMs > 15000 || nativeAuthorityAckWaiters.has(eventSequence)) return Promise.reject(new Error("AUTHORITY_ACK_WAITER_INVALID"));
 	return new Promise((resolve, reject) => {
 		const timer = setTimeout(() => { nativeAuthorityAckWaiters.delete(eventSequence); reject(new Error("AUTHORITY_EVENT_ACK_TIMEOUT")); }, timeoutMs);
@@ -908,7 +1145,8 @@ async function commitNativeCardActionAuthority(gate, record) {
 		const response = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2NativeStartDiagnosticState,a=s?.nativeAction,o=window.__v2ManagedNativeActionOptions?.get(${JSON.stringify(record.option)}),c=window.__v2ManagedGame,core=window.__v2ManagedEngine?.core,game=core?.game;
 		 if(!a||a.eventId!==${JSON.stringify(gate.nativeEventId)}||a.seatId!==${JSON.stringify(gate.seatId)}||a.optionId!==${JSON.stringify(record.option)}||a.useResultCount!==1||a.nativeChildWaitCompleted!==true||a.nativeEventInstanceMatches!==true||a.nativeEventStepAfterWait<5||!o||!c||c.authorityState.revision!==3||game?.me!==null||game?.players?.some(p=>p.ws))return {ok:false,code:'NATIVE_ACTION_STATE_NOT_COMMITTED'};
 		 const hands=game.players.map(p=>({seatId:p.playerid,handCount:p.countCards('h'),hand:p.getCards('h').map(card=>({name:card.name||null,suit:card.suit||null,number:card.number||null,nature:card.nature||null}))}));
-		 return {ok:true,eventStep:a.nativeEventStepAfterWait,seatId:a.seatId,optionId:a.optionId,cardName:a.cardName,targetSeatId:a.targetSeatId,useResultCount:a.useResultCount,useCardChildName:a.nativeUseCardChildName||null,useCardChildStep:Number.isSafeInteger(a.nativeUseCardChildStep)?a.nativeUseCardChildStep:null,nativeUseCardChildCompleted:a.nativeUseCardChildCompleted===true,usedCardPosition:core.get.position(o.card),nativeChildWaitCompleted:a.nativeChildWaitCompleted,nativeEventInstanceMatches:a.nativeEventInstanceMatches,gameMeNull:game.me===null,connectedTransports:game.players.filter(p=>p.ws).length,hands,firstActSeatId:core?._status?.firstAct?.playerid||null}})()`, returnByValue: true }, 2000);
+		 const state=window.__v2ManagedUnifiedRoot;
+		 return {ok:true,eventStep:a.nativeEventStepAfterWait,seatId:a.seatId,optionId:a.optionId,cardName:a.cardName,targetSeatId:a.targetSeatId,useResultCount:a.useResultCount,useCardChildName:a.nativeUseCardChildName||null,useCardChildStep:Number.isSafeInteger(a.nativeUseCardChildStep)?a.nativeUseCardChildStep:null,nativeUseCardChildCompleted:a.nativeUseCardChildCompleted===true,usedCardPosition:core.get.position(o.card),nativeChildWaitCompleted:a.nativeChildWaitCompleted,nativeEventInstanceMatches:a.nativeEventInstanceMatches,gameMeNull:game.me===null,connectedTransports:game.players.filter(p=>p.ws).length,hands,firstActSeatId:core?._status?.firstAct?.playerid||null,rootInstanceId:state?.rootInstanceId||null,rootMatches:state?.root===core?._status?.eventManager?.rootEvent}})()`, returnByValue: true }, 2000);
 		const observed = response.result?.value;
 		let rejectionCode = response.exceptionDetails ? "CDP_EXCEPTION" : !observed?.ok ? (observed?.code || "STATE_QUERY") :
 			observed.seatId !== gate.seatId ? "SEAT" : observed.optionId !== record.option ? "OPTION" :
@@ -929,6 +1167,10 @@ async function commitNativeCardActionAuthority(gate, record) {
 					firstActMatches: observed?.firstActSeatId === gate.seatId, handSeatCount: observed?.hands?.length ?? null } });
 			throw new Error(`NATIVE_ACTION_AUTHORITY_PROOF_${rejectionCode}`);
 		}
+		if (interactiveChoice.nativeRootInstanceId &&
+			(observed.rootInstanceId !== interactiveChoice.nativeRootInstanceId || observed.rootMatches !== true)) {
+			throw new Error("NATIVE_ACTION_AUTHORITY_ROOT_MISMATCH");
+		}
 		const seats = observed.hands.map((seat, index) => {
 			const previous = base.seats[index];
 			if (seat.seatId !== previous.seatId) throw new Error("NATIVE_ACTION_AUTHORITY_SEAT_ORDER_REJECTED");
@@ -945,6 +1187,7 @@ async function commitNativeCardActionAuthority(gate, record) {
 			beforeSummary: base, afterSummary: after,
 			event: { kind: "xingbei_native_card_action_v1", name: "gongJiOrFaShu", nativeEventName: "gongJiOrFaShu",
 				nativeEventId: gate.nativeEventId, nativeEventCompleted: true, seatId: gate.seatId, cardName: observed.cardName,
+				...(observed.rootInstanceId ? { rootInstanceId: observed.rootInstanceId } : {}),
 				targetSeatId: observed.targetSeatId, optionId: record.option, nativeEventStep: observed.eventStep,
 				useResultCount: observed.useResultCount, useCardChildName: observed.useCardChildName, useCardChildStep: observed.useCardChildStep,
 				nativeUseCardChildCompleted: observed.nativeUseCardChildCompleted, usedCardPosition: observed.usedCardPosition,
@@ -1106,7 +1349,7 @@ async function runNativeStartDiagnostic(message) {
 	 const managed=window.__v2ManagedEngine,{game,lib,get,_status}=managed.core,manager=_status.eventManager,Player=lib.element.Player;
 	 const state=reuseOpeningRoot?window.__v2ManagedOpeningDraw:(window.__v2NativeStartDiagnosticState||{traceCount:0,lastSuccessfulEventStep:null,gameStartCount:0,drawCreated:false,drawEntered:false,phaseLoopCreated:false,prepareArenaCalls:0,waitForPlayerCalls:0,randomMapOLCalls:0,chooseCharacterCalls:0,phaseCalls:0,rootPromiseState:'not_started',failureCode:null});
 	 window.__v2NativeStartDiagnosticState=state;
-	 const snapshot=()=>{const current=_status.event,top=manager.eventStack.at(-1),phaseLoop=state.phaseLoop,phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct);return {eventName:current?.name||null,eventStep:Number.isSafeInteger(current?.step)?current.step:null,parentEventName:current?.parent?.name||null,rootEventName:manager.rootEvent?.name||null,eventStackDepth:manager.eventStack.length,eventStackTop:top?.name||null,eventStack:manager.eventStack.map(event=>event.name),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:state.gameStartCount>0,gameStartCount:state.gameStartCount,gameDrawCreated:state.drawCreated,gameDrawEntered:state.drawEntered,gameDrawParentName:state.drawParentName||state.draw?.parent?.name||null,phaseLoopCreated:state.phaseLoopCreated,phaseLoopStartRequested:state.phaseLoopStartRequested||false,phaseLoopStarted:state.phaseLoopStarted||false,phaseLoopPaused:state.phaseLoopPaused||false,phaseLoopReleased:state.phaseLoopReleased||false,phaseLoopParentName:phaseLoop?.parent?.name||state.phaseLoopParentName||null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:state.firstPhaseGate||null,nativeInputGate:state.nativeInputGate||null,nativeInputGateStatus:state.nativeInputResumeGate?.status||null,nativeAction:state.nativeAction||null,testFaultMode:${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")},prepareArenaCalls:state.prepareArenaCalls,waitForPlayerCalls:state.waitForPlayerCalls,randomMapOLCalls:state.randomMapOLCalls,chooseCharacterCalls:state.chooseCharacterCalls,phaseCalls:state.phaseCalls,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(current?.name||'')?current.name:null,pendingChoiceSeatId:current?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')})),lastSuccessfulEventStep:state.lastSuccessfulEventStep,rootPromiseState:state.rootPromiseState,failureCode:state.failureCode,traceCount:state.traceCount}};
+	 const snapshot=()=>{const current=_status.event,top=manager.eventStack.at(-1),phaseLoop=state.phaseLoop,phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct);return {eventName:current?.name||null,eventStep:Number.isSafeInteger(current?.step)?current.step:null,parentEventName:current?.parent?.name||null,rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,eventStackDepth:manager.eventStack.length,eventStackTop:top?.name||null,eventStack:manager.eventStack.map(event=>event.name),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:state.gameStartCount>0,gameStartCount:state.gameStartCount,gameDrawCreated:state.drawCreated,gameDrawEntered:state.drawEntered,gameDrawParentName:state.drawParentName||state.draw?.parent?.name||null,phaseLoopCreated:state.phaseLoopCreated,phaseLoopStartRequested:state.phaseLoopStartRequested||false,phaseLoopStarted:state.phaseLoopStarted||false,phaseLoopPaused:state.phaseLoopPaused||false,phaseLoopReleased:state.phaseLoopReleased||false,phaseLoopParentName:phaseLoop?.parent?.name||state.phaseLoopParentName||null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:state.firstPhaseGate||null,nativeInputGate:state.nativeInputGate||null,nativeInputGateStatus:state.nativeInputResumeGate?.status||null,nativeAction:state.nativeAction||null,testFaultMode:${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")},prepareArenaCalls:state.prepareArenaCalls,waitForPlayerCalls:state.waitForPlayerCalls,randomMapOLCalls:state.randomMapOLCalls,chooseCharacterCalls:state.chooseCharacterCalls,phaseCalls:state.phaseCalls,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(current?.name||'')?current.name:null,pendingChoiceSeatId:current?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')})),lastSuccessfulEventStep:state.lastSuccessfulEventStep,rootPromiseState:state.rootPromiseState,failureCode:state.failureCode,traceCount:state.traceCount}};
 	 const ring=state.ring||(state.ring=[]);let emittedMilestones=0,emittedSteps=0,lastEventStepToken='';
 	 const emit=stage=>{state.traceCount++;const snap=snapshot();ring.push({stage,snapshot:snap});if(ring.length>128)ring.shift();const token=[snap.eventName,snap.eventStep].join(':');const milestone=new Set(['root_event_created','root_start_dispatched','wait_for_player_called','random_map_ol_called','prepare_arena_called','choose_character_called','game_start_trigger','game_draw_called','phase_loop_called','phase_called','native_input_gate','native_input_gate_waiting','native_input_wait_open','native_input_resume_accepted','native_input_resume_rejected','native_input_cancelled','native_input_cancel_rejected','native_input_gate_expired','native_useResult_entered','native_useResult_dispatched','native_useResult_exception','native_useCard_child_exception','native_action_child_wait_completed','root_promise_fulfilled','root_promise_rejected','wait_next_error']).has(stage);const criticalFailure=['native_input_gate_expired','native_input_resume_rejected','native_input_cancel_rejected','native_useResult_exception','native_useCard_child_exception','root_promise_rejected','wait_next_error'].includes(stage);const changedStep=token!==lastEventStepToken;lastEventStepToken=token;if(milestone){if(!criticalFailure&&emittedMilestones++>=64)return}else if(changedStep){if(emittedSteps++>=64)return}else return;const payload={kind:'native_start_trace_v1',stage,snapshot:snap};try{window.__v2NativeStartTrace(JSON.stringify(payload))}catch{}};
 	 if(!state.instrumented){
@@ -1190,7 +1433,7 @@ async function runNativeStartDiagnostic(message) {
 		const deadline=Date.now()+2500;
 		while(Date.now()<deadline){
 			try {
-				const probe=await cdp.send("Runtime.evaluate",{expression:`(()=>{const s=window.__v2NativeStartDiagnosticState,{game,_status}=window.__v2ManagedEngine.core,phaseLoop=s?.phaseLoop,phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct);return {rootPromiseState:s?.rootPromiseState||'unobserved',snapshot:{eventName:_status.event?.name||null,eventStep:Number.isSafeInteger(_status.event?.step)?_status.event.step:null,parentEventName:_status.event?.parent?.name||null,rootEventName:_status.eventManager.rootEvent?.name||null,eventStackDepth:_status.eventManager.eventStack.length,eventStackTop:_status.eventManager.eventStack.at(-1)?.name||null,eventStack:_status.eventManager.eventStack.map(event=>event.name),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:(s?.gameStartCount||0)>0,gameStartCount:s?.gameStartCount||0,gameDrawCreated:Boolean(s?.drawCreated),gameDrawEntered:Boolean(s?.drawEntered),gameDrawParentName:s?.drawParentName||null,phaseLoopCreated:Boolean(s?.phaseLoopCreated),phaseLoopParentName:s?.phaseLoopParentName||null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:s?.firstPhaseGate||null,nativeInputGate:s?.nativeInputGate||null,prepareArenaCalls:s?.prepareArenaCalls||0,waitForPlayerCalls:s?.waitForPlayerCalls||0,randomMapOLCalls:s?.randomMapOLCalls||0,chooseCharacterCalls:s?.chooseCharacterCalls||0,phaseCalls:s?.phaseCalls||0,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(_status.event?.name||'')?_status.event.name:null,pendingChoiceSeatId:_status.event?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(p=>({seatId:p.playerid||null,characterInitialized:typeof p.name1==='string',handCount:p.countCards('h')})),lastSuccessfulEventStep:s?.lastSuccessfulEventStep||null,failureCode:s?.failureCode||null}}})()`,returnByValue:true},800);
+				const probe=await cdp.send("Runtime.evaluate",{expression:`(()=>{const s=window.__v2NativeStartDiagnosticState,{game,_status}=window.__v2ManagedEngine.core,phaseLoop=s?.phaseLoop,phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct);return {rootPromiseState:s?.rootPromiseState||'unobserved',snapshot:{eventName:_status.event?.name||null,eventStep:Number.isSafeInteger(_status.event?.step)?_status.event.step:null,parentEventName:_status.event?.parent?.name||null,rootEventName:_status.eventManager.rootEvent?.name||null,rootInstanceId:s?.rootInstanceId||null,rootObjectMatches:s?.root? _status.eventManager.rootEvent===s.root:null,eventStackDepth:_status.eventManager.eventStack.length,eventStackTop:_status.eventManager.eventStack.at(-1)?.name||null,eventStack:_status.eventManager.eventStack.map(event=>event.name),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:(s?.gameStartCount||0)>0,gameStartCount:s?.gameStartCount||0,gameDrawCreated:Boolean(s?.drawCreated),gameDrawEntered:Boolean(s?.drawEntered),gameDrawParentName:s?.drawParentName||null,phaseLoopCreated:Boolean(s?.phaseLoopCreated),phaseLoopParentName:s?.phaseLoopParentName||null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:s?.firstPhaseGate||null,nativeInputGate:s?.nativeInputGate||null,prepareArenaCalls:s?.prepareArenaCalls||0,waitForPlayerCalls:s?.waitForPlayerCalls||0,randomMapOLCalls:s?.randomMapOLCalls||0,chooseCharacterCalls:s?.chooseCharacterCalls||0,phaseCalls:s?.phaseCalls||0,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(_status.event?.name||'')?_status.event.name:null,pendingChoiceSeatId:_status.event?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(p=>({seatId:p.playerid||null,characterInitialized:typeof p.name1==='string',handCount:p.countCards('h')})),lastSuccessfulEventStep:s?.lastSuccessfulEventStep||null,failureCode:s?.failureCode||null}}})()`,returnByValue:true},800);
 				if(probe.exceptionDetails) {lastProbeError=String(probe.exceptionDetails.text||"CDP_EVALUATION_EXCEPTION").slice(0,256);break;}
 				value=probe.result?.value||null;
 				const waitForManagedInputGate=['managed_input_resume','managed_input_timeout','managed_input_cancel','managed_input_cancel_resume_race','managed_input_stop','managed_input_controller','managed_input_controller_trustee','managed_input_controller_registry','managed_input_controller_fault_before_apply','managed_opening_root_action','managed_opening_root_action_event4','managed_opening_root_action_event4_ack_loss','managed_opening_root_action_event4_trustee'].includes(message.mode);
@@ -1230,7 +1473,7 @@ process.on("message", message => {
 		return;
 	}
 	if (message?.type === "host_authority_event_ack" && validHostCommand(message) &&
-		[2, 3, 4].includes(message.eventSequence) && message.stateRevision === message.eventSequence &&
+		[1, 2, 3, 4].includes(message.eventSequence) && message.stateRevision === message.eventSequence &&
 		typeof message.afterDigest === "string" && /^[a-f0-9]{64}$/.test(message.afterDigest)) {
 		nativeAuthorityAckWaiters.get(message.eventSequence)?.(message);
 		return;

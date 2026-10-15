@@ -29,7 +29,7 @@ async function until(check, timeoutMs = 45000, diagnostic = () => null) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -286,7 +286,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const expectedAuthorityRevision = process.env.V2_NATIVE_OPENING_DRAW_EVENT3 === "1" ?
 		(process.env.V2_NATIVE_START_PROBE_MODE?.startsWith("managed_opening_root_action_event4") ? 4 : 3) : 2;
 	const probeMode = process.env.V2_NATIVE_START_PROBE_MODE || "native_start";
-	let actionDiagnosticDispatched = false;
+	let actionDiagnosticDispatched = process.env.V2_NATIVE_C3_UNIFIED_ROOT === "1";
 	let completed;
 	let openingDrawAccepted = null;
 	if (probeMode === "managed_opening_root_action_stop_before_release") {
@@ -305,7 +305,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (probeMode.startsWith("managed_opening_root_action_event4")) {
 		await until(() => manager.inspect(roomId)?.authorityStateRevision === 3,
 			45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), nativeDiagnostic }));
-		assert.equal((await manager.diagnoseNativeStart(roomId, probeMode)).ok, true);
+		if (process.env.V2_NATIVE_C3_UNIFIED_ROOT !== "1") {
+			assert.equal((await manager.diagnoseNativeStart(roomId, probeMode)).ok, true);
+		}
 		actionDiagnosticDispatched = true;
 	}
 	if (probeMode.startsWith("managed_opening_root_action_event4") && ["use_result_throws", "use_card_child_throws"].includes(nativeFaultMode)) {
@@ -576,6 +578,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					"one managed-host run must submit exactly authority events 1 through 4");
 				assert.ok(authoritySubmissions.every(entry => entry.roomId === roomId && entry.sessionId === session.sessionId),
 					"authority events must use the same room and managed host session");
+				if (process.env.V2_NATIVE_C3_UNIFIED_ROOT === "1") {
+					const rootIds = authoritySubmissions.map(entry => entry.proof.event.rootInstanceId);
+					assert.ok(rootIds.every(rootId => typeof rootId === "string" && /^native_root_[A-Za-z0-9_-]{16,96}$/.test(rootId)),
+						"all four native authority proofs must bind an explicit root identity");
+					assert.equal(new Set(rootIds).size, 1, "Events #1–#4 must bind the same native root instance");
+					assert.equal(authoritySubmissions[0].proof.event.sideEventParentName, "chooseCharacterOL");
+					assert.equal(authoritySubmissions[0].proof.event.selectionParentName, "game");
+					assert.equal(authoritySubmissions[2].proof.event.rootEventName, "game");
+					assert.equal(nativeDiagnostic.some(entry => entry?.snapshot?.rootObjectMatches === false), false,
+						"native root object identity changed during the four-event chain");
+					const actionGate = nativeDiagnostic.find(entry => entry?.stage === "native_start_probe_outcome")?.snapshot;
+					assert.equal(actionGate?.rootObjectMatches, true);
+					assert.equal(actionGate?.rootInstanceId, rootIds[0]);
+				}
 				for (let index = 0; index < authoritySubmissions.length; index++) {
 					const { proof, resourcePids } = authoritySubmissions[index];
 					assert.equal(proof.stateRevisionBefore, index);

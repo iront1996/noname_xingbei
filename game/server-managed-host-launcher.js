@@ -112,7 +112,7 @@ function createManagedHostProcessLauncher({
 						command.accepted === true &&
 						command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
 						command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret &&
-						[2, 3, 4].includes(command.eventSequence) && command.stateRevision === command.eventSequence &&
+						[1, 2, 3, 4].includes(command.eventSequence) && command.stateRevision === command.eventSequence &&
 						/^[a-f0-9]{64}$/.test(command.afterDigest)) ||
 					["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||
 				Object.getPrototypeOf(command) !== Object.prototype) throw new Error("HOST_COMMAND_REJECTED");

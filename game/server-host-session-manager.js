@@ -222,7 +222,7 @@ function createHostSessionManager({
 				else if (message?.type === "host_game_ready") markGameReady(message);
 				else if (message?.type === "host_authority_event") {
 					const committed = commitAuthorityEvent(message);
-					if (["xingbei_character_selection_v1", "xingbei_opening_draw_v1", "xingbei_native_card_action_v1"].includes(message.proof?.event?.kind)) {
+					if (["xingbei_side_assignment_v1", "xingbei_character_selection_v1", "xingbei_opening_draw_v1", "xingbei_native_card_action_v1"].includes(message.proof?.event?.kind)) {
 						if (!committed.ok) {
 							fail(record, committed.code);
 							Promise.resolve(record.handle?.stop("authority_event_rejected")).catch(() => {});
@@ -269,7 +269,10 @@ function createHostSessionManager({
 			event.hostPlayerAbsent !== true || event.connectedTransports !== 0 ||
 			!record.seatIds.includes(event.firstActSeatId) || !Array.isArray(event.sides) ||
 			event.sides.length !== record.seatIds.length || event.sides.some((side, index) =>
-				side?.seatId !== record.seatIds[index] || typeof side.side !== "boolean")) return false;
+			side?.seatId !== record.seatIds[index] || typeof side.side !== "boolean")) return false;
+		if (event.rootInstanceId !== undefined && (!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(event.rootInstanceId) ||
+			event.rootEventName !== "game" || event.rootParentName !== null || event.selectionEventName !== "chooseCharacterOL" ||
+			event.selectionParentName !== "game" || event.sideEventParentName !== "chooseCharacterOL")) return false;
 		const red = event.sides.filter(side => side.side).length;
 		const blue = event.sides.length - red;
 		const firstActor = event.sides.find(side => side.seatId === event.firstActSeatId);
@@ -291,6 +294,9 @@ function createHostSessionManager({
 				event.characters.length !== record.seatIds.length || event.characters.some((entry, index) =>
 				entry?.seatId !== record.seatIds[index] || typeof entry.character !== "string" ||
 				entry.character.length < 1 || entry.character.length > 128)) return false;
+			if (record.xingbeiAuthorityContext?.rootInstanceId && event.rootInstanceId !== record.xingbeiAuthorityContext.rootInstanceId) return false;
+			if (event.rootInstanceId !== undefined && (event.rootEventName !== "game" || event.rootParentName !== null ||
+				event.selectionParentName !== "game" || event.selectionEventName !== "chooseCharacterOL")) return false;
 			return new Set(event.characters.map(entry => entry.character)).size === event.characters.length &&
 				record.xingbeiAuthorityContext?.firstActSeatId && record.xingbeiAuthorityContext.sides?.length === record.seatIds.length;
 		}
@@ -305,6 +311,7 @@ function createHostSessionManager({
 				event.gameMeNull !== true || event.connectedTransports !== 0 || event.firstActSeatId !== context.firstActSeatId ||
 				!/^native_[A-Za-z0-9_-]{16,96}$/.test(event.nativeEventId || "") ||
 				!Array.isArray(event.seats) || event.seats.length !== record.seatIds.length) return false;
+			if (context.rootInstanceId && event.rootInstanceId !== context.rootInstanceId) return false;
 			const seatsValid = event.seats.every((seat, index) => seat && Object.keys(seat).sort().join(",") ===
 				"character,handCommitment,handCount,position,seatId,side" && seat.seatId === record.seatIds[index] &&
 				seat.position === index && seat.character === context.characters[index]?.character &&
@@ -324,6 +331,7 @@ function createHostSessionManager({
 				!context?.openingDrawCommitted || !before) return reject("CARD_ACTION_PHASE");
 			if (event.nativeEventCompleted !== true || event.nativeEventName !== "gongJiOrFaShu" ||
 				!/^[A-Za-z0-9_-]{1,128}$/.test(event.nativeEventId || "")) return reject("CARD_ACTION_EVENT_IDENTITY");
+			if (context.rootInstanceId && event.rootInstanceId !== context.rootInstanceId) return reject("CARD_ACTION_ROOT_IDENTITY");
 			if (!record.seatIds.includes(event.seatId) || event.seatId !== before.firstActSeatId) return reject("CARD_ACTION_ACTOR");
 			if (typeof event.cardName !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(event.cardName) ||
 				!record.seatIds.includes(event.targetSeatId) ||
@@ -411,7 +419,8 @@ function createHostSessionManager({
 			record.acceptedNativeCardActionProofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
 		}
 		if (proof.event.kind === "xingbei_side_assignment_v1") {
-			record.xingbeiAuthorityContext = { firstActSeatId: proof.event.firstActSeatId, sides: proof.event.sides.map(side => ({ ...side })), characters: null };
+			record.xingbeiAuthorityContext = { firstActSeatId: proof.event.firstActSeatId, sides: proof.event.sides.map(side => ({ ...side })),
+				characters: null, rootInstanceId: proof.event.rootInstanceId || null };
 		} else if (proof.event.kind === "xingbei_character_selection_v1") {
 			record.xingbeiAuthorityContext.characters = proof.event.characters.map(entry => ({ ...entry }));
 		}
