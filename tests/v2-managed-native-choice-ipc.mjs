@@ -43,7 +43,7 @@ function safeNativeDiagnostic(value) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -184,17 +184,21 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					nativeNoOptionCandidateAvailable = Boolean(nativeActionOptionId);
 					nativeActionOptionId ||= message.options.find(option => message.optionKinds[option] === "gongJi");
 					assert.ok(nativeActionOptionId, "seeded native opening did not produce a legal native gongJi action candidate");
+				} else if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_response_probe" && process.env.V2_NATIVE_YINYANG_FIXTURE === "1") {
+					assert.ok(message.optionTargetSeatIds && Object.keys(message.optionTargetSeatIds).length === message.options.length,
+						"fixture action target map must be derived from the actual native card/target candidate mapping");
+					const eligibleOptions = message.options.filter(option => message.optionKinds[option] === "gongJi" &&
+						message.optionTargetSeatIds[option] === nativeYinYangFixtureSeatId && message.optionYinYangEligible?.[option] === true);
+					if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
+						assert.ok(Array.isArray(message.responseProbeOptions));
+						nativeActionOptionId = eligibleOptions.find(option => message.responseProbeOptions.includes(option));
+					} else nativeActionOptionId = eligibleOptions[0];
+					assert.ok(nativeActionOptionId, "native action must target the YinYang fixture seat with an attack accepted by the original response predicates");
 				} else if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
 					assert.ok(Array.isArray(message.responseProbeOptions) && message.responseProbeOptions.length > 0,
 						"test could not select a native attack whose target has a card accepted by the native yingZhan response predicate");
 					nativeActionOptionId = message.responseProbeOptions.find(option => message.optionKinds[option] === "gongJi");
 					assert.ok(nativeActionOptionId, "response-capable target candidate must be an attack card");
-				} else if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_response_probe" && process.env.V2_NATIVE_YINYANG_FIXTURE === "1") {
-					assert.ok(message.optionTargetSeatIds && Object.keys(message.optionTargetSeatIds).length === message.options.length,
-						"fixture action target map must be derived from the actual native card/target candidate mapping");
-					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === "gongJi" &&
-						message.optionTargetSeatIds[option] === nativeYinYangFixtureSeatId && message.optionYinYangEligible?.[option] === true);
-					assert.ok(nativeActionOptionId, "native action must target the YinYang fixture seat with an attack that passes the native response preconditions");
 				} else if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_response_probe") {
 					assert.ok(message.optionKinds && Object.keys(message.optionKinds).length === message.options.length);
 					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === "gongJi");
@@ -773,7 +777,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.notEqual(responseStarted.snapshot.seatId, nativeActionCandidate.seatId,
 					"the response event must belong to the attacked ordinary seat, not the attacking seat");
 				assert.equal(responseCompleted.snapshot.gameMeAbsent, true);
-				assert.equal(typeof responseCompleted.snapshot.resultBool, "boolean",
+				if (process.env.V2_NATIVE_YINYANG_VIEWAS_PROBE !== "1") assert.equal(typeof responseCompleted.snapshot.resultBool, "boolean",
 					"native chooseToUse must produce an actual response/decline result");
 				if (process.env.V2_NATIVE_YINYANG_FIXTURE === "1") {
 					assert.equal(responseStarted.snapshot.seatId, nativeYinYangFixtureSeatId,
@@ -788,6 +792,34 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"the original skill filter did not expose an eligible native candidate");
 					assert.ok(responseStarted.snapshot.yinYangNativeCandidate?.matchingPhysicalMaterialCount > 0,
 						"the seat did not receive a real matching physical gongJi material through native gameDraw");
+				if (process.env.V2_NATIVE_YINYANG_VIEWAS_PROBE === "1") {
+					const contractTrace = nativeDiagnostic.find(entry => entry?.stage === "native_yinyang_viewas_contract_probe");
+					const contract = contractTrace?.snapshot;
+					assert.ok(contract, `the live native yingZhan did not expose the opt-in YinYang viewAs contract probe: ${JSON.stringify(nativeDiagnostic.filter(entry => String(entry?.stage).includes("yinyang")))}`);
+					assert.equal(contract.eventName, "yingZhan");
+					assert.equal(contract.eventContent, "chooseToUse");
+					assert.equal(contract.hasSkill, true);
+					assert.equal(contract.nativeEventEnableMatches, true,
+						`the native skill enable contract must include the actual event: ${JSON.stringify(contract)}`);
+					assert.equal(contract.nativeSkillFilterAccepted, true);
+					assert.equal(contract.engineSkillEnabled, contract.nativeSkillExpanded,
+						"filterEnable must reflect the actual player skill expansion result, not a fabricated candidate");
+					assert.equal(contract.materialFilterAccepted, true,
+						"the original skill.filterCard must accept a physical hand material");
+					assert.equal(contract.nativeEventFilterAccepted, true,
+						"the original yingZhan event.filterCard must accept the skill's virtual viewAs card");
+					assert.equal(contract.nativeCardEnabled, true);
+					assert.ok(contract.legalTargetCount > 0, "native target filters must accept at least one target for the virtual card");
+					assert.deepEqual(contract.virtualShape, { hasName: true, xiBieMatchesIncoming: true, isCard: true,
+						containsPhysicalMaterials: false, hasSkillField: false, hasSourceSkillField: false });
+					assert.equal(contract.viewAsFilterPresent, false,
+						"yinYangZhanHuan has no viewAsFilter; enable/filter/filterCard are the controlling predicates");
+					assert.equal(contract.nativeUiCandidateEnumerationObserved, false,
+						"this probe validates native eligibility and result shape, not the legacy local-UI candidate enumerator");
+					assert.equal(contract.probeError, null);
+					assert.equal(contract.contractAccepted, true, `native skill contract rejected: ${JSON.stringify(contract)}`);
+					console.info(`native_yinyang_viewas_contract=${JSON.stringify(contract)}`);
+				}
 				}
 			}
 			if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
