@@ -7,6 +7,12 @@
 - Follow-up isolates the browser bootstrap allowance at 20 s and gives that test's outer Browser Ready watchdog 25 s; CDP command/gameplay deadlines remain 15 s and assertions are unchanged. Local Windows Chrome passed the previously failing character-selection test 1/1 with zero skips (~12.3 s). Linux CI `38775693351` passed all 179 TAP tests with zero failures and zero skips, including the no-target Chromium response step and the existing native response, Event #1–#4, B2, cleanup and fault regressions.
 - Current verified scope is limited to physical `yingZhan → chooseToUse` response shapes (single target, explicit zero target) and optional decline. General `chooseToRespond`, skills/multi-card/multi-target dynamics, terminal authority, Full Playable, HALL, M3/M4, and future V3 integration remain incomplete. Formal V2/live systems remain untouched; PR #1 remains Open/unmerged.
 
+## FP-P incremental proof: native targeted spell card action
+
+- The managed turn-action integration test now has an opt-in allowlisted category selector and the serialized Linux workflow runs an explicit `faShu` candidate path through native `gongJiOrFaShu`, `useResult`, original `useCard` child and Event #4 validator. No rule or authority validator changed.
+- Local Windows Chrome: after an unseeded run correctly failed because the initial native hand had no `faShu` option, the explicit test-only seed path passed 4/4 fresh runs with zero skips. Each run selected an actual native-event `faShu` option, moved its physical card from hand through the engine's use-card flow, completed the native child once, accepted Event #4 and advanced authority revision to 4; `game.me` remained null. Linux CI for this deterministic category assertion is pending.
+- This proves only a constrained physical, one-card/one-target `faShu` action. It does not establish all spells, skills, target counts, full turn rotation, response skills, terminal authority or Full Playable.
+
 ## Architecture direction correction (normative)
 
 The final integration target for the M2 server-authority core is **V3**, not formal V2. This branch's V2 naming and V2-oriented implementation are historical engineering context; formal V2 is permanently independent and must retain its current protocol, room lifecycle, gameplay flow, and deployment unchanged.

@@ -216,7 +216,9 @@ async function boot(message) {
 	await cdp.send("Page.enable");
 	let testRandomSource = "";
 	if (process.env.V2_NATIVE_TEST_RANDOM_SEED !== undefined) {
-		if (process.env.V2_NATIVE_MANAGED_RESPONSE !== "1" || !/^(0|[1-9][0-9]{0,9})$/.test(process.env.V2_NATIVE_TEST_RANDOM_SEED)) {
+		const managedResponseSeed = process.env.V2_NATIVE_MANAGED_RESPONSE === "1";
+		const managedActionKindSeed = ["gongJi", "faShu"].includes(process.env.V2_NATIVE_ACTION_KIND);
+		if ((!managedResponseSeed && !managedActionKindSeed) || !/^(0|[1-9][0-9]{0,9})$/.test(process.env.V2_NATIVE_TEST_RANDOM_SEED)) {
 			throw new Error("NATIVE_TEST_RANDOM_SEED_REJECTED");
 		}
 		const seed = Number(process.env.V2_NATIVE_TEST_RANDOM_SEED) >>> 0;

@@ -43,7 +43,7 @@ function safeNativeDiagnostic(value) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -164,7 +164,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.ok(Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 64);
 				assert.equal(new Set(message.options).size, message.options.length);
 				assert.ok(message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)));
-				if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
+				if (process.env.V2_NATIVE_ACTION_KIND) {
+					assert.ok(["gongJi", "faShu"].includes(process.env.V2_NATIVE_ACTION_KIND),
+						"native action kind must be an allowlisted Xingbei card category");
+					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === process.env.V2_NATIVE_ACTION_KIND);
+					assert.ok(nativeActionOptionId,
+						`native event produced no legal ${process.env.V2_NATIVE_ACTION_KIND} action candidate`);
+				} else if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
 					assert.ok(Array.isArray(message.responseProbeOptions) && message.responseProbeOptions.length > 0,
 						"test could not select a native attack whose target has a card accepted by the native yingZhan response predicate");
 					nativeActionOptionId = message.responseProbeOptions.find(option => message.optionKinds[option] === "gongJi");
@@ -747,6 +753,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(probeMode) ? "trustee" : "player");
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.option,
 				["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(probeMode) ? nativeActionCandidate.trusteeOption : nativeActionOptionId);
+			if (process.env.V2_NATIVE_ACTION_KIND) {
+				assert.equal(nativeActionCandidate.optionKinds[controller.inspect(roomId, nativeActionChoice.choiceId).resolution.option],
+					process.env.V2_NATIVE_ACTION_KIND, "managed host must apply the requested native card category");
+			}
 			assert.equal(applied.snapshot?.nativeAction?.optionId, controller.inspect(roomId, nativeActionChoice.choiceId).resolution.option,
 				"native engine applied an option other than the controller resolution");
 			assert.equal(nativeActionAckDropped, true);
