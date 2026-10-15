@@ -1,5 +1,11 @@
 # V2 server-authority plan and evidence
 
+## FP-R2: nested native response chain (Linux CI pending)
+
+- The response integration test adds an opt-in seeded nested-chain scenario. A server-local native eligibility probe identifies an actual physical `gongJi` response option whose legal target can answer under Xingbei's original response predicates; only that option ID plus the boolean native-derived proof is sent through the isolated test IPC. No hand/card metadata is published to clients or ordinary logs.
+- Windows real-Chromium test passed 3/3 consecutively with seed 3, plus the non-nested response regression 1/1. Evidence: one managed root and four ordinary seats; two sequential native `yingZhan → chooseToUse` events; the second event's observed parent chain contains the first `yingZhan`; both choices traverse controller and native completion/ACK; no transport is attached and `game.me` remains null. Seed 1/2 did not produce a legal second-layer response target and correctly failed the opt-in probe instead of manufacturing one.
+- CI adds a serialized Chromium step pinned to this deterministic seed. Until that Linux run passes, classify the nested-path proof as local-only. General response skills, generic `chooseToRespond`, other card/target shapes, full turn cycling, terminal authority and Full Playable remain incomplete.
+
 ## FP-R2 follow-up: zero-target response and browser bootstrap diagnosis
 
 - The native response adapter now carries a distinct no-target physical-card shape, admitted only when the live Xingbei event has `notarget === true` and exact `[0,0]` target bounds. Original `chooseToUse`/use-card processing remains authoritative; the host verifies zero targets and native child completion before ACK. Local real Chromium passed the same-root four-seat chain; no broader response or Full Playable claim follows.

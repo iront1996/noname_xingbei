@@ -1,5 +1,11 @@
 # V2 Codex engineering handoff
 
+## FP-R2: nested native `yingZhan` response chain (Linux CI pending)
+
+- The native response candidate adapter now has an opt-in nested-response probe. It uses the live response event's legal options and a server-local eligibility check to select a native `gongJi` response whose legal target itself has a native response; no card/hand detail is broadcast to players or persisted in ordinary diagnostics.
+- Seeded real-Chromium run (`V2_NATIVE_TEST_RANDOM_SEED=3`) passed 3/3 consecutive local runs. Each used the same four-seat native `mode.start → phaseLoop → phase → xingDong → gongJiOrFaShu` root, entered two native `yingZhan → chooseToUse` gates with the second parented under the earlier `yingZhan` chain, completed each native response and ACK once, and kept `game.me === null` with zero player WebSockets. The non-nested managed-response regression also passed 1/1 locally.
+- The nested assertion checks the second gate's actual parent chain, same-root identity, its `yingZhan` parent, null local player, and accepted authenticated post-native ACK. It does not claim generic `chooseToRespond`, skill/multi-card paths, terminal authority, continuous full-match playability, HALL/M3/M4, or production compatibility. Linux CI is pending for this addition; a prior probe seed without a legal second-layer target failed closed and was not treated as acceptance.
+
 ## FP-R2 follow-up: native no-target response and Chromium cold-start CI
 
 - Added a distinct fail-closed native no-target physical response shape. It is admitted only when the live Xingbei event declares `notarget === true` and exact target range `[0,0]`; delivery is revalidated against that native event and resumed with no targets. This is a narrow real-engine response slice, not general response support.

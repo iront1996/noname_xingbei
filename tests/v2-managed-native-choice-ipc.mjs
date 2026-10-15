@@ -255,12 +255,23 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.ok(message.options.every(option => ["native_single_target_card", "native_notarget_card", "native_optional_decline"].includes(message.optionShapes[option])));
 				const firstManagedResponse = nativeResponseChoices.length === 0;
 				const targetlessProbe = process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1";
+				const nestedResponseProbe = process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1";
 				const responseTrusteeProbe = process.env.V2_NATIVE_RESPONSE_TRUSTEE === "1";
-				const submittedResponseOption = firstManagedResponse ? message.options.find(option => message.optionKinds[option] === "card" &&
+				if (nestedResponseProbe) {
+					assert.ok(message.optionCanTriggerNestedResponse,
+						"nested-response probe requires native-only response mapping metadata");
+					assert.deepEqual(Object.keys(message.optionCanTriggerNestedResponse).sort(), [...message.options].sort(),
+						"nested-response eligibility must be bound to the exact native option set");
+					assert.ok(Object.values(message.optionCanTriggerNestedResponse).every(value => typeof value === "boolean"));
+				}
+				const submittedResponseOption = firstManagedResponse ? nestedResponseProbe ? message.options.find(option =>
+					message.optionKinds[option] === "card" && message.optionCanTriggerNestedResponse[option] === true) : message.options.find(option => message.optionKinds[option] === "card" &&
 					(!targetlessProbe || message.optionShapes[option] === "native_notarget_card")) : message.trusteeOption;
 				if (firstManagedResponse) {
 					nativeResponseOptionId = submittedResponseOption;
-					assert.ok(nativeResponseOptionId, targetlessProbe ? "the native yingZhan event exposed no legal native no-target response candidate" :
+					assert.ok(nativeResponseOptionId, nestedResponseProbe ? `the native yingZhan event exposed no legal response whose native target can itself respond: ${JSON.stringify({
+						optionKinds: message.optionKinds, optionCanTriggerNestedResponse: message.optionCanTriggerNestedResponse,
+					})}` : targetlessProbe ? "the native yingZhan event exposed no legal native no-target response candidate" :
 						"the native yingZhan event exposed no legal physical-card response candidate");
 					if (targetlessProbe) assert.equal(message.optionShapes[nativeResponseOptionId], "native_notarget_card");
 					nativeResponseCandidate = message;
@@ -798,6 +809,21 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.ok(nativeResponseChoices.every(entry => nativeDiagnostic.filter(item => item?.stage === "native_response_applied" &&
 					item?.snapshot?.nativeEventId === entry.candidate.nativeEventId).length === 1),
 					"native response delivery/ACK retry must not apply the same response twice");
+				if (process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1") {
+					assert.ok(nativeResponseChoices.length >= 2, "native response action did not produce the expected nested response choice");
+					const nestedResponse = nativeResponseChoices.map(entry => ({ entry,
+						gate: nativeDiagnostic.find(item => item?.stage === "native_response_wait_open" &&
+							item?.snapshot?.nativeEventId === entry.candidate.nativeEventId)?.snapshot,
+					})).find(item => item.gate?.parentChain?.includes("yingZhan"));
+					assert.ok(nestedResponse, `native engine did not create a managed response beneath an earlier yingZhan event: ${JSON.stringify(
+						nativeResponseChoices.map(entry => nativeDiagnostic.find(item => item?.stage === "native_response_wait_open" &&
+							item?.snapshot?.nativeEventId === entry.candidate.nativeEventId)?.snapshot?.parentChain || null))}`);
+					assert.equal(nestedResponse.gate?.rootObjectMatches, true);
+					assert.equal(nestedResponse.gate?.waitEventParentName, "yingZhan");
+					assert.equal(nestedResponse.gate?.gameMeAbsent, true);
+					assert.ok(nativeResponseAckResults.some(ack => ack.choiceId === nestedResponse.entry.choice.choiceId && ack.accepted),
+						"nested native response must complete through authenticated post-event ACK");
+				}
 				if (process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1") {
 					assert.equal(nativeResponseAckDropped, true, "response ACK-loss injection did not drop the first native completion ACK");
 					assert.ok(nativeResponseAckResults.find(ack => ack.choiceId === nativeResponseChoice.choiceId)?.accepted,
