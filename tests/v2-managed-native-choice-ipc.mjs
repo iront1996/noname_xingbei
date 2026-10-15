@@ -368,14 +368,6 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
 		assert.equal(controlled.classification, "cdp_command_timeout");
 		if (!actionDiagnosticDispatched) assert.equal((await manager.diagnoseNativeStart(roomId, probeMode)).ok, true);
-		const outcome = await until(() => nativeDiagnostic.find(entry =>
-			["native_start_probe_outcome", "native_start_root_evaluation_outcome", "native_start_diagnostic_rejected"].includes(entry?.stage)), 5000,
-			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), failures: nativeDiagnostic.map(entry => entry?.failureCode), hostAlive: manager.inspect(roomId)?.state }));
-		assert.ok(["native_promise_pending_cdp_responsive", "native_exception_observed", "native_root_fulfilled", "explicit_exception",
-			"javascript_loop_starvation_suspected", "undetermined", "chromium_exit"].includes(outcome.classification));
-		const snapshot = outcome.snapshot;
-		assert.ok(snapshot, `native startup state was not observable: ${JSON.stringify(outcome)}`);
-		t.diagnostic(`native startup pre-assert (${probeMode}): ${JSON.stringify(outcome)}`);
 		if (["before_native_result_set", "cdp_result_unknown_after_dispatch", "use_result_throws", "use_card_child_throws"].includes(nativeFaultMode)) {
 			await until(() => manager.inspect(roomId)?.state === "failed", 10000,
 				() => ({ session: manager.inspect(roomId), nativeDiagnostic: nativeDiagnostic.slice(-12) }));
@@ -404,6 +396,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			await failedHandle.waitForCleanup();
 			return;
 		}
+		const outcome = await until(() => nativeDiagnostic.find(entry =>
+			["native_start_probe_outcome", "native_start_root_evaluation_outcome", "native_start_diagnostic_rejected"].includes(entry?.stage)), 5000,
+			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), failures: nativeDiagnostic.map(entry => entry?.failureCode), hostAlive: manager.inspect(roomId)?.state }));
+		assert.ok(["native_promise_pending_cdp_responsive", "native_exception_observed", "native_root_fulfilled", "explicit_exception",
+			"javascript_loop_starvation_suspected", "undetermined", "chromium_exit"].includes(outcome.classification));
+		const snapshot = outcome.snapshot;
+		assert.ok(snapshot, `native startup state was not observable: ${JSON.stringify(outcome)}`);
+		t.diagnostic(`native startup pre-assert (${probeMode}): ${JSON.stringify(outcome)}`);
 		if (probeMode === "native_start") {
 			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
 			assert.equal(snapshot.waitForPlayerCalls, 1);
