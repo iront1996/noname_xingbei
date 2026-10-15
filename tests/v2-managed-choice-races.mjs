@@ -173,7 +173,8 @@ test("stop during pending and delivery_pending native choices clears only the st
 	await deliveryBarrier.entered;
 	assert.equal(f.controller.inspect(roomId, pending.choiceId).state, "pending");
 	assert.equal(f.controller.inspect(roomId, applying.choiceId).state, "delivery_pending");
-	assert.equal(f.timers.size, 1, "the still-pending choice deadline remains registered while delivery is barrier-blocked");
+	assert.deepEqual([...f.timers.values()].map(timer => timer.delay).sort((a, b) => a - b), [1000, 4000],
+		"the pending-choice deadline and bounded IPC-send watchdog remain registered while delivery is barrier-blocked");
 	assert.equal((await f.manager.stop(roomId, "race_stop_during_delivery")).ok, true);
 	assert.equal(f.controller.inspect(roomId, pending.choiceId), null);
 	assert.equal(f.controller.inspect(roomId, applying.choiceId), null);
