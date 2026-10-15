@@ -10,7 +10,7 @@
 ## FP-P incremental proof: native targeted spell card action
 
 - The managed turn-action integration test now has an opt-in allowlisted category selector and the serialized Linux workflow runs an explicit `faShu` candidate path through native `gongJiOrFaShu`, `useResult`, original `useCard` child and Event #4 validator. No rule or authority validator changed.
-- Local Windows Chrome: after an unseeded run correctly failed because the initial native hand had no `faShu` option, the explicit test-only seed path passed 4/4 fresh runs with zero skips. Each run selected an actual native-event `faShu` option, moved its physical card from hand through the engine's use-card flow, completed the native child once, accepted Event #4 and advanced authority revision to 4; `game.me` remained null. Linux CI for this deterministic category assertion is pending.
+- Local Windows Chrome: after an unseeded run correctly failed because the initial native hand had no `faShu` option, the explicit test-only seed path passed 4/4 fresh runs with zero skips. Each run selected an actual native-event `faShu` option, moved its physical card from hand through the engine's use-card flow, completed the native child once, accepted Event #4 and advanced authority revision to 4; `game.me` remained null. Linux CI `38777426984` passed 180/180 TAP tests, zero failures/skips; its explicit native `faShu` Event #4 step passed.
 - This proves only a constrained physical, one-card/one-target `faShu` action. It does not establish all spells, skills, target counts, full turn rotation, response skills, terminal authority or Full Playable.
 
 ## Architecture direction correction (normative)
