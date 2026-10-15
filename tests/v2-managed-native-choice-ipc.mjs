@@ -821,11 +821,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(released.snapshot?.gameDrawEntered, true);
 				assert.equal(released.snapshot?.hostPlayerAbsent, true);
 				const nativeGate = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open" &&
-					entry?.snapshot?.rootEventName === "game" && entry?.snapshot?.phaseLoopParentName === "game" &&
+					entry?.snapshot?.rootEventName === "game" &&
+					entry?.snapshot?.eventStackDetails?.find(item => item.eventName === "phaseLoop")?.parentEventName === "game" &&
 					entry?.snapshot?.eventStack?.slice(0, 4).join("/") === "game/phaseLoop/phase/xingDong"), 5000,
 					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
 				assert.equal(nativeGate.snapshot?.rootEventName, "game");
-				assert.equal(nativeGate.snapshot?.phaseLoopParentName, "game");
+				assert.equal(nativeGate.snapshot?.eventStackDetails?.find(item => item.eventName === "phaseLoop")?.parentEventName, "game");
 				assert.deepEqual(nativeGate.snapshot?.eventStack?.slice(0, 4), ["game", "phaseLoop", "phase", "xingDong"]);
 				assert.equal(nativeGate.snapshot?.nativeInputGate?.eventName, "gongJiOrFaShu");
 				assert.equal(nativeGate.snapshot?.nativeInputGate?.parentEventName, "xingDong");
