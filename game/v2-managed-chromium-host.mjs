@@ -1545,7 +1545,8 @@ async function runNativeStartDiagnostic(message) {
 				if (payload?.kind !== "native_start_trace_v1" || typeof payload.stage !== "string" ||
 					!payload.snapshot || typeof payload.snapshot !== "object") return;
 				if (event.params.payload.length > 8192) {
-					const criticalStages = new Set(["native_useResult_exception", "native_useCard_child_exception", "wait_next_error", "root_promise_rejected"]);
+					const criticalStages = new Set(["native_useResult_exception", "native_useCard_child_exception", "wait_next_error", "root_promise_rejected",
+						"native_input_gate_expired", "native_input_resume_rejected", "native_input_cancel_rejected", "native_input_resume_accepted", "native_input_cancelled"]);
 					if (!criticalStages.has(payload.stage)) return;
 					const snapshot = payload.snapshot;
 					const action = snapshot.nativeAction || {};
@@ -1555,11 +1556,19 @@ async function runNativeStartDiagnostic(message) {
 						rootObjectMatches: snapshot.rootObjectMatches === true, nativeEventId: snapshot.nativeInputGate?.nativeEventId || null,
 						seatId: action.seatId || snapshot.nativeInputGate?.seatId || null,
 						failureCode: typeof snapshot.failureCode === "string" ? snapshot.failureCode : null,
-							nativeAction: { eventId: action.eventId || null, seatId: action.seatId || null,
-								status: typeof action.status === "string" ? action.status : null,
-								useResultCount: Number.isSafeInteger(action.useResultCount) ? action.useResultCount : 0,
-								nativeUseCardHistoryEntries: Number.isSafeInteger(action.nativeUseCardHistoryEntries) ? action.nativeUseCardHistoryEntries : null,
-								cardInHandAtFailure: typeof action.cardInHandAtFailure === "boolean" ? action.cardInHandAtFailure : null },
+						hostPlayerAbsent: snapshot.hostPlayerAbsent === true,
+						nativeInputGateStatus: snapshot.nativeInputGate?.status || null,
+						nativeInputGate: snapshot.nativeInputGate ? { nativeEventId: snapshot.nativeInputGate.nativeEventId || null,
+							seatId: snapshot.nativeInputGate.seatId || null, status: snapshot.nativeInputGate.status || null,
+							failureCode: typeof snapshot.nativeInputGate.failureCode === "string" ? snapshot.nativeInputGate.failureCode : null,
+							nativeSendCount: Number.isSafeInteger(snapshot.nativeInputGate.nativeSendCount) ? snapshot.nativeInputGate.nativeSendCount : 0,
+							nativeResumeCount: Number.isSafeInteger(snapshot.nativeInputGate.nativeResumeCount) ? snapshot.nativeInputGate.nativeResumeCount : 0,
+							engineResumeCount: Number.isSafeInteger(snapshot.nativeInputGate.engineResumeCount) ? snapshot.nativeInputGate.engineResumeCount : 0 } : null,
+						nativeAction: snapshot.nativeAction ? { eventId: action.eventId || null, seatId: action.seatId || null,
+							status: typeof action.status === "string" ? action.status : null,
+							useResultCount: Number.isSafeInteger(action.useResultCount) ? action.useResultCount : 0,
+							nativeUseCardHistoryEntries: Number.isSafeInteger(action.nativeUseCardHistoryEntries) ? action.nativeUseCardHistoryEntries : null,
+							cardInHandAtFailure: typeof action.cardInHandAtFailure === "boolean" ? action.cardInHandAtFailure : null } : null,
 						gameMeAbsent: snapshot.gameMeAbsent === true,
 					} });
 					return;
