@@ -494,7 +494,7 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	const beforeSummary = { revision: 3, firstActSeatId: openingDraw.event.firstActSeatId,
 		seats: openingDraw.event.seats.map(seat => ({ ...seat })) };
 	const afterSeats = beforeSummary.seats.map((seat, index) => index === 0 ? { ...seat, handCount: 3,
-		handCommitment: "ab".repeat(32) } : { ...seat });
+		handCommitment: "ef".repeat(32) } : { ...seat });
 	const cardAction = {
 		kind: "native_authority_event_v1", checkpoint: null, eventSequence: 4,
 		stateRevisionBefore: 3, stateRevisionAfter: 4, beforeDigest: openingDraw.afterDigest,
@@ -548,6 +548,18 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	assert.equal(cardCommitted.session.nextAuthorityEventSequence, 5);
 	assert.deepEqual(cardCommitted.session.lastAuthorityEvent, { sequence: 4, name: "gongJiOrFaShu" });
 	assert.equal(cardCommitted.session.authorityStateDigest, cardAction.afterDigest);
+	const publicSessionJson = JSON.stringify(cardCommitted.session);
+	assert.equal(publicSessionJson.includes("handCommitment"), false, "public session inspection must not disclose hidden-hand commitments");
+	assert.equal(Object.hasOwn(cardCommitted.session, "secret"), false, "public session inspection must not expose the managed-host secret field");
+	assert.equal(Object.hasOwn(cardCommitted.session, "credential"), false, "public session inspection must not expose a credential field");
+	assert.equal(/seatCredential|credentialDigest|seatToken/.test(publicSessionJson), false,
+		"public session inspection must not disclose seat credential material");
+	assert.ok(cardCommitted.session.authorityDigestChain.every(entry => Object.keys(entry).sort().join(",") === "afterDigest,beforeDigest,eventSequence"),
+		"public authority-chain entries must contain only event sequencing and digests");
+	const privateCommitments = [...openingDraw.event.seats.map(seat => seat.handCommitment), afterSeats[0].handCommitment];
+	const exposedCommitmentFields = Object.entries(cardCommitted.session).filter(([, value]) =>
+		privateCommitments.some(commitment => JSON.stringify(value).includes(commitment))).map(([key]) => key);
+	assert.deepEqual(exposedCommitmentFields, [], "public session inspection leaked a hidden-hand commitment field");
 	const replayed = f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: cardAction }));
 	assert.equal(replayed.ok, true, "identical Event #4 retransmission must replay its ACK idempotently");
 	assert.equal(replayed.idempotent, true);

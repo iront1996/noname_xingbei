@@ -63,7 +63,17 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		authorizeManagedHost: message => message.hostProof === sessionSecret,
 		authorizeSeatBinding: message => seatRegistry ? seatRegistry.authorizeSeatBinding(message) : message.serverProof === message.connectionId,
 		authenticateSeat: (message, record) => seatRegistry ? seatRegistry.authenticateSeat(message, record) : message.credential === credentialFor(record.seatId),
-		onResolved: choice => { deliveryCount++; return manager.sendChoiceDelivery(roomId, choice).then(result => result.ok); },
+		onResolved: choice => {
+			deliveryCount++;
+			if (process.env.V2_NATIVE_C3_FULL_CHAIN === "1") {
+				const encoded = JSON.stringify(choice);
+				assert.equal(encoded.includes("handCommitment"), false, "player-choice delivery must not contain hand commitments");
+				assert.equal(encoded.includes(sessionSecret), false, "player-choice delivery must not contain the managed-host secret");
+				for (const credential of seatCredentials.values()) assert.equal(encoded.includes(credential), false,
+					"player-choice delivery must not contain seat credentials");
+			}
+			return manager.sendChoiceDelivery(roomId, choice).then(result => result.ok);
+		},
 		onDeliveryFailed: choice => { void manager.stop(choice.roomId, "choice_delivery_failed"); },
 	});
 	manager = createHostSessionManager({
@@ -581,6 +591,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				const diagnosticJson = JSON.stringify(nativeDiagnostic);
 				assert.equal(publicViewJson.includes("handCommitment"), false, "server public view must not expose hidden-hand commitments");
 				assert.equal(diagnosticJson.includes("handCommitment"), false, "native diagnostics must not expose hidden-hand commitments");
+				assert.equal(/\"hand\"\s*:/.test(diagnosticJson), false, "native diagnostics must not expose complete hidden hands");
 				assert.equal(publicViewJson.includes(sessionSecret), false, "server public view leaked the managed-host secret");
 				assert.equal(diagnosticJson.includes(sessionSecret), false, "native diagnostics leaked the managed-host secret");
 				for (const credential of seatCredentials.values()) {
