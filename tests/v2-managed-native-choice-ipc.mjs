@@ -35,6 +35,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
 	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, event3Proof = null, dropAcks = true, dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, ackTrace = [];
+	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
 	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
@@ -199,7 +200,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				ackTrace.push({ nativeAction: nativeActionChoice?.choiceId === message.choiceId, dropAcks,
 					choiceState: controller.inspect(roomId, message.choiceId)?.state || null,
 					nativeApplied: message.nativeApplied === true, authorityEventSequence: message.authorityEventSequence || null });
-				if (dropAcks) { droppedAcks++; return; }
+				if (dropAcks) {
+					const isNativeActionAck = nativeActionChoice?.choiceId === message.choiceId;
+					if (isNativeActionAck || !droppedChoiceAckIds.has(message.choiceId)) {
+						droppedAcks++;
+						if (!isNativeActionAck) droppedChoiceAckIds.add(message.choiceId);
+						return;
+					}
+				}
 				if (nativeActionChoice && message.choiceId === nativeActionChoice.choiceId) {
 					if (seatRegistry) {
 						const beforeStaleAck = controller.inspect(roomId, message.choiceId);
@@ -354,7 +362,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	// IDs; Chromium must acknowledge the already-applied native result without
 	// running `event.sendback` or Player.init a second time.
 	dropAcks = false;
-	for (const choice of opened) assert.equal(controller.retryDelivery({ roomId, choiceId: choice.choiceId }).ok, true);
+	for (const choice of opened) {
+		const current = controller.inspect(roomId, choice.choiceId);
+		if (current?.state === "delivery_pending") assert.equal(controller.retryDelivery({ roomId, choiceId: choice.choiceId }).ok, true);
+		else assert.equal(current?.state, "resolved", "character-choice ACK retry must resolve before teardown");
+	}
 	if (nativeActionChoice && manager.inspect(roomId)?.authorityStateRevision === 4 && controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "delivery_pending") {
 		assert.equal(controller.retryDelivery({ roomId, choiceId: nativeActionChoice.choiceId }).ok, true,
 			"native action result must be redelivered after the intentionally dropped choice ACK");
