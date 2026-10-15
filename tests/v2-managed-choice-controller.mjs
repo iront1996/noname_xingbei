@@ -53,10 +53,48 @@ test("manual retry cancels the scheduled timer and joins an in-flight IPC delive
 	const retry = f.c.retryDelivery({ roomId, choiceId: opened.choice.choiceId });
 	assert.equal(retry.delivery, "sent");
 	assert.equal(attempts, 2);
-	assert.equal(timers.has(2), false, "manual retry must cancel the prior scheduled retry timer");
-	assert.equal(timers.has(3), true, "the new attempt must own exactly one replacement timer");
+	assert.equal(timers.has(2), false, "manual retry must cancel the prior in-flight delivery watchdog");
+	assert.equal(timers.has(3), false, "manual retry must replace the scheduled retry timer");
+	assert.equal(timers.has(4), true, "the replacement attempt must own exactly one timer");
 	assert.equal(timers.size, 1);
 	f.c.cleanupHostSession(roomId, hostSessionId);
+});
+
+test("a hung IPC send is retried and reaches a bounded fail-closed state", async () => {
+	let clock = 1000, id = 0, attempts = 0, failures = 0, releaseLate;
+	const timers = new Map();
+	const controller = createManagedChoiceController({
+		now: () => clock,
+		isHostSessionActive: (room, session) => room === roomId && session === hostSessionId,
+		authorizeManagedHost: message => message.hostProof === hostSessionId,
+		authenticateSeat: message => message.credential === seatId,
+		authorizeSeatBinding: message => message.serverProof === message.connectionId,
+		schedule: (fn, delay) => { const timer = ++id; timers.set(timer, { fn, at: clock + delay }); return timer; },
+		cancel: timer => timers.delete(timer),
+		deliveryRetryMs: 100,
+		maxDeliveryAttempts: 2,
+		onResolved: () => { attempts++; return attempts === 1 ? new Promise(resolve => { releaseLate = resolve; }) : Promise.resolve(true); },
+		onDeliveryFailed: () => { failures++; },
+	});
+	const opened = controller.openChoice({ protocol: 1, roomId, hostSessionId, seatId, nativeEventId,
+		eventSequence: 2, options: ["a", "b"], trusteeOption: "b", deadlineAt: 2000, hostProof: hostSessionId });
+	assert.equal(opened.ok, true);
+	assert.equal(controller.bindSeatConnection({ roomId, seatId, connectionId: "conn_1", serverProof: "conn_1" }).ok, true);
+	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId, seatId, nativeEventId, eventSequence: 2,
+		choiceId: opened.choice.choiceId, connectionId: "conn_1", credential: seatId, option: "a" }).ok, true);
+	assert.equal(attempts, 1);
+	clock = 1100;
+	for (const [timer, entry] of [...timers]) if (entry.at <= clock) { timers.delete(timer); entry.fn(); }
+	await Promise.resolve(); await Promise.resolve();
+	assert.equal(attempts, 2, "a send callback that never settles must not block the next immutable attempt");
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId).state, "delivery_failed");
+	assert.equal(failures, 1);
+	assert.equal(timers.size, 0);
+	releaseLate(true);
+	await Promise.resolve(); await Promise.resolve();
+	assert.equal(attempts, 2, "late completion of an expired send must not create another delivery");
+	assert.equal(failures, 1);
+	controller.cleanupHostSession(roomId, hostSessionId);
 });
 
 test("unacknowledged result delivery has bounded retries and an explicit terminal state", async () => {

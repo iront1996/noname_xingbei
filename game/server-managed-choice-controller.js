@@ -41,7 +41,7 @@ function createManagedChoiceController({
 	}
 	const choices = new Map();
 	const connections = new Map();
-	const deliveryInFlight = new Set();
+	const deliveryInFlight = new Map();
 
 	function key(roomId, choiceId) {
 		return `${roomId}\u0000${choiceId}`;
@@ -133,11 +133,24 @@ function createManagedChoiceController({
 		let outcome;
 		try { outcome = onResolved(publicChoice(attempting)); } catch (_) { scheduleDeliveryRetry(attempting); return Object.freeze({ ok: true, delivery: "pending", choice: publicChoice(attempting) }); }
 		if (outcome && typeof outcome.then === "function") {
-			deliveryInFlight.add(choiceKey);
+			const flight = { timer: null };
+			deliveryInFlight.set(choiceKey, flight);
+			flight.timer = schedule(() => {
+				if (deliveryInFlight.get(choiceKey) !== flight) return;
+				deliveryInFlight.delete(choiceKey);
+				const latest = choices.get(choiceKey);
+				if (!latest || latest.state !== "delivery_pending" || latest.deliveryId !== attempting.deliveryId) return;
+				if ((latest.deliveryAttempts || 0) >= maxDeliveryAttempts) failDelivery(latest);
+				else deliver(latest);
+			}, deliveryRetryMs);
 			Promise.resolve(outcome).then(() => {
+				if (deliveryInFlight.get(choiceKey) !== flight) return;
+				cancel(flight.timer);
 				deliveryInFlight.delete(choiceKey);
 				scheduleDeliveryRetry(attempting);
 			}, () => {
+				if (deliveryInFlight.get(choiceKey) !== flight) return;
+				cancel(flight.timer);
 				deliveryInFlight.delete(choiceKey);
 				scheduleDeliveryRetry(attempting);
 			});
@@ -150,9 +163,7 @@ function createManagedChoiceController({
 		const current = choices.get(key(record?.roomId, record?.choiceId));
 		if (!current || current.state !== "delivery_pending" || current.deliveryId !== record.deliveryId || current.deliveryTimer) return;
 		if ((current.deliveryAttempts || 0) >= maxDeliveryAttempts) {
-			const failed = Object.freeze({ ...current, state: "delivery_failed", deliveryTimer: null, deliveryFailureCode: "MANAGED_CHOICE_ACK_RETRY_EXHAUSTED" });
-			choices.set(key(current.roomId, current.choiceId), failed);
-			try { onDeliveryFailed(publicChoice(failed)); } catch (_) {}
+			failDelivery(current);
 			return;
 		}
 		const timer = schedule(() => {
@@ -164,6 +175,13 @@ function createManagedChoiceController({
 		}, deliveryRetryMs);
 		choices.set(key(current.roomId, current.choiceId), Object.freeze({ ...current, deliveryTimer: timer }));
 	}
+	function failDelivery(current) {
+		if (!current || current.state !== "delivery_pending") return;
+		if (current.deliveryTimer) cancel(current.deliveryTimer);
+		const failed = Object.freeze({ ...current, state: "delivery_failed", deliveryTimer: null, deliveryFailureCode: "MANAGED_CHOICE_ACK_RETRY_EXHAUSTED" });
+		choices.set(key(current.roomId, current.choiceId), failed);
+		try { onDeliveryFailed(publicChoice(failed)); } catch (_) {}
+	}
 	function acknowledgeDelivery(message) {
 		const record = choices.get(key(message?.roomId, message?.choiceId));
 		if (!record || message?.protocol !== 1 || message.kind !== "managed_host" || record.state !== "delivery_pending" ||
@@ -171,7 +189,10 @@ function createManagedChoiceController({
 			message.deliveryId !== record.deliveryId || !isHostSessionActive(record.roomId, record.hostSessionId) ||
 			!authorizeManagedHost(message)) return failure("MANAGED_CHOICE_ACK_REJECTED");
 		if (record.deliveryTimer) cancel(record.deliveryTimer);
-		deliveryInFlight.delete(key(record.roomId, record.choiceId));
+		const choiceKey = key(record.roomId, record.choiceId);
+		const flight = deliveryInFlight.get(choiceKey);
+		if (flight) cancel(flight.timer);
+		deliveryInFlight.delete(choiceKey);
 		const acknowledged = Object.freeze({ ...record, deliveryTimer: null, state: "resolved" });
 		choices.set(key(record.roomId, record.choiceId), acknowledged); pruneResolved();
 		return Object.freeze({ ok: true, choice: publicChoice(acknowledged) });
@@ -213,13 +234,13 @@ function createManagedChoiceController({
 	function cleanupRoom(roomId) {
 		if (!ROOM_ID.test(roomId)) return failure("MANAGED_CHOICE_CLEANUP_REJECTED");
 		for (const [choiceKey, record] of choices) if (record.roomId === roomId) { if (record.timer) cancel(record.timer); if (record.deliveryTimer) cancel(record.deliveryTimer); choices.delete(choiceKey); }
-		for (const choiceKey of deliveryInFlight) if (choiceKey.startsWith(`${roomId}\u0000`)) deliveryInFlight.delete(choiceKey);
+		for (const [choiceKey, flight] of deliveryInFlight) if (choiceKey.startsWith(`${roomId}\u0000`)) { cancel(flight.timer); deliveryInFlight.delete(choiceKey); }
 		for (const connectionKeyValue of connections.keys()) if (connectionKeyValue.startsWith(`${roomId}\u0000`)) connections.delete(connectionKeyValue);
 		return Object.freeze({ ok: true });
 	}
 	function cleanupHostSession(roomId, hostSessionId) {
 		if (!ROOM_ID.test(roomId) || !SESSION_ID.test(hostSessionId)) return failure("MANAGED_CHOICE_CLEANUP_REJECTED");
-		for (const [choiceKey, record] of choices) if (record.roomId === roomId && record.hostSessionId === hostSessionId) { if (record.timer) cancel(record.timer); if (record.deliveryTimer) cancel(record.deliveryTimer); choices.delete(choiceKey); deliveryInFlight.delete(choiceKey); }
+		for (const [choiceKey, record] of choices) if (record.roomId === roomId && record.hostSessionId === hostSessionId) { if (record.timer) cancel(record.timer); if (record.deliveryTimer) cancel(record.deliveryTimer); const flight = deliveryInFlight.get(choiceKey); if (flight) cancel(flight.timer); deliveryInFlight.delete(choiceKey); choices.delete(choiceKey); }
 		return Object.freeze({ ok: true });
 	}
 
