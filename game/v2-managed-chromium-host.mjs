@@ -1333,7 +1333,7 @@ async function commitNativeCardActionAuthority(gate, record) {
 		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
 			observed: { kind: "native_authority_event_accepted_v1", stage: "native_card_action_event_4_accepted", eventSequence: 4,
 				stateRevision: 4, beforeDigest: proof.beforeDigest, afterDigest, nativeEventName: "gongJiOrFaShu",
-				seatId: gate.seatId, cardName: observed.cardName, nativeUseCardChildCompleted: true,
+				seatId: gate.seatId, nativeUseCardChildCompleted: true,
 				hostPlayerAbsent: true, connectedTransports: 0, checkpointAvailable: false } });
 		process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: record.choiceId,
 			deliveryId: record.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true, authorityEventSequence: 4 });
@@ -1343,6 +1343,7 @@ async function commitNativeCardActionAuthority(gate, record) {
 
 function emitNativeStartDiagnostic(observed) {
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !observed || typeof observed !== "object") return;
+	if (observed.stage === "native_input_wait_open") dispatchManagedNativeActionCandidates(observed.snapshot);
 	let nativeResponseAckOutcome = null;
 	if (observed.stage === "native_response_applied" && interactiveChoice?.nativeResponseGates?.has(observed.snapshot?.nativeEventId)) {
 		const gate = interactiveChoice.nativeResponseGates.get(observed.snapshot.nativeEventId);
@@ -1402,20 +1403,7 @@ function emitNativeStartDiagnostic(observed) {
 			options: [...snapshot.optionIds], optionKinds: snapshot.optionKinds,
 			trusteeOption: snapshot.declineOptionId || snapshot.optionIds[0], deadlineMs: 5000 });
 	}
-	if (interactiveChoice && observed.stage === "native_input_wait_open" && observed.snapshot?.nativeInputGate?.nativeEventId) {
-		const controllerManaged = ["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(process.env.V2_NATIVE_START_PROBE_MODE);
-		interactiveChoice.nativeInputGate = { nativeEventId: observed.snapshot.nativeInputGate.nativeEventId,
-			seatId: observed.snapshot.nativeInputGate.seatId, status: "waiting", controllerManaged,
-			optionIds: observed.snapshot.nativeInputGate.candidates.map(candidate => candidate.optionId),
-			actionDeliveries: controllerManaged ? new Map() : null };
-		if (controllerManaged) {
-			process.send?.({ ...identity, type: "host_native_action_candidates", nativeEventId: observed.snapshot.nativeInputGate.nativeEventId,
-				eventSequence: 4, seatId: observed.snapshot.nativeInputGate.seatId, options: interactiveChoice.nativeInputGate.optionIds,
-				optionKinds: Object.fromEntries(observed.snapshot.nativeInputGate.candidates.map(candidate => [candidate.optionId, candidate.cardType])),
-				...(process.env.V2_NATIVE_MANAGED_RESPONSE === "1" ? { responseProbeOptions: observed.snapshot.nativeInputGate.candidates.filter(candidate => candidate.responseProbePotential === true).map(candidate => candidate.optionId) } : {}),
-				trusteeOption: interactiveChoice.nativeInputGate.optionIds[0], deadlineMs: ["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? 750 : 5000, eventName: "gongJiOrFaShu" });
-		}
-	}
+	if (observed.stage === "native_input_wait_open") dispatchManagedNativeActionCandidates(observed.snapshot);
 	if (interactiveChoice?.nativeInputGate?.controllerManaged && observed.stage === "native_action_event_completed") {
 		const gate = interactiveChoice.nativeInputGate;
 		const record = gate.actionDeliveries.get(gate.seatId);
@@ -1441,12 +1429,7 @@ function emitNativeStartDiagnostic(observed) {
 			}
 		}
 	}
-	const safeObserved = observed.stage?.startsWith("native_response_") && observed.snapshot && typeof observed.snapshot === "object" ?
-		{ ...observed, snapshot: { ...observed.snapshot } } : observed;
-	if (safeObserved !== observed) {
-		delete safeObserved.snapshot.cardName;
-		delete safeObserved.snapshot.selectedCardName;
-	}
+	const safeObserved = sanitizeNativeStartDiagnostic(observed);
 	const entry = Object.freeze({ at: Date.now(), ...safeObserved, ...(nativeResponseAckOutcome ? { nativeResponseAckOutcome } : {}) });
 	nativeStartDiagnosticRing.push(entry);
 	if (nativeStartDiagnosticRing.length > 128) nativeStartDiagnosticRing.shift();
@@ -1457,6 +1440,48 @@ function emitNativeStartDiagnostic(observed) {
 		const code = /^[A-Z0-9_]{3,96}$/.test(observed.snapshot?.failureCode || "") ? observed.snapshot.failureCode : "HOST_NATIVE_EVENT_UNCERTAIN";
 		process.send?.({ ...identity, type: "host_failure", code }, () => cleanup().finally(() => process.exit(1)));
 	}
+}
+
+function sanitizeNativeStartDiagnostic(value) {
+	if (Array.isArray(value)) return value.map(sanitizeNativeStartDiagnostic);
+	if (!value || typeof value !== "object") return value;
+	const safe = {};
+	for (const [key, item] of Object.entries(value)) {
+		if (/^(cardName|selectedCardName|handCommitment|secret|credential|hand)$/i.test(key)) continue;
+		safe[key] = sanitizeNativeStartDiagnostic(item);
+	}
+	return safe;
+}
+
+function dispatchManagedNativeActionCandidates(snapshot) {
+	const managedModes = new Set(["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry",
+		"managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4",
+		"managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"]);
+	const gate = snapshot?.nativeInputGate;
+	if (!interactiveChoice || !managedModes.has(process.env.V2_NATIVE_START_PROBE_MODE) || !gate ||
+		gate.eventName !== "gongJiOrFaShu" || gate.action !== true || gate.waiting !== true ||
+		!/^native_[A-Za-z0-9_-]{16,96}$/.test(gate.nativeEventId || "") ||
+		!/^[A-Za-z0-9_-]{1,128}$/.test(gate.seatId || "") || !Array.isArray(gate.candidates) ||
+		gate.candidates.length < 1 || gate.candidates.length > 64 || snapshot.eventName !== "gongJiOrFaShu") return false;
+	const current = interactiveChoice.nativeInputGate;
+	if (current?.nativeEventId === gate.nativeEventId && current.candidateDispatched === true) return false;
+	if (current && current.nativeEventId !== gate.nativeEventId) return false;
+	const optionIds = gate.candidates.map(candidate => candidate?.optionId);
+	if (optionIds.some(optionId => !/^native_option_[a-f0-9]{32}$/.test(optionId || "")) || new Set(optionIds).size !== optionIds.length) return false;
+	const controllerManaged = true;
+	interactiveChoice.nativeInputGate = { nativeEventId: gate.nativeEventId, seatId: gate.seatId, status: "waiting", controllerManaged,
+		candidateDispatched: true, optionIds, actionDeliveries: new Map() };
+	const message = { ...identity, type: "host_native_action_candidates", nativeEventId: gate.nativeEventId,
+		eventSequence: 4, seatId: gate.seatId, options: optionIds,
+		optionKinds: Object.fromEntries(gate.candidates.map(candidate => [candidate.optionId, candidate.cardType])),
+		...(process.env.V2_NATIVE_MANAGED_RESPONSE === "1" ? { responseProbeOptions: gate.candidates.filter(candidate => candidate.responseProbePotential === true).map(candidate => candidate.optionId) } : {}),
+		trusteeOption: optionIds[0], deadlineMs: ["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? 750 : 5000,
+		eventName: "gongJiOrFaShu" };
+	process.send?.(message, error => {
+		if (!error) return;
+		if (process.connected) process.send({ ...identity, type: "host_failure", code: "NATIVE_ACTION_CANDIDATE_IPC_FAILED" }, () => cleanup().finally(() => process.exit(1)));
+	});
+	return true;
 }
 
 async function resumeManagedNativeInput(message) {
@@ -1662,6 +1687,9 @@ async function runNativeStartDiagnostic(message) {
 				if(probe.exceptionDetails) {lastProbeError=String(probe.exceptionDetails.text||"CDP_EVALUATION_EXCEPTION").slice(0,256);break;}
 				value=probe.result?.value||null;
 				const waitForManagedInputGate=['managed_input_resume','managed_input_timeout','managed_input_cancel','managed_input_cancel_resume_race','managed_input_stop','managed_input_controller','managed_input_controller_trustee','managed_input_controller_registry','managed_input_controller_fault_before_apply','managed_opening_root_action','managed_opening_root_action_event4','managed_opening_root_action_event4_ack_loss','managed_opening_root_action_event4_trustee'].includes(message.mode);
+				if (waitForManagedInputGate && value?.snapshot?.nativeInputGate?.waiting === true) {
+					emitNativeStartDiagnostic({ stage: "native_input_wait_open", snapshot: value.snapshot, observationSource: "bounded_cdp_poll" });
+				}
 				if((waitForManagedInputGate ? value?.snapshot?.nativeInputGate?.eventName==='gongJiOrFaShu'&&value?.snapshot?.nativeInputGate?.waiting===true : message.mode === "managed_input_gate" ? value?.snapshot?.nativeInputGate : value?.snapshot?.phaseLoopCreated)||value?.snapshot?.failureCode)break;
 			} catch(error) { lastProbeError=error.message; break; }
 			await new Promise(resolve=>setTimeout(resolve,50));

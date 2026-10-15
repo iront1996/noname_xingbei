@@ -658,6 +658,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(applied.snapshot?.nativeInputGate?.nativeResumeCount || 0, 0, "controller path must not use the test-only direct resume command");
 			assert.equal(applied.snapshot?.hostPlayerAbsent, true);
 			assert.equal(applied.snapshot?.seats?.length, 4);
+			const safeDiagnostics = JSON.stringify(nativeDiagnostic);
+			const privateDiagnosticKeys = [...safeDiagnostics.matchAll(/"(cardName|selectedCardName|handCommitment|secret|credential|hand)"\s*:/gi)].map(match => match[1]);
+			assert.deepEqual(privateDiagnosticKeys, [], "native startup diagnostics must not disclose card identities, hidden-hand data, or credentials");
 			if (probeMode === "managed_native_response_probe") {
 				const rootProbe = nativeDiagnostic.find(entry => entry?.stage === "native_start_probe_outcome");
 				const responseStarted = nativeDiagnostic.find(entry => entry?.stage === "native_response_started" && entry?.snapshot?.eventName === "yingZhan");
