@@ -507,7 +507,8 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 		handCommitment: "ef".repeat(32) } : index === 2 ? { ...seat, handCount: 3, handCommitment: "ab".repeat(32) } : { ...seat });
 	const nativeResponse = { nativeEventId: "native_abcdef0123456789abcdef0123456789", actionEventId: "native_event_0123456789abcdef0123456789abcdef",
 		seatId: "seat_3", sourceSeatId: "seat_1", kind: "card", optionId: "native_option_abcdef0123456789abcdef0123456789",
-		targetSeatId: "seat_1", forced: false, useCardChildrenStarted: 1, useCardChildrenCompleted: 1, rootInstanceId: null };
+		optionShape: "native_single_target_card", targetSeatId: "seat_1", targetCount: 1,
+		forced: false, useCardChildrenStarted: 1, useCardChildrenCompleted: 1, rootInstanceId: null };
 	const cardAction = {
 		kind: "native_authority_event_v1", checkpoint: null, eventSequence: 4,
 		stateRevisionBefore: 3, stateRevisionAfter: 4, beforeDigest: openingDraw.afterDigest,
@@ -546,6 +547,10 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 			event: { ...cardAction.event, responseActions: [{ ...nativeResponse, forced: true }] } },
 		{ ...cardAction, afterSummary: { ...cardAction.afterSummary, responses: [{ ...nativeResponse, targetSeatId: "seat_missing" }] },
 			event: { ...cardAction.event, responseActions: [{ ...nativeResponse, targetSeatId: "seat_missing" }] } },
+		{ ...cardAction, afterSummary: { ...cardAction.afterSummary, responses: [{ ...nativeResponse, optionShape: "native_notarget_card", targetSeatId: null }] },
+			event: { ...cardAction.event, responseActions: [{ ...nativeResponse, optionShape: "native_notarget_card", targetSeatId: null }] } },
+		{ ...cardAction, afterSummary: { ...cardAction.afterSummary, responses: [{ ...nativeResponse, targetCount: 0 }] },
+			event: { ...cardAction.event, responseActions: [{ ...nativeResponse, targetCount: 0 }] } },
 		{ ...cardAction, afterSummary: { ...cardAction.afterSummary,
 			seats: cardAction.afterSummary.seats.map((seat, index) => index === 2 ? { ...seat, handCommitment: beforeSummary.seats[index].handCommitment } : seat) } },
 		{ ...cardAction, afterSummary: { ...cardAction.afterSummary,

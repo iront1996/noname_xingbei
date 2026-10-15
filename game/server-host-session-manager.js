@@ -374,7 +374,7 @@ function createHostSessionManager({
 			const seatsTouchedByNativeCardTree = new Set([event.seatId, event.targetSeatId]);
 			for (const response of after.responses) {
 				if (!response || Object.keys(response).sort().join(",") !==
-					"actionEventId,forced,kind,nativeEventId,optionId,rootInstanceId,seatId,sourceSeatId,targetSeatId,useCardChildrenCompleted,useCardChildrenStarted" ||
+					"actionEventId,forced,kind,nativeEventId,optionId,optionShape,rootInstanceId,seatId,sourceSeatId,targetCount,targetSeatId,useCardChildrenCompleted,useCardChildrenStarted" ||
 					response.actionEventId !== event.nativeEventId || response.rootInstanceId !== context.rootInstanceId ||
 					!/^native_[A-Za-z0-9_-]{16,96}$/.test(response.nativeEventId || "") || responseEventIds.has(response.nativeEventId) ||
 					!/^[A-Za-z0-9_-]{1,128}$/.test(response.seatId || "") || !record.seatIds.includes(response.seatId) ||
@@ -382,9 +382,11 @@ function createHostSessionManager({
 					response.seatId === response.sourceSeatId || !possibleSources.has(response.sourceSeatId) ||
 					!/^native_option_[a-f0-9]{32}$/.test(response.optionId || "") || responseOptionIds.has(response.optionId) ||
 					typeof response.forced !== "boolean" ||
-					(response.kind === "card" ? !record.seatIds.includes(response.targetSeatId) || response.forced !== false ||
-						response.useCardChildrenStarted !== 1 || response.useCardChildrenCompleted !== 1 :
-						response.kind !== "decline" || response.targetSeatId !== null || response.forced !== false ||
+					(response.kind === "card" ? response.forced !== false || response.useCardChildrenStarted !== 1 || response.useCardChildrenCompleted !== 1 ||
+						!(response.optionShape === "native_single_target_card" && response.targetCount === 1 && record.seatIds.includes(response.targetSeatId) ||
+							response.optionShape === "native_notarget_card" && response.targetCount === 0 && response.targetSeatId === null) :
+						response.kind !== "decline" || response.optionShape !== "native_optional_decline" || response.targetCount !== 0 ||
+						response.targetSeatId !== null || response.forced !== false ||
 						response.useCardChildrenStarted !== 0 || response.useCardChildrenCompleted !== 0)) return reject("CARD_ACTION_RESPONSE_EVIDENCE");
 				responseEventIds.add(response.nativeEventId);
 				responseOptionIds.add(response.optionId);
@@ -392,7 +394,7 @@ function createHostSessionManager({
 					possibleSources.add(response.seatId);
 					seatsWithCardConsumption.add(response.seatId);
 					seatsTouchedByNativeCardTree.add(response.seatId);
-					seatsTouchedByNativeCardTree.add(response.targetSeatId);
+					if (response.targetCount === 1) seatsTouchedByNativeCardTree.add(response.targetSeatId);
 				}
 			}
 			const seatsValid = after.seats.every((seat, index) => {

@@ -238,11 +238,17 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(new Set(message.options).size, message.options.length);
 				assert.ok(message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)));
 				assert.ok(message.optionKinds && Object.keys(message.optionKinds).length === message.options.length);
+				assert.ok(message.optionShapes && Object.keys(message.optionShapes).length === message.options.length);
+				assert.ok(message.options.every(option => ["native_single_target_card", "native_notarget_card", "native_optional_decline"].includes(message.optionShapes[option])));
 				const firstManagedResponse = nativeResponseChoices.length === 0;
-				const submittedResponseOption = firstManagedResponse ? message.options.find(option => message.optionKinds[option] === "card") : message.trusteeOption;
+				const targetlessProbe = process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1";
+				const submittedResponseOption = firstManagedResponse ? message.options.find(option => message.optionKinds[option] === "card" &&
+					(!targetlessProbe || message.optionShapes[option] === "native_notarget_card")) : message.trusteeOption;
 				if (firstManagedResponse) {
 					nativeResponseOptionId = submittedResponseOption;
-					assert.ok(nativeResponseOptionId, "the native yingZhan event exposed no legal physical-card response candidate");
+					assert.ok(nativeResponseOptionId, targetlessProbe ? "the native yingZhan event exposed no legal native no-target response candidate" :
+						"the native yingZhan event exposed no legal physical-card response candidate");
+					if (targetlessProbe) assert.equal(message.optionShapes[nativeResponseOptionId], "native_notarget_card");
 					nativeResponseCandidate = message;
 				} else assert.equal(message.optionKinds[submittedResponseOption], "decline", "nested response trustee should decline through the native optional-choice contract");
 				const openedChoice = controller.openChoice({ protocol: 1, roomId, hostSessionId: message.sessionId, nativeEventId: message.nativeEventId,
@@ -434,7 +440,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	try {
 		completed = await until(() => {
 			const session = manager.inspect(roomId);
-			if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, authorityFailureReason: session.authorityFailureReason, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks, responseAuthority: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response_authority")).slice(-4), responseSummary: nativeDiagnostic.filter(entry => entry?.stage === "native_response_action_summary").slice(-3), responseStages: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response")).slice(-8).map(entry => entry?.stage) })}`);
+			if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, authorityFailureReason: session.authorityFailureReason, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks, responseAuthority: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response_authority")).slice(-4), responseSummary: nativeDiagnostic.filter(entry => entry?.stage === "native_response_action_summary").slice(-3), actionAuthorityDiagnostics: nativeDiagnostic.filter(entry => ["event4_local_proof_rejected", "native_action_event_completed"].includes(entry?.stage)).slice(-4), responseStages: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response")).slice(-8).map(entry => entry?.stage) })}`);
 			return session?.authorityStateRevision === expectedAuthorityRevision && session;
 		}, 45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), deliveryCount, ackCount, droppedAcks, nativeDiagnostic }));
 	} catch (error) {
@@ -704,6 +710,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(nativeApplied.snapshot?.rootInstanceId, nativeDiagnostic.find(entry => entry?.stage === "native_start_probe_outcome")?.snapshot?.rootInstanceId);
 				assert.equal(nativeApplied.snapshot?.gameMeAbsent, true);
 				assert.equal(nativeApplied.snapshot?.selectedKind, "card");
+				assert.equal(nativeApplied.snapshot?.targetCount, process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1" ? 0 : 1,
+					"managed response must preserve the actual native card target shape");
 				assert.equal(nativeApplied.snapshot?.useCardChildrenStarted, 1);
 				assert.equal(nativeApplied.snapshot?.useCardChildrenCompleted, 1);
 				assert.equal(nativeApplied.snapshot?.nativeEventId, nativeResponseCandidate.nativeEventId);
