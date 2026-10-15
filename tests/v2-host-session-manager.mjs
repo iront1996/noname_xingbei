@@ -312,10 +312,15 @@ test("host termination cleanup is session-scoped, cancels pending choices and is
 	assert.equal(timers.size, 0);
 });
 
-test("authority event chain requires authenticated balanced native Xingbei side assignment", async () => {
+test("authority event chain requires authenticated balanced native Xingbei side assignment", async t => {
+	const oldDiagnostics = process.env.V2_NATIVE_START_DIAGNOSTICS;
+	process.env.V2_NATIVE_START_DIAGNOSTICS = "1";
+	t.after(() => oldDiagnostics === undefined ? delete process.env.V2_NATIVE_START_DIAGNOSTICS : process.env.V2_NATIVE_START_DIAGNOSTICS = oldDiagnostics);
 	const f = fixture();
 	await f.manager.start("native_progress_gate", gameSetup);
 	const bootstrap = f.launches[0].bootstrap;
+	const sentCommands = [];
+	f.launches[0].handle.sendHostCommand = async command => { sentCommands.push(command); };
 	f.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready"));
 	f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready"));
 	f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", { proof: gameReadyProof(bootstrap) }));
@@ -413,6 +418,9 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	assert.equal(selected.session.authorityStateDigest, characterSelection.afterDigest);
 	assert.equal(selected.session.nextAuthorityEventSequence, 3);
 	assert.deepEqual(selected.session.lastAuthorityEvent, { sequence: 2, name: "chooseCharacterOL" });
+	assert.equal((await f.manager.diagnoseNativeStart("native_progress_gate", "managed_opening_root_action")).ok, false,
+		"phaseLoop release must stay blocked until the authoritative opening draw commits");
+	assert.equal(sentCommands.length, 0);
 	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: characterSelection })).code,
 		"HOST_AUTHORITY_EVENT_REJECTED");
 	const openingDraw = {
@@ -477,6 +485,10 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	assert.equal(drawCommitted.session.authorityStateDigest, openingDraw.afterDigest);
 	assert.equal(drawCommitted.session.nextAuthorityEventSequence, 4);
 	assert.deepEqual(drawCommitted.session.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+	assert.equal((await f.manager.diagnoseNativeStart("native_progress_gate", "managed_opening_root_action")).ok, true);
+	assert.equal(sentCommands.length, 1);
+	assert.equal(sentCommands[0].type, "host_native_start_diagnostic");
+	assert.equal(sentCommands[0].mode, "managed_opening_root_action");
 	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: openingDraw })).code,
 		"HOST_AUTHORITY_EVENT_REJECTED", "native opening draw must be one-shot");
 	await f.manager.stop("native_progress_gate");
