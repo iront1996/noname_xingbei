@@ -20,8 +20,13 @@ test("authenticated applying receipt keeps immutable delivery bounded and final 
 	assert.equal(f.c.markDeliveryApplying(receipt).ok,true);
 	assert.equal(f.c.inspect(roomId,x.choice.choiceId).state,"applying");
 	assert.equal(f.c.markDeliveryApplying(receipt).duplicate,true,"receipt replay is idempotent");
+	const retry=f.c.retryDelivery({roomId,choiceId:x.choice.choiceId});
+	assert.equal(retry.ok,true,"an applying native result must support explicit idempotent redelivery");
+	assert.equal(retry.choice.state,"applying");
+	assert.equal(retry.choice.deliveryId,pending.deliveryId,"applying retry must preserve its immutable delivery ID");
+	assert.equal(sends,2,"the explicit retry must deliver the existing resolution once");
 	f.advance(1300);
-	assert.ok(sends>=2,"applying delivery keeps bounded idempotent retry alive for a lost final ACK");
+	assert.ok(sends>=3,"applying delivery keeps bounded idempotent retry alive for a lost final ACK");
 	assert.equal(f.c.inspect(roomId,x.choice.choiceId).state,"applying");
 	const finalAck=f.c.acknowledgeDelivery(receipt);
 	assert.equal(finalAck.ok,true,"only the distinct final ACK resolves the applying choice");

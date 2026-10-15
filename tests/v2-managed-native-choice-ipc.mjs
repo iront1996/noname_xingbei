@@ -48,7 +48,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, ackTrace = [];
+	let manager, controller, sessionSecret, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -119,7 +119,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				event4AckBarrierWaitCount++;
 				if (!event4ControllerRetryTriggered) {
 					event4ControllerRetryTriggered = true;
-					if (!nativeActionChoice || controller.inspect(roomId, nativeActionChoice.choiceId)?.state !== "delivery_pending") {
+					if (!nativeActionChoice || !["delivery_pending", "applying"].includes(controller.inspect(roomId, nativeActionChoice.choiceId)?.state)) {
 						throw new Error("EVENT4_ACK_BARRIER_CHOICE_NOT_PENDING");
 					}
 					// This explicit test barrier creates the ACK-loss interleaving deterministically.
@@ -130,7 +130,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 				await event4AckBarrier;
 			}
-			return sendHostCommand(command);
+			try { return await sendHostCommand(command); } catch (error) {
+				if (command?.type === "host_authority_event_ack" && command.eventSequence === 4) event4AckSendErrors.push(String(error?.message || "unknown").slice(0, 96));
+				throw error;
+			}
 			};
 			return handle;
 		},
@@ -475,7 +478,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		15000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state || null),
 			actionChoice: nativeActionChoice && controller.inspect(roomId, nativeActionChoice.choiceId), deliveryCount, ackCount, nativeActionAckCount,
 			event4AckDropCount, event4SubmissionCount, event4AckBarrierWaitCount, event4ControllerRetryTriggered,
-			event4AuthorityJoinCount, event4AckBarrierReleased, diagnostics: nativeDiagnostic.slice(-12).map(entry => entry?.stage), ackTrace: ackTrace.slice(-12) }));
+				event4AuthorityJoinCount, event4AckBarrierReleased, event4AckSendErrors, diagnostics: nativeDiagnostic.slice(-12).map(entry => entry?.stage), ackTrace: ackTrace.slice(-12) }));
 	assert.equal(completed.state, "playable_probe");
 	if (expectedAuthorityRevision >= 3) {
 		if (expectedAuthorityRevision === 3) {

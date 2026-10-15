@@ -291,7 +291,7 @@ function createManagedChoiceController({
 		retryDelivery: ({ roomId, choiceId }) => {
 			const choiceKey = key(roomId, choiceId);
 			const current = choices.get(choiceKey);
-			if (!current || current.state !== "delivery_pending") return failure("MANAGED_CHOICE_DELIVERY_REJECTED");
+			if (!current || !["delivery_pending", "applying"].includes(current.state)) return failure("MANAGED_CHOICE_DELIVERY_REJECTED");
 			if (current.deliveryTimer) cancel(current.deliveryTimer);
 			const retry = Object.freeze({ ...current, deliveryTimer: null });
 			choices.set(choiceKey, retry);
