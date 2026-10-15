@@ -330,12 +330,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.ok(nativeActionCandidate?.options.length > 1);
 			if (probeMode === "managed_opening_root_action") {
 				assert.equal(expectedAuthorityRevision, 3, "C2-1 must start from accepted Event #3");
-				assert.equal(snapshot.rootEventName, "game");
 				assert.equal(snapshot.gameStartCount, 1);
 				assert.equal(snapshot.gameDrawEntered, true);
 				assert.equal(snapshot.phaseLoopCreated, true);
-				assert.equal(snapshot.phaseLoopParentName, "game");
-				assert.equal(snapshot.phaseLoopReleased, true);
 				assert.equal(snapshot.hostPlayerAbsent, true);
 			}
 			if (nativeFaultMode === "delivery_stop_barrier") {
@@ -393,13 +390,19 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(expectedAuthorityRevision, 3);
 				const released = await until(() => nativeDiagnostic.find(entry => entry?.stage === "existing_root_phase_loop_released"), 5000,
 					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.filter(entry => entry?.snapshot).at(-1)?.snapshot || null }));
-				assert.equal(released.snapshot?.rootEventName, "game");
 				assert.equal(released.snapshot?.phaseLoopCreated, true);
 				assert.equal(released.snapshot?.phaseLoopStartRequested, true);
 				assert.equal(released.snapshot?.phaseLoopReleased, true);
 				assert.equal(released.snapshot?.gameStartCount, 1);
 				assert.equal(released.snapshot?.gameDrawEntered, true);
 				assert.equal(released.snapshot?.hostPlayerAbsent, true);
+				const nativeGate = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open"), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
+				assert.equal(nativeGate.snapshot?.rootEventName, "game");
+				assert.equal(nativeGate.snapshot?.phaseLoopParentName, "game");
+				assert.deepEqual(nativeGate.snapshot?.eventStack?.slice(0, 4), ["game", "phaseLoop", "phase", "xingDong"]);
+				assert.equal(nativeGate.snapshot?.nativeInputGate?.eventName, "gongJiOrFaShu");
+				assert.equal(nativeGate.snapshot?.nativeInputGate?.parentEventName, "xingDong");
 				assert.ok(applied.snapshot?.eventStack?.includes("game"));
 				assert.ok(applied.snapshot?.eventStack?.includes("phaseLoop"));
 				assert.equal(applied.snapshot?.phaseLoopParentName, "game");
