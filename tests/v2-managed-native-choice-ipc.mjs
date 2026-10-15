@@ -43,12 +43,12 @@ function safeNativeDiagnostic(value) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, engineReadyProof = null, opened = [], candidatesSeen, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
+	let manager, controller, sessionSecret, engineReadyProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -150,6 +150,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			} else if (type === "host_choice_candidates") {
 				sessionSecret = message.secret;
 				candidatesSeen = message.choices;
+				if (process.env.V2_NATIVE_YINYANG_FIXTURE === "1") {
+					nativeYinYangFixtureSeatId = message.yinyangFixture?.seatId || null;
+					assert.equal(message.yinyangFixture?.nativeCandidateGenerated, true);
+					assert.ok(message.choices.some(choice => choice.seatId === nativeYinYangFixtureSeatId && choice.options.includes("yinYangShi")),
+						"yinYangShi must be supplied by the real native chooseCharacterOL candidate map");
+				}
 				for (const candidate of message.choices) {
 					const openedChoice = controller.openChoice({ protocol: 1, roomId, hostSessionId: message.sessionId, nativeEventId: message.nativeEventId,
 						seatId: candidate.seatId, eventSequence: message.eventSequence, options: candidate.options, trusteeOption: candidate.options[0],
@@ -183,6 +189,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"test could not select a native attack whose target has a card accepted by the native yingZhan response predicate");
 					nativeActionOptionId = message.responseProbeOptions.find(option => message.optionKinds[option] === "gongJi");
 					assert.ok(nativeActionOptionId, "response-capable target candidate must be an attack card");
+				} else if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_response_probe" && process.env.V2_NATIVE_YINYANG_FIXTURE === "1") {
+					assert.ok(message.optionTargetSeatIds && Object.keys(message.optionTargetSeatIds).length === message.options.length,
+						"fixture action target map must be derived from the actual native card/target candidate mapping");
+					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === "gongJi" &&
+						message.optionTargetSeatIds[option] === nativeYinYangFixtureSeatId && message.optionYinYangEligible?.[option] === true);
+					assert.ok(nativeActionOptionId, "native action must target the YinYang fixture seat with an attack that passes the native response preconditions");
 				} else if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_response_probe") {
 					assert.ok(message.optionKinds && Object.keys(message.optionKinds).length === message.options.length);
 					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === "gongJi");
@@ -392,7 +404,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	}
 	await until(() => {
 		const current = manager.inspect(roomId);
-		if (current?.state === "failed") throw new Error(`native choice host failed: ${current.failureCode}:${JSON.stringify(nativeDiagnostic)}`);
+		if (current?.state === "failed") throw new Error(`native choice host failed: ${current.failureCode}:${JSON.stringify({ nativeDiagnostic: nativeDiagnostic.slice(-18), authoritySubmissions: authoritySubmissions.map(entry => ({ sequence: entry.proof?.eventSequence, kind: entry.proof?.event?.kind })), opened: opened.map(choice => choice.choiceId) })}`);
 		return opened.length === 4;
 	}, 15000);
 	assert.ok(candidatesSeen.every(choice => choice.options.length >= 2));
@@ -417,12 +429,21 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		await faultHandle.waitForCleanup();
 		return;
 	}
-	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: a.hostSessionId, nativeEventId: a.nativeEventId, seatId: a.seatId, eventSequence: 2, choiceId: a.choiceId, connectionId: `conn_${a.seatId}`, credential: credentialFor(a.seatId), option: a.options[1] }).ok, true);
+	if (process.env.V2_NATIVE_YINYANG_FIXTURE === "1") {
+		for (const choice of opened) {
+			const option = choice.options.includes("yinYangShi") && choice.seatId === nativeYinYangFixtureSeatId ? "yinYangShi" : choice.options[0];
+			assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: choice.hostSessionId, nativeEventId: choice.nativeEventId,
+				seatId: choice.seatId, eventSequence: 2, choiceId: choice.choiceId, connectionId: `conn_${choice.seatId}`,
+				credential: credentialFor(choice.seatId), option }).ok, true, `native fixture choice rejected for ${choice.seatId}`);
+		}
+	} else assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: a.hostSessionId, nativeEventId: a.nativeEventId, seatId: a.seatId, eventSequence: 2, choiceId: a.choiceId, connectionId: `conn_${a.seatId}`, credential: credentialFor(a.seatId), option: a.options[1] }).ok, true);
+	if (process.env.V2_NATIVE_YINYANG_FIXTURE !== "1") {
 	assert.equal(bindSeat(c.seatId, `new_${c.seatId}`).ok, true);
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: c.hostSessionId, nativeEventId: c.nativeEventId, seatId: c.seatId, eventSequence: 2, choiceId: c.choiceId, connectionId: `conn_${c.seatId}`, credential: credentialFor(c.seatId), option: c.options[0] }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: c.hostSessionId, nativeEventId: c.nativeEventId, seatId: c.seatId, eventSequence: 2, choiceId: c.choiceId, connectionId: `new_${c.seatId}`, credential: credentialFor(c.seatId), option: c.options[0] }).ok, true);
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: d.hostSessionId, nativeEventId: d.nativeEventId, seatId: d.seatId, eventSequence: 2, choiceId: d.choiceId, connectionId: `conn_${d.seatId}`, credential: credentialFor(d.seatId), option: "forged" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: d.hostSessionId, nativeEventId: d.nativeEventId, seatId: d.seatId, eventSequence: 2, choiceId: d.choiceId, connectionId: `conn_${d.seatId}`, credential: credentialFor(d.seatId), option: d.options[0] }).ok, true);
+	}
 	if (process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 === "1") {
 		await until(() => manager.inspect(roomId)?.state === "failed", 15000,
 			() => ({ session: manager.inspect(roomId), nativeDiagnostic }));
@@ -569,9 +590,18 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal(drawAccepted.checkpointAvailable, false);
 		assert.deepEqual(drawAccepted.seatHandCounts.map(entry => entry.handCount), [4, 4, 4, 4]);
 	} else assert.deepEqual(completed.lastAuthorityEvent, { sequence: 2, name: "chooseCharacterOL" });
-	assert.equal(controller.inspect(roomId, a.choiceId).resolution.option, a.options[1]);
-	assert.equal(controller.inspect(roomId, b.choiceId).resolution.kind, "trustee");
-	assert.equal(controller.inspect(roomId, d.choiceId).state, "resolved");
+	if (process.env.V2_NATIVE_YINYANG_FIXTURE === "1") {
+		const selected = controller.inspect(roomId, nativeYinYangFixtureSeatId === a.seatId ? a.choiceId :
+			nativeYinYangFixtureSeatId === b.seatId ? b.choiceId : nativeYinYangFixtureSeatId === c.seatId ? c.choiceId : d.choiceId);
+		assert.equal(selected?.resolution?.option, "yinYangShi");
+		const characterAuthorityEvent = authoritySubmissions.find(entry => entry.proof?.eventSequence === 2)?.proof?.event;
+		assert.ok(characterAuthorityEvent?.characters?.some(entry => entry.seatId === nativeYinYangFixtureSeatId && entry.character === "yinYangShi"),
+			"the real native Event #2 result must assign the fixture's native-generated choice to the target seat");
+	} else {
+		assert.equal(controller.inspect(roomId, a.choiceId).resolution.option, a.options[1]);
+		assert.equal(controller.inspect(roomId, b.choiceId).resolution.kind, "trustee");
+		assert.equal(controller.inspect(roomId, d.choiceId).state, "resolved");
+	}
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
 		const probeMode = ["managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? process.env.V2_NATIVE_START_PROBE_MODE : "native_start";
 		assert.equal((await manager.diagnoseNativeStart(roomId, "controlled_block")).ok, true);
@@ -745,6 +775,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(responseCompleted.snapshot.gameMeAbsent, true);
 				assert.equal(typeof responseCompleted.snapshot.resultBool, "boolean",
 					"native chooseToUse must produce an actual response/decline result");
+				if (process.env.V2_NATIVE_YINYANG_FIXTURE === "1") {
+					assert.equal(responseStarted.snapshot.seatId, nativeYinYangFixtureSeatId,
+						"the actual native response event must belong to the selected yinYangShi ordinary seat");
+					assert.equal(responseStarted.snapshot.yinYangNativeCandidate?.nativeSkillPredicateAccepted, true,
+						`the original skill predicate must accept the actual native yingZhan event: ${JSON.stringify(responseStarted.snapshot.yinYangNativeCandidate)}`);
+					assert.equal(responseStarted.snapshot.yinYangNativeCandidate?.nativeIncomingAttack, true);
+					assert.equal(responseStarted.snapshot.yinYangNativeCandidate?.eventHadCard, true);
+					assert.equal(responseStarted.snapshot.yinYangNativeCandidate?.hasSkill, true);
+					assert.ok(responseStarted.snapshot.yinYangNativeCandidate?.filterCalls > 0);
+					assert.ok(responseStarted.snapshot.yinYangNativeCandidate?.eligibleFilterCalls > 0,
+						"the original skill filter did not expose an eligible native candidate");
+					assert.ok(responseStarted.snapshot.yinYangNativeCandidate?.matchingPhysicalMaterialCount > 0,
+						"the seat did not receive a real matching physical gongJi material through native gameDraw");
+				}
 			}
 			if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
 				if (process.env.V2_NATIVE_RESPONSE_NO_OPTIONS === "1") {
