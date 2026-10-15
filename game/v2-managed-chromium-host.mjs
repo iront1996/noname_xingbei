@@ -136,6 +136,13 @@ function canonicalize(value) {
 
 async function boot(message) {
 	if (identity || !validBootstrap(message)) throw new Error("HOST_BOOTSTRAP_INVALID");
+	if (process.env.V2_TEST_MATCH_RECORD_POST === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1") {
+		throw new Error("TEST_MATCH_POST_REQUIRES_NETWORK_BLOCK");
+	}
+	if (process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
+		!/^http:\/\/127\.0\.0\.1:\d+$/.test(process.env.V2_GAME_ORIGIN || "")) {
+		throw new Error("TEST_NETWORK_ORIGIN_INVALID");
+	}
 	const executable = process.env.V2_CHROMIUM;
 	if (typeof executable !== "string" || !path.isAbsolute(executable)) {
 		throw new Error("CHROMIUM_EXECUTABLE_INVALID");
@@ -160,6 +167,7 @@ async function boot(message) {
 		"--no-default-browser-check",
 		"--disable-extensions",
 		"--disable-background-networking",
+		...(process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" ? ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"] : []),
 		"--disable-dev-shm-usage",
 		"--remote-debugging-address=127.0.0.1",
 		"--remote-debugging-port=0",
@@ -245,6 +253,8 @@ async function boot(message) {
 	cdp = createCdpSession(page.webSocketDebuggerUrl);
 	await cdp.open();
 	await cdp.send("Page.enable");
+	// Test-only defense in depth: the fetch guard below is the assertion boundary;
+	// this resolver rule prevents a future bypass from reaching public hosts.
 	let testRandomSource = "";
 	if (process.env.V2_NATIVE_TEST_RANDOM_SEED !== undefined) {
 		const managedResponseSeed = process.env.V2_NATIVE_MANAGED_RESPONSE === "1";
@@ -255,8 +265,10 @@ async function boot(message) {
 		const seed = Number(process.env.V2_NATIVE_TEST_RANDOM_SEED) >>> 0;
 		testRandomSource = `(()=>{let state=${seed};Math.random=()=>{state=(state+0x6D2B79F5)>>>0;let value=state;value=Math.imul(value^(value>>>15),value|1);value^=value+Math.imul(value^(value>>>7),value|61);return ((value^(value>>>14))>>>0)/4294967296}})();`;
 	}
+	const testNetworkGuard = process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" ?
+		`(()=>{const nativeFetch=window.fetch.bind(window);let blocked=0;Object.defineProperty(window,"__v2ExternalFetchBlockedCount",{configurable:false,get:()=>blocked});window.fetch=(input,init)=>{let url;try{url=new URL(input instanceof Request?input.url:String(input),location.href)}catch{return Promise.reject(new TypeError('V2_TEST_FETCH_URL_INVALID'))}if(url.origin!==location.origin){blocked++;return Promise.reject(new TypeError('V2_TEST_EXTERNAL_NETWORK_BLOCKED'))}return nativeFetch(input,init)}})();` : "";
 	await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-		source: `${testRandomSource}Object.defineProperty(window,"isNonameServer",{value:true,writable:false,configurable:false});`,
+		source: `${testRandomSource}${testNetworkGuard}Object.defineProperty(window,"isNonameServer",{value:true,writable:false,configurable:false});`,
 	});
 	const navigation = await cdp.send("Page.navigate", { url: `${origin}/v2-managed-host.html` });
 	if (navigation.errorText) throw new Error("ENGINE_NAVIGATION_FAILED");
@@ -267,7 +279,7 @@ async function boot(message) {
 			 const core=await import('/noname.js');
 		 await core.boot();
 		 clearTimeout(window.resetGameTimeout);
-			 const imported=await import('/mode/xingBei.js');
+		 const imported=await import('/mode/xingBei.js');
 		 const mode=imported.default();
 		 if(!core.game||!core.lib||!core.ui||!core._status||mode.name!=='xingBei'||
 		    typeof mode.game?.checkResult!=='function'||
@@ -275,9 +287,17 @@ async function boot(message) {
 		    typeof core.game.randomMapOL!=='function')throw Error('ENGINE_API_MISSING');
 		 Object.defineProperty(window,'__v2ManagedEngine',{configurable:false,
 		  value:Object.freeze({core,mode})});
+		 let testMatchRecordPostBlocked=null;
+		 if(${process.env.V2_TEST_MATCH_RECORD_POST === "1"}){
+		  if(window.__v2ExternalFetchBlockedCount!==0||typeof mode.game.submitMatchData!=='function')throw Error('TEST_NETWORK_GUARD_MISSING');
+		  await mode.game.submitMatchData({kind:'isolated_network_guard_probe'});
+		  testMatchRecordPostBlocked=window.__v2ExternalFetchBlockedCount;
+		  if(testMatchRecordPostBlocked!==1)throw Error('TEST_MATCH_RECORD_POST_NOT_BLOCKED');
+		 }
 		 return {loaded:true,mode:mode.name,offboard:true,
 		  nativeGame:typeof core.game.randomMapOL==='function',
-		  nativeResult:typeof mode.game.checkResult==='function',gameLoopStarted:false};
+		  nativeResult:typeof mode.game.checkResult==='function',gameLoopStarted:false,
+		  testMatchRecordPostBlocked};
 		})()`,
 		awaitPromise: true,
 		returnByValue: true,
