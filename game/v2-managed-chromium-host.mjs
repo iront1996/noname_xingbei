@@ -1861,6 +1861,13 @@ async function runNativeStartDiagnostic(message) {
 	   }prepareManagedNativeResponseGate(event);recordNativeResponse(event,'started')}
 	   return originalStart.apply(this,args).then(value=>{
 	    if(responseChildOwner){responseChildOwner.useCardChildrenCompleted++;const selected=responseChildOwner.options.get(responseChildOwner.delivery?.optionId);if(selected?.kind==='view_as_skill')responseChildOwner.nativeSkillEffectProof={childName:event.name,skillId:event.skill||null,cardName:event.card?.name||null,xiBie:get.xiBie(event.card),materialIsSource:Array.isArray(event.cards)&&event.cards.length===1&&event.cards[0]===selected.material,materialStillInHand:event.player?.getCards('h').includes(selected.material)===true,guiHuoBefore:responseChildOwner.yinYangBaseline.guiHuo,guiHuoAfter:event.player?.countZhiShiWu('guiHuo')??null,targetCount:Array.isArray(event.targets)?event.targets.length:null,targetSeatId:event.targets?.[0]?.playerid||null,gameMeAbsent:game.me===null}}
+	    if(responseChildOwner?.options.get(responseChildOwner.delivery?.optionId)?.kind==='view_as_skill'){
+	     const proof=responseChildOwner.nativeSkillEffectProof,queue=[{event,depth:0}],seen=new Set(),tree=[];
+	     while(queue.length&&tree.length<48){const item=queue.shift(),node=item?.event;if(!node||seen.has(node)||item.depth>8)continue;seen.add(node);
+	      const safeName=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,64}$/.test(value)?value:null;
+	      tree.push({eventName:safeName(node.name),eventStep:Number.isSafeInteger(node.step)?node.step:null,parentEventName:safeName(node.parent?.name)});
+	      if(Array.isArray(node.next))for(const child of node.next)if(child&&typeof child==='object')queue.push({event:child,depth:item.depth+1})}
+	     proof.parentEventName=event.parent?.name||null;proof.parentEventInstanceMatches=event.parent===responseChildOwner.event;proof.eventStep=Number.isSafeInteger(event.step)?event.step:null;proof.nativeEffectEventTree=tree;proof.nativeSkillTriggerTrace=responseChildOwner.nativeSkillTriggerTrace||[];proof.nativeSkillTriggerTraceOverflow=responseChildOwner.nativeSkillTriggerTraceOverflow===true}
 	    if(responseEvent){
 	     const gate=event.__v2ManagedResponseGate;recordNativeResponse(event,'completed');
 	     if(gate?.delivery?.status==='applying'){
@@ -1897,9 +1904,13 @@ async function runNativeStartDiagnostic(message) {
 	      gate.status='applied';gate.delivery.status='applied';gate.completedResult={bool:event.result.bool,selectedKind:selected.kind,
 	       ...(selected.kind==='card'?{cardName:selected.card?.name||null}:{}),targetSeatId:selected.target?.playerid||null,targetCount:event.result?.targets?.length||0,
 	       useCardChildrenStarted:gate.useCardChildrenStarted,useCardChildrenCompleted:gate.useCardChildrenCompleted,
-	       ...(selected.kind==='view_as_skill'?{skillId:selected.skillId,physicalMaterialConsumed:gate.nativeSkillEffectProof.materialStillInHand===false,
-	        xiBieApplied:gate.nativeSkillEffectProof.xiBie===get.xiBie(selected.material),resolvedXiBie:gate.nativeSkillEffectProof.xiBie,
-	        guiHuoDelta:gate.nativeSkillEffectProof.guiHuoAfter-gate.nativeSkillEffectProof.guiHuoBefore}: {})};
+	      ...(selected.kind==='view_as_skill'?{skillId:selected.skillId,physicalMaterialConsumed:gate.nativeSkillEffectProof.materialStillInHand===false,
+	       xiBieApplied:gate.nativeSkillEffectProof.xiBie===get.xiBie(selected.material),resolvedXiBie:gate.nativeSkillEffectProof.xiBie,
+	       guiHuoDelta:gate.nativeSkillEffectProof.guiHuoAfter-gate.nativeSkillEffectProof.guiHuoBefore,
+	       nativeUseCardChild:{eventName:gate.nativeSkillEffectProof.childName,eventStep:gate.nativeSkillEffectProof.eventStep,
+	        parentEventName:gate.nativeSkillEffectProof.parentEventName,parentEventInstanceMatchesResponse:gate.nativeSkillEffectProof.parentEventInstanceMatches,
+	        effectEventTree:gate.nativeSkillEffectProof.nativeEffectEventTree,nativeSkillTriggerTrace:gate.nativeSkillEffectProof.nativeSkillTriggerTrace,
+	        nativeSkillTriggerTraceOverflow:gate.nativeSkillEffectProof.nativeSkillTriggerTraceOverflow}}: {})};
 	      try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_applied',snapshot:{nativeEventId:gate.nativeEventId,
 	       seatId:gate.seatId,eventName:event.name,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,
 	       ...gate.completedResult,gameMeAbsent:game.me===null}}))}catch{}
@@ -1953,7 +1964,11 @@ async function runNativeStartDiagnostic(message) {
 	   }
 	   return originalLoop.apply(this,args)
 	  };
-	  GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;emit(name==='gameStart'?'game_start_trigger':'event_trigger');return originalTrigger.call(this,name,...args)};
+	  GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;const activeSkillGate=${JSON.stringify(process.env.V2_NATIVE_YINYANG_FIXTURE === "1")}?[...(state.managedNativeResponseGates?.values()||[])].find(gate=>gate.delivery?.status==='applying'&&gate.options.get(gate.delivery?.optionId)?.kind==='view_as_skill'):null;
+	   const child=originalTrigger.call(this,name,...args);if(activeSkillGate&&['gongJiBefore','yinYangZhanHuan'].includes(name)){let linked=false;for(let item=this,count=0;item&&count<24;item=item.parent,count++)if(item===activeSkillGate.event){linked=true;break}
+	    activeSkillGate.nativeSkillTriggerTrace??=[];if(activeSkillGate.nativeSkillTriggerTrace.length<8)activeSkillGate.nativeSkillTriggerTrace.push({ownerEventName:this.name||null,ownerEventStep:Number.isSafeInteger(this.step)?this.step:null,ownerParentEventName:this.parent?.name||null,triggerName:name,
+	     triggerEventName:child?.name||null,triggerEventParentName:child?.parent?.name||null,triggerEventParentMatchesOwner:child?.parent===this,linkedToNativeResponse:linked});else activeSkillGate.nativeSkillTriggerTraceOverflow=true}
+	   emit(name==='gameStart'?'game_start_trigger':'event_trigger');return child};
 	  game.createEvent=function(name,...args){const event=originalCreateEvent.call(this,name,...args);if(name==='gameDraw'){state.drawCreated=true;state.draw=event;state.drawParentName=event.parent?.name||null}if(name==='phaseLoop'){state.phaseLoopCreated=true;state.phaseLoop=event;state.phaseLoopParentName=event.parent?.name||null}emit('event_created');return event};
 	  const verifyCompletedRoom=()=>game.players.length===4&&game.players.every((player,index)=>player.playerid===window.__v2ManagedGame.setup.seats[index]?.seatId&&typeof player.name1==='string'&&!player.ws)&&game.me===null;
 	  game.prepareArena=function(...args){state.prepareArenaCalls++;emit('prepare_arena_called');if(managedStart)throw Error('DUPLICATE_PREPARE_ARENA_REJECTED');return originalPrepareArena.apply(this,args)};

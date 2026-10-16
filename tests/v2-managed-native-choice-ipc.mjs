@@ -365,7 +365,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					nativeResponseAckCount++;
 					nativeResponseAckAttempts.set(message.choiceId, (nativeResponseAckAttempts.get(message.choiceId) || 0) + 1);
 				}
-				ackTrace.push({ choiceId: message.choiceId, nativeAction: nativeActionChoice?.choiceId === message.choiceId, nativeResponse: isNativeResponseAck, dropAcks,
+				ackTrace.push({ at: Date.now(), choiceId: message.choiceId, nativeAction: nativeActionChoice?.choiceId === message.choiceId, nativeResponse: isNativeResponseAck, dropAcks,
 					responseEventCompleted: message.nativeResponseEventCompleted === true,
 					choiceState: controller.inspect(roomId, message.choiceId)?.state || null,
 					nativeApplied: message.nativeApplied === true, authorityEventSequence: message.authorityEventSequence || null });
@@ -412,7 +412,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					else assert.equal(acked.ok, true, `choice ACK rejected: ${acked.code}`);
 				}
 			} else if (type === "host_choice_diagnostic") {
-				 nativeDiagnostic.push(message.observed);
+				 nativeDiagnostic.push({ ...message.observed, receivedAt: Date.now() });
 				if (message.observed?.stage === "native_action_delivery_joined_authority_commit") {
 					event4AuthorityJoinCount++;
 					if (!event4AckBarrierReleased) {
@@ -911,6 +911,54 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(nativeApplied.snapshot?.targetCount, 1);
 					assert.equal(nativeApplied.snapshot?.useCardChildrenStarted, 1);
 					assert.equal(nativeApplied.snapshot?.useCardChildrenCompleted, 1);
+					const responseStarted = nativeDiagnostic.find(entry => entry?.stage === "native_response_started" &&
+						entry?.snapshot?.eventName === "yingZhan" && entry?.snapshot?.seatId === nativeResponseCandidate.seatId);
+					const responseCompleted = nativeDiagnostic.find(entry => entry?.stage === "native_response_completed" &&
+						entry?.snapshot?.eventName === "yingZhan" && entry?.snapshot?.seatId === nativeResponseCandidate.seatId &&
+						entry?.snapshot?.selectedKind === "view_as_skill");
+					assert.equal(responseStarted?.snapshot?.eventName, "yingZhan");
+					assert.equal(responseStarted?.snapshot?.nativeContentName, "chooseToUse");
+					assert.ok(responseStarted?.snapshot?.parentChain?.includes("_yingZhan"),
+						"the tested response must be the native _yingZhan → yingZhan → chooseToUse path");
+					assert.equal(responseCompleted?.snapshot?.parentEventName, "_yingZhan");
+					assert.equal(responseCompleted?.snapshot?.responseUseCardChildrenStarted, 1);
+					assert.equal(responseCompleted?.snapshot?.responseUseCardChildrenCompleted, 1);
+					const child = nativeApplied.snapshot?.nativeUseCardChild;
+					assert.deepEqual({ eventName: child?.eventName, parentEventName: child?.parentEventName,
+						parentEventInstanceMatchesResponse: child?.parentEventInstanceMatchesResponse },
+					{ eventName: "useCard", parentEventName: "yingZhan", parentEventInstanceMatchesResponse: true },
+					"the skill must complete through its actual native useCard child under the same response event instance");
+					assert.ok(Array.isArray(child.effectEventTree) && child.effectEventTree.length > 0);
+					assert.equal(child.effectEventTree[0].eventName, "useCard");
+					assert.equal(child.effectEventTree[0].parentEventName, "yingZhan");
+					const skillTriggers = child.nativeSkillTriggerTrace || [];
+					assert.equal(child.nativeSkillTriggerTraceOverflow, false, "bounded topology observer must not truncate this tested native effect path");
+					const gongJiBefore = skillTriggers.find(entry => entry.triggerName === "gongJiBefore");
+					const yinYangSkillTrigger = skillTriggers.find(entry => entry.triggerName === "yinYangZhanHuan");
+					assert.deepEqual({ ownerEventName: gongJiBefore?.ownerEventName, triggerEventName: gongJiBefore?.triggerEventName,
+						triggerEventParentName: gongJiBefore?.triggerEventParentName, triggerEventParentMatchesOwner: gongJiBefore?.triggerEventParentMatchesOwner,
+						linkedToNativeResponse: gongJiBefore?.linkedToNativeResponse },
+					{ ownerEventName: "useCard", triggerEventName: "arrangeTrigger", triggerEventParentName: "useCard",
+						triggerEventParentMatchesOwner: true, linkedToNativeResponse: true },
+					"the native useCard event must schedule Xingbei's gongJiBefore trigger under itself");
+					assert.deepEqual({ ownerEventName: yinYangSkillTrigger?.ownerEventName, triggerEventName: yinYangSkillTrigger?.triggerEventName,
+						triggerEventParentName: yinYangSkillTrigger?.triggerEventParentName, triggerEventParentMatchesOwner: yinYangSkillTrigger?.triggerEventParentMatchesOwner,
+						linkedToNativeResponse: yinYangSkillTrigger?.linkedToNativeResponse },
+					{ ownerEventName: "yinYangZhanHuan_xiaoGuo", triggerEventName: "arrangeTrigger", triggerEventParentName: "yinYangZhanHuan_xiaoGuo",
+						triggerEventParentMatchesOwner: true, linkedToNativeResponse: true },
+					"the native skill subskill must schedule its yinYangZhanHuan trigger beneath its actual trigger event");
+					const nativeResponseAck = ackTrace.find(entry => entry.choiceId === nativeResponseChoice.choiceId);
+					const authorityEvent4 = nativeDiagnostic.find(entry => entry?.stage === "native_card_action_event_4_accepted");
+					const nativeActionAck = ackTrace.find(entry => entry.nativeAction && entry.authorityEventSequence === 4);
+					assert.ok(nativeApplied.at <= nativeResponseAck?.at,
+						"the native skill effects must be observed before its response ACK reaches the controller");
+					assert.ok(nativeResponseAck?.at < authorityEvent4?.receivedAt,
+						`response acknowledgement ordering mismatch: ${JSON.stringify({ nativeAppliedAt: nativeApplied.at,
+							responseAck: nativeResponseAck, authorityEvent4At: authorityEvent4?.receivedAt,
+							nativeActionAck, responseAckAttempts: ackTrace.filter(entry => entry.choiceId === nativeResponseChoice.choiceId) })}`);
+					assert.ok(authorityEvent4?.receivedAt <= nativeActionAck?.at,
+						`parent action ACK ordering mismatch: ${JSON.stringify({ authorityEvent4At: authorityEvent4?.receivedAt,
+							nativeActionAck, nativeActionAckAttempts: ackTrace.filter(entry => entry.nativeAction) })}`);
 				} else {
 					assert.equal(nativeApplied.snapshot?.selectedKind, "card");
 					assert.equal(nativeApplied.snapshot?.targetCount, process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1" ? 0 : 1,
