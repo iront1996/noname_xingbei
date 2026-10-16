@@ -1329,8 +1329,21 @@ async function applyManagedNativeResponseDelivery(message) {
 		if (prior.choiceId !== message.choiceId || prior.deliveryId !== message.deliveryId || prior.optionId !== optionId) {
 			throw new Error("NATIVE_RESPONSE_DELIVERY_CONFLICT");
 		}
-		if (prior.status === "applying" || prior.status === "dispatched") return;
+		if (prior.status === "applying" || prior.status === "dispatched") {
+			// A redelivery can arrive while the native parent is still waiting for its
+			// useCard/response child. Remember one deferred ACK request; never apply
+			// the result again. If the original completion ACK is lost, the completion
+			// observer emits an identical post-completion ACK below.
+			prior.ackRetryRequested = true;
+			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
+				observed: { kind: "native_response_delivery_retry_v1", stage: "native_response_duplicate_while_applying",
+					seatId: gate.seatId, choiceId: prior.choiceId, deliveryId: prior.deliveryId } });
+			return;
+		}
 		if (prior.status !== "applied") throw new Error("NATIVE_RESPONSE_DELIVERY_UNCERTAIN");
+		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
+			observed: { kind: "native_response_delivery_retry_v1", stage: "native_response_duplicate_after_apply",
+				seatId: gate.seatId, choiceId: prior.choiceId, deliveryId: prior.deliveryId } });
 		process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: prior.choiceId,
 			deliveryId: prior.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true,
 			nativeResponseEventCompleted: true, nativeUseCardChildCount: gate.useCardChildrenCompleted });
@@ -1726,9 +1739,14 @@ function emitNativeStartDiagnostic(observed) {
 				rootInstanceId: proof.rootInstanceId });
 			if (!delivery.ackSent) {
 				delivery.ackSent = true;
-				process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: delivery.choiceId,
+				const ack = { ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: delivery.choiceId,
 					deliveryId: delivery.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true,
-					nativeResponseEventCompleted: true, nativeUseCardChildCount: proof.useCardChildrenCompleted });
+					nativeResponseEventCompleted: true, nativeUseCardChildCount: proof.useCardChildrenCompleted };
+				process.send?.(ack);
+				if (delivery.ackRetryRequested) {
+					delivery.ackRetryRequested = false;
+					process.send?.(ack);
+				}
 				nativeResponseAckOutcome = "ack_sent";
 			} else nativeResponseAckOutcome = "duplicate_ack_suppressed";
 		} else if (!nativeCompletionValid) {
