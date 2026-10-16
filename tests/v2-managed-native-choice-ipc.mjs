@@ -45,12 +45,12 @@ function safeNativeDiagnostic(value) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, engineReadyProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
+	let manager, controller, sessionSecret, engineReadyProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -112,6 +112,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				if (message?.type === "host_authority_event" && message.proof?.event?.kind === "xingbei_native_card_action_v1") {
 					event4SubmissionCount++;
 					event4ProofSubmissions.push(JSON.stringify(message.proof));
+					if (process.env.V2_NATIVE_REJECT_PARENT_FENCE_EVENT4 === "1") {
+						message.proof.afterDigest = "0".repeat(64);
+						event4ProofSubmissions[event4ProofSubmissions.length - 1] = JSON.stringify(message.proof);
+					}
 				}
 			});
 			const sendHostCommand = handle.sendHostCommand.bind(handle);
@@ -137,7 +141,18 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 				await event4AckBarrier;
 			}
-			try { return await sendHostCommand(command); } catch (error) {
+			try {
+				const result = await sendHostCommand(command);
+				if (process.env.V2_NATIVE_PARENT_FENCE === "1" &&
+					process.env.V2_NATIVE_START_PROBE_MODE === "managed_opening_root_action_event4_ack_loss" &&
+					command?.type === "host_authority_event_ack" && command.eventSequence === 4 && !duplicateEvent4AuthorityAckSent) {
+					duplicateEvent4AuthorityAckSent = true;
+					// Replay the exact authenticated ACK after the one-shot native waiter has
+					// consumed it; this must be inert and cannot release the parent twice.
+					await sendHostCommand(command);
+				}
+				return result;
+			} catch (error) {
 				if (command?.type === "host_authority_event_ack" && command.eventSequence === 4) event4AckSendErrors.push(String(error?.message || "unknown").slice(0, 96));
 				throw error;
 			}
@@ -147,7 +162,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		browserReadyTimeoutMs: 20000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000,
 		onSessionEnd: event => { sessionEnds.push({ roomId: event.roomId, sessionId: event.sessionId, state: event.state, code: event.code });
 			controller.cleanupHostSession(event.roomId, event.sessionId); },
-		onManagedChoiceMessage: ({ type, message }) => {
+		onManagedChoiceMessage: async ({ type, message }) => {
 			if (type === "host_choice_delivery_started") {
 				const marked = controller.markDeliveryApplying({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret });
 				assert.equal(marked.ok, true, `authenticated native delivery receipt rejected: ${marked.code}`);
@@ -448,6 +463,34 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				if (message.observed?.stage === "native_action_delivery_joined_authority_commit") {
 					event4AuthorityJoinCount++;
 					if (!event4AckBarrierReleased) {
+						if (process.env.V2_NATIVE_PARENT_FENCE === "1") {
+							const waitingFence = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_parent_fence_waiting" &&
+								entry?.snapshot?.status === "waiting" && entry?.snapshot?.nativeEventId === nativeActionCandidate?.nativeEventId), 5000,
+								() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-10), host: manager.inspect(roomId) }));
+							const snapshotCount = nativeDiagnostic.filter(entry => entry?.stage === "native_start_live_snapshot").length;
+							assert.equal((await manager.snapshotNativeStart(roomId, "managed_opening_root_action_event4")).ok, true,
+								"authenticated snapshot must remain available while the parent continuation is fenced");
+							const held = await until(() => nativeDiagnostic.slice().reverse().find(entry => entry?.stage === "native_start_live_snapshot" &&
+								 nativeDiagnostic.indexOf(entry) >= nativeDiagnostic.findIndex(item => item?.stage === "native_parent_fence_waiting")), 5000,
+								() => ({ countBefore: snapshotCount, latest: nativeDiagnostic.slice(-10), host: manager.inspect(roomId) }));
+							assert.equal(held.nativeParentFence?.status, "waiting");
+							assert.equal(held.nativeParentFence?.nativeEventId, waitingFence.snapshot.nativeEventId);
+							assert.equal(held.nativeParentFence?.parentEventName, "xingDong");
+							assert.equal(held.nativeParentFence?.completedChildName, "gongJiOrFaShu");
+							assert.equal(held.nativeParentFence?.completedChildFinished, true);
+							assert.equal(held.nativeParentFence?.completedChildParentMatches, true);
+							assert.equal(held.nativeParentFence?.parentNextCount, 0);
+							assert.equal(held.rootObjectMatches, true);
+							assert.equal(held.hostPlayerAbsent, true);
+							assert.equal(held.paused, waitingFence.snapshot.paused,
+								"parent fence must preserve the pre-existing pause state rather than change global pause state");
+							assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_parent_fence_released" &&
+								 entry?.snapshot?.nativeEventId === waitingFence.snapshot.nativeEventId), false,
+								"parent fence released before the authority ACK barrier was opened");
+							const fenceIndex = nativeDiagnostic.indexOf(waitingFence);
+							assert.equal(nativeDiagnostic.slice(fenceIndex + 1).some(entry => entry?.stage === "native_parent_next_action_child_start"), false,
+								"a subsequent native action started while Event #4 authority acceptance was withheld");
+						}
 						event4AckBarrierReleased = true;
 						releaseEvent4AckBarrier();
 					}
@@ -749,6 +792,33 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		const failedHandle = launchedHandles.get(failedSession.sessionId);
 		await until(() => failedHandle.resources().length === 0, 10000, () => ({ resources: failedHandle.resources() }));
 		await failedHandle.waitForCleanup();
+		return;
+	}
+	if (process.env.V2_NATIVE_REJECT_PARENT_FENCE_EVENT4 === "1") {
+		const waiting = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_parent_fence_waiting"), 10000,
+			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), session: manager.inspect(roomId) }));
+		assert.ok(event4SubmissionCount >= 1, "the altered Event #4 proof never reached the server validation boundary");
+		assert.equal(JSON.parse(event4ProofSubmissions[0]).afterDigest, "0".repeat(64), "test mutation did not reach the authority validator");
+		await until(() => manager.inspect(roomId)?.state === "failed", 10000,
+			() => ({ session: manager.inspect(roomId), stages: nativeDiagnostic.map(entry => entry?.stage) }));
+		const rejected = manager.inspect(roomId);
+		assert.equal(rejected.failureCode, "HOST_AUTHORITY_EVENT_REJECTED");
+		assert.equal(rejected.authorityStateRevision, 3, "rejected Event #4 must leave the accepted authority tip at revision 3");
+		assert.deepEqual(rejected.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+		assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_parent_fence_released"), false,
+			"rejected Event #4 released the native parent continuation");
+		assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_card_action_event_4_accepted"), false,
+			"rejected Event #4 emitted an accepted authority milestone");
+		const fenceWaitIndex = nativeDiagnostic.indexOf(waiting);
+		assert.equal(nativeDiagnostic.slice(fenceWaitIndex + 1).some(entry => entry?.stage === "native_parent_next_action_child_start"), false,
+			"native action loop continued after Event #4 rejection");
+		assert.equal(nativeActionAckCount, 0, "a rejected authority event must not receive a successful player-choice ACK");
+		assert.ok(waiting.snapshot?.rootObjectMatches && waiting.snapshot?.gameMeAbsent,
+			"the rejected fence was not bound to the live managed root or lost the headless-player invariant");
+		assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId), null, "rejected host left its action choice pending");
+		const rejectedHandle = launchedHandles.get(rejected.sessionId);
+		await until(() => rejectedHandle.resources().length === 0, 10000, () => ({ resources: rejectedHandle.resources() }));
+		await rejectedHandle.waitForCleanup();
 		return;
 	}
 	try {
@@ -1211,6 +1281,26 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			}
 			await until(() => controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved", 15000,
 				() => ({ choice: controller.inspect(roomId, nativeActionChoice.choiceId), host: manager.inspect(roomId), stages: nativeDiagnostic.map(entry => entry?.stage) }));
+			if (process.env.V2_NATIVE_PARENT_FENCE === "1") {
+				const fenceReleased = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_parent_fence_released" &&
+					entry?.snapshot?.nativeEventId === nativeActionCandidate?.nativeEventId), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-12), host: manager.inspect(roomId) }));
+				const hostTip = manager.inspect(roomId);
+				assert.equal(fenceReleased.snapshot.status, "released");
+				assert.equal(fenceReleased.snapshot.releaseCount, 1, "parent continuation must have one accepted release");
+				assert.deepEqual(fenceReleased.snapshot.releaseResolution, { eventSequence: 4, stateRevision: 4,
+					afterDigest: hostTip.authorityStateDigest });
+				const successor = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_parent_next_action_child_start" &&
+					nativeDiagnostic.indexOf(entry) > nativeDiagnostic.indexOf(fenceReleased)), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-12), host: manager.inspect(roomId) }));
+				assert.deepEqual(successor.snapshot.priorParentFence, { status: "released", releaseCount: 1,
+					acceptedAuthority: { nativeEventId: nativeActionCandidate.nativeEventId, eventSequence: 4,
+						stateRevision: 4, afterDigest: hostTip.authorityStateDigest },
+					releaseResolution: { eventSequence: 4, stateRevision: 4, afterDigest: hostTip.authorityStateDigest } },
+					"the next native action must observe the immutable server-accepted Event #4 release tuple");
+				assert.equal(successor.snapshot.rootObjectMatches, true);
+				assert.equal(successor.snapshot.gameMeAbsent, true);
+			}
 			if (process.env.V2_NATIVE_PARENT_FENCE_AUDIT === "1" && probeMode.startsWith("managed_opening_root_action_event4")) {
 				const actionCompleted = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_event_completed"), 5000,
 					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), host: manager.inspect(roomId) }));
@@ -1238,9 +1328,19 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.ok(parentWait.snapshot.quotas && Object.values(parentWait.snapshot.quotas).every(value => value === null || Number.isSafeInteger(value)));
 				assert.equal(nextActionStart.snapshot.rootObjectMatches, true);
 				assert.equal(nextActionStart.snapshot.gameMeAbsent, true);
+				const acceptedFence = nextActionStart.snapshot.priorParentFence?.status === "released" &&
+					nextActionStart.snapshot.priorParentFence?.releaseCount === 1 &&
+					nextActionStart.snapshot.priorParentFence?.acceptedAuthority?.eventSequence === 4 &&
+					nextActionStart.snapshot.priorParentFence?.acceptedAuthority?.stateRevision === 4 &&
+					nextActionStart.snapshot.priorParentFence?.acceptedAuthority?.afterDigest === event4Accepted.afterDigest;
+				const continuationClassification = acceptedFence
+					? "next native action observed the exact server-accepted Event #4 fence tuple; host acceptance diagnostic can arrive later"
+					: nextActionIndex < event4Index ? "next native action began before Event #4 acceptance" : "Event #4 accepted before next native action began";
+				if (process.env.V2_NATIVE_PARENT_FENCE === "1") assert.equal(acceptedFence, true,
+					"native continuation lacked the exact accepted Event #4 fence tuple");
 				t.diagnostic(`native parent boundary order: ${JSON.stringify({ actionCompleted: actionIndex, parentWaitNextCompleted: parentIndex,
 					nextActionChildStarted: nextActionIndex, event4AuthorityAccepted: event4Index,
-					firstUnfencedSuccessor: nextActionIndex < event4Index ? "next native action began before Event #4 acceptance" : "Event #4 accepted before next native action began",
+					continuationClassification, acceptedFence,
 					parentWait: parentWait.snapshot, nextAction: nextActionStart.snapshot })}`);
 			}
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.kind,
@@ -1329,6 +1429,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(event4ControllerRetryTriggered, true, "controller retry must be deterministic while the authority ACK is withheld");
 					assert.equal(event4AuthorityJoinCount, 1, "ACK barrier releases only after the controller retry joined the pending commit");
 					assert.equal(event4AckBarrierReleased, true);
+					assert.equal(duplicateEvent4AuthorityAckSent, true, "the exact Event #4 authority ACK replay was not exercised");
 					assert.equal(completed.authorityDigestChain.length, 4, "ACK replay must not append Event #4 twice");
 					assert.equal(nativeActionAckCount >= 2, true, "choice ACK waits for authority acceptance after retry");
 					assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1, "overlapping delivery retry cannot re-run native useResult");

@@ -1546,6 +1546,22 @@ async function commitNativeCardActionAuthority(gate, record) {
 		if (ackResult.accepted !== true) throw new Error("NATIVE_ACTION_AUTHORITY_REJECTED");
 		const finalized = await cdp.send("Runtime.evaluate", { expression: `(()=>{const c=window.__v2ManagedGame,s=window.__v2ManagedOpeningDraw;if(c?.authorityState?.revision!==3||s?.authorityDigest!==${JSON.stringify(proof.beforeDigest)})return {ok:false};c.authorityState.revision=4;s.authoritySummary=${JSON.stringify(after)};s.authorityDigest=${JSON.stringify(afterDigest)};return {ok:true,revision:c.authorityState.revision}})()`, returnByValue: true }, 1500);
 		if (finalized.exceptionDetails || finalized.result?.value?.ok !== true || finalized.result.value.revision !== 4) throw new Error("NATIVE_ACTION_AUTHORITY_FINALIZE_FAILED");
+		if (process.env.V2_NATIVE_PARENT_FENCE === "1") {
+			const released = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2NativeStartDiagnosticState,f=s?.nativeParentContinuationFence,
+				c=window.__v2ManagedGame,a=s?.inputEvent,manager=window.__v2ManagedEngine?.core?._status?.eventManager;
+				const nativeEventId=${JSON.stringify(gate.nativeEventId)},afterDigest=${JSON.stringify(afterDigest)};
+				if(!f||f.status!=='waiting'||f.releaseCount!==0||f.nativeEventId!==nativeEventId||f.actionEvent!==a||f.parentEvent!==a?.parent||
+					f.rootEvent!==s?.root||manager?.rootEvent!==s?.root||c?.authorityState?.revision!==4||window.__v2ManagedOpeningDraw?.authorityDigest!==afterDigest||
+					f.completedChildFinished!==true||f.completedChildParentMatches!==true||f.parentNextCount!==0||!f.resolve)return {ok:false,code:'NATIVE_PARENT_FENCE_BINDING_REJECTED'};
+				f.status='accepted';f.releaseCount=1;f.acceptedAuthority=Object.freeze({nativeEventId,eventSequence:4,stateRevision:4,afterDigest});
+				f.resolve({accepted:true,nativeEventId,eventSequence:4,stateRevision:4,afterDigest});
+				return {ok:true,status:f.status,releaseCount:f.releaseCount,eventSequence:f.acceptedAuthority.eventSequence,stateRevision:f.acceptedAuthority.stateRevision,afterDigest:f.acceptedAuthority.afterDigest};})()`, returnByValue: true }, 1500);
+			const observedRelease = released.result?.value;
+			if (released.exceptionDetails || observedRelease?.ok !== true || observedRelease.status !== "accepted" || observedRelease.releaseCount !== 1 ||
+				observedRelease.eventSequence !== 4 || observedRelease.stateRevision !== 4 || observedRelease.afterDigest !== afterDigest) {
+				throw new Error("NATIVE_PARENT_FENCE_RELEASE_UNCERTAIN");
+			}
+		}
 		record.status = "authority_committed";
 		gate.status = "authority_committed";
 		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
@@ -1977,7 +1993,7 @@ async function runNativeStartDiagnostic(message) {
 	    return value
 	   })
 	  };
-	  GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;emit('wait_next_begin');return originalWaitNext.apply(this,args).then(value=>{state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};if(event===state.inputEvent&&state.nativeAction?.eventId===event.__v2NativeEventId&&state.nativeAction.useResultCount===1){const mapping=window.__v2ManagedNativeActionOptions.get(state.nativeAction.optionId);state.nativeAction.nativeChildWaitCompleted=true;state.nativeAction.nativeEventInstanceMatches=event===state.nativeInputResumeGate?.event;state.nativeAction.nativeEventStepAfterWait=Number.isSafeInteger(event.step)?event.step:null;state.nativeAction.cardInHandAfterNativeWait=Boolean(mapping&&event.player.getCards('h').includes(mapping.card));state.nativeAction.cardPositionAfterNativeWait=mapping?get.position(mapping.card):null;state.nativeAction.status='native_child_wait_completed';emit('native_action_child_wait_completed')}
+	  GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;emit('wait_next_begin');return originalWaitNext.apply(this,args).then(async value=>{state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};if(event===state.inputEvent&&state.nativeAction?.eventId===event.__v2NativeEventId&&state.nativeAction.useResultCount===1){const mapping=window.__v2ManagedNativeActionOptions.get(state.nativeAction.optionId);state.nativeAction.nativeChildWaitCompleted=true;state.nativeAction.nativeEventInstanceMatches=event===state.nativeInputResumeGate?.event;state.nativeAction.nativeEventStepAfterWait=Number.isSafeInteger(event.step)?event.step:null;state.nativeAction.cardInHandAfterNativeWait=Boolean(mapping&&event.player.getCards('h').includes(mapping.card));state.nativeAction.cardPositionAfterNativeWait=mapping?get.position(mapping.card):null;state.nativeAction.status='native_child_wait_completed';emit('native_action_child_wait_completed')}
 	   if(${JSON.stringify(process.env.V2_NATIVE_PARENT_FENCE_AUDIT === "1")}&&event.name==='xingDong'){
 	    const completedChild=[...(event.childEvents||[])].reverse().find(child=>child.action===true&&child.finished===true),player=event.player;
 	    const snapshot={boundary:'parent_wait_next_child_completed',parentEventName:event.name,parentEventStep:Number.isSafeInteger(event.step)?event.step:null,parentFinished:event.finished===true,
@@ -1987,6 +2003,41 @@ async function runNativeStartDiagnostic(message) {
 	      gongJi:Number.isSafeInteger(player?.storage?.gongJi)?player.storage.gongJi:null,extraXingDongCount:Array.isArray(player?.storage?.extraXingDong)?player.storage.extraXingDong.length:null},
 	     rootObjectMatches:state.root?manager.rootEvent===state.root:null,gameMeAbsent:game.me===null};
 	    state.nativeParentFenceAudit=snapshot;try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_parent_action_child_wait_completed',snapshot}))}catch{}
+	   }
+	   if(${JSON.stringify(process.env.V2_NATIVE_PARENT_FENCE === "1")}&&event.name==='xingDong'&&event===state.inputEvent?.parent&&
+	    !state.nativeParentContinuationFence){
+	    const actionEvent=state.inputEvent,completedChild=[...(event.childEvents||[])].reverse().find(child=>child===actionEvent);
+	    if(!completedChild||completedChild.finished!==true||completedChild.parent!==event||!state.nativeActionCompletionReported||
+	     state.nativeAction?.eventId!==actionEvent.__v2NativeEventId||state.nativeAction.useResultCount!==1||
+	     state.nativeAction.nativeChildWaitCompleted!==true||state.nativeAction.nativeUseCardChildCompleted!==true||
+	     !state.root||manager.rootEvent!==state.root||game.me!==null||game.players.some(player=>player.ws))throw Error('NATIVE_PARENT_FENCE_PRECONDITION_REJECTED');
+	    if(state.nativeParentContinuationFence)throw Error('NATIVE_PARENT_FENCE_DUPLICATE_REJECTED');
+	    let releaseFence;const wait=new Promise(resolve=>{releaseFence=resolve});
+	    const fence={status:'waiting',releaseCount:0,nativeEventId:actionEvent.__v2NativeEventId,seatId:actionEvent.player?.playerid||null,
+	     parentEvent:event,actionEvent,rootEvent:state.root,rootInstanceId:state.rootInstanceId||null,
+	     parentEventName:event.name,parentEventStep:Number.isSafeInteger(event.step)?event.step:null,
+	     completedChildName:completedChild.name||null,completedChildStep:Number.isSafeInteger(completedChild.step)?completedChild.step:null,
+	     completedChildFinished:completedChild.finished===true,completedChildParentMatches:completedChild.parent===event,
+	     parentNextCount:Array.isArray(event.next)?event.next.length:null,
+	     quotas:{gongJiOrFaShu:Number.isSafeInteger(event.player?.storage?.gongJiOrFaShu)?event.player.storage.gongJiOrFaShu:null,
+	      faShu:Number.isSafeInteger(event.player?.storage?.faShu)?event.player.storage.faShu:null,
+	      gongJi:Number.isSafeInteger(event.player?.storage?.gongJi)?event.player.storage.gongJi:null,
+	      extraXingDongCount:Array.isArray(event.player?.storage?.extraXingDong)?event.player.storage.extraXingDong.length:null},
+	     promise:wait,resolve:releaseFence};
+	    state.nativeParentContinuationFence=fence;
+	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_parent_fence_waiting',snapshot:{status:fence.status,
+	     nativeEventId:fence.nativeEventId,seatId:fence.seatId,parentEventName:fence.parentEventName,parentEventStep:fence.parentEventStep,
+	     completedChildName:fence.completedChildName,completedChildStep:fence.completedChildStep,completedChildFinished:fence.completedChildFinished,
+			     completedChildParentMatches:fence.completedChildParentMatches,parentNextCount:fence.parentNextCount,quotas:fence.quotas,
+			     rootInstanceId:fence.rootInstanceId,rootObjectMatches:manager.rootEvent===fence.rootEvent,gameMeAbsent:game.me===null,
+			     connectedTransports:game.players.filter(player=>player.ws).length,paused:Boolean(_status.paused)}}))}catch{}
+	    const accepted=await fence.promise;
+	    if(fence.status!=='accepted'||accepted?.accepted!==true||accepted.nativeEventId!==fence.nativeEventId||
+	     accepted.eventSequence!==4||accepted.stateRevision!==4||!/^([a-f0-9]{64})$/.test(accepted.afterDigest||''))throw Error('NATIVE_PARENT_FENCE_RELEASE_REJECTED');
+	    fence.status='released';fence.releaseResolution=Object.freeze({eventSequence:accepted.eventSequence,stateRevision:accepted.stateRevision,afterDigest:accepted.afterDigest});
+	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_parent_fence_released',snapshot:{status:fence.status,
+	     nativeEventId:fence.nativeEventId,seatId:fence.seatId,parentEventName:event.name,parentEventStep:Number.isSafeInteger(event.step)?event.step:null,
+	     releaseCount:fence.releaseCount,releaseResolution:fence.releaseResolution,rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null}}))}catch{}
 	   }
 	   emit('wait_next_end');return value},error=>{const name=typeof error?.name==='string'&&/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(error.name)?error.name:'Error',message=typeof error?.message==='string'?error.message:'';const nullProperty=/^Cannot read properties of (null|undefined) \(reading '([A-Za-z_$][A-Za-z0-9_$]{0,48})'\)$/.exec(message),notFunction=/^([A-Za-z_$][A-Za-z0-9_$]{0,48}) is not a function$/.exec(message),code=/^[A-Z][A-Z0-9_]{0,80}$/.test(message)?message:null;state.nativeWaitError={name,...(nullProperty?{nullBase:nullProperty[1],property:nullProperty[2]}:{}),...(notFunction?{notFunction:notFunction[1]}:{}),...(code?{code}:{})};state.failureCode='NATIVE_WAIT_NEXT_REJECTED';emit('wait_next_error');throw error})};
 	 const completedActionStart=GameEvent.prototype.start;
@@ -1998,6 +2049,10 @@ async function runNativeStartDiagnostic(message) {
 	    seatId:event.player?.playerid||null,parentSeatId:player?.playerid||null,parentActionChildCount:Array.isArray(event.parent.childEvents)?event.parent.childEvents.filter(child=>child.action===true).length:null,
 	    parentCompletedActionChildCount:Array.isArray(event.parent.childEvents)?event.parent.childEvents.filter(child=>child.action===true&&child.finished===true).length:null,
 	    parentNextCount:Array.isArray(event.parent.next)?event.parent.next.length:null,parentNextHeadIsEvent:event.parent.next?.[0]===event,
+	    priorParentFence:state.nativeParentContinuationFence?{status:state.nativeParentContinuationFence.status||null,
+	     releaseCount:state.nativeParentContinuationFence.releaseCount||0,
+	     acceptedAuthority:state.nativeParentContinuationFence.acceptedAuthority||null,
+	     releaseResolution:state.nativeParentContinuationFence.releaseResolution||null}:null,
 	    quotas:{gongJiOrFaShu:Number.isSafeInteger(player?.storage?.gongJiOrFaShu)?player.storage.gongJiOrFaShu:null,faShu:Number.isSafeInteger(player?.storage?.faShu)?player.storage.faShu:null,
 	     gongJi:Number.isSafeInteger(player?.storage?.gongJi)?player.storage.gongJi:null,extraXingDongCount:Array.isArray(player?.storage?.extraXingDong)?player.storage.extraXingDong.length:null},
 	    rootObjectMatches:state.root?manager.rootEvent===state.root:null,gameMeAbsent:game.me===null};
@@ -2215,6 +2270,19 @@ async function snapshotNativeStart(message) {
 					status:state.nativeAction.status||null,useResultCount:state.nativeAction.useResultCount||0,
 					nativeChildWaitCompleted:state.nativeAction.nativeChildWaitCompleted===true,
 					nativeUseCardChildCompleted:state.nativeAction.nativeUseCardChildCompleted===true}:null,
+				nativeParentFence:state?.nativeParentContinuationFence?{status:state.nativeParentContinuationFence.status||null,
+					nativeEventId:state.nativeParentContinuationFence.nativeEventId||null,seatId:state.nativeParentContinuationFence.seatId||null,
+					parentEventName:state.nativeParentContinuationFence.parentEventName||null,
+					parentEventStep:Number.isSafeInteger(state.nativeParentContinuationFence.parentEventStep)?state.nativeParentContinuationFence.parentEventStep:null,
+					completedChildName:state.nativeParentContinuationFence.completedChildName||null,
+					completedChildStep:Number.isSafeInteger(state.nativeParentContinuationFence.completedChildStep)?state.nativeParentContinuationFence.completedChildStep:null,
+					completedChildFinished:state.nativeParentContinuationFence.completedChildFinished===true,
+					completedChildParentMatches:state.nativeParentContinuationFence.completedChildParentMatches===true,
+					parentNextCount:Number.isSafeInteger(state.nativeParentContinuationFence.parentNextCount)?state.nativeParentContinuationFence.parentNextCount:null,
+					releaseCount:state.nativeParentContinuationFence.releaseCount||0,
+					releaseResolution:state.nativeParentContinuationFence.releaseResolution||null,
+					acceptedAuthority:state.nativeParentContinuationFence.acceptedAuthority||null,
+					quotas:state.nativeParentContinuationFence.quotas||null}:null,
 				responseGates:[...(state?.managedNativeResponseGates?.values()||[])].slice(-16).map(gate=>({nativeEventId:gate.nativeEventId||null,
 					seatId:gate.seatId||null,actionEventId:gate.actionEventId||null,sourceSeatId:gate.sourceSeatId||null,
 					eventStep:Number.isSafeInteger(gate.event?.step)?gate.event.step:null,status:gate.status||null,
