@@ -1330,14 +1330,27 @@ async function applyManagedNativeResponseDelivery(message) {
 			throw new Error("NATIVE_RESPONSE_DELIVERY_CONFLICT");
 		}
 		if (prior.status === "applying" || prior.status === "dispatched") {
-			// A redelivery can arrive while the native parent is still waiting for its
-			// useCard/response child. Remember one deferred ACK request; never apply
-			// the result again. If the original completion ACK is lost, the completion
-			// observer emits an identical post-completion ACK below.
+			// The native page and this supervisor keep separate gate records. A page
+			// completion ACK may have been lost while this Node record remains stale;
+			// query the exact native gate read-only before deciding whether to ACK.
+			// If the native child is still running, remember the retry and never apply
+			// its result again.
 			prior.ackRetryRequested = true;
 			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
 				observed: { kind: "native_response_delivery_retry_v1", stage: "native_response_duplicate_while_applying",
 					seatId: gate.seatId, choiceId: prior.choiceId, deliveryId: prior.deliveryId } });
+			const completion = await inspectNativeResponseDelivery(gate, prior);
+			if (completion?.applied === true) {
+				prior.status = "applied";
+				gate.status = "applied";
+				prior.ackRetryRequested = false;
+				process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
+					observed: { kind: "native_response_delivery_retry_v1", stage: "native_response_duplicate_verified_applied",
+						seatId: gate.seatId, choiceId: prior.choiceId, deliveryId: prior.deliveryId } });
+				process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: prior.choiceId,
+					deliveryId: prior.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true,
+					nativeResponseEventCompleted: true, nativeUseCardChildCount: completion.useCardChildrenCompleted });
+			}
 			return;
 		}
 		if (prior.status !== "applied") throw new Error("NATIVE_RESPONSE_DELIVERY_UNCERTAIN");
@@ -1449,6 +1462,44 @@ async function applyManagedNativeResponseDelivery(message) {
 		throw new Error(testFailureCode || value?.code || "NATIVE_RESPONSE_APPLY_UNCERTAIN");
 	}
 	delivery.status = "dispatched";
+}
+
+async function inspectNativeResponseDelivery(gate, delivery) {
+	if (!cdp || !gate || !delivery || !interactiveChoice?.nativeResponseGates?.has(gate.nativeEventId) ||
+		interactiveChoice.nativeResponseGates.get(gate.nativeEventId) !== gate) return null;
+	try {
+		const response = await cdp.send("Runtime.evaluate", { expression: `(()=>{
+		 const state=window.__v2NativeStartDiagnosticState,g=state?.managedNativeResponseGates?.get(${JSON.stringify(gate.nativeEventId)}),
+		  d=g?.delivery,r=g?.completedResult,m=window.__v2ManagedEngine?.core,manager=m?._status?.eventManager;
+		 if(!g||!d||!r)return {found:Boolean(g),applied:false};
+		 return {found:true,nativeEventId:g.nativeEventId,seatId:g.seatId,eventName:g.eventName,rootInstanceId:state.rootInstanceId||null,
+		  rootObjectMatches:state.root?manager?.rootEvent===state.root:false,gameMeAbsent:m?.game?.me===null,
+		  status:g.status,deliveryStatus:d.status,choiceId:d.choiceId,deliveryId:d.deliveryId,optionId:d.optionId,
+		  selectedKind:r.selectedKind,bool:r.bool,hasCardName:typeof r.cardName==='string'&&r.cardName.length>0,
+		  targetSeatId:r.targetSeatId||null,targetCount:r.targetCount,useCardChildrenStarted:r.useCardChildrenStarted,
+		  useCardChildrenCompleted:r.useCardChildrenCompleted,skillId:r.skillId||null,physicalMaterialConsumed:r.physicalMaterialConsumed===true,
+		  xiBieApplied:r.xiBieApplied===true,guiHuoDelta:Number.isSafeInteger(r.guiHuoDelta)?r.guiHuoDelta:null};
+	 })()`, returnByValue: true }, 1500);
+		const proof = response.result?.value;
+		if (response.exceptionDetails || !proof || proof.found !== true) return null;
+		const kind = gate.optionKinds?.[delivery.optionId];
+		const identityMatches = proof.nativeEventId === gate.nativeEventId && proof.seatId === gate.seatId &&
+			proof.eventName === "yingZhan" && proof.rootObjectMatches === true && proof.rootInstanceId === gate.rootInstanceId &&
+			proof.gameMeAbsent === true && proof.status === "applied" && proof.deliveryStatus === "applied" &&
+			proof.choiceId === delivery.choiceId && proof.deliveryId === delivery.deliveryId && proof.optionId === delivery.optionId;
+		const resultMatches = kind === "card" ? proof.bool === true && proof.selectedKind === "card" && proof.hasCardName &&
+			proof.useCardChildrenStarted === 1 && proof.useCardChildrenCompleted === 1 &&
+			(gate.optionShapes?.[delivery.optionId] === "native_single_target_card" ? proof.targetCount === 1 && typeof proof.targetSeatId === "string" :
+				gate.optionShapes?.[delivery.optionId] === "native_notarget_card" && proof.targetCount === 0 && proof.targetSeatId === null) :
+			kind === "view_as_skill" ? proof.bool === true && proof.selectedKind === "view_as_skill" && proof.skillId === "yinYangZhanHuan" &&
+			proof.physicalMaterialConsumed === true && proof.xiBieApplied === true && Number.isSafeInteger(proof.guiHuoDelta) &&
+			proof.guiHuoDelta > 0 && proof.targetCount === 1 && typeof proof.targetSeatId === "string" &&
+			proof.useCardChildrenStarted === 1 && proof.useCardChildrenCompleted === 1 :
+			kind === "decline" && proof.bool === false && proof.selectedKind === "decline" && proof.targetCount === 0 &&
+			proof.useCardChildrenStarted === 0 && proof.useCardChildrenCompleted === 0;
+		if (!identityMatches || !resultMatches) return null;
+		return Object.freeze({ applied: true, useCardChildrenCompleted: proof.useCardChildrenCompleted });
+	} catch (_) { return null; }
 }
 
 async function applyManagedNativeActionDelivery(message) {

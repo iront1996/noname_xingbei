@@ -1302,9 +1302,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(nativeResponseAckDropped, true, "response ACK-loss injection did not drop the first native completion ACK");
 					assert.ok(nativeResponseAckResults.find(ack => ack.choiceId === nativeResponseChoice.choiceId)?.accepted,
 						"response ACK loss did not trigger stable managed-choice redelivery");
-					assert.ok(nativeDiagnostic.some(item => ["native_response_duplicate_while_applying", "native_response_duplicate_after_apply"].includes(item?.stage) &&
+					assert.ok(nativeDiagnostic.some(item => ["native_response_duplicate_while_applying", "native_response_duplicate_after_apply",
+						"native_response_duplicate_verified_applied"].includes(item?.stage) &&
 						item?.choiceId === droppedNativeResponseAckChoiceId),
-						"ACK-loss retry must reach the native idempotency fence for the same immutable response delivery");
+						"ACK-loss retry must reach the native idempotency fence and verify the same immutable response delivery");
 				}
 				}
 			}
