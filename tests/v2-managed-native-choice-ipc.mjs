@@ -51,6 +51,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
 	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
+	let event4AcceptedProjection = null;
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -120,6 +121,23 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			});
 			const sendHostCommand = handle.sendHostCommand.bind(handle);
 		handle.sendHostCommand = async command => {
+			if (process.env.V2_NATIVE_T4_DELTA_AUDIT === "1" && command?.type === "host_authority_event_ack" &&
+				command.accepted === true && command.eventSequence === 4 && command.stateRevision === 4 && !event4AcceptedProjection) {
+				const priorSnapshots = nativeDiagnostic.filter(entry => entry?.stage === "native_start_live_snapshot").length;
+				const requested = await manager.snapshotNativeStart(roomId, "managed_opening_root_action_event4");
+				if (!requested.ok) throw new Error(`T4_EVENT4_SNAPSHOT_REQUEST_REJECTED:${requested.code}`);
+				const acceptedSnapshot = await until(() => { const snapshots = nativeDiagnostic.filter(entry => entry?.stage === "native_start_live_snapshot");
+					return snapshots.length > priorSnapshots ? snapshots.at(-1) : null; }, 3000,
+					() => ({ stage: "T4_EVENT4_ACCEPTED_SNAPSHOT_TIMEOUT", host: manager.inspect(roomId), stages: nativeDiagnostic.slice(-12) }));
+				const audit = acceptedSnapshot.projectionAudit;
+				if (acceptedSnapshot.rootInstanceId == null || acceptedSnapshot.nativeParentFence?.status !== "waiting" ||
+					audit?.candidateDisposition !== "diagnostic_only_not_a_proof" || audit?.authorized !== false ||
+					manager.inspect(roomId)?.authorityStateRevision !== 4 || manager.inspect(roomId)?.authorityStateDigest !== command.afterDigest) {
+					throw new Error("T4_EVENT4_ACCEPTED_SNAPSHOT_BINDING_REJECTED");
+				}
+				event4AcceptedProjection = Object.freeze({ rootInstanceId: acceptedSnapshot.rootInstanceId,
+					afterDigest: command.afterDigest, projectionAudit: audit, checkpointAvailable: manager.inspect(roomId).checkpointAvailable });
+			}
 			if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_opening_root_action_event4_ack_loss" &&
 				command?.type === "host_authority_event_ack" && command.eventSequence === 4 && event4AckDropCount === 0) {
 				event4AckDropCount++;
@@ -1462,6 +1480,51 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"the held native boundary projection must remain unchanged while authority is not advanced");
 					assert.equal(heldSnapshotB.nativePhaseBoundaryFence?.status, "waiting");
 					assert.equal(heldSnapshotB.hostPlayerAbsent, true);
+					if (process.env.V2_NATIVE_T4_DELTA_AUDIT === "1") {
+						assert.ok(event4AcceptedProjection, "Event #4 acceptance snapshot was not captured before the native fence release");
+						const openingProof = JSON.parse(event4ProofSubmissions[0]);
+						assert.equal(openingProof.eventSequence, 4);
+						assert.equal(openingProof.afterDigest, event4AcceptedProjection.afterDigest);
+						assert.equal(event4AcceptedProjection.rootInstanceId, heldSnapshotA.rootInstanceId);
+						assert.equal(event4AcceptedProjection.rootInstanceId, heldSnapshotA.nativePhaseBoundaryFence?.rootInstanceId);
+						assert.equal(event4AcceptedProjection.checkpointAvailable, false);
+						assert.equal(event4AcceptedProjection.projectionAudit.seats.length, 4);
+						assert.deepEqual(openingProof.afterSummary.seats.map(seat => ({ seatId: seat.seatId, position: seat.position,
+							character: seat.character, side: seat.side, handCount: seat.handCount })),
+							event4AcceptedProjection.projectionAudit.seats.map(seat => ({ seatId: seat.seatId, position: seat.position,
+							character: seat.character, side: seat.side, handCount: seat.handCount })),
+							"accepted Event #4 seat summary must agree with the live native state before phaseOver");
+						const publicProjection = audit => ({ roundNumber: audit.roundNumber, phaseNumber: audit.phaseNumber,
+							currentSeatId: audit.currentSeatId, firstActSeatId: audit.firstActSeatId, resources: audit.resources,
+							cardZoneCounts: audit.cardZoneCounts, seats: audit.seats });
+						const before = publicProjection(event4AcceptedProjection.projectionAudit);
+						const after = publicProjection(heldSnapshotA.projectionAudit);
+						const changed = [];
+						const walk = (left, right, path) => {
+							if (JSON.stringify(left) === JSON.stringify(right)) return;
+							if (left && right && typeof left === "object" && typeof right === "object" &&
+								!Array.isArray(left) && !Array.isArray(right)) {
+								for (const key of [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()) walk(left[key], right[key], path ? `${path}.${key}` : key);
+								return;
+							}
+							if (Array.isArray(left) && Array.isArray(right) && left.length === right.length) {
+								for (let index = 0; index < left.length; index++) walk(left[index], right[index], `${path}[${index}]`);
+								return;
+							}
+							changed.push({ path, before: left ?? null, after: right ?? null });
+						};
+						walk(before, after, "");
+						assert.equal(heldSnapshotA.projectionAudit?.candidateDisposition, "diagnostic_only_not_a_proof");
+						assert.equal(heldSnapshotA.projectionAudit?.authorized, false);
+						assert.equal(manager.inspect(roomId).authorityStateRevision, 4,
+							"the Event #4-to-fence diagnostic must not advance authority state");
+						assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 5);
+						assert.equal(manager.inspect(roomId).checkpointAvailable, false);
+						assert.equal(JSON.stringify({ before, after, changed }).includes("handCommitment"), false);
+						t.diagnostic(`T4 Event #4 accepted-to-post-phaseOver native delta (diagnostic only): ${JSON.stringify({
+							rootInstanceId: event4AcceptedProjection.rootInstanceId, revision: manager.inspect(roomId).authorityStateRevision,
+							before, after, changed, seedAuthorized: false, checkpointAvailable: false })}`);
+					}
 					assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_parent_next_action_child_start" &&
 						nativeDiagnostic.indexOf(entry) > nativeDiagnostic.indexOf(waitingBoundaryFence)), false,
 						"the parent must not start the next action while the boundary fence is held");
