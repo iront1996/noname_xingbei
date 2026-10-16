@@ -26,6 +26,7 @@ let identity = null;
 let stopping = false;
 let cdp = null;
 let networkPolicyUnsubscribe = null;
+let managedRandomFailureUnsubscribe = null;
 let interactiveChoice = null;
 let choiceCommandChain = Promise.resolve();
 let choiceDiagnosticTimer = null;
@@ -33,6 +34,7 @@ const nativeAuthorityAckWaiters = new Map();
 const nativeStartDiagnosticRing = [];
 let nativeStartDiagnosticUnsubscribe = null;
 let nativeFailureReported = false;
+let managedRandomFailureReported = false;
 let nativeFaultApplyBarrier = null;
 const chromiumStartupStderr = [];
 
@@ -82,8 +84,10 @@ function createCdpSession(url) {
 		send(method, params = {}, timeoutMs = WAIT_MS) {
 			const diagnosticMethod = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				["Runtime.enable", "Runtime.addBinding"].includes(method);
+			const managedRandomBindingMethod = (method === "Runtime.enable" && Object.keys(params).length === 0) ||
+				(method === "Runtime.addBinding" && params.name === "__v2ManagedRandomFailureNotify" && Object.keys(params).sort().join(",") === "name");
 			const fetchPolicyMethod = ["Fetch.enable", "Fetch.continueRequest", "Fetch.failRequest"].includes(method);
-			if (!(diagnosticMethod || fetchPolicyMethod || ["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.navigate", "Runtime.evaluate"].includes(method)) ||
+			if (!(diagnosticMethod || managedRandomBindingMethod || fetchPolicyMethod || ["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.navigate", "Runtime.evaluate"].includes(method)) ||
 				socket.readyState !== WebSocket.OPEN || !Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 60000) {
 				return Promise.reject(new Error("CHROMIUM_CDP_METHOD_DENIED"));
 			}
@@ -113,6 +117,8 @@ async function cleanup() {
 	stopping = true;
 	try { networkPolicyUnsubscribe?.(); } catch {}
 	networkPolicyUnsubscribe = null;
+	try { managedRandomFailureUnsubscribe?.(); } catch {}
+	managedRandomFailureUnsubscribe = null;
 	try { cdp?.close(); } catch {}
 	if (chromium && chromium.exitCode === null && chromium.signalCode === null) {
 		chromium.kill("SIGTERM");
@@ -286,6 +292,20 @@ async function boot(message) {
 	if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(origin)) throw new Error("ENGINE_ORIGIN_INVALID");
 	cdp = createCdpSession(page.webSocketDebuggerUrl);
 	await cdp.open();
+	const randomFailureCodes = new Set(["MANAGED_RANDOM_SOURCE_UNAVAILABLE", "MANAGED_RANDOM_SOURCE_FAILED", "MANAGED_RANDOM_DRAW_LIMIT_EXCEEDED"]);
+	managedRandomFailureUnsubscribe = cdp.onInternalEvent(event => {
+		if (managedRandomFailureReported || event.method !== "Runtime.bindingCalled" || event.params?.name !== "__v2ManagedRandomFailureNotify" ||
+			typeof event.params.payload !== "string" || !randomFailureCodes.has(event.params.payload)) return;
+		managedRandomFailureReported = true;
+		const code = event.params.payload;
+		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: null,
+			observed: { kind: "managed_random_failure_v1", failureCode: code } });
+		const terminate = () => cleanup().finally(() => process.exit(1));
+		if (process.connected) process.send({ ...identity, type: "host_failure", code }, () => terminate());
+		else terminate();
+	});
+	await cdp.send("Runtime.enable");
+	await cdp.send("Runtime.addBinding", { name: "__v2ManagedRandomFailureNotify" });
 	await cdp.send("Page.enable");
 	const networkPolicy = await installSameOriginNetworkPolicy(origin);
 	networkPolicyUnsubscribe = networkPolicy.unsubscribe;

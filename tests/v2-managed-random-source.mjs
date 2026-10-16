@@ -6,8 +6,8 @@ import vm from "node:vm";
 const require = createRequire(import.meta.url);
 const { createManagedRandomBootstrap, PRODUCTION_KIND, TEST_KIND } = require("../game/server-managed-random-source.js");
 
-function run(source, crypto) {
-	const context = { window: {}, crypto, Math: Object.create(Math), Uint32Array, Object };
+function run(source, crypto, onFailure = () => {}) {
+	const context = { window: { __v2ManagedRandomFailureNotify: onFailure }, crypto, Math: Object.create(Math), Uint32Array, Object };
 	context.globalThis = context;
 	vm.runInNewContext(source, context);
 	return context;
@@ -37,23 +37,29 @@ test("production managed random adapter uses WebCrypto and returns uniform-range
 });
 
 test("production managed random adapter fails closed when WebCrypto is unavailable or fails", () => {
-	const missing = run(createManagedRandomBootstrap().source, undefined);
+	const missingFailures = [];
+	const missing = run(createManagedRandomBootstrap().source, undefined, code => missingFailures.push(code));
 	assert.equal(missing.window.__v2ManagedRandomFailure, "MANAGED_RANDOM_SOURCE_UNAVAILABLE");
 	assert.equal(missing.window.__v2ManagedRandomAudit, undefined);
+	assert.deepEqual(missingFailures, ["MANAGED_RANDOM_SOURCE_UNAVAILABLE"]);
 
-	const context = run(createManagedRandomBootstrap().source, { getRandomValues() { throw new Error("injected"); } });
+	const failures = [];
+	const context = run(createManagedRandomBootstrap().source, { getRandomValues() { throw new Error("injected"); } }, code => failures.push(code));
 	assert.throws(() => context.Math.random(), /MANAGED_RANDOM_SOURCE_FAILED/);
 	assert.equal(context.window.__v2ManagedRandomAudit.failed, true);
 	assert.throws(() => context.Math.random(), /MANAGED_RANDOM_SOURCE_FAILED/);
+	assert.deepEqual(failures, ["MANAGED_RANDOM_SOURCE_FAILED"], "runtime failure notifies the managed process exactly once");
 });
 
 test("production random draw bound permanently fails closed", () => {
 	const source = createManagedRandomBootstrap().source.replace("maxDraws=10000000", "maxDraws=1");
-	const context = run(source, { getRandomValues(words) { words[0] = 0; words[1] = 0; return words; } });
+	const failures = [];
+	const context = run(source, { getRandomValues(words) { words[0] = 0; words[1] = 0; return words; } }, code => failures.push(code));
 	assert.equal(context.Math.random(), 0);
 	assert.throws(() => context.Math.random(), /MANAGED_RANDOM_DRAW_LIMIT_EXCEEDED/);
 	assert.equal(context.window.__v2ManagedRandomAudit.failed, true);
 	assert.throws(() => context.Math.random(), /MANAGED_RANDOM_SOURCE_FAILED/);
+	assert.deepEqual(failures, ["MANAGED_RANDOM_DRAW_LIMIT_EXCEEDED"]);
 });
 
 test("deterministic random source is explicitly labeled and isolated to valid test seeds", () => {
