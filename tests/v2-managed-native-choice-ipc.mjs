@@ -673,7 +673,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		await until(() => manager.inspect(roomId)?.authorityStateRevision === 3, 45000,
 			() => ({ session: manager.inspect(roomId), nativeDiagnostic }));
 		assert.equal((await manager.stop(roomId, "event3_accepted_before_phase_release")).ok, true);
-		assert.equal(manager.inspect(roomId)?.state, "stopped");
+		assert.equal(manager.inspect(roomId)?.state, "stopped", JSON.stringify({
+			session: manager.inspect(roomId), sessionEnds: sessionEnds.slice(-3),
+			nativeStages: safeNativeDiagnostic(nativeDiagnostic.slice(-12).map(entry => ({ stage: entry?.stage,
+				classification: entry?.classification, failureCode: entry?.failureCode, snapshot: entry?.snapshot || null }))),
+		}));
 		assert.equal(manager.inspect(roomId)?.authorityStateRevision, 3);
 		assert.equal(nativeDiagnostic.some(entry => entry?.stage === "existing_root_phase_loop_released"), false,
 			"stop after Event #3 but before phase release cannot start the phase loop");
