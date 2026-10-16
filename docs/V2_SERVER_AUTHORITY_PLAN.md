@@ -956,4 +956,6 @@ Linux CI `38963646845` passed the dedicated non-skippable real-Chromium T3-B1 st
 
 T3-B1 implementation commits: `2cc7e96`, `0503aae`, `8dd27f7`, `ec106b1`, `38d6d39`, `5eb8732`, `81b1ef9`, `81c5583`. The managed-engine release lock was verified at the final implementation commit. T3-B2 skills/effects, T3-B3 turn/resources, T4-B, T5 and the independent ACK race investigation remain unaccepted and require their own evidence.
 
+The T3-B1 acceptance record was committed as `d419524bd4feac9e2577a0c80460d6a903b0f39e`; its full Linux CI `38964794798` completed 83/83 workflow steps and aggregated 237/237 TAP tests with zero failures/skips. The dedicated real-Chromium T3-B1 step ran and passed again. PR #1 remains open/unmerged.
+
 All gates remain closed: `seedAuthorized=false`; revision 4; Event #5 rejected; `checkpointAvailable=false`. Formal V1/V2/V3, VPS, monitoring and external record services remain unchanged; PR #1 remains open and unmerged.
