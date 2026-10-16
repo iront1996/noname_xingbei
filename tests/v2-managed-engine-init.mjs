@@ -59,8 +59,12 @@ for (const playerCount of [4, 6, 8]) test(`real Chromium creates native ${player
 });
 
 test("real managed Chromium fails closed when the served native rules source differs from the server manifest", { skip: !active, timeout: 60000 }, async t => {
-	const server = await createV2NativeModuleTestServer({ root, transformAsset: (pathname, bytes) =>
-		pathname === "/mode/xingBei.js" ? Buffer.concat([bytes, Buffer.from("\n// source-integrity-mismatch\n")]) : bytes });
+	const server = await createV2NativeModuleTestServer({ root, transformAsset: (pathname, bytes) => {
+		if (pathname !== "/mode/xingBei.js") return bytes;
+		const changed = Buffer.from(bytes);
+		changed[0] = changed[0] === 0x20 ? 0x09 : 0x20;
+		return changed;
+	} });
 	t.after(() => server.close());
 	const previousOrigin = process.env.V2_GAME_ORIGIN;
 	process.env.V2_GAME_ORIGIN = server.origin;
