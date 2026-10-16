@@ -36,7 +36,9 @@ function validateRows(snapshot, seatIds) {
 			Object.keys(row).sort().join(",") !== "cardId,duYou,kind,mingGe,name,ownerSeatId,position,xiBie,zone" ||
 			!IDENTIFIER.test(row.cardId || "") || seen.has(row.cardId) || !ZONES.includes(row.zone) ||
 			!Number.isSafeInteger(row.position) || row.position < 0 ||
-			![row.name, row.xiBie, row.mingGe, row.duYou].every(value => typeof value === "string" && value.length <= 128) ||
+			typeof row.name !== "string" || row.name.length > 128 || typeof row.xiBie !== "string" || row.xiBie.length > 128 ||
+			!(typeof row.mingGe === "string" && row.mingGe.length <= 128 || Number.isSafeInteger(row.mingGe)) ||
+			!(row.duYou === null || typeof row.duYou === "string" && row.duYou.length <= 128) ||
 			row.kind !== "physical_dom_card_v1") fail("NATIVE_CARD_LEDGER_ROW_INVALID");
 		seen.add(row.cardId);
 		const global = GLOBAL_ZONES.has(row.zone);

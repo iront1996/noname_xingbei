@@ -2671,10 +2671,11 @@ async function snapshotNativeCardLedger(message) {
 			const cards=[],seenPlayers=new Set();
 			const append=(card,zone,ownerSeatId,position)=>{
 				if(!(card instanceof Element)||!card.classList.contains('card')||typeof card.cardid!=='string'||!card.cardid||
-					typeof card.name!=='string'||typeof card.xiBie!=='string'||typeof card.mingGe!=='string'||
+					typeof card.name!=='string'||typeof card.xiBie!=='string'||
+					!(typeof card.mingGe==='string'||Number.isSafeInteger(card.mingGe))||
 					(card.duYou!==undefined&&card.duYou!==null&&typeof card.duYou!=='string')) throw Error('NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID');
 				cards.push({cardId:card.cardid,zone,ownerSeatId,position,name:card.name,xiBie:card.xiBie,mingGe:card.mingGe,
-					duYou:card.duYou||'',kind:'physical_dom_card_v1'});
+					duYou:card.duYou===undefined?null:card.duYou,kind:'physical_dom_card_v1'});
 			};
 			const appendGlobal=(root,zone)=>{
 				if(!root) throw Error('NATIVE_CARD_LEDGER_ZONE_MISSING');

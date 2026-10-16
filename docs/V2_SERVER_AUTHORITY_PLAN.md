@@ -944,4 +944,6 @@ First Linux CI `38960644333` did execute the dedicated real-Chromium step, but t
 
 Retry Linux CI `38961105997` localized the failure to the native CDP snapshot (`NATIVE_CARD_LEDGER_CAPTURE_FAILED`), still before Event #4 with authority revision 3. The supervised child now maps recognized native ledger validation errors and coarse CDP exception classes to fixed allowlisted error codes without emitting raw exception details or card data. This change improves observability only; T3-B1 remains incomplete until a subsequent real-Chromium run passes.
 
+Linux CI `38961489263` produced the specific failure `NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID`. Native `Card.init()` source confirms the engine can store `mingGe` as a number and `duYou` as absent. The canonical ledger now retains safe integer `mingGe` without string coercion and encodes absent `duYou` as `null`; fractional numbers and unknown objects still fail closed. The updated source lock is `48d769f15d44af4cc954b11487174eb4e6313b1fd149b3595b5f6fbc1aea539f`; required Linux Chromium revalidation remains pending.
+
 All gates remain closed: `seedAuthorized=false`; revision 4; Event #5 rejected; `checkpointAvailable=false`. Formal V1/V2/V3, VPS, monitoring and external record services remain unchanged; PR #1 remains open and unmerged.

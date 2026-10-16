@@ -10,7 +10,7 @@ const buildId = "b".repeat(64);
 const key = Buffer.alloc(32, 0x37);
 
 function row(cardId, zone, ownerSeatId, position, name = "gongJi") {
-	return { cardId, zone, ownerSeatId, position, name, xiBie: "hong", mingGe: "normal", duYou: "", kind: "physical_dom_card_v1" };
+	return { cardId, zone, ownerSeatId, position, name, xiBie: "hong", mingGe: "normal", duYou: null, kind: "physical_dom_card_v1" };
 }
 
 function snapshot(cards, overrides = {}) {
@@ -76,6 +76,17 @@ test("canonical private ledger is stable for the same captured zone state regard
 	assert.equal(second.changedPhysicalCardCount, 0);
 	assert.deepEqual(second.zoneDelta, { draw: 0, discard: 0, ordering: 0, special: 0, hand: 0,
 		equipment: 0, judgment: 0, player_special: 0, expansion: 0 });
+});
+
+test("native physical-card face preserves the engine's numeric mingGe and absent duYou explicitly", () => {
+	const current = ledger();
+	const nativeNumeric = { ...row("physical_1", "draw", null, 0), mingGe: 7, duYou: null };
+	const first = current.commit(snapshot([nativeNumeric]));
+	assert.match(first.commitment, /^[a-f0-9]{64}$/);
+	const asString = ledger().commit(snapshot([{ ...nativeNumeric, mingGe: "7" }]));
+	assert.notEqual(first.commitment, asString.commitment, "canonical encoding must preserve native numeric-versus-string face types");
+	assert.throws(() => ledger().commit(snapshot([{ ...nativeNumeric, mingGe: 1.5 }])), /NATIVE_CARD_LEDGER_ROW_INVALID/);
+	assert.throws(() => ledger().commit(snapshot([{ ...nativeNumeric, duYou: { unknown: true } }])), /NATIVE_CARD_LEDGER_ROW_INVALID/);
 });
 
 test("native ledger rejects duplicate identities, unknown zones, malformed ownership and sequence gaps", () => {
