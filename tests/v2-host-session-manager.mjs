@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
@@ -36,6 +39,7 @@ function fixture(options = {}) {
 	let byte = 0;
 	const manager = createHostSessionManager({
 		launch,
+		...(options.engineReleaseLockPath ? { engineReleaseLockPath: options.engineReleaseLockPath } : {}),
 		randomBytes(size) {
 			byte++;
 			return Buffer.alloc(size, byte);
@@ -108,6 +112,16 @@ test("browser readiness cannot authorize results before separate engine readines
 	assert.equal(stopped.ok, true);
 	assert.equal(stopped.session.state, "stopped");
 	assert.deepEqual(f.launches[0].handle.stops, ["room_cleanup"]);
+});
+
+test("managed host refuses a working-tree source revision that does not match its pinned release lock", async t => {
+	const directory = await mkdtemp(path.join(os.tmpdir(), "managed-engine-lock-"));
+	t.after(() => rm(directory, { recursive: true, force: true }));
+	const lockPath = path.join(directory, "release.json");
+	await writeFile(lockPath, JSON.stringify({ schema: "xingbei_managed_engine_release_lock_v1", schemaVersion: 1, buildId: "0".repeat(64) }));
+	const { launches, manager } = fixture({ engineReleaseLockPath: lockPath });
+	assert.deepEqual(await manager.start("room_release_lock", gameSetup), { ok: false, code: "HOST_MANAGED_ENGINE_RELEASE_MISMATCH" });
+	assert.equal(launches.length, 0);
 });
 
 test("engine readiness is bound to the server manifest and rejects a stale engine build", async () => {

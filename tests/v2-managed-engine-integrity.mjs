@@ -11,6 +11,9 @@ const {
 	createManagedEngineSourceManifest,
 	validateManagedEngineSourceManifest,
 	verifyManagedEngineSourceManifest,
+	MANAGED_ENGINE_RELEASE_LOCK_SCHEMA,
+	validateManagedEngineReleaseLock,
+	verifyManagedEngineRelease,
 } = require("../game/server-managed-engine-integrity.js");
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -46,6 +49,26 @@ test("native source changes produce a different content-addressed build identity
 	const after = createManagedEngineSourceManifest(root);
 	assert.notEqual(after.buildId, before.buildId);
 	assert.equal(verifyManagedEngineSourceManifest(root, before).code, "MANAGED_ENGINE_SOURCE_MISMATCH");
+});
+
+test("managed engine release lock pins the native source tree and fails closed on mismatch", async t => {
+	const root = await sourceTree(t);
+	const manifest = createManagedEngineSourceManifest(root);
+	const lockPath = path.join(root, "managed-engine-release.json");
+	const lock = { schema: MANAGED_ENGINE_RELEASE_LOCK_SCHEMA, schemaVersion: 1, buildId: manifest.buildId };
+	assert.equal(validateManagedEngineReleaseLock(lock), true);
+	await writeFile(lockPath, JSON.stringify(lock), "utf8");
+	const verified = verifyManagedEngineRelease(root, lockPath);
+	assert.equal(verified.ok, true);
+	assert.equal(verified.manifest.buildId, manifest.buildId);
+	await writeFile(lockPath, JSON.stringify({ ...lock, buildId: "0".repeat(64) }), "utf8");
+	assert.deepEqual(verifyManagedEngineRelease(root, lockPath), { ok: false, code: "MANAGED_ENGINE_RELEASE_MISMATCH" });
+	await writeFile(lockPath, JSON.stringify({ ...lock, schemaVersion: 2 }), "utf8");
+	assert.deepEqual(verifyManagedEngineRelease(root, lockPath), { ok: false, code: "MANAGED_ENGINE_RELEASE_LOCK_INVALID" });
+	await writeFile(lockPath, "x".repeat(1025), "utf8");
+	assert.deepEqual(verifyManagedEngineRelease(root, lockPath), { ok: false, code: "MANAGED_ENGINE_RELEASE_LOCK_INVALID" });
+	assert.equal(verifyManagedEngineRelease(root, path.join(root, "missing.json")).code, "MANAGED_ENGINE_RELEASE_LOCK_UNAVAILABLE");
+	assert.equal(verifyManagedEngineRelease("relative-root", lockPath).code, "MANAGED_ENGINE_SOURCE_ROOT_INVALID");
 });
 
 test("manifest rejects unknown paths, unsorted entries, and altered digest", async t => {

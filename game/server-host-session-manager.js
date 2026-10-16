@@ -2,7 +2,7 @@
 
 const crypto = require("node:crypto");
 const path = require("node:path");
-const { createManagedEngineSourceManifest, MANAGED_ENGINE_TRUST_CONTRACT } = require("./server-managed-engine-integrity.js");
+const { verifyManagedEngineRelease, MANAGED_ENGINE_TRUST_CONTRACT } = require("./server-managed-engine-integrity.js");
 
 const PROTOCOL = 1;
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -63,6 +63,7 @@ function prepareGameSetup(value) {
 function createHostSessionManager({
 	launch,
 	engineSourceRoot = path.resolve(__dirname, ".."),
+	engineReleaseLockPath,
 	randomBytes = crypto.randomBytes,
 	browserReadyTimeoutMs = 15000,
 	engineReadyTimeoutMs = 15000,
@@ -71,7 +72,8 @@ function createHostSessionManager({
 	onManagedChoiceMessage = () => {},
 	onSessionEnd = () => {},
 } = {}) {
-	if (typeof launch !== "function" || typeof engineSourceRoot !== "string" || !path.isAbsolute(engineSourceRoot) || typeof randomBytes !== "function" ||
+	if (typeof launch !== "function" || typeof engineSourceRoot !== "string" || !path.isAbsolute(engineSourceRoot) ||
+		(engineReleaseLockPath !== undefined && (typeof engineReleaseLockPath !== "string" || !path.isAbsolute(engineReleaseLockPath))) || typeof randomBytes !== "function" ||
 		!Number.isSafeInteger(browserReadyTimeoutMs) || browserReadyTimeoutMs < 100 || browserReadyTimeoutMs > 60000 ||
 		!Number.isSafeInteger(engineReadyTimeoutMs) || engineReadyTimeoutMs < 100 || engineReadyTimeoutMs > 60000 ||
 		!Number.isSafeInteger(gameReadyTimeoutMs) || gameReadyTimeoutMs < 100 || gameReadyTimeoutMs > 60000 ||
@@ -80,6 +82,7 @@ function createHostSessionManager({
 	}
 
 	const sessions = new Map();
+	const releaseLockPath = engineReleaseLockPath || path.resolve(engineSourceRoot, "managed-engine-release.json");
 
 	function publicView(record) {
 		if (!record) return null;
@@ -175,7 +178,9 @@ function createHostSessionManager({
 			return failure("HOST_GAME_SETUP_INVALID");
 		}
 		try {
-			sourceManifest = createManagedEngineSourceManifest(engineSourceRoot);
+			const release = verifyManagedEngineRelease(engineSourceRoot, releaseLockPath);
+			if (!release.ok) return failure(`HOST_${release.code}`);
+			sourceManifest = release.manifest;
 		} catch (_) {
 			return failure("HOST_ENGINE_SOURCE_UNAVAILABLE");
 		}

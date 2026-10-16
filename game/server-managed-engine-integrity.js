@@ -6,6 +6,7 @@ const path = require("node:path");
 
 const SCHEMA = "xingbei_managed_engine_source_manifest_v1";
 const TRUST_CONTRACT = "xingbei_managed_native_trust_v1";
+const RELEASE_LOCK_SCHEMA = "xingbei_managed_engine_release_lock_v1";
 const MAX_FILES = 4096;
 const MAX_FILE_BYTES = 16 * 1024 * 1024;
 const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
@@ -105,10 +106,40 @@ function verifyManagedEngineSourceManifest(sourceRoot, expectedManifest) {
 	return Object.freeze({ ok: true, buildId: actual.buildId, fileCount: actual.fileCount, totalBytes: actual.totalBytes });
 }
 
+function validateManagedEngineReleaseLock(lock) {
+	return Boolean(lock && Object.getPrototypeOf(lock) === Object.prototype &&
+		Object.keys(lock).sort().join(",") === "buildId,schema,schemaVersion" &&
+		lock.schema === RELEASE_LOCK_SCHEMA && lock.schemaVersion === 1 &&
+		/^[a-f0-9]{64}$/.test(lock.buildId || ""));
+}
+
+function verifyManagedEngineRelease(sourceRoot, lockPath) {
+	if (typeof sourceRoot !== "string" || !path.isAbsolute(sourceRoot)) return Object.freeze({ ok: false, code: "MANAGED_ENGINE_SOURCE_ROOT_INVALID" });
+	lockPath ||= path.resolve(sourceRoot, "managed-engine-release.json");
+	let lock;
+	try {
+		const details = fs.lstatSync(lockPath);
+		if (details.isSymbolicLink() || !details.isFile() || details.size > 1024) {
+			return Object.freeze({ ok: false, code: "MANAGED_ENGINE_RELEASE_LOCK_INVALID" });
+		}
+		lock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+	}
+	catch (_) { return Object.freeze({ ok: false, code: "MANAGED_ENGINE_RELEASE_LOCK_UNAVAILABLE" }); }
+	if (!validateManagedEngineReleaseLock(lock)) return Object.freeze({ ok: false, code: "MANAGED_ENGINE_RELEASE_LOCK_INVALID" });
+	let actual;
+	try { actual = createManagedEngineSourceManifest(sourceRoot); }
+	catch (_) { return Object.freeze({ ok: false, code: "MANAGED_ENGINE_SOURCE_UNAVAILABLE" }); }
+	if (actual.buildId !== lock.buildId) return Object.freeze({ ok: false, code: "MANAGED_ENGINE_RELEASE_MISMATCH" });
+	return Object.freeze({ ok: true, buildId: actual.buildId, fileCount: actual.fileCount, totalBytes: actual.totalBytes, manifest: actual });
+}
+
 module.exports = {
 	MANAGED_ENGINE_SOURCE_SCHEMA: SCHEMA,
 	MANAGED_ENGINE_TRUST_CONTRACT: TRUST_CONTRACT,
+	MANAGED_ENGINE_RELEASE_LOCK_SCHEMA: RELEASE_LOCK_SCHEMA,
 	createManagedEngineSourceManifest,
 	validateManagedEngineSourceManifest,
 	verifyManagedEngineSourceManifest,
+	validateManagedEngineReleaseLock,
+	verifyManagedEngineRelease,
 };
