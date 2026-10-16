@@ -124,8 +124,17 @@ function createHostSessionManager({
 		if (record.phaseTimer.unref) record.phaseTimer.unref();
 	}
 
+	function cancelPrivateCardLedgerRequests(record) {
+		for (const [requestId, pending] of record.privateCardLedgerRequests) {
+			clearTimeout(pending.timer);
+			pending.resolve(failure("NATIVE_CARD_LEDGER_SESSION_ENDED"));
+			record.privateCardLedgerRequests.delete(requestId);
+		}
+	}
+
 	function finish(record, code) {
 		clearPhaseTimer(record);
+		cancelPrivateCardLedgerRequests(record);
 		let ended = false;
 		if (record.state === "stopping") {
 			record.state = "stopped";
@@ -148,6 +157,7 @@ function createHostSessionManager({
 	function fail(record, code) {
 		if (!record || !ACTIVE_STATES.has(record.state)) return;
 		clearPhaseTimer(record);
+		cancelPrivateCardLedgerRequests(record);
 		record.state = "failed";
 		record.failureCode = code;
 		notifySessionEnd(record);
@@ -160,6 +170,31 @@ function createHostSessionManager({
 			message.roomId === record.roomId &&
 			message.sessionId === record.sessionId &&
 			safeEqualHex(message.secret, record.secret));
+	}
+
+	function validPrivateCardLedgerSummary(record, message) {
+		const snapshot = message.snapshot;
+		const zones = "discard,draw,equipment,expansion,hand,judgment,ordering,player_special,special";
+		if (!snapshot || Object.getPrototypeOf(snapshot) !== Object.prototype ||
+			Object.keys(snapshot).sort().join(",") !== "changedPhysicalCardCount,checkpointAvailable,commitment,engineBuildId,physicalCardCount,rootInstanceId,schema,schemaVersion,snapshotOrdinal,totalCountConserved,virtualCardsIncluded,zoneCounts,zoneDelta" ||
+			snapshot.schema !== "xingbei_native_private_card_commitment_v1" || snapshot.schemaVersion !== 1 ||
+			snapshot.snapshotOrdinal !== record.privateCardLedgerSnapshotCount + 1 || snapshot.engineBuildId !== record.engineBuildId ||
+			snapshot.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId || !DIGEST.test(snapshot.commitment || "") ||
+			!Number.isSafeInteger(snapshot.physicalCardCount) || snapshot.physicalCardCount < 1 || snapshot.physicalCardCount > 4096 ||
+			!Number.isSafeInteger(snapshot.changedPhysicalCardCount) || snapshot.changedPhysicalCardCount < 0 ||
+			snapshot.virtualCardsIncluded !== false || snapshot.checkpointAvailable !== false ||
+			!snapshot.zoneCounts || Object.getPrototypeOf(snapshot.zoneCounts) !== Object.prototype || Object.keys(snapshot.zoneCounts).sort().join(",") !== zones ||
+			Object.values(snapshot.zoneCounts).some(value => !Number.isSafeInteger(value) || value < 0) ||
+			Object.values(snapshot.zoneCounts).reduce((sum, value) => sum + value, 0) !== snapshot.physicalCardCount) return false;
+		if (snapshot.snapshotOrdinal === 1) return snapshot.changedPhysicalCardCount === 0 && snapshot.zoneDelta === null && snapshot.totalCountConserved === null;
+		if (snapshot.snapshotOrdinal !== 2 || snapshot.changedPhysicalCardCount === 0 || snapshot.totalCountConserved !== true ||
+			!record.privateCardLedgerPriorZoneCounts || snapshot.physicalCardCount !== record.privateCardLedgerPriorPhysicalCount ||
+			snapshot.commitment === record.privateCardLedgerPriorCommitment || !snapshot.zoneDelta ||
+			Object.getPrototypeOf(snapshot.zoneDelta) !== Object.prototype || Object.keys(snapshot.zoneDelta).sort().join(",") !== zones) return false;
+		const orderedZones = Object.keys(snapshot.zoneCounts).sort();
+		if (orderedZones.some(zone => !Number.isSafeInteger(snapshot.zoneDelta[zone]) ||
+			snapshot.zoneDelta[zone] !== snapshot.zoneCounts[zone] - record.privateCardLedgerPriorZoneCounts[zone])) return false;
+		return Object.values(snapshot.zoneDelta).reduce((sum, value) => sum + value, 0) === 0;
 	}
 
 	async function start(roomId, gameSetup) {
@@ -198,6 +233,12 @@ function createHostSessionManager({
 			pid: null,
 			handle: null,
 			phaseTimer: null,
+			privateCardLedgerRequests: new Map(),
+			privateCardLedgerSnapshotCount: 0,
+			privateCardLedgerRequestCount: 0,
+			privateCardLedgerPriorCommitment: null,
+			privateCardLedgerPriorPhysicalCount: null,
+			privateCardLedgerPriorZoneCounts: null,
 			nextResultSequence: 1,
 			failureCode: null,
 			gameSetup: prepared.setup,
@@ -266,6 +307,28 @@ function createHostSessionManager({
 				}
 				else if (message?.type === "host_failure" && authenticate(record, message)) {
 					fail(record, typeof message.code === "string" && /^[A-Z0-9_]{3,96}$/.test(message.code) ? message.code : "HOST_MANAGED_EXECUTION_FAILED");
+				}
+				else if (message?.type === "host_private_card_ledger_commitment" && authenticate(record, message)) {
+					const pending = record.privateCardLedgerRequests.get(message.requestId);
+					if (pending && message.mode === pending.mode && validPrivateCardLedgerSummary(record, message)) {
+						record.privateCardLedgerRequests.delete(message.requestId);
+						clearTimeout(pending.timer);
+						record.privateCardLedgerSnapshotCount++;
+						record.privateCardLedgerPriorCommitment = message.snapshot.commitment;
+						record.privateCardLedgerPriorPhysicalCount = message.snapshot.physicalCardCount;
+						record.privateCardLedgerPriorZoneCounts = Object.freeze({ ...message.snapshot.zoneCounts });
+						pending.resolve(Object.freeze({ ok: true, snapshot: Object.freeze({ ...message.snapshot,
+							zoneCounts: Object.freeze({ ...message.snapshot.zoneCounts }),
+							zoneDelta: message.snapshot.zoneDelta ? Object.freeze({ ...message.snapshot.zoneDelta }) : null }) }));
+					}
+				}
+				else if (message?.type === "host_private_card_ledger_failed" && authenticate(record, message)) {
+					const pending = record.privateCardLedgerRequests.get(message.requestId);
+					if (pending && pending.mode === message.mode && /^[A-Z0-9_]{3,96}$/.test(message.code || "")) {
+						record.privateCardLedgerRequests.delete(message.requestId);
+						clearTimeout(pending.timer);
+						pending.resolve(failure(message.code));
+					}
 				}
 					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
 					else if (["host_choice_candidates", "host_choice_delivery_started", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates", "host_native_response_candidates"].includes(message?.type) && authenticate(record, message)) {
@@ -648,6 +711,41 @@ function createHostSessionManager({
 		} catch (_) { return failure("HOST_NATIVE_SNAPSHOT_REJECTED"); }
 	}
 
+	async function snapshotNativeCardLedger(roomId, mode) {
+		const record = sessions.get(roomId);
+		const expectedRevision = mode === "pre_native_action" ? 3 : mode === "post_phase_over" ? 4 : null;
+		if (process.env.V2_NATIVE_CARD_LEDGER_PROBE !== "1" || process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" ||
+			process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" || !record || record.state !== "playable_probe" ||
+			!record.handle?.sendHostCommand || expectedRevision !== record.authorityStateRevision ||
+			record.xingbeiAuthorityContext?.rootInstanceId == null || record.privateCardLedgerRequestCount >= 2 ||
+			(mode === "pre_native_action" && record.privateCardLedgerRequestCount !== 0) ||
+			(mode === "post_phase_over" && (record.privateCardLedgerRequestCount !== 1 || record.privateCardLedgerSnapshotCount !== 1)) ||
+			(mode === "pre_native_action" && (record.lastAuthorityEvent?.sequence !== 3 || record.lastAuthorityEvent?.name !== "gameDraw")) ||
+			(mode === "post_phase_over" && (record.lastAuthorityEvent?.sequence !== 4 || record.lastAuthorityEvent?.name !== "gongJiOrFaShu"))) {
+			return failure("NATIVE_CARD_LEDGER_PROBE_REJECTED");
+		}
+		const requestId = `ledger_${randomBytes(16).toString("hex")}`;
+		if (!/^ledger_[a-f0-9]{32}$/.test(requestId)) return failure("NATIVE_CARD_LEDGER_PROBE_REJECTED");
+		record.privateCardLedgerRequestCount++;
+		return new Promise(resolve => {
+			const timer = setTimeout(() => {
+				record.privateCardLedgerRequests.delete(requestId);
+				resolve(failure("NATIVE_CARD_LEDGER_PROBE_TIMEOUT"));
+			}, 5000);
+			if (timer.unref) timer.unref();
+			record.privateCardLedgerRequests.set(requestId, { timer, resolve, mode });
+			Promise.resolve(record.handle.sendHostCommand({ type: "host_native_card_ledger_snapshot", kind: "managed_host", protocol: PROTOCOL,
+				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret, requestId, mode, seatIds: record.seatIds }))
+				.catch(() => {
+					const pending = record.privateCardLedgerRequests.get(requestId);
+					if (!pending) return;
+					record.privateCardLedgerRequests.delete(requestId);
+					clearTimeout(pending.timer);
+					pending.resolve(failure("NATIVE_CARD_LEDGER_PROBE_REJECTED"));
+				});
+		});
+	}
+
 	async function releaseNativePhaseBoundary(roomId, input) {
 		const record = sessions.get(roomId);
 		const allowedKeys = ["nativeEventId", "rootInstanceId", "seatId"];
@@ -713,6 +811,7 @@ function createHostSessionManager({
 		sendChoiceDelivery,
 		diagnoseNativeStart,
 		snapshotNativeStart,
+		snapshotNativeCardLedger,
 		releaseNativePhaseBoundary,
 		resumeNativeInput,
 		cancelNativeInput,
