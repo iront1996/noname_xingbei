@@ -1489,11 +1489,15 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(event4AcceptedProjection.rootInstanceId, heldSnapshotA.nativePhaseBoundaryFence?.rootInstanceId);
 						assert.equal(event4AcceptedProjection.checkpointAvailable, false);
 						assert.equal(event4AcceptedProjection.projectionAudit.seats.length, 4);
-						assert.deepEqual(openingProof.afterSummary.seats.map(seat => ({ seatId: seat.seatId, position: seat.position,
+						assert.deepEqual(openingProof.afterSummary.seats.map(seat => ({ seatId: seat.seatId,
 							character: seat.character, side: seat.side, handCount: seat.handCount })),
-							event4AcceptedProjection.projectionAudit.seats.map(seat => ({ seatId: seat.seatId, position: seat.position,
+							event4AcceptedProjection.projectionAudit.seats.map(seat => ({ seatId: seat.seatId,
 							character: seat.character, side: seat.side, handCount: seat.handCount })),
 							"accepted Event #4 seat summary must agree with the live native state before phaseOver");
+						assert.deepEqual(event4AcceptedProjection.projectionAudit.seats.map(seat => seat.position), [0, 1, 2, 3],
+							"live native seat positions must remain complete and ordered even though legacy Event #4 summary does not carry position");
+						assert.deepEqual(event4AcceptedProjection.projectionAudit.seats.map(seat => seat.seatId),
+							openingProof.afterSummary.seats.map(seat => seat.seatId), "legacy seat order must equal the live ordered native seat set");
 						const publicProjection = audit => ({ roundNumber: audit.roundNumber, phaseNumber: audit.phaseNumber,
 							currentSeatId: audit.currentSeatId, firstActSeatId: audit.firstActSeatId, resources: audit.resources,
 							cardZoneCounts: audit.cardZoneCounts, seats: audit.seats });
