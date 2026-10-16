@@ -946,4 +946,6 @@ Retry Linux CI `38961105997` localized the failure to the native CDP snapshot (`
 
 Linux CI `38961489263` produced the specific failure `NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID`. Native `Card.init()` source confirms the engine can store `mingGe` as a number and `duYou` as absent. The canonical ledger now retains safe integer `mingGe` without string coercion and encodes absent `duYou` as `null`; fractional numbers and unknown objects still fail closed. The updated source lock is `48d769f15d44af4cc954b11487174eb4e6313b1fd149b3595b5f6fbc1aea539f`; required Linux Chromium revalidation remains pending.
 
+Linux CI `38961916836` still reported `NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID`, showing that the `mingGe`/`duYou` type compatibility change was insufficient. The collector now splits this into fixed, field-only categories (DOM node, cardid, name, xiBie, mingGe, duYou) while never exposing values. This is diagnostic-only; no ledger snapshot has yet been accepted in Chromium. Current release lock is `fa5c4f7bfa65a487cc88934e6ef49cdd0c925a79b8caa530b013f56da92f23cd`; next Linux run must independently verify it.
+
 All gates remain closed: `seedAuthorized=false`; revision 4; Event #5 rejected; `checkpointAvailable=false`. Formal V1/V2/V3, VPS, monitoring and external record services remain unchanged; PR #1 remains open and unmerged.
