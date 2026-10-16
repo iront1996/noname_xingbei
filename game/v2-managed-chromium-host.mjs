@@ -2446,6 +2446,7 @@ async function runNativeStartDiagnostic(message) {
 	 emit('root_start_dispatched');return {started:true,snapshot:snapshot()};
 	})()`;
 	if (message.mode === "controlled_block") {
+		emitNativeStartDiagnostic({ stage: "controlled_block_cdp_started", classification: "cdp_command_dispatched" });
 		try {
 			await cdp.send("Runtime.evaluate", { expression: `(()=>{const until=performance.now()+700;while(performance.now()<until){};return 'released'})()`, returnByValue: true }, 150);
 			emitNativeStartDiagnostic({ stage: "controlled_block_unexpectedly_responded", classification: "undetermined" });
@@ -2716,7 +2717,10 @@ process.on("message", message => {
 		});
 		return;
 	}
-						if (message?.type === "host_native_start_diagnostic" && process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
+	if (message?.type === "host_native_start_diagnostic" && process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
+		if (message.mode === "controlled_block") {
+			emitNativeStartDiagnostic({ stage: "controlled_block_command_received", classification: "command_dispatched" });
+		}
 		runNativeStartDiagnostic(message).catch(error => emitNativeStartDiagnostic({ stage: "native_start_diagnostic_rejected",
 			classification: "explicit_exception", failureCode: String(error?.message || "NATIVE_START_DIAGNOSTIC_FAILED").slice(0, 96) }));
 		return;
