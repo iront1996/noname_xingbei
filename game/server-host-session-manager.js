@@ -193,6 +193,10 @@ function createHostSessionManager({
 			lastAuthorityEvent: null,
 			xingbeiAuthorityContext: null,
 			acceptedNativeCardActionProofDigest: null,
+			acceptedNativeCardActionNativeEventId: null,
+			acceptedNativeCardActionRootInstanceId: null,
+			acceptedNativeCardActionSeatId: null,
+			nativePhaseBoundaryReleaseSent: false,
 			authorityDigestChain: [],
 			endNotified: false,
 		};
@@ -460,6 +464,9 @@ function createHostSessionManager({
 		record.lastAuthorityEvent = Object.freeze({ sequence: proof.eventSequence, name: proof.event.name });
 		if (proof.event.kind === "xingbei_native_card_action_v1") {
 			record.acceptedNativeCardActionProofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
+			record.acceptedNativeCardActionNativeEventId = proof.event.nativeEventId;
+			record.acceptedNativeCardActionRootInstanceId = proof.event.rootInstanceId;
+			record.acceptedNativeCardActionSeatId = proof.event.seatId;
 		}
 		if (proof.event.kind === "xingbei_side_assignment_v1") {
 			record.xingbeiAuthorityContext = { firstActSeatId: proof.event.firstActSeatId, sides: proof.event.sides.map(side => ({ ...side })),
@@ -613,6 +620,37 @@ function createHostSessionManager({
 		} catch (_) { return failure("HOST_NATIVE_SNAPSHOT_REJECTED"); }
 	}
 
+	async function releaseNativePhaseBoundary(roomId, input) {
+		const record = sessions.get(roomId);
+		const allowedKeys = ["nativeEventId", "rootInstanceId", "seatId"];
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
+			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand ||
+			record.authorityStateRevision !== 4 || record.nextAuthorityEventSequence !== 5 ||
+			record.lastAuthorityEvent?.sequence !== 4 || record.lastAuthorityEvent?.name !== "gongJiOrFaShu" ||
+			!record.acceptedNativeCardActionProofDigest || !DIGEST.test(record.authorityStateDigest || "") ||
+			record.nativePhaseBoundaryReleaseSent || !input || Object.getPrototypeOf(input) !== Object.prototype ||
+			Object.keys(input).sort().join(",") !== allowedKeys.sort().join(",") ||
+			!/^[A-Za-z0-9_-]{1,128}$/.test(input.nativeEventId || "") ||
+			!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(input.rootInstanceId || "") || !record.seatIds.includes(input.seatId)) {
+			return failure("NATIVE_PHASE_BOUNDARY_RELEASE_REJECTED");
+		}
+		if (input.nativeEventId !== record.acceptedNativeCardActionNativeEventId ||
+			input.rootInstanceId !== record.acceptedNativeCardActionRootInstanceId ||
+			input.seatId !== record.acceptedNativeCardActionSeatId) return failure("NATIVE_PHASE_BOUNDARY_RELEASE_REJECTED");
+		record.nativePhaseBoundaryReleaseSent = true;
+		try {
+			await record.handle.sendHostCommand({ type: "host_native_phase_boundary_release", kind: "managed_host", protocol: PROTOCOL,
+				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret,
+				nativeEventId: input.nativeEventId, rootInstanceId: input.rootInstanceId, seatId: input.seatId,
+				eventSequence: 4, stateRevision: 4, afterDigest: record.authorityStateDigest });
+			return Object.freeze({ ok: true, requested: true });
+		} catch (_) {
+			fail(record, "NATIVE_PHASE_BOUNDARY_RELEASE_FAILED");
+			Promise.resolve(record.handle?.stop("native_phase_boundary_release_failed")).catch(() => {});
+			return failure("NATIVE_PHASE_BOUNDARY_RELEASE_FAILED");
+		}
+	}
+
 	async function resumeNativeInput(roomId, input) {
 		const record = sessions.get(roomId);
 		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !record || record.state !== "playable_probe" || !record.handle?.sendHostCommand ||
@@ -647,6 +685,7 @@ function createHostSessionManager({
 		sendChoiceDelivery,
 		diagnoseNativeStart,
 		snapshotNativeStart,
+		releaseNativePhaseBoundary,
 		resumeNativeInput,
 		cancelNativeInput,
 		stop,

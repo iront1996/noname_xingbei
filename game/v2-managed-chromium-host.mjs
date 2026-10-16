@@ -1995,21 +1995,77 @@ async function runNativeStartDiagnostic(message) {
 	  };
 	  GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;emit('wait_next_begin');return originalWaitNext.apply(this,args).then(async value=>{state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};if(event===state.inputEvent&&state.nativeAction?.eventId===event.__v2NativeEventId&&state.nativeAction.useResultCount===1){const mapping=window.__v2ManagedNativeActionOptions.get(state.nativeAction.optionId);state.nativeAction.nativeChildWaitCompleted=true;state.nativeAction.nativeEventInstanceMatches=event===state.nativeInputResumeGate?.event;state.nativeAction.nativeEventStepAfterWait=Number.isSafeInteger(event.step)?event.step:null;state.nativeAction.cardInHandAfterNativeWait=Boolean(mapping&&event.player.getCards('h').includes(mapping.card));state.nativeAction.cardPositionAfterNativeWait=mapping?get.position(mapping.card):null;state.nativeAction.status='native_child_wait_completed';emit('native_action_child_wait_completed')}
 	   if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1")}&&event.name==='phaseLoop'){
-	    const children=Array.isArray(event.childEvents)?event.childEvents:[],completedChild=[...children].reverse().find(child=>child?.finished===true),pendingChildren=children.filter(child=>child?.finished!==true).length+(Array.isArray(event.next)?event.next.filter(child=>child&&child.finished!==true).length:0);
-	    const phaseBoundary=event.step===1&&completedChild?.name==='phase'&&completedChild.parent===event&&pendingChildren===0;
-	    const snapshot={boundary:'phaseLoop_wait_next_after_child',isCompletedPhaseBoundary:phaseBoundary,eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,
+	    const children=Array.isArray(event.childEvents)?event.childEvents:[],completedChild=[...children].reverse().find(child=>child?.finished===true),phaseChild=children.find(child=>child?.name==='phase'&&child?.finished===true&&child.parent===event),pendingChildren=children.filter(child=>child?.finished!==true).length+(Array.isArray(event.next)?event.next.filter(child=>child&&child.finished!==true).length:0);
+	    const phaseBoundary=event.step===1&&phaseChild?.parent===event&&pendingChildren===0,phaseOverTriggerEvent=state.nativePhaseOverTriggerEvent||null;
+	    const phaseOverTriggerComplete=state.nativePhaseOverTriggerCount===1&&(!phaseOverTriggerEvent||(phaseOverTriggerEvent.finished===true&&phaseOverTriggerEvent.parent===event));
+	    const phaseOverBoundary=event.step===2&&phaseChild?.parent===event&&phaseChild.player===event.player&&state.nativePhaseOverTriggerCount===1&&phaseOverTriggerComplete&&pendingChildren===0;
+	    const completedActor=phaseChild?.player||null,completedActorQuotas={gongJiOrFaShu:Number.isSafeInteger(completedActor?.storage?.gongJiOrFaShu)?completedActor.storage.gongJiOrFaShu:null,
+	     faShu:Number.isSafeInteger(completedActor?.storage?.faShu)?completedActor.storage.faShu:null,
+	     gongJi:Number.isSafeInteger(completedActor?.storage?.gongJi)?completedActor.storage.gongJi:null,
+	     extraXingDongCount:Array.isArray(completedActor?.storage?.extraXingDong)?completedActor.storage.extraXingDong.length:null};
+	    const snapshot={boundary:'phaseLoop_wait_next_after_child',isCompletedPhaseBoundary:phaseBoundary,isCompletedPhaseOverBoundary:phaseOverBoundary,
+	     phaseOverTriggerCount:state.nativePhaseOverTriggerCount||0,phaseOverTriggerComplete,phaseOverTriggerEventName:phaseOverTriggerEvent?.name||null,
+	     phaseOverTriggerEventFinished:phaseOverTriggerEvent?.finished===true,phaseOverTriggerEventParentMatches:phaseOverTriggerEvent?.parent===event,
+	     eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,
 	     loopSeatId:event.player?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,currentPhaseSeatId:_status.currentPhase?.playerid||null,
 	     completedChildName:completedChild?.name||null,completedChildFinished:completedChild?.finished===true,completedChildParentMatches:completedChild?.parent===event,
+	     completedPhaseChildName:phaseChild?.name||null,completedPhaseChildFinished:phaseChild?.finished===true,completedPhaseChildParentMatches:phaseChild?.parent===event,
 	     completedChildSeatId:completedChild?.player?.playerid||null,completedChildStep:Number.isSafeInteger(completedChild?.step)?completedChild.step:null,
 	     pendingChildCount:pendingChildren,childEventCount:children.length,nextCount:Array.isArray(event.next)?event.next.length:null,
 	     eventStack:manager.eventStack.map(item=>item.name||null),eventStackTop:manager.eventStack.at(-1)?.name||null,
 	     phaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:null,roundNumber:Number.isSafeInteger(game.roundNumber)?game.roundNumber:null,
+	     completedActorQuotas,
 	     rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,
 	     priorAuthorityFence:state.nativeParentContinuationFence?{status:state.nativeParentContinuationFence.status||null,releaseCount:state.nativeParentContinuationFence.releaseCount||0,
 	      nativeEventId:state.nativeParentContinuationFence.nativeEventId||null,releaseResolution:state.nativeParentContinuationFence.releaseResolution||null}:null,
 	     gameMeAbsent:game.me===null,connectedTransports:game.players.filter(player=>player.ws).length};
 	    state.nativePhaseLoopBoundaryAudit??=[];state.nativePhaseLoopBoundaryAudit.push(snapshot);if(state.nativePhaseLoopBoundaryAudit.length>8)state.nativePhaseLoopBoundaryAudit.shift();
 	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_loop_wait_next_boundary',snapshot}))}catch{}
+	    if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&phaseOverBoundary&&!state.nativePhaseBoundaryFence){
+	     const actionEvent=state.inputEvent,action=state.nativeAction,authority=window.__v2ManagedGame?.authorityState;
+	     const pendingDescendants=(root)=>{const seen=new WeakSet();let pending=0,nodes=0,overflow=false;const walk=node=>{if(!node||typeof node!=='object'||seen.has(node))return;seen.add(node);if(++nodes>4096){overflow=true;return}if(node!==root&&node.finished!==true)pending++;for(const child of [...(Array.isArray(node.childEvents)?node.childEvents:[]),...(Array.isArray(node.next)?node.next:[])])walk(child)};walk(root);return {pending,nodes,overflow}};
+	     const descendants=pendingDescendants(event),priorFence=state.nativeParentContinuationFence;
+	     if(!actionEvent||!action||action.eventId!==actionEvent.__v2NativeEventId||action.useResultCount!==1||
+	      action.nativeChildWaitCompleted!==true||action.nativeUseCardChildCompleted!==true||
+	      priorFence?.status!=='released'||priorFence.releaseCount!==1||priorFence.nativeEventId!==action.eventId||
+	      authority?.revision!==4||window.__v2ManagedOpeningDraw?.authorityDigest!==priorFence.releaseResolution?.afterDigest||
+	      event!==state.phaseLoop||event.step!==2||phaseChild.player!==_status.firstAct||state.nativePhaseOverTriggerCount!==1||
+	      (phaseOverTriggerEvent&&(phaseOverTriggerEvent.finished!==true||phaseOverTriggerEvent.parent!==event))||descendants.overflow||descendants.pending!==0||
+	      manager.rootEvent!==state.root||!state.root||game.me!==null||game.players.some(player=>player.ws)||
+	      _status.currentPhase!=null||event.player!==_status.firstAct)throw Error('NATIVE_PHASE_BOUNDARY_FENCE_PRECONDITION_REJECTED');
+	     let releaseBoundary;const wait=new Promise(resolve=>{releaseBoundary=resolve});
+	     const fence={status:'waiting',releaseCount:0,nativeEventId:action.eventId,seatId:actionEvent.player?.playerid||null,
+	      rootInstanceId:state.rootInstanceId,rootEvent:state.root,phaseLoopEvent:event,completedPhaseEvent:phaseChild,phaseOverTriggerEvent,
+	      phaseLoopStep:event.step,phaseOverTriggerCount:state.nativePhaseOverTriggerCount,phaseOverTriggerComplete,
+	      priorAuthority:Object.freeze({eventSequence:4,stateRevision:4,afterDigest:priorFence.releaseResolution.afterDigest}),
+	      descendantNodeCount:descendants.nodes,pendingDescendantCount:descendants.pending,promise:wait,resolve:releaseBoundary};
+	     state.nativePhaseBoundaryFence=fence;
+	     const waiting={status:fence.status,nativeEventId:fence.nativeEventId,seatId:fence.seatId,rootInstanceId:fence.rootInstanceId,
+	      phaseLoopStep:fence.phaseLoopStep,phaseOverTriggerCount:state.nativePhaseOverTriggerCount,phaseOverTriggerComplete,
+	      phaseOverTriggerEventName:phaseOverTriggerEvent?.name||null,phaseOverTriggerEventFinished:phaseOverTriggerEvent?.finished===true,
+	      phaseOverTriggerEventParentMatches:phaseOverTriggerEvent?.parent===event,
+	      completedPhaseFinished:phaseChild.finished===true,completedPhaseParentMatches:phaseChild.parent===event,
+	      descendantNodeCount:fence.descendantNodeCount,pendingDescendantCount:fence.pendingDescendantCount,
+	      priorAuthority:fence.priorAuthority,roundNumber:Number.isSafeInteger(game.roundNumber)?game.roundNumber:null,
+	      phaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:null,loopSeatId:event.player?.playerid||null,
+	      completedActorQuotas,
+	      firstActSeatId:_status.firstAct?.playerid||null,currentPhaseSeatId:_status.currentPhase?.playerid||null,
+	      rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null,connectedTransports:game.players.filter(player=>player.ws).length};
+	     try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_boundary_fence_waiting',snapshot:waiting}))}catch{}
+	     const release=await fence.promise;
+	     if(fence.status!=='accepted'||fence.releaseCount!==1||release?.accepted!==true||
+	      release.nativeEventId!==fence.nativeEventId||release.rootInstanceId!==fence.rootInstanceId||release.seatId!==fence.seatId||
+	      release.eventSequence!==4||release.stateRevision!==4||release.afterDigest!==fence.priorAuthority.afterDigest||
+	      manager.rootEvent!==fence.rootEvent||event!==fence.phaseLoopEvent||event.step!==2||phaseChild!==fence.completedPhaseEvent||
+	      state.nativePhaseOverTriggerCount!==fence.phaseOverTriggerCount||fence.phaseOverTriggerCount!==1||fence.phaseOverTriggerComplete!==true||
+	      (fence.phaseOverTriggerEvent&&(fence.phaseOverTriggerEvent.finished!==true||fence.phaseOverTriggerEvent.parent!==event))||
+	      state.nativeAction?.eventId!==fence.nativeEventId||authority?.revision!==4||
+	      window.__v2ManagedOpeningDraw?.authorityDigest!==fence.priorAuthority.afterDigest)throw Error('NATIVE_PHASE_BOUNDARY_FENCE_RELEASE_REJECTED');
+	     fence.status='released';fence.releaseResolution=Object.freeze({eventSequence:4,stateRevision:4,afterDigest:fence.priorAuthority.afterDigest});
+	     try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_boundary_fence_released',snapshot:{status:fence.status,
+	      releaseCount:fence.releaseCount,nativeEventId:fence.nativeEventId,seatId:fence.seatId,rootInstanceId:fence.rootInstanceId,
+	      releaseResolution:fence.releaseResolution,rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null}}))}catch{}
+	    }
 	   }
 	   if(${JSON.stringify(process.env.V2_NATIVE_PARENT_FENCE_AUDIT === "1")}&&event.name==='xingDong'){
 	    const completedChild=[...(event.childEvents||[])].reverse().find(child=>child.action===true&&child.finished===true),player=event.player;
@@ -2143,7 +2199,13 @@ async function runNativeStartDiagnostic(message) {
 	   return originalLoop.apply(this,args)
 	  };
 	  GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;const activeSkillGate=${JSON.stringify(process.env.V2_NATIVE_YINYANG_FIXTURE === "1")}?[...(state.managedNativeResponseGates?.values()||[])].find(gate=>gate.delivery?.status==='applying'&&gate.options.get(gate.delivery?.optionId)?.kind==='view_as_skill'):null;
-	   const child=originalTrigger.call(this,name,...args);if(activeSkillGate&&['gongJiBefore','yinYangZhanHuan'].includes(name)){let linked=false;for(let item=this,count=0;item&&count<24;item=item.parent,count++)if(item===activeSkillGate.event){linked=true;break}
+	   const child=originalTrigger.call(this,name,...args);if(this===state.phaseLoop&&name==='phaseOver'){
+	    state.nativePhaseOverTriggerCount=(state.nativePhaseOverTriggerCount||0)+1;state.nativePhaseOverTriggerEvent=child&&typeof child==='object'&&typeof child.start==='function'?child:null;
+	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_over_trigger_called',snapshot:{triggerCount:state.nativePhaseOverTriggerCount,
+	     triggerEventName:state.nativePhaseOverTriggerEvent?.name||null,triggerEventParentMatches:state.nativePhaseOverTriggerEvent?.parent===this,
+	     triggerEventFinished:state.nativePhaseOverTriggerEvent?.finished===true,phaseLoopStep:Number.isSafeInteger(this.step)?this.step:null,
+	     rootObjectMatches:state.root?manager.rootEvent===state.root:null,gameMeAbsent:game.me===null}}))}catch{}
+	   }if(activeSkillGate&&['gongJiBefore','yinYangZhanHuan'].includes(name)){let linked=false;for(let item=this,count=0;item&&count<24;item=item.parent,count++)if(item===activeSkillGate.event){linked=true;break}
 	    activeSkillGate.nativeSkillTriggerTrace??=[];if(activeSkillGate.nativeSkillTriggerTrace.length<8)activeSkillGate.nativeSkillTriggerTrace.push({ownerEventName:this.name||null,ownerEventStep:Number.isSafeInteger(this.step)?this.step:null,ownerParentEventName:this.parent?.name||null,triggerName:name,
 	     triggerEventName:child?.name||null,triggerEventParentName:child?.parent?.name||null,triggerEventParentMatchesOwner:child?.parent===this,linkedToNativeResponse:linked});else activeSkillGate.nativeSkillTriggerTraceOverflow=true}
 	   emit(name==='gameStart'?'game_start_trigger':'event_trigger');return child};
@@ -2300,6 +2362,16 @@ async function snapshotNativeStart(message) {
 					releaseResolution:state.nativeParentContinuationFence.releaseResolution||null,
 					acceptedAuthority:state.nativeParentContinuationFence.acceptedAuthority||null,
 					quotas:state.nativeParentContinuationFence.quotas||null}:null,
+				nativePhaseBoundaryFence:state?.nativePhaseBoundaryFence?{status:state.nativePhaseBoundaryFence.status||null,
+					nativeEventId:state.nativePhaseBoundaryFence.nativeEventId||null,seatId:state.nativePhaseBoundaryFence.seatId||null,
+					rootInstanceId:state.nativePhaseBoundaryFence.rootInstanceId||null,phaseLoopStep:state.nativePhaseBoundaryFence.phaseLoopStep,
+					phaseOverTriggerCount:state.nativePhaseBoundaryFence.phaseOverTriggerCount,
+					phaseOverTriggerComplete:state.nativePhaseBoundaryFence.phaseOverTriggerComplete,
+					descendantNodeCount:state.nativePhaseBoundaryFence.descendantNodeCount,
+					pendingDescendantCount:state.nativePhaseBoundaryFence.pendingDescendantCount,
+					releaseCount:state.nativePhaseBoundaryFence.releaseCount||0,
+					priorAuthority:state.nativePhaseBoundaryFence.priorAuthority||null,
+					releaseResolution:state.nativePhaseBoundaryFence.releaseResolution||null}:null,
 				responseGates:[...(state?.managedNativeResponseGates?.values()||[])].slice(-16).map(gate=>({nativeEventId:gate.nativeEventId||null,
 					seatId:gate.seatId||null,actionEventId:gate.actionEventId||null,sourceSeatId:gate.sourceSeatId||null,
 					eventStep:Number.isSafeInteger(gate.event?.step)?gate.event.step:null,status:gate.status||null,
@@ -2321,6 +2393,40 @@ async function snapshotNativeStart(message) {
 				classification: error?.message === "CHROMIUM_CDP_TIMEOUT" ? "cdp_command_timeout" : "undetermined",
 				chromiumAlive: chromium?.exitCode === null && chromium?.signalCode === null } });
 	}
+}
+
+async function releaseNativePhaseBoundary(message) {
+	const keys = "afterDigest,eventSequence,kind,nativeEventId,protocol,roomId,rootInstanceId,seatId,secret,sessionId,stateRevision,type";
+	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
+		!validHostCommand(message) || message.type !== "host_native_phase_boundary_release" ||
+		Object.keys(message).sort().join(",") !== keys || message.eventSequence !== 4 || message.stateRevision !== 4 ||
+		!/^[a-f0-9]{64}$/.test(message.afterDigest || "") || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(message.rootInstanceId || "") ||
+		!/^native_event_[a-f0-9]{32}$/.test(message.nativeEventId || "") || typeof message.seatId !== "string" || !cdp) {
+		throw new Error("NATIVE_PHASE_BOUNDARY_RELEASE_REJECTED");
+	}
+	const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2NativeStartDiagnosticState,f=s?.nativePhaseBoundaryFence,
+		c=window.__v2ManagedGame,a=s?.inputEvent,manager=window.__v2ManagedEngine?.core?._status?.eventManager;
+		const command=${JSON.stringify({ nativeEventId: message.nativeEventId, rootInstanceId: message.rootInstanceId, seatId: message.seatId,
+			eventSequence: message.eventSequence, stateRevision: message.stateRevision, afterDigest: message.afterDigest })};
+		if(!f||f.status!=='waiting'||f.releaseCount!==0||f.nativeEventId!==command.nativeEventId||f.seatId!==command.seatId||
+			f.rootInstanceId!==command.rootInstanceId||f.rootEvent!==s?.root||f.phaseLoopEvent!==s?.phaseLoop||manager?.rootEvent!==s?.root||
+			f.phaseLoopStep!==2||f.phaseOverTriggerCount!==1||f.phaseOverTriggerComplete!==true||
+			f.completedPhaseEvent?.finished!==true||f.completedPhaseEvent?.parent!==f.phaseLoopEvent||
+			f.pendingDescendantCount!==0||!a||a.__v2NativeEventId!==command.nativeEventId||
+			c?.authorityState?.revision!==4||window.__v2ManagedOpeningDraw?.authorityDigest!==command.afterDigest||
+			f.priorAuthority?.eventSequence!==4||f.priorAuthority?.stateRevision!==4||f.priorAuthority?.afterDigest!==command.afterDigest||!f.resolve)
+			return {ok:false,code:'NATIVE_PHASE_BOUNDARY_FENCE_BINDING_REJECTED'};
+		f.status='accepted';f.releaseCount=1;f.acceptedAuthority=Object.freeze({eventSequence:4,stateRevision:4,afterDigest:command.afterDigest});
+		f.resolve({accepted:true,...command});
+		return {ok:true,status:f.status,releaseCount:f.releaseCount,nativeEventId:f.nativeEventId,rootInstanceId:f.rootInstanceId,seatId:f.seatId,
+			eventSequence:f.acceptedAuthority.eventSequence,stateRevision:f.acceptedAuthority.stateRevision,afterDigest:f.acceptedAuthority.afterDigest};})()`, returnByValue: true }, 1500);
+	const observed = result.result?.value;
+	if (result.exceptionDetails || observed?.ok !== true || observed.releaseCount !== 1 || observed.nativeEventId !== message.nativeEventId ||
+		observed.rootInstanceId !== message.rootInstanceId || observed.seatId !== message.seatId || observed.eventSequence !== 4 ||
+		observed.stateRevision !== 4 || observed.afterDigest !== message.afterDigest) throw new Error("NATIVE_PHASE_BOUNDARY_RELEASE_UNCERTAIN");
+	emitNativeStartDiagnostic({ stage: "native_phase_boundary_release_command_accepted", snapshot: {
+		nativeEventId: observed.nativeEventId, rootInstanceId: observed.rootInstanceId, seatId: observed.seatId,
+		releaseCount: observed.releaseCount, eventSequence: observed.eventSequence, stateRevision: observed.stateRevision } });
 }
 
 process.on("message", message => {
@@ -2391,6 +2497,14 @@ process.on("message", message => {
 	}
 	if (message?.type === "host_native_start_snapshot" && process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
 		snapshotNativeStart(message).catch(() => {});
+		return;
+	}
+	if (message?.type === "host_native_phase_boundary_release" && process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1") {
+		choiceCommandChain = choiceCommandChain.then(() => releaseNativePhaseBoundary(message)).catch(error => {
+			const failureCode = String(error?.message || "NATIVE_PHASE_BOUNDARY_RELEASE_REJECTED").slice(0, 96);
+			emitNativeStartDiagnostic({ stage: "native_phase_boundary_release_rejected", classification: "explicit_exception", failureCode });
+			process.send?.({ ...identity, type: "host_failure", code: failureCode }, () => cleanup().finally(() => process.exit(1)));
+		});
 		return;
 	}
 						if (message?.type === "host_native_start_diagnostic" && process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {

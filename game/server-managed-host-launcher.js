@@ -107,6 +107,13 @@ function createManagedHostProcessLauncher({
 				command?.type === "host_native_start_diagnostic" && ["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "controlled_block"].includes(command.mode);
 			const nativeSnapshotCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				command?.type === "host_native_start_snapshot" && ["managed_opening_root_action_event4"].includes(command.mode);
+			const nativePhaseBoundaryReleaseCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
+				process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1" && command?.type === "host_native_phase_boundary_release" &&
+				command.kind === "managed_host" && command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
+				command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret &&
+				typeof command.nativeEventId === "string" && typeof command.rootInstanceId === "string" && typeof command.seatId === "string" &&
+				command.eventSequence === 4 && command.stateRevision === 4 && /^[a-f0-9]{64}$/.test(command.afterDigest || "") &&
+				Object.keys(command).sort().join(",") === "afterDigest,eventSequence,kind,nativeEventId,protocol,roomId,rootInstanceId,seatId,secret,sessionId,stateRevision,type";
 			const inputResumeCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				command?.type === "host_native_input_resume" && typeof command.nativeEventId === "string" &&
 				typeof command.seatId === "string" && typeof command.optionId === "string" &&
@@ -115,7 +122,7 @@ function createManagedHostProcessLauncher({
 				typeof command.nativeEventId === "string" && typeof command.seatId === "string" &&
 				Object.keys(command).every(key => ["type", "nativeEventId", "seatId"].includes(key));
 			if (exited || !child.connected || !command ||
-				!(diagnosticCommand || nativeSnapshotCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
+				!(diagnosticCommand || nativeSnapshotCommand || nativePhaseBoundaryReleaseCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
 					(command?.type === "host_authority_event_ack" && command.kind === "managed_host" &&
 						command.accepted === true &&
 						command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
