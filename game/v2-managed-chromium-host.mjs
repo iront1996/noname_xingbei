@@ -39,6 +39,7 @@ let managedRandomFailureReported = false;
 let nativeFaultApplyBarrier = null;
 let managedNativeCardLedger = null;
 let managedSeatIds = null;
+let managedCardSidecarNonce = null;
 const chromiumStartupStderr = [];
 
 function safeChromiumStartupDiagnostics() {
@@ -121,6 +122,7 @@ async function cleanup() {
 	try { managedNativeCardLedger?.destroy(); } catch {}
 	managedNativeCardLedger = null;
 	managedSeatIds = null;
+	managedCardSidecarNonce = null;
 	try { networkPolicyUnsubscribe?.(); } catch {}
 	networkPolicyUnsubscribe = null;
 	try { managedRandomFailureUnsubscribe?.(); } catch {}
@@ -395,6 +397,7 @@ async function boot(message) {
 			process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" || message.gameSetup?.mode !== "xingBei" ||
 			message.gameSetup?.seats?.length !== 4) throw new Error("NATIVE_CARD_LEDGER_TEST_SCOPE_INVALID");
 		managedSeatIds = message.gameSetup.seats.map(seat => seat.seatId);
+		managedCardSidecarNonce = randomBytes(16).toString("hex");
 		managedNativeCardLedger = createManagedNativeCardLedger({ roomId: message.roomId, sessionId: message.sessionId,
 			engineBuildId: integrity.buildId, seatIds: managedSeatIds, key: randomBytes(32) });
 	}
@@ -2655,7 +2658,7 @@ async function snapshotNativeCardLedger(message) {
 		!managedNativeCardLedger || !Array.isArray(message.seatIds) || JSON.stringify(message.seatIds) !== JSON.stringify(managedSeatIds) || !cdp) {
 		throw new Error("NATIVE_CARD_LEDGER_COMMAND_REJECTED");
 	}
-	const request = { requestId: message.requestId, mode: message.mode, seatIds: message.seatIds };
+		const request = { requestId: message.requestId, mode: message.mode, seatIds: message.seatIds, sidecarNonce: managedCardSidecarNonce };
 	try {
 		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{
 			const command=${JSON.stringify(request)},state=window.__v2NativeStartDiagnosticState,managed=window.__v2ManagedEngine,
@@ -2669,11 +2672,16 @@ async function snapshotNativeCardLedger(message) {
 					state.nativePhaseBoundaryFence.rootInstanceId!==state.rootInstanceId||state.nativePhaseBoundaryFence.pendingDescendantCount!==0||
 					state.nativePhaseBoundaryFence.phaseOverTriggerComplete!==true))) throw Error('NATIVE_CARD_LEDGER_FENCE_INVALID');
 			const cards=[],seenPlayers=new Set(),registryEntries=Object.entries(core.lib?.cardOL||{}),registryByCard=new Map();
-			for(const [id,card] of registryEntries){if(typeof id!=='string'||!id||registryByCard.has(card))throw Error('NATIVE_CARD_LEDGER_CARD_REGISTRY_INVALID');registryByCard.set(card,id);}
+			for(const [id,card] of registryEntries){if(typeof id!=='string'||!id||registryByCard.has(card)||!(card instanceof Element)||!card.classList?.contains('card'))throw Error('NATIVE_CARD_LEDGER_CARD_REGISTRY_INVALID');registryByCard.set(card,id);}
+			let sidecar=window.__v2NativeCardLedgerSidecar;
+			if(!sidecar){sidecar={nonce:command.sidecarNonce,nextId:0,ids:new WeakMap()};Object.defineProperty(window,'__v2NativeCardLedgerSidecar',{value:sidecar,configurable:true});}
+			if(sidecar.nonce!==command.sidecarNonce||!(sidecar.ids instanceof WeakMap))throw Error('NATIVE_CARD_LEDGER_SIDECAR_INVALID');
 			const append=(card,zone,ownerSeatId,position)=>{
 				if(!(card instanceof Element)||!card.classList?.contains('card')) throw Error('NATIVE_CARD_LEDGER_CARD_NODE_INVALID');
-				const cardId=registryByCard.get(card);
-				if(typeof cardId!=='string'||!cardId||(card.cardid&&card.cardid!==cardId)) throw Error('NATIVE_CARD_LEDGER_CARD_ID_INVALID');
+				const registeredId=registryByCard.get(card);
+				if(card.cardid!==undefined&&card.cardid!==null&&typeof card.cardid!=='string') throw Error('NATIVE_CARD_LEDGER_CARD_ID_INVALID');
+				if(registeredId&&card.cardid&&card.cardid!==registeredId) throw Error('NATIVE_CARD_LEDGER_CARD_ID_INVALID');
+				let cardId=sidecar.ids.get(card);if(!cardId){cardId='native_card_'+command.sidecarNonce+'_'+(++sidecar.nextId);sidecar.ids.set(card,cardId);}
 				if(typeof card.name!=='string') throw Error('NATIVE_CARD_LEDGER_CARD_NAME_INVALID');
 				if(typeof card.xiBie!=='string') throw Error('NATIVE_CARD_LEDGER_CARD_XIBIE_INVALID');
 				if(!(typeof card.mingGe==='string'||Number.isSafeInteger(card.mingGe))) throw Error('NATIVE_CARD_LEDGER_CARD_MINGGE_INVALID');
@@ -2694,9 +2702,10 @@ async function snapshotNativeCardLedger(message) {
 			for(const seatId of command.seatIds){const player=players.find(item=>item.playerid===seatId);if(seenPlayers.has(player))throw Error('NATIVE_CARD_LEDGER_SEAT_DUPLICATE');seenPlayers.add(player);
 				for(const [slot,zone] of zoneTypes){const list=player.getCards(slot);if(!Array.isArray(list))throw Error('NATIVE_CARD_LEDGER_PLAYER_ZONE_INVALID');
 					list.forEach((card,position)=>append(card,zone,seatId,position));}}
-			const tracked=new Set(cards.map(card=>card.cardId)),trackedObjects=new Set(registryEntries.filter(([id])=>tracked.has(id)).map(([,card])=>card));
-			if(registryEntries.length!==tracked.size||registryEntries.some(([id,card])=>id!==registryByCard.get(card)||!tracked.has(id)||!trackedObjects.has(card)||
-				!(card instanceof Element)||!card.classList.contains('card'))) throw Error('NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD');
+			const trackedObjects=new Set([...players.flatMap(player=>zoneTypes.flatMap(([slot])=>player.getCards(slot))),
+				...Array.from(core.ui.cardPile.children),...Array.from(core.ui.discardPile.children),...Array.from(core.ui.ordering.children),...Array.from(core.ui.special.children)]);
+			if(registryEntries.some(([id,card])=>id!==registryByCard.get(card)||!trackedObjects.has(card)||
+				(card.cardid&&card.cardid!==id))) throw Error('NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD');
 			return {schema:'xingbei_native_private_card_ledger_v1',rootInstanceId:state.rootInstanceId,
 				seatIds:command.seatIds,cards};})()`, returnByValue: true }, 3000);
 		const snapshot = result.result?.value;
@@ -2704,7 +2713,7 @@ async function snapshotNativeCardLedger(message) {
 			const allowedFailureCodes = ["NATIVE_CARD_LEDGER_FENCE_INVALID", "NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID",
 				"NATIVE_CARD_LEDGER_CARD_NODE_INVALID", "NATIVE_CARD_LEDGER_CARD_ID_INVALID", "NATIVE_CARD_LEDGER_CARD_NAME_INVALID",
 				"NATIVE_CARD_LEDGER_CARD_XIBIE_INVALID", "NATIVE_CARD_LEDGER_CARD_MINGGE_INVALID", "NATIVE_CARD_LEDGER_CARD_DUYOU_INVALID",
-				"NATIVE_CARD_LEDGER_CARD_REGISTRY_INVALID",
+				"NATIVE_CARD_LEDGER_CARD_REGISTRY_INVALID", "NATIVE_CARD_LEDGER_SIDECAR_INVALID",
 				"NATIVE_CARD_LEDGER_ZONE_MISSING", "NATIVE_CARD_LEDGER_SEAT_SET_INVALID", "NATIVE_CARD_LEDGER_SEAT_DUPLICATE",
 				"NATIVE_CARD_LEDGER_PLAYER_ZONE_INVALID", "NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD"];
 			const exception = `${result.exceptionDetails.text || ""} ${result.exceptionDetails.exception?.description || ""}`;
@@ -2723,7 +2732,8 @@ async function snapshotNativeCardLedger(message) {
 		const allowed = new Set(["NATIVE_CARD_LEDGER_COMMAND_REJECTED", "NATIVE_CARD_LEDGER_CAPTURE_FAILED", "NATIVE_CARD_LEDGER_FENCE_INVALID",
 			"NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID", "NATIVE_CARD_LEDGER_CARD_NODE_INVALID", "NATIVE_CARD_LEDGER_CARD_ID_INVALID",
 			"NATIVE_CARD_LEDGER_CARD_NAME_INVALID", "NATIVE_CARD_LEDGER_CARD_XIBIE_INVALID", "NATIVE_CARD_LEDGER_CARD_MINGGE_INVALID",
-			"NATIVE_CARD_LEDGER_CARD_DUYOU_INVALID", "NATIVE_CARD_LEDGER_CARD_REGISTRY_INVALID", "NATIVE_CARD_LEDGER_ZONE_MISSING", "NATIVE_CARD_LEDGER_SEAT_SET_INVALID",
+			"NATIVE_CARD_LEDGER_CARD_DUYOU_INVALID", "NATIVE_CARD_LEDGER_CARD_REGISTRY_INVALID", "NATIVE_CARD_LEDGER_SIDECAR_INVALID",
+			"NATIVE_CARD_LEDGER_ZONE_MISSING", "NATIVE_CARD_LEDGER_SEAT_SET_INVALID",
 			"NATIVE_CARD_LEDGER_SEAT_DUPLICATE", "NATIVE_CARD_LEDGER_PLAYER_ZONE_INVALID", "NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD",
 			"NATIVE_CARD_LEDGER_CDP_REFERENCE_ERROR", "NATIVE_CARD_LEDGER_CDP_TYPE_ERROR", "NATIVE_CARD_LEDGER_CDP_EXCEPTION", "NATIVE_CARD_LEDGER_ROW_INVALID",
 			"NATIVE_CARD_LEDGER_OWNER_INVALID", "NATIVE_CARD_LEDGER_ORDER_INVALID", "NATIVE_CARD_LEDGER_ROOT_CHANGED", "NATIVE_CARD_LEDGER_SEQUENCE_INVALID"]);
