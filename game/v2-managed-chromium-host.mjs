@@ -396,6 +396,10 @@ async function boot(message) {
 		buildId: integrity.buildId, fileCount: integrity.fileCount,
 		totalBytes: integrity.totalBytes, networkPolicy: "same-origin-only",
 	} });
+	if (process.env.V2_TEST_MATCH_RECORD_POST === "1") {
+		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: null,
+			observed: { stage: "test_network_guard_verified", blockedPostCount: proof.testMatchRecordPostBlocked } });
+	}
 
 	const encodedSetup = JSON.stringify(message.gameSetup);
 	const initialized = await cdp.send("Runtime.evaluate", {

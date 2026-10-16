@@ -163,6 +163,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		onSessionEnd: event => { sessionEnds.push({ roomId: event.roomId, sessionId: event.sessionId, state: event.state, code: event.code });
 			controller.cleanupHostSession(event.roomId, event.sessionId); },
 		onManagedChoiceMessage: async ({ type, message }) => {
+			if (type === "host_choice_diagnostic" && message?.observed?.stage === "test_network_guard_verified") {
+				engineReadyProof = { ...engineReadyProof, testMatchRecordPostBlocked: message.observed.blockedPostCount };
+			}
 			if (type === "host_choice_delivery_started") {
 				const marked = controller.markDeliveryApplying({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret });
 				assert.equal(marked.ok, true, `authenticated native delivery receipt rejected: ${marked.code}`);
