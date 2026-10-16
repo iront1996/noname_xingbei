@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -40,6 +40,20 @@ test("managed engine manifest is deterministic and binds all selected native sou
 	assert.equal(verifyManagedEngineSourceManifest(root, first).ok, true);
 	assert.equal(first.files.some(entry => entry.path === "mode/xingBei.js"), true);
 	assert.equal(first.files.some(entry => entry.path === "noname/game/index.js"), true);
+});
+
+test("managed engine source identity is stable across LF and CRLF working trees", async t => {
+	const lfRoot = await sourceTree(t);
+	const crlfRoot = await sourceTree(t);
+	const lfManifest = createManagedEngineSourceManifest(lfRoot);
+	for (const entry of lfManifest.files) {
+		const absolute = path.join(crlfRoot, entry.path);
+		const text = await readFile(absolute, "utf8");
+		await writeFile(absolute, text.replace(/\r?\n/g, "\r\n"), "utf8");
+	}
+	const crlfManifest = createManagedEngineSourceManifest(crlfRoot);
+	assert.equal(crlfManifest.buildId, lfManifest.buildId);
+	assert.equal(verifyManagedEngineSourceManifest(crlfRoot, lfManifest).ok, true);
 });
 
 test("native source changes produce a different content-addressed build identity", async t => {

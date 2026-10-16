@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
+const { TextDecoder } = require("node:util");
 
 const SCHEMA = "xingbei_managed_engine_source_manifest_v1";
 const TRUST_CONTRACT = "xingbei_managed_native_trust_v1";
@@ -28,6 +29,11 @@ function digest(bytes) {
 	return crypto.createHash("sha256").update(bytes).digest("hex");
 }
 
+function canonicalSourceBytes(bytes) {
+	try { return Buffer.from(new TextDecoder("utf-8", { fatal: true }).decode(bytes).replace(/\r\n/g, "\n"), "utf8"); }
+	catch (_) { throw new TypeError("MANAGED_ENGINE_SOURCE_ENCODING_INVALID"); }
+}
+
 function collectFiles(root, relative, entries, totals) {
 	const absolute = path.join(root, relative);
 	const details = fs.lstatSync(absolute);
@@ -42,8 +48,10 @@ function collectFiles(root, relative, entries, totals) {
 	if (entries.length >= MAX_FILES || details.size > MAX_FILE_BYTES || totals.bytes + details.size > MAX_TOTAL_BYTES) {
 		throw new TypeError("MANAGED_ENGINE_SOURCE_LIMIT_EXCEEDED");
 	}
-	const bytes = fs.readFileSync(absolute);
-	if (bytes.length !== details.size) throw new TypeError("MANAGED_ENGINE_SOURCE_CHANGED_DURING_SCAN");
+	const rawBytes = fs.readFileSync(absolute);
+	if (rawBytes.length !== details.size) throw new TypeError("MANAGED_ENGINE_SOURCE_CHANGED_DURING_SCAN");
+	const bytes = canonicalSourceBytes(rawBytes);
+	if (bytes.length > MAX_FILE_BYTES || totals.bytes + bytes.length > MAX_TOTAL_BYTES) throw new TypeError("MANAGED_ENGINE_SOURCE_LIMIT_EXCEEDED");
 	totals.bytes += bytes.length;
 	entries.push(Object.freeze({ path: relative.split(path.sep).join("/"), size: bytes.length, sha256: digest(bytes) }));
 }

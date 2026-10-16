@@ -90,3 +90,34 @@ test("real managed Chromium fails closed when the served native rules source dif
 	assert.equal(session.authorityStateRevision, null);
 	assert.equal(session.nextAuthorityEventSequence, 1);
 });
+
+test("real managed Chromium verifies and loads native sources served with Windows CRLF endings", { skip: !active, timeout: 60000 }, async t => {
+	const server = await createV2NativeModuleTestServer({ root, transformAsset: (pathname, bytes) => {
+		if (!/\.(?:js|mjs|json)$/.test(pathname)) return bytes;
+		return Buffer.from(bytes.toString("utf8").replace(/\r?\n/g, "\r\n"), "utf8");
+	} });
+	t.after(() => server.close());
+	const previousOrigin = process.env.V2_GAME_ORIGIN;
+	process.env.V2_GAME_ORIGIN = server.origin;
+	t.after(() => {
+		if (previousOrigin === undefined) delete process.env.V2_GAME_ORIGIN;
+		else process.env.V2_GAME_ORIGIN = previousOrigin;
+	});
+	const manager = createHostSessionManager({
+		launch: createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 }),
+		browserReadyTimeoutMs: 20000,
+		engineReadyTimeoutMs: 30000,
+	});
+	t.after(() => manager.stop("engine_crlf_room", "test_cleanup"));
+	assert.equal((await manager.start("engine_crlf_room", gameSetup(4))).ok, true);
+	await until(() => {
+		const session = manager.inspect("engine_crlf_room");
+		if (session?.state === "failed") throw new Error(`CRLF native engine rejected: ${session.failureCode}`);
+		return session?.state === "game_ready";
+	});
+	const session = manager.inspect("engine_crlf_room");
+	assert.match(session.engineBuildId, /^[a-f0-9]{64}$/);
+	assert.equal(session.state, "game_ready");
+	assert.equal(session.authorityStateRevision, 0);
+	assert.equal((await manager.stop("engine_crlf_room", "test_complete")).ok, true);
+});

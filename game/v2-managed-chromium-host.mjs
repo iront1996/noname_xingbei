@@ -328,7 +328,10 @@ async function boot(message) {
 		  await Promise.all(manifest.files.slice(offset,offset+8).map(async entry=>{
 		   const response=await fetch(new URL('/'+entry.path,location.origin),{cache:'no-store',credentials:'omit'});
 		   if(!response.ok)throw Error('ENGINE_SOURCE_FILE_MISSING');
-		   const bytes=await response.arrayBuffer();
+		   const rawBytes=await response.arrayBuffer();
+		   let sourceText;
+		   try{sourceText=new TextDecoder('utf-8',{fatal:true}).decode(rawBytes)}catch{throw Error('ENGINE_SOURCE_ENCODING_INVALID')}
+		   const bytes=new TextEncoder().encode(sourceText.replace(/\\r\\n/g,'\\n'));
 		   if(bytes.byteLength!==entry.size)throw Error('ENGINE_SOURCE_SIZE_MISMATCH');
 		   const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
 		   const hex=Array.from(digest,value=>value.toString(16).padStart(2,'0')).join('');
@@ -346,7 +349,7 @@ async function boot(message) {
 		integrity.fileCount !== message.engineSourceManifest.fileCount || integrity.totalBytes !== message.engineSourceManifest.totalBytes ||
 		integrity.networkPolicy !== "same-origin-only") {
 		const detail = `${integrityCheck.exceptionDetails?.text || ""} ${integrityCheck.exceptionDetails?.exception?.description || ""}`;
-		const code = ["ENGINE_SOURCE_MANIFEST_INVALID", "ENGINE_SOURCE_FILE_MISSING", "ENGINE_SOURCE_SIZE_MISMATCH", "ENGINE_SOURCE_DIGEST_MISMATCH"]
+		const code = ["ENGINE_SOURCE_MANIFEST_INVALID", "ENGINE_SOURCE_FILE_MISSING", "ENGINE_SOURCE_ENCODING_INVALID", "ENGINE_SOURCE_SIZE_MISMATCH", "ENGINE_SOURCE_DIGEST_MISMATCH"]
 			.find(candidate => detail.includes(candidate));
 		throw new Error(code || "ENGINE_SOURCE_INTEGRITY_FAILED");
 	}
