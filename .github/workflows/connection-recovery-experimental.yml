@@ -60,6 +60,8 @@ jobs:
         run: node --test tests/v2-host-session-manager.mjs tests/v2-managed-host-process.mjs tests/v2-managed-choice-controller.mjs
       - name: V2 M2 versioned Xingbei canonical authority-state contract
         run: node --test tests/v2-xingbei-authority-state-v2.mjs
+      - name: V2 M2 managed native source integrity manifest
+        run: node --test tests/v2-managed-engine-integrity.mjs
       - name: V2 M2 deterministic choice and host-session race barriers
         run: node --test tests/v2-managed-choice-races.mjs
       - name: V2 M2 real Chromium off-board lifecycle proof

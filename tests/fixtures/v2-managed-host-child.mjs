@@ -23,12 +23,18 @@ process.on("message", message => {
 		setTimeout(() => process.exit(17), 20);
 		return;
 	}
-	process.send?.({ ...identity, type: "host_engine_ready" });
+	process.send?.({ ...identity, type: "host_engine_ready", proof: {
+		kind: "managed_engine_integrity_v1", trustContract: message.trustContract, buildId: message.engineSourceManifest?.buildId,
+		fileCount: message.engineSourceManifest?.fileCount, totalBytes: message.engineSourceManifest?.totalBytes,
+		networkPolicy: "same-origin-only",
+	} });
 	process.send?.({
 		...identity,
 		type: "host_game_ready",
 		proof: {
 			kind: "pre_game_verification_v1",
+			trustContract: message.trustContract,
+			engineBuildId: message.engineSourceManifest?.buildId,
 			setupDigest: message.setupDigest,
 			preGameSummaryDigest: createHash("sha256").update(JSON.stringify({ simulated: true })).digest("hex"),
 			seatIds: message.gameSetup.seats.map(seat => seat.seatId),

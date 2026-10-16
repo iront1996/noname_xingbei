@@ -50,6 +50,14 @@ function fixture(options = {}) {
 }
 
 function hostMessage(bootstrap, type, extra = {}) {
+	if (type === "host_engine_ready" && extra.proof === undefined) extra = { ...extra, proof: {
+		kind: "managed_engine_integrity_v1", trustContract: bootstrap.trustContract, buildId: bootstrap.engineSourceManifest.buildId,
+		fileCount: bootstrap.engineSourceManifest.fileCount, totalBytes: bootstrap.engineSourceManifest.totalBytes,
+		networkPolicy: "same-origin-only",
+	} };
+	if (type === "host_game_ready" && extra.proof && extra.proof.engineBuildId === undefined) extra = { ...extra, proof: {
+		...extra.proof, trustContract: extra.proof.trustContract ?? bootstrap.trustContract, engineBuildId: bootstrap.engineSourceManifest.buildId,
+	} };
 	return {
 		kind: "managed_host",
 		type,
@@ -100,6 +108,26 @@ test("browser readiness cannot authorize results before separate engine readines
 	assert.equal(stopped.ok, true);
 	assert.equal(stopped.session.state, "stopped");
 	assert.deepEqual(f.launches[0].handle.stops, ["room_cleanup"]);
+});
+
+test("engine readiness is bound to the server manifest and rejects a stale engine build", async () => {
+	const f = fixture();
+	assert.equal((await f.manager.start("room_engine_integrity", gameSetup)).ok, true);
+	const bootstrap = f.launches[0].bootstrap;
+	assert.equal(f.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready")).ok, true);
+	assert.equal(f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready", { proof: {
+		kind: "managed_engine_integrity_v1", trustContract: bootstrap.trustContract, buildId: "0".repeat(64), fileCount: bootstrap.engineSourceManifest.fileCount,
+		totalBytes: bootstrap.engineSourceManifest.totalBytes, networkPolicy: "same-origin-only",
+	} })).code, "HOST_ENGINE_READY_REJECTED");
+	assert.equal(f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready", { proof: {
+		kind: "managed_engine_integrity_v1", trustContract: "xingbei_managed_native_trust_v0", buildId: bootstrap.engineSourceManifest.buildId,
+		fileCount: bootstrap.engineSourceManifest.fileCount, totalBytes: bootstrap.engineSourceManifest.totalBytes, networkPolicy: "same-origin-only",
+	} })).code, "HOST_ENGINE_READY_REJECTED");
+	assert.equal(f.manager.inspect("room_engine_integrity").state, "browser_ready");
+	assert.equal(f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready")).ok, true);
+	assert.equal(f.manager.inspect("room_engine_integrity").engineBuildId, bootstrap.engineSourceManifest.buildId);
+	assert.equal("engineSourceManifest" in f.manager.inspect("room_engine_integrity"), false);
+	await f.manager.stop("room_engine_integrity");
 });
 
 test("player and administrator credentials cannot attest or submit authoritative results", async () => {
@@ -224,6 +252,7 @@ test("game readiness rejects mismatched setup, seat set and initial-state proof"
 		{ ...gameReadyProof(bootstrap), seatIds: ["seat_1", "seat_2"] },
 		{ ...gameReadyProof(bootstrap), kind: "checkpoint_v1" },
 		{ ...gameReadyProof(bootstrap), checkpoint: { revision: 0 } },
+		{ ...gameReadyProof(bootstrap), trustContract: "xingbei_managed_native_trust_v0" },
 	]) {
 		assert.equal(f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", { proof })).code, "HOST_GAME_READY_REJECTED");
 		assert.equal(f.manager.inspect("room_game_gate").state, "engine_ready");
@@ -235,6 +264,7 @@ test("invalid server game setup never launches a managed host", async () => {
 	const f = fixture();
 	for (const setup of [undefined, { ...gameSetup, mode: "identity" }, { ...gameSetup, seats: [] },
 		{ ...gameSetup, config: { playerCount: 6 } },
+		{ ...gameSetup, config: { playerCount: 4, extensions: ["untrusted"] } },
 		{ ...gameSetup, seats: gameSetup.seats.map((seat, index) => ({ ...seat, position: index === 2 ? 3 : index })) }, {
 		...gameSetup,
 		seats: gameSetup.seats.map((seat, index) => ({ seatId: index < 2 ? "duplicate" : seat.seatId, position: index })),

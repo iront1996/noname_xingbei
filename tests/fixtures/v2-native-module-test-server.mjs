@@ -9,10 +9,11 @@ const MIME = {
 	".css": "text/css; charset=utf-8",
 	".html": "text/html; charset=utf-8",
 };
-const page = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>V2 managed engine</title><script src="/game/config.js"></script><script src="/game/package.js"></script></head><body></body></html>';
+const page = '<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><title>V2 managed engine</title></head><body></body></html>';
 
-export async function createV2NativeModuleTestServer({ root } = {}) {
+export async function createV2NativeModuleTestServer({ root, transformAsset = null } = {}) {
 	if (typeof root !== "string" || !path.isAbsolute(root)) throw new Error("ABSOLUTE_TEST_ROOT_REQUIRED");
+	if (transformAsset !== null && typeof transformAsset !== "function") throw new Error("TEST_ASSET_TRANSFORM_INVALID");
 	const base = path.resolve(root);
 	const server = createServer(async (request, response) => {
 		if (request.method !== "GET" && request.method !== "HEAD") {
@@ -38,7 +39,8 @@ export async function createV2NativeModuleTestServer({ root } = {}) {
 		try {
 			const details = await stat(file);
 			if (!details.isFile()) throw new Error("NOT_FILE");
-			const bytes = await readFile(file);
+			const originalBytes = await readFile(file);
+			const bytes = transformAsset ? await transformAsset(pathname, originalBytes) : originalBytes;
 			response.writeHead(200, {
 				"Content-Type": MIME[path.extname(file)] || "application/octet-stream",
 				"Cache-Control": "no-store",

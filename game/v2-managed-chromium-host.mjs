@@ -5,6 +5,10 @@ import { constants as fsConstants } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import process from "node:process";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { validateManagedEngineSourceManifest, MANAGED_ENGINE_TRUST_CONTRACT } = require("./server-managed-engine-integrity.js");
 
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SESSION_ID = /^hs_[a-f0-9]{32}$/;
@@ -20,6 +24,7 @@ let profile = null;
 let identity = null;
 let stopping = false;
 let cdp = null;
+let networkPolicyUnsubscribe = null;
 let interactiveChoice = null;
 let choiceCommandChain = Promise.resolve();
 let choiceDiagnosticTimer = null;
@@ -76,7 +81,8 @@ function createCdpSession(url) {
 		send(method, params = {}, timeoutMs = WAIT_MS) {
 			const diagnosticMethod = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				["Runtime.enable", "Runtime.addBinding"].includes(method);
-			if (!(diagnosticMethod || ["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.navigate", "Runtime.evaluate"].includes(method)) ||
+			const fetchPolicyMethod = ["Fetch.enable", "Fetch.continueRequest", "Fetch.failRequest"].includes(method);
+			if (!(diagnosticMethod || fetchPolicyMethod || ["Page.enable", "Page.addScriptToEvaluateOnNewDocument", "Page.navigate", "Runtime.evaluate"].includes(method)) ||
 				socket.readyState !== WebSocket.OPEN || !Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 60000) {
 				return Promise.reject(new Error("CHROMIUM_CDP_METHOD_DENIED"));
 			}
@@ -92,6 +98,11 @@ function createCdpSession(url) {
 			listeners.add(listener);
 			return () => listeners.delete(listener);
 		},
+		onInternalEvent(listener) {
+			if (typeof listener !== "function") throw new Error("CDP_INTERNAL_LISTENER_INVALID");
+			listeners.add(listener);
+			return () => listeners.delete(listener);
+		},
 		close() { socket.close(); },
 	};
 }
@@ -99,6 +110,8 @@ function createCdpSession(url) {
 async function cleanup() {
 	if (stopping) return;
 	stopping = true;
+	try { networkPolicyUnsubscribe?.(); } catch {}
+	networkPolicyUnsubscribe = null;
 	try { cdp?.close(); } catch {}
 	if (chromium && chromium.exitCode === null && chromium.signalCode === null) {
 		chromium.kill("SIGTERM");
@@ -113,7 +126,26 @@ async function cleanup() {
 
 function validBootstrap(message) {
 	return message?.kind === "host_session_bootstrap" && message.protocol === 1 &&
-		ROOM_ID.test(message.roomId) && SESSION_ID.test(message.sessionId) && SECRET.test(message.secret);
+		message.trustContract === MANAGED_ENGINE_TRUST_CONTRACT &&
+		ROOM_ID.test(message.roomId) && SESSION_ID.test(message.sessionId) && SECRET.test(message.secret) &&
+		validateManagedEngineSourceManifest(message.engineSourceManifest);
+}
+
+function installSameOriginNetworkPolicy(origin) {
+	const state = { blockedRequests: 0 };
+	const unsubscribe = cdp.onInternalEvent(message => {
+		if (message?.method !== "Fetch.requestPaused") return;
+		const requestId = message.params?.requestId;
+		const requestUrl = message.params?.request?.url;
+		if (typeof requestId !== "string" || typeof requestUrl !== "string") return;
+		let sameOrigin = false;
+		try { sameOrigin = new URL(requestUrl).origin === origin; } catch {}
+		if (!sameOrigin) state.blockedRequests++;
+		const command = sameOrigin ? "Fetch.continueRequest" : "Fetch.failRequest";
+		const params = sameOrigin ? { requestId } : { requestId, errorReason: "BlockedByClient" };
+		cdp.send(command, params).catch(() => {});
+	});
+	return cdp.send("Fetch.enable", { patterns: [{ urlPattern: "*" }] }).then(() => Object.freeze({ state, unsubscribe }));
 }
 
 function notifyChoiceDeliveryApplying(choice) {
@@ -168,7 +200,7 @@ async function boot(message) {
 		"--no-default-browser-check",
 		"--disable-extensions",
 		"--disable-background-networking",
-		...(process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" ? ["--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1"] : []),
+		"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE 127.0.0.1",
 		"--disable-dev-shm-usage",
 		"--remote-debugging-address=127.0.0.1",
 		"--remote-debugging-port=0",
@@ -254,8 +286,20 @@ async function boot(message) {
 	cdp = createCdpSession(page.webSocketDebuggerUrl);
 	await cdp.open();
 	await cdp.send("Page.enable");
-	// Test-only defense in depth: the fetch guard below is the assertion boundary;
-	// this resolver rule prevents a future bypass from reaching public hosts.
+	const networkPolicy = await installSameOriginNetworkPolicy(origin);
+	networkPolicyUnsubscribe = networkPolicy.unsubscribe;
+	if (process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1") {
+		const blockedProbe = await cdp.send("Runtime.evaluate", {
+			expression: `fetch('https://example.invalid/v2-managed-network-probe').then(()=>false,()=>true)`,
+			awaitPromise: true,
+			returnByValue: true,
+		}, 3000);
+		if (blockedProbe.exceptionDetails || blockedProbe.result?.value !== true || networkPolicy.state.blockedRequests !== 1) {
+			networkPolicy.unsubscribe();
+			throw new Error("MANAGED_EXTERNAL_NETWORK_POLICY_FAILED");
+		}
+	}
+	// Test-only deterministic RNG remains separate from the production source path.
 	let testRandomSource = "";
 	if (process.env.V2_NATIVE_TEST_RANDOM_SEED !== undefined) {
 		const managedResponseSeed = process.env.V2_NATIVE_MANAGED_RESPONSE === "1";
@@ -274,13 +318,47 @@ async function boot(message) {
 	});
 	const navigation = await cdp.send("Page.navigate", { url: `${origin}/v2-managed-host.html` });
 	if (navigation.errorText) throw new Error("ENGINE_NAVIGATION_FAILED");
+	const integrityCheck = await cdp.send("Runtime.evaluate", {
+		expression: `(async()=>{
+		 const manifest=${JSON.stringify(message.engineSourceManifest)};
+		 if(manifest.schema!=='xingbei_managed_engine_source_manifest_v1'||manifest.schemaVersion!==1||
+		    !Array.isArray(manifest.files)||manifest.buildId!==${JSON.stringify(message.engineSourceManifest.buildId)})throw Error('ENGINE_SOURCE_MANIFEST_INVALID');
+		 let totalBytes=0;
+		 for(let offset=0;offset<manifest.files.length;offset+=8){
+		  await Promise.all(manifest.files.slice(offset,offset+8).map(async entry=>{
+		   const response=await fetch(new URL('/'+entry.path,location.origin),{cache:'no-store',credentials:'omit'});
+		   if(!response.ok)throw Error('ENGINE_SOURCE_FILE_MISSING');
+		   const bytes=await response.arrayBuffer();
+		   if(bytes.byteLength!==entry.size)throw Error('ENGINE_SOURCE_SIZE_MISMATCH');
+		   const digest=new Uint8Array(await crypto.subtle.digest('SHA-256',bytes));
+		   const hex=Array.from(digest,value=>value.toString(16).padStart(2,'0')).join('');
+		   if(hex!==entry.sha256)throw Error('ENGINE_SOURCE_DIGEST_MISMATCH');
+		  }));
+		 }
+		 totalBytes=manifest.files.reduce((sum,entry)=>sum+entry.size,0);
+		 return {verified:true,buildId:manifest.buildId,fileCount:manifest.files.length,totalBytes,networkPolicy:'same-origin-only'};
+		})()`,
+		awaitPromise: true,
+		returnByValue: true,
+	});
+	const integrity = integrityCheck.result?.value;
+	if (integrityCheck.exceptionDetails || integrity?.verified !== true || integrity.buildId !== message.engineSourceManifest.buildId ||
+		integrity.fileCount !== message.engineSourceManifest.fileCount || integrity.totalBytes !== message.engineSourceManifest.totalBytes ||
+		integrity.networkPolicy !== "same-origin-only") throw new Error("ENGINE_SOURCE_INTEGRITY_FAILED");
 	const engine = await cdp.send("Runtime.evaluate", {
-		 expression: `(async()=>{
-		 await new Promise(resolve=>document.readyState==='complete'?resolve():addEventListener('load',resolve,{once:true}));
+		expression: `(async()=>{
+		await new Promise(resolve=>document.readyState==='complete'?resolve():addEventListener('load',resolve,{once:true}));
 		 if(window.isNonameServer!==true)throw Error('OFFBOARD_FLAG_MISSING');
+		 const loadScript=src=>new Promise((resolve,reject)=>{const script=document.createElement('script');script.src=src;script.onload=resolve;script.onerror=()=>reject(Error('ENGINE_BOOTSTRAP_SCRIPT_FAILED'));document.head.appendChild(script)});
+		 await loadScript('/game/config.js');
+		 await loadScript('/game/package.js');
+		 if(!window.config||typeof window.config!=='object')throw Error('ENGINE_CONFIG_MISSING');
+		 window.config.extensions=[];window.config.extension_sources={};window.config.extension_source='';
 			 const core=await import('/noname.js');
 		 await core.boot();
 		 clearTimeout(window.resetGameTimeout);
+		 if((Array.isArray(core.lib.config.extensions)&&core.lib.config.extensions.length!==0)||
+		    (Array.isArray(core.lib.extensions)&&core.lib.extensions.length!==0))throw Error('UNTRUSTED_EXTENSION_PRESENT');
 		 const imported=await import('/mode/xingBei.js');
 		 const mode=imported.default();
 		 if(!core.game||!core.lib||!core.ui||!core._status||mode.name!=='xingBei'||
@@ -299,7 +377,7 @@ async function boot(message) {
 		 return {loaded:true,mode:mode.name,offboard:true,
 		  nativeGame:typeof core.game.randomMapOL==='function',
 		  nativeResult:typeof mode.game.checkResult==='function',gameLoopStarted:false,
-		  testMatchRecordPostBlocked};
+		  testMatchRecordPostBlocked,engineBuildId:${JSON.stringify(integrity.buildId)}};
 		})()`,
 		awaitPromise: true,
 		returnByValue: true,
@@ -307,8 +385,12 @@ async function boot(message) {
 	const proof = engine.result?.value;
 	if (engine.exceptionDetails || proof?.loaded !== true || proof.mode !== "xingBei" ||
 		proof.offboard !== true || proof.nativeGame !== true || proof.nativeResult !== true ||
-		proof.gameLoopStarted !== false) throw new Error("ENGINE_INITIALIZATION_FAILED");
-	process.send?.({ ...identity, type: "host_engine_ready", proof });
+		proof.gameLoopStarted !== false || proof.engineBuildId !== integrity.buildId) throw new Error("ENGINE_INITIALIZATION_FAILED");
+	process.send?.({ ...identity, type: "host_engine_ready", proof: {
+		kind: "managed_engine_integrity_v1", trustContract: MANAGED_ENGINE_TRUST_CONTRACT,
+		buildId: integrity.buildId, fileCount: integrity.fileCount,
+		totalBytes: integrity.totalBytes, networkPolicy: "same-origin-only",
+	} });
 
 	const encodedSetup = JSON.stringify(message.gameSetup);
 	const initialized = await cdp.send("Runtime.evaluate", {
@@ -403,6 +485,8 @@ async function boot(message) {
 		type: "host_game_ready",
 		proof: {
 			kind: "pre_game_verification_v1",
+			trustContract: MANAGED_ENGINE_TRUST_CONTRACT,
+			engineBuildId: integrity.buildId,
 			setupDigest: message.setupDigest,
 			preGameSummaryDigest,
 			seatIds: preGameSummary.seats.map(seat => seat.seatId),

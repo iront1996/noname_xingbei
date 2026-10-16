@@ -27,6 +27,14 @@ function controlledTimers() {
 }
 
 function readyMessage(bootstrap, type, extra = {}) {
+	if (type === "host_engine_ready" && extra.proof === undefined) extra = { ...extra, proof: {
+		kind: "managed_engine_integrity_v1", trustContract: bootstrap.trustContract, buildId: bootstrap.engineSourceManifest.buildId,
+		fileCount: bootstrap.engineSourceManifest.fileCount, totalBytes: bootstrap.engineSourceManifest.totalBytes,
+		networkPolicy: "same-origin-only",
+	} };
+	if (type === "host_game_ready" && extra.proof && extra.proof.engineBuildId === undefined) extra = { ...extra, proof: {
+		...extra.proof, trustContract: extra.proof.trustContract ?? bootstrap.trustContract, engineBuildId: bootstrap.engineSourceManifest.buildId,
+	} };
 	return { kind: "managed_host", protocol: bootstrap.protocol, roomId: bootstrap.roomId,
 		sessionId: bootstrap.sessionId, secret: bootstrap.secret, type, ...extra };
 }

@@ -57,3 +57,32 @@ for (const playerCount of [4, 6, 8]) test(`real Chromium creates native ${player
 	assert.equal(stopped.ok, true);
 	assert.equal(stopped.session.state, "stopped");
 });
+
+test("real managed Chromium fails closed when the served native rules source differs from the server manifest", { skip: !active, timeout: 60000 }, async t => {
+	const server = await createV2NativeModuleTestServer({ root, transformAsset: (pathname, bytes) =>
+		pathname === "/mode/xingBei.js" ? Buffer.concat([bytes, Buffer.from("\n// source-integrity-mismatch\n")]) : bytes });
+	t.after(() => server.close());
+	const previousOrigin = process.env.V2_GAME_ORIGIN;
+	process.env.V2_GAME_ORIGIN = server.origin;
+	t.after(() => {
+		if (previousOrigin === undefined) delete process.env.V2_GAME_ORIGIN;
+		else process.env.V2_GAME_ORIGIN = previousOrigin;
+	});
+	const manager = createHostSessionManager({
+		launch: createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 }),
+		browserReadyTimeoutMs: 20000,
+		engineReadyTimeoutMs: 30000,
+	});
+	t.after(() => manager.stop("engine_integrity_room", "test_cleanup"));
+	assert.equal((await manager.start("engine_integrity_room", gameSetup(4))).ok, true);
+	await until(() => {
+		const session = manager.inspect("engine_integrity_room");
+		if (session?.state === "failed") return session;
+		return null;
+	});
+	const session = manager.inspect("engine_integrity_room");
+	assert.equal(session.state, "failed");
+	assert.equal(session.failureCode, "ENGINE_SOURCE_DIGEST_MISMATCH");
+	assert.equal(session.authorityStateRevision, null);
+	assert.equal(session.nextAuthorityEventSequence, 1);
+});
