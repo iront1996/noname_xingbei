@@ -344,7 +344,12 @@ async function boot(message) {
 	const integrity = integrityCheck.result?.value;
 	if (integrityCheck.exceptionDetails || integrity?.verified !== true || integrity.buildId !== message.engineSourceManifest.buildId ||
 		integrity.fileCount !== message.engineSourceManifest.fileCount || integrity.totalBytes !== message.engineSourceManifest.totalBytes ||
-		integrity.networkPolicy !== "same-origin-only") throw new Error("ENGINE_SOURCE_INTEGRITY_FAILED");
+		integrity.networkPolicy !== "same-origin-only") {
+		const detail = `${integrityCheck.exceptionDetails?.text || ""} ${integrityCheck.exceptionDetails?.exception?.description || ""}`;
+		const code = ["ENGINE_SOURCE_MANIFEST_INVALID", "ENGINE_SOURCE_FILE_MISSING", "ENGINE_SOURCE_SIZE_MISMATCH", "ENGINE_SOURCE_DIGEST_MISMATCH"]
+			.find(candidate => detail.includes(candidate));
+		throw new Error(code || "ENGINE_SOURCE_INTEGRITY_FAILED");
+	}
 	const engine = await cdp.send("Runtime.evaluate", {
 		expression: `(async()=>{
 		await new Promise(resolve=>document.readyState==='complete'?resolve():addEventListener('load',resolve,{once:true}));
