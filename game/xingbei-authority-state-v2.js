@@ -101,7 +101,7 @@ function digestState(state, expected) {
 	return crypto.createHash("sha256").update(validateState(state, expected)).digest("hex");
 }
 
-function validateEvent4SeedBridge({ state, event4Proof, expected, expectedLegacyBeforeDigest, expectedLegacyAfterDigest } = {}) {
+function compareEvent4ProjectionV2({ state, event4Proof, expected, expectedLegacyBeforeDigest, expectedLegacyAfterDigest } = {}) {
 	try {
 		const expectedKeys = ["roomId", "rootInstanceId", "firstActSeatId", "seatIds"];
 		const event = event4Proof?.event;
@@ -144,7 +144,12 @@ function validateEvent4SeedBridge({ state, event4Proof, expected, expectedLegacy
 		validateState(state, { roomId: expected.roomId, rootInstanceId: expected.rootInstanceId,
 			firstActSeatId: expected.firstActSeatId, seatIds: expected.seatIds });
 		if (state.authorityEventSequence !== 4 || state.authorityStateRevision !== 4 || state.turn.phase !== "xingDong" ||
-			state.turn.currentSeatId !== event.seatId || summary.seats.some((seat, index) => {
+			state.turn.currentSeatId !== event.seatId || event.seatId !== state.firstActSeatId ||
+			!Number.isSafeInteger(event.useCardChildStep) || event.useCardChildStep < 0 ||
+			!Number.isSafeInteger(event.nativeEventStep) || event.nativeEventStep < 5 ||
+			!/^native_option_[a-f0-9]{32}$/.test(event.optionId || "") ||
+			!IDENTIFIER.test(event.cardName || "") || !expected.seatIds.includes(event.targetSeatId) ||
+			!['d', 'x'].includes(event.usedCardPosition) || summary.seats.some((seat, index) => {
 				const projected = state.seats[index];
 				return Object.keys(seat).sort().join(",") !== "character,handCommitment,handCount,position,seatId,side" ||
 					seat.seatId !== expected.seatIds[index] || seat.position !== index ||
@@ -152,7 +157,8 @@ function validateEvent4SeedBridge({ state, event4Proof, expected, expectedLegacy
 					seat.character !== projected.character || seat.side !== projected.side ||
 					seat.handCount !== projected.handCount || seat.handCommitment !== projected.handCommitment;
 			})) return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_SEED_BRIDGE_REJECTED" });
-		return Object.freeze({ ok: true, legacyDigest: oldDigest, authorityStateDigest: digestState(state, expected),
+		return Object.freeze({ ok: true, projectionOnly: true, seedAuthorized: false, legacyDigest: oldDigest,
+			authorityStateDigest: digestState(state, expected),
 			legacyEventSequence: 4, authorityEventSequence: state.authorityEventSequence,
 			legacyRevision: 4, authorityStateRevision: state.authorityStateRevision, checkpointAvailable: false });
 	} catch (_) {
@@ -240,5 +246,5 @@ function createAuthorityStateChainV2({ initialState, expected, validateInitialSt
 	return Object.freeze({ inspect, commit });
 }
 
-module.exports = Object.freeze({ SCHEMA, VERSION, canonicalize, validateState, digestState, validateEvent4SeedBridge,
+module.exports = Object.freeze({ SCHEMA, VERSION, canonicalize, validateState, digestState, compareEvent4ProjectionV2,
 	validateTransition, createAuthorityStateChainV2 });

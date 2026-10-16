@@ -4,7 +4,7 @@ import test from "node:test";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { SCHEMA, VERSION, canonicalize, digestState, validateEvent4SeedBridge, validateState, validateTransition, createAuthorityStateChainV2 } = require("../game/xingbei-authority-state-v2.js");
+const { SCHEMA, VERSION, canonicalize, compareEvent4ProjectionV2, digestState, validateState, validateTransition, createAuthorityStateChainV2 } = require("../game/xingbei-authority-state-v2.js");
 const digest = value => String(value).repeat(64).slice(0, 64);
 
 function state(overrides = {}) {
@@ -77,7 +77,7 @@ test("Event #4 to v2 seed bridge is explicit, recomputed and cross-checks the na
 		({ seatId, position, character, side, handCount, handCommitment }));
 	const summary = { revision: 4, firstActSeatId: projected.firstActSeatId, seats: summarySeats, responses: [],
 		action: { nativeEventId: "native_action_0000000000000001", nativeEventName: "gongJiOrFaShu",
-			seatId: "seat_a", cardName: "sha", targetSeatId: "seat_b", optionId: "native_option_0000000000000001", usedCardPosition: "d" } };
+			seatId: "seat_a", cardName: "sha", targetSeatId: "seat_b", optionId: `native_option_${"0".repeat(32)}`, usedCardPosition: "d" } };
 	const beforeSummary = { revision: 3, firstActSeatId: projected.firstActSeatId,
 		seats: summarySeats.map(seat => ({ ...seat })) };
 	const beforeDigest = createHash("sha256").update(canonicalize(beforeSummary)).digest("hex");
@@ -86,25 +86,31 @@ test("Event #4 to v2 seed bridge is explicit, recomputed and cross-checks the na
 		nativeEventId: summary.action.nativeEventId, rootInstanceId: projected.rootInstanceId, nativeEventCompleted: true,
 		seatId: summary.action.seatId, cardName: summary.action.cardName, targetSeatId: summary.action.targetSeatId,
 		optionId: summary.action.optionId, usedCardPosition: summary.action.usedCardPosition,
-		useResultCount: 1, useCardChildName: "useCard", nativeUseCardChildCompleted: true,
+		nativeEventStep: 6, useResultCount: 1, useCardChildName: "useCard", useCardChildStep: 3, nativeUseCardChildCompleted: true,
 		nativeChildWaitCompleted: true, nativeEventInstanceMatches: true, gameMeNull: true, connectedTransports: 0, responseActions: [] };
 	const proof = { kind: "native_authority_event_v1", checkpoint: null, eventSequence: 4, stateRevisionBefore: 3,
 		stateRevisionAfter: 4, beforeDigest, afterDigest, beforeSummary, afterSummary: summary, event };
 	const expected = { roomId: projected.roomId, rootInstanceId: projected.rootInstanceId,
 		firstActSeatId: projected.firstActSeatId, seatIds: projected.seats.map(seat => seat.seatId) };
-	const bridge = args => validateEvent4SeedBridge({ state: projected, event4Proof: proof,
+	const bridge = args => compareEvent4ProjectionV2({ state: projected, event4Proof: proof,
 		expected, expectedLegacyBeforeDigest: beforeDigest, expectedLegacyAfterDigest: afterDigest, ...args });
-	assert.equal(bridge().ok, true);
+	assert.equal(bridge().ok, true, JSON.stringify(bridge()));
 	assert.equal(bridge().authorityStateDigest, digestState(projected));
 	assert.equal(bridge().legacyDigest, afterDigest);
+	assert.equal(bridge().projectionOnly, true);
+	assert.equal(bridge().seedAuthorized, false, "matching the v1 seat subset does not authorize unverified v2 resources, zones, skills or turn state");
 	assert.equal(bridge().checkpointAvailable, false);
 	for (const invalid of [
 		{ state: { ...projected, authorityEventSequence: 5 } },
 		{ state: { ...projected, rootInstanceId: "different_root" } },
 		{ state: { ...projected, seats: projected.seats.map((seat, index) => index ? seat : { ...seat, handCommitment: digest("z") }) } },
 		{ event4Proof: { ...proof, afterDigest: digest("x") } },
+		{ event4Proof: { ...proof, beforeDigest: digest("x") } },
 		{ event4Proof: { ...proof, event: { ...event, rootInstanceId: "different_root" } } },
 		{ event4Proof: { ...proof, event: { ...event, gameMeNull: false } } },
+		{ event4Proof: { ...proof, event: { ...event, seatId: "seat_b" } } },
+		{ event4Proof: { ...proof, event: { ...event, responseActions: [{ nativeEventId: "native_response_unbound" }] } } },
+		{ event4Proof: { ...proof, beforeSummary: { ...beforeSummary, firstActSeatId: "seat_b" } } },
 		{ expectedLegacyAfterDigest: digest("x") },
 	]) assert.equal(bridge(invalid).ok, false);
 });
