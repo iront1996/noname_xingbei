@@ -1640,7 +1640,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							const remaining = Math.max(1, snapshotDeadline - Date.now());
 							lastSnapshot = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot"),
 								Math.min(remaining, 1000), () => ({ session: manager.inspect(roomId), diagnostics: nativeDiagnostic.slice(beforeSnapshot) }));
-							if (lastSnapshot?.phaseEvent?.name === "phase" && lastSnapshot?.xingDongEvent?.name === "xingDong") liveSnapshot = lastSnapshot;
+							if (lastSnapshot?.projectionAudit?.phaseEvent?.name === "phase" && lastSnapshot?.projectionAudit?.xingDongEvent?.name === "xingDong") liveSnapshot = lastSnapshot;
 						}
 						assert.ok(liveSnapshot, `native phase snapshot was not observed at a stable phase/xingDong boundary: ${JSON.stringify(lastSnapshot)}`);
 						assert.equal(liveSnapshot.rootObjectMatches, true);
