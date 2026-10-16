@@ -38,9 +38,10 @@ function canonicalize(value, depth = 0) {
 }
 
 function validateState(state, expected = {}) {
-	if (!ownObject(state, ["schema", "schemaVersion", "roomId", "rootInstanceId", "firstActSeatId", "turn", "resources", "cardZones", "seats"]) ||
+	if (!ownObject(state, ["schema", "schemaVersion", "roomId", "rootInstanceId", "authorityEventSequence", "authorityStateRevision", "firstActSeatId", "turn", "resources", "cardZones", "seats"]) ||
 		state.schema !== SCHEMA || state.schemaVersion !== VERSION || !IDENTIFIER.test(state.roomId || "") ||
-		!IDENTIFIER.test(state.rootInstanceId || "") || !IDENTIFIER.test(state.firstActSeatId || "") ||
+		!IDENTIFIER.test(state.rootInstanceId || "") || !Number.isSafeInteger(state.authorityEventSequence) || state.authorityEventSequence < 0 ||
+		!Number.isSafeInteger(state.authorityStateRevision) || state.authorityStateRevision < 0 || !IDENTIFIER.test(state.firstActSeatId || "") ||
 		!Array.isArray(state.seats) || state.seats.length < 2 || state.seats.length > MAX_SEATS) {
 		throw new TypeError("XINGBEI_AUTHORITY_STATE_V2_INVALID");
 	}
@@ -102,10 +103,13 @@ function validateTransition({ before, after, event, expected }) {
 	try {
 		const beforeEncoded = validateState(before, expected);
 		const afterEncoded = validateState(after, expected);
-		if (!ownObject(event, ["kind", "nativeEventId", "nativeEventName", "rootInstanceId", "completed", "pendingChildCount"]) ||
+		if (!ownObject(event, ["kind", "nativeEventId", "nativeEventName", "eventSequence", "stateRevisionBefore", "stateRevisionAfter", "rootInstanceId", "completed", "pendingChildCount"]) ||
 			event.kind !== "xingbei_native_transition_v2" || !IDENTIFIER.test(event.nativeEventId || "") ||
 			!IDENTIFIER.test(event.nativeEventName || "") || event.rootInstanceId !== before.rootInstanceId ||
 			event.rootInstanceId !== after.rootInstanceId || event.completed !== true || event.pendingChildCount !== 0 ||
+			event.eventSequence !== before.authorityEventSequence + 1 || event.eventSequence !== after.authorityEventSequence ||
+			event.stateRevisionBefore !== before.authorityStateRevision || event.stateRevisionAfter !== before.authorityStateRevision + 1 ||
+			event.stateRevisionAfter !== after.authorityStateRevision ||
 			before.roomId !== after.roomId || before.firstActSeatId !== after.firstActSeatId ||
 			before.seats.length !== after.seats.length || before.seats.some((seat, index) => seat.seatId !== after.seats[index].seatId) ||
 			beforeEncoded === afterEncoded) return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_TRANSITION_INVALID" });

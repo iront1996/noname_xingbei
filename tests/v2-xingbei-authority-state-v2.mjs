@@ -12,6 +12,8 @@ function state(overrides = {}) {
 		schemaVersion: VERSION,
 		roomId: "room_p1",
 		rootInstanceId: "root_p1",
+		authorityEventSequence: 4,
+		authorityStateRevision: 4,
 		firstActSeatId: "seat_a",
 		turn: { currentSeatId: "seat_a", roundNumber: 1, phaseNumber: 1, phase: "xingDong", actionIndex: 0,
 			quotas: { gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0 } },
@@ -69,12 +71,14 @@ test("seat order, uniqueness, numeric ranges, phase and digest commitments are v
 test("completed native transition requires same root, immutable room topology and a real state delta", () => {
 	const before = state();
 	const after = state();
+	after.authorityEventSequence++;
+	after.authorityStateRevision++;
 	after.seats[0].handCount = 3;
 	after.seats[0].handCommitment = digest("9");
 	after.cardZones.discardCount = 1;
 	after.cardZones.discardCommitment = digest("8");
 	const event = { kind: "xingbei_native_transition_v2", nativeEventId: "native_evt_5", nativeEventName: "gongJiOrFaShu",
-		rootInstanceId: "root_p1", completed: true, pendingChildCount: 0 };
+		eventSequence: 5, stateRevisionBefore: 4, stateRevisionAfter: 5, rootInstanceId: "root_p1", completed: true, pendingChildCount: 0 };
 	const result = validateTransition({ before, after, event });
 	assert.equal(result.ok, true);
 	assert.equal(result.beforeDigest, digestState(before));
@@ -84,6 +88,10 @@ test("completed native transition requires same root, immutable room topology an
 	assert.equal(validateTransition({ before, after, event: { ...event, pendingChildCount: 1 } }).code,
 		"XINGBEI_AUTHORITY_TRANSITION_INVALID");
 	assert.equal(validateTransition({ before, after, event: { ...event, rootInstanceId: "other_root" } }).code,
+		"XINGBEI_AUTHORITY_TRANSITION_INVALID");
+	assert.equal(validateTransition({ before, after, event: { ...event, eventSequence: 7 } }).code,
+		"XINGBEI_AUTHORITY_TRANSITION_INVALID");
+	assert.equal(validateTransition({ before, after, event: { ...event, stateRevisionBefore: 3 } }).code,
 		"XINGBEI_AUTHORITY_TRANSITION_INVALID");
 });
 
