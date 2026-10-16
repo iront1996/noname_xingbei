@@ -9,6 +9,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { validateManagedEngineSourceManifest, MANAGED_ENGINE_TRUST_CONTRACT } = require("./server-managed-engine-integrity.js");
+const { createManagedRandomBootstrap } = require("./server-managed-random-source.js");
 
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SESSION_ID = /^hs_[a-f0-9]{32}$/;
@@ -299,8 +300,7 @@ async function boot(message) {
 			throw new Error("MANAGED_EXTERNAL_NETWORK_POLICY_FAILED");
 		}
 	}
-	// Test-only deterministic RNG remains separate from the production source path.
-	let testRandomSource = "";
+	let managedRandomSource;
 	if (process.env.V2_NATIVE_TEST_RANDOM_SEED !== undefined) {
 		const managedResponseSeed = process.env.V2_NATIVE_MANAGED_RESPONSE === "1";
 		const managedActionKindSeed = ["gongJi", "faShu"].includes(process.env.V2_NATIVE_ACTION_KIND);
@@ -309,15 +309,26 @@ async function boot(message) {
 			throw new Error("NATIVE_TEST_RANDOM_SEED_REJECTED");
 		}
 		const seed = Number(process.env.V2_NATIVE_TEST_RANDOM_SEED) >>> 0;
-		testRandomSource = `(()=>{let state=${seed};Math.random=()=>{state=(state+0x6D2B79F5)>>>0;let value=state;value=Math.imul(value^(value>>>15),value|1);value^=value+Math.imul(value^(value>>>7),value|61);return ((value^(value>>>14))>>>0)/4294967296}})();`;
+		managedRandomSource = createManagedRandomBootstrap(seed);
 	}
+	else managedRandomSource = createManagedRandomBootstrap();
+	const randomSourceKind = managedRandomSource.kind;
 	const testNetworkGuard = process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" ?
 		`(()=>{const nativeFetch=window.fetch.bind(window);let blocked=0;Object.defineProperty(window,"__v2ExternalFetchBlockedCount",{configurable:false,get:()=>blocked});window.fetch=(input,init)=>{let url;try{url=new URL(input instanceof Request?input.url:String(input),location.href)}catch{return Promise.reject(new TypeError('V2_TEST_FETCH_URL_INVALID'))}if(url.origin!==location.origin){blocked++;return Promise.reject(new TypeError('V2_TEST_EXTERNAL_NETWORK_BLOCKED'))}return nativeFetch(input,init)}})();` : "";
 	await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
-		source: `${testRandomSource}${testNetworkGuard}Object.defineProperty(window,"isNonameServer",{value:true,writable:false,configurable:false});`,
+		source: `${managedRandomSource.source}${testNetworkGuard}Object.defineProperty(window,"isNonameServer",{value:true,writable:false,configurable:false});`,
 	});
 	const navigation = await cdp.send("Page.navigate", { url: `${origin}/v2-managed-host.html` });
 	if (navigation.errorText) throw new Error("ENGINE_NAVIGATION_FAILED");
+	const randomReady = await cdp.send("Runtime.evaluate", {
+		expression: `(()=>{const audit=window.__v2ManagedRandomAudit;if(window.__v2ManagedRandomFailure||!audit||audit.source!==${JSON.stringify(randomSourceKind)}||audit.failed!==false||audit.active!==true||typeof Math.random!=='function')return {ready:false,code:window.__v2ManagedRandomFailure||'MANAGED_RANDOM_SOURCE_NOT_READY'};const sample=Math.random();return {ready:Number.isFinite(sample)&&sample>=0&&sample<1&&audit.active===true,source:audit.source,drawCount:audit.drawCount,code:'MANAGED_RANDOM_SOURCE_NOT_READY'}})()`,
+		returnByValue: true,
+	});
+	const randomAudit = randomReady.result?.value;
+	if (randomReady.exceptionDetails || randomAudit?.ready !== true || randomAudit.source !== randomSourceKind ||
+		!Number.isSafeInteger(randomAudit.drawCount) || randomAudit.drawCount < 1) {
+		throw new Error(randomAudit?.code || "MANAGED_RANDOM_SOURCE_NOT_READY");
+	}
 	const integrityCheck = await cdp.send("Runtime.evaluate", {
 		expression: `(async()=>{
 		 const manifest=${JSON.stringify(message.engineSourceManifest)};
@@ -385,7 +396,8 @@ async function boot(message) {
 		 return {loaded:true,mode:mode.name,offboard:true,
 		  nativeGame:typeof core.game.randomMapOL==='function',
 		  nativeResult:typeof mode.game.checkResult==='function',gameLoopStarted:false,
-		  testMatchRecordPostBlocked,engineBuildId:${JSON.stringify(integrity.buildId)}};
+		  testMatchRecordPostBlocked,engineBuildId:${JSON.stringify(integrity.buildId)},
+		  randomSourceAudit:(()=>{const audit=window.__v2ManagedRandomAudit;return {source:audit?.source||null,drawCount:audit?.drawCount??null,failed:audit?.failed??null,active:audit?.active===true}})()};
 		})()`,
 		awaitPromise: true,
 		returnByValue: true,
@@ -394,6 +406,11 @@ async function boot(message) {
 	if (engine.exceptionDetails || proof?.loaded !== true || proof.mode !== "xingBei" ||
 		proof.offboard !== true || proof.nativeGame !== true || proof.nativeResult !== true ||
 		proof.gameLoopStarted !== false || proof.engineBuildId !== integrity.buildId) throw new Error("ENGINE_INITIALIZATION_FAILED");
+	const engineRandomAudit = proof.randomSourceAudit;
+	if (!engineRandomAudit || engineRandomAudit.source !== randomSourceKind || engineRandomAudit.failed !== false ||
+		engineRandomAudit.active !== true || !Number.isSafeInteger(engineRandomAudit.drawCount) || engineRandomAudit.drawCount < 1) {
+		throw new Error("MANAGED_RANDOM_SOURCE_CHANGED_DURING_ENGINE_LOAD");
+	}
 	process.send?.({ ...identity, type: "host_engine_ready", proof: {
 		kind: "managed_engine_integrity_v1", trustContract: MANAGED_ENGINE_TRUST_CONTRACT,
 		buildId: integrity.buildId, fileCount: integrity.fileCount,
@@ -403,6 +420,9 @@ async function boot(message) {
 		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: null,
 			observed: { stage: "test_network_guard_verified", blockedPostCount: proof.testMatchRecordPostBlocked } });
 	}
+	process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: null,
+		observed: { stage: "managed_random_source_ready", source: engineRandomAudit.source,
+			drawCount: engineRandomAudit.drawCount, testOnly: engineRandomAudit.source === "test_seeded_v1" } });
 
 	const encodedSetup = JSON.stringify(message.gameSetup);
 	const initialized = await cdp.send("Runtime.evaluate", {

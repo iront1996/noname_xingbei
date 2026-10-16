@@ -29,6 +29,7 @@ for (const playerCount of [4, 6, 8]) test(`real Chromium creates native ${player
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
 	const previousOrigin = process.env.V2_GAME_ORIGIN;
+	let randomSourceDiagnostic = null;
 	process.env.V2_GAME_ORIGIN = server.origin;
 	t.after(() => {
 		if (previousOrigin === undefined) delete process.env.V2_GAME_ORIGIN;
@@ -38,6 +39,11 @@ for (const playerCount of [4, 6, 8]) test(`real Chromium creates native ${player
 		launch: createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 }),
 		browserReadyTimeoutMs: 20000,
 		engineReadyTimeoutMs: 30000,
+		onManagedChoiceMessage: async ({ type, message }) => {
+			if (type === "host_choice_diagnostic" && message?.observed?.stage === "managed_random_source_ready") {
+				randomSourceDiagnostic = message.observed;
+			}
+		},
 	});
 	const roomId = `engine_room_${playerCount}`;
 	t.after(() => manager.stop(roomId, "test_cleanup"));
@@ -51,6 +57,10 @@ for (const playerCount of [4, 6, 8]) test(`real Chromium creates native ${player
 	assert.equal(session.nextResultSequence, 1);
 	assert.equal(session.authorityStateRevision, 0);
 	assert.equal(session.checkpointAvailable, false);
+	assert.deepEqual(Object.keys(randomSourceDiagnostic || {}).sort(), ["drawCount", "source", "stage", "testOnly"]);
+	assert.equal(randomSourceDiagnostic?.source, "webcrypto_getRandomValues_v1");
+	assert.equal(randomSourceDiagnostic?.testOnly, false);
+	assert.ok(Number.isSafeInteger(randomSourceDiagnostic?.drawCount) && randomSourceDiagnostic.drawCount >= 1);
 	assert.match(session.setupDigest, /^[a-f0-9]{64}$/);
 	assert.match(session.preGameSummaryDigest, /^[a-f0-9]{64}$/);
 	const stopped = await manager.stop(roomId, "test_complete");
