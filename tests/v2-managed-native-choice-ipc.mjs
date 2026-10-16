@@ -623,13 +623,15 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal((await manager.diagnoseNativeStart(roomId, "managed_random_failure_probe")).ok, true);
 		await until(() => manager.inspect(roomId)?.state === "failed", 10000,
 			() => ({ session: manager.inspect(roomId), nativeDiagnostic: nativeDiagnostic.slice(-12) }));
+		const randomFailureDiagnostic = await until(() => nativeDiagnostic.find(entry => entry?.kind === "managed_random_failure_v1"), 5000,
+			() => ({ session: manager.inspect(roomId), nativeDiagnostic: nativeDiagnostic.slice(-12) }));
 		const failed = manager.inspect(roomId);
 		assert.equal(failed.failureCode, "MANAGED_RANDOM_SOURCE_FAILED");
+		assert.equal(randomFailureDiagnostic.failureCode, "MANAGED_RANDOM_SOURCE_FAILED");
 		assert.equal(failed.authorityStateRevision, 3, "an RNG failure must not advance authority state beyond Event #3");
 		assert.deepEqual(failed.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
 		assert.equal(failed.nextAuthorityEventSequence, 4, "the RNG-failed game must not create Event #4 or Event #5");
 		assert.equal(authoritySubmissions.some(entry => entry.proof?.eventSequence >= 4), false);
-		assert.ok(nativeDiagnostic.some(entry => entry?.stage === "managed_random_failure_binding_invoked"));
 		assert.ok(opened.every(choice => controller.inspect(roomId, choice.choiceId) === null), "host failure must clear all native choices");
 		const failedHandle = launchedHandles.get(failed.sessionId);
 		await until(() => failedHandle.resources().length === 0, 10000, () => ({ resources: failedHandle.resources() }));
