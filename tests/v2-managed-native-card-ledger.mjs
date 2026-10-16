@@ -36,6 +36,7 @@ test("private native physical-card ledger commits ordered four-seat zones and de
 	assert.equal(first.physicalCardCount, 4);
 	assert.equal(second.physicalCardCount, 4);
 	assert.equal(second.changedPhysicalCardCount, 1);
+	assert.equal(second.movedZonePhysicalCardCount, 1);
 	assert.equal(second.totalCountConserved, true);
 	assert.deepEqual(second.zoneDelta, { draw: 0, discard: 1, ordering: 0, special: 0, hand: -1,
 		equipment: 0, judgment: 0, player_special: 0, expansion: 0 });

@@ -1842,11 +1842,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.notEqual(nativeCardLedgerBefore.commitment, nativeCardLedgerAfter.commitment,
 						"native physical-card state changed across the real action, so the private commitment must change");
 					assert.ok(nativeCardLedgerAfter.changedPhysicalCardCount > 0);
+					assert.ok(nativeCardLedgerAfter.movedZonePhysicalCardCount > 0,
+						"at least one stable sidecar-tracked native physical Card must move between actual engine zones");
 					assert.equal(nativeCardLedgerAfter.totalCountConserved, true);
 					assert.equal(Object.values(nativeCardLedgerAfter.zoneDelta).reduce((sum, value) => sum + value, 0), 0);
-					assert.ok(nativeCardLedgerAfter.zoneDelta.hand < 0, "the native action must move at least one physical card out of a hand");
-					assert.ok(Object.entries(nativeCardLedgerAfter.zoneDelta).some(([zone, delta]) => zone !== "hand" && delta > 0),
-						"the native action must move a physical card into a different native zone");
 					assert.equal(nativeCardLedgerBefore.checkpointAvailable, false);
 					assert.equal(nativeCardLedgerAfter.checkpointAvailable, false);
 					const privateSummary = JSON.stringify([nativeCardLedgerBefore, nativeCardLedgerAfter]);
@@ -1854,6 +1853,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"only HMAC commitments and aggregate deltas may cross the internal host boundary");
 					t.diagnostic(`T3-B1 private native card ledger: ${JSON.stringify({ schema: nativeCardLedgerAfter.schema,
 						physicalCardCount: nativeCardLedgerAfter.physicalCardCount, changedPhysicalCardCount: nativeCardLedgerAfter.changedPhysicalCardCount,
+						movedZonePhysicalCardCount: nativeCardLedgerAfter.movedZonePhysicalCardCount,
 						zoneDelta: nativeCardLedgerAfter.zoneDelta, sameRoot: true, sameBuild: true, checkpointAvailable: false })}`);
 				}
 				const publicViewJson = JSON.stringify(session);

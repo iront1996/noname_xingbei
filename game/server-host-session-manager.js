@@ -176,17 +176,18 @@ function createHostSessionManager({
 		const snapshot = message.snapshot;
 		const zones = "discard,draw,equipment,expansion,hand,judgment,ordering,player_special,special";
 		if (!snapshot || Object.getPrototypeOf(snapshot) !== Object.prototype ||
-			Object.keys(snapshot).sort().join(",") !== "changedPhysicalCardCount,checkpointAvailable,commitment,engineBuildId,physicalCardCount,rootInstanceId,schema,schemaVersion,snapshotOrdinal,totalCountConserved,virtualCardsIncluded,zoneCounts,zoneDelta" ||
+			Object.keys(snapshot).sort().join(",") !== "changedPhysicalCardCount,checkpointAvailable,commitment,engineBuildId,movedZonePhysicalCardCount,physicalCardCount,rootInstanceId,schema,schemaVersion,snapshotOrdinal,totalCountConserved,virtualCardsIncluded,zoneCounts,zoneDelta" ||
 			snapshot.schema !== "xingbei_native_private_card_commitment_v1" || snapshot.schemaVersion !== 1 ||
 			snapshot.snapshotOrdinal !== record.privateCardLedgerSnapshotCount + 1 || snapshot.engineBuildId !== record.engineBuildId ||
 			snapshot.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId || !DIGEST.test(snapshot.commitment || "") ||
 			!Number.isSafeInteger(snapshot.physicalCardCount) || snapshot.physicalCardCount < 1 || snapshot.physicalCardCount > 4096 ||
 			!Number.isSafeInteger(snapshot.changedPhysicalCardCount) || snapshot.changedPhysicalCardCount < 0 ||
+			!Number.isSafeInteger(snapshot.movedZonePhysicalCardCount) || snapshot.movedZonePhysicalCardCount < 0 || snapshot.movedZonePhysicalCardCount > snapshot.changedPhysicalCardCount ||
 			snapshot.virtualCardsIncluded !== false || snapshot.checkpointAvailable !== false ||
 			!snapshot.zoneCounts || Object.getPrototypeOf(snapshot.zoneCounts) !== Object.prototype || Object.keys(snapshot.zoneCounts).sort().join(",") !== zones ||
 			Object.values(snapshot.zoneCounts).some(value => !Number.isSafeInteger(value) || value < 0) ||
 			Object.values(snapshot.zoneCounts).reduce((sum, value) => sum + value, 0) !== snapshot.physicalCardCount) return false;
-		if (snapshot.snapshotOrdinal === 1) return snapshot.changedPhysicalCardCount === 0 && snapshot.zoneDelta === null && snapshot.totalCountConserved === null;
+		if (snapshot.snapshotOrdinal === 1) return snapshot.changedPhysicalCardCount === 0 && snapshot.movedZonePhysicalCardCount === 0 && snapshot.zoneDelta === null && snapshot.totalCountConserved === null;
 		if (snapshot.snapshotOrdinal !== 2 || snapshot.changedPhysicalCardCount === 0 || snapshot.totalCountConserved !== true ||
 			!record.privateCardLedgerPriorZoneCounts || snapshot.physicalCardCount !== record.privateCardLedgerPriorPhysicalCount ||
 			snapshot.commitment === record.privateCardLedgerPriorCommitment || !snapshot.zoneDelta ||

@@ -83,9 +83,11 @@ function createManagedNativeCardLedger({ roomId, sessionId, engineBuildId, seatI
 			const commitment = crypto.createHmac("sha256", privateKey).update(encoded, "utf8").digest("hex");
 			const zoneCounts = Object.fromEntries(ZONES.map(zone => [zone, rows.filter(row => row.zone === zone).length]));
 			const changed = new Map(), present = new Set(rows.map(row => row.cardId));
+			let movedZonePhysicalCardCount = 0;
 			for (const row of rows) {
 				const prior = priorRows.get(row.cardId);
 				if (!prior || canonicalize(prior) !== canonicalize(row)) changed.set(row.cardId, row.zone);
+				if (prior && (prior.zone !== row.zone || prior.ownerSeatId !== row.ownerSeatId)) movedZonePhysicalCardCount++;
 			}
 			for (const [cardId, prior] of priorRows) if (!present.has(cardId)) changed.set(cardId, prior.zone);
 			const priorZoneCounts = priorCommitment?.zoneCounts || null;
@@ -99,6 +101,7 @@ function createManagedNativeCardLedger({ roomId, sessionId, engineBuildId, seatI
 				snapshotOrdinal: snapshotCount, rootInstanceId: snapshot.rootInstanceId, engineBuildId,
 				physicalCardCount: rows.length, zoneCounts: Object.freeze(zoneCounts), commitment,
 				changedPhysicalCardCount: snapshotCount === 1 ? 0 : changed.size,
+				movedZonePhysicalCardCount: snapshotCount === 1 ? 0 : movedZonePhysicalCardCount,
 				zoneDelta: zoneDelta && Object.freeze(zoneDelta), totalCountConserved: snapshotCount === 1 ? null :
 					rows.length === priorPhysicalCardCount, virtualCardsIncluded: false,
 				checkpointAvailable: false });
