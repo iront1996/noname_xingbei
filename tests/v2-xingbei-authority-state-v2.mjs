@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { SCHEMA, VERSION, canonicalize, digestState, validateState, validateTransition, createAuthorityStateChainV2 } = require("../game/xingbei-authority-state-v2.js");
+const { SCHEMA, VERSION, canonicalize, digestState, validateEvent4SeedBridge, validateState, validateTransition, createAuthorityStateChainV2 } = require("../game/xingbei-authority-state-v2.js");
 const digest = value => String(value).repeat(64).slice(0, 64);
 
 function state(overrides = {}) {
@@ -68,6 +69,44 @@ test("seat order, uniqueness, numeric ranges, phase and digest commitments are v
 		"native Xingbei resource events may produce a value below zero before checkResult resolves the match");
 	assert.throws(() => validateState(state({ resources: { ...state().resources, hongShiQi: -1000001 } })), /INVALID/);
 	assert.throws(() => validateState(state({ cardZones: { ...state().cardZones, drawCommitment: "not-a-digest" } })), /INVALID/);
+});
+
+test("Event #4 to v2 seed bridge is explicit, recomputed and cross-checks the native seat projection", () => {
+	const projected = state();
+	const summarySeats = projected.seats.map(({ seatId, position, character, side, handCount, handCommitment }) =>
+		({ seatId, position, character, side, handCount, handCommitment }));
+	const summary = { revision: 4, firstActSeatId: projected.firstActSeatId, seats: summarySeats, responses: [],
+		action: { nativeEventId: "native_action_0000000000000001", nativeEventName: "gongJiOrFaShu",
+			seatId: "seat_a", cardName: "sha", targetSeatId: "seat_b", optionId: "native_option_0000000000000001", usedCardPosition: "d" } };
+	const beforeSummary = { revision: 3, firstActSeatId: projected.firstActSeatId,
+		seats: summarySeats.map(seat => ({ ...seat })) };
+	const beforeDigest = createHash("sha256").update(canonicalize(beforeSummary)).digest("hex");
+	const afterDigest = createHash("sha256").update(canonicalize(summary)).digest("hex");
+	const event = { kind: "xingbei_native_card_action_v1", name: "gongJiOrFaShu", nativeEventName: "gongJiOrFaShu",
+		nativeEventId: summary.action.nativeEventId, rootInstanceId: projected.rootInstanceId, nativeEventCompleted: true,
+		seatId: summary.action.seatId, cardName: summary.action.cardName, targetSeatId: summary.action.targetSeatId,
+		optionId: summary.action.optionId, usedCardPosition: summary.action.usedCardPosition,
+		useResultCount: 1, useCardChildName: "useCard", nativeUseCardChildCompleted: true,
+		nativeChildWaitCompleted: true, nativeEventInstanceMatches: true, gameMeNull: true, connectedTransports: 0, responseActions: [] };
+	const proof = { kind: "native_authority_event_v1", checkpoint: null, eventSequence: 4, stateRevisionBefore: 3,
+		stateRevisionAfter: 4, beforeDigest, afterDigest, beforeSummary, afterSummary: summary, event };
+	const expected = { roomId: projected.roomId, rootInstanceId: projected.rootInstanceId,
+		firstActSeatId: projected.firstActSeatId, seatIds: projected.seats.map(seat => seat.seatId) };
+	const bridge = args => validateEvent4SeedBridge({ state: projected, event4Proof: proof,
+		expected, expectedLegacyBeforeDigest: beforeDigest, expectedLegacyAfterDigest: afterDigest, ...args });
+	assert.equal(bridge().ok, true);
+	assert.equal(bridge().authorityStateDigest, digestState(projected));
+	assert.equal(bridge().legacyDigest, afterDigest);
+	assert.equal(bridge().checkpointAvailable, false);
+	for (const invalid of [
+		{ state: { ...projected, authorityEventSequence: 5 } },
+		{ state: { ...projected, rootInstanceId: "different_root" } },
+		{ state: { ...projected, seats: projected.seats.map((seat, index) => index ? seat : { ...seat, handCommitment: digest("z") }) } },
+		{ event4Proof: { ...proof, afterDigest: digest("x") } },
+		{ event4Proof: { ...proof, event: { ...event, rootInstanceId: "different_root" } } },
+		{ event4Proof: { ...proof, event: { ...event, gameMeNull: false } } },
+		{ expectedLegacyAfterDigest: digest("x") },
+	]) assert.equal(bridge(invalid).ok, false);
 });
 
 test("completed native transition requires same root, immutable room topology and a real state delta", () => {

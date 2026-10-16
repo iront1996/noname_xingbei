@@ -101,6 +101,65 @@ function digestState(state, expected) {
 	return crypto.createHash("sha256").update(validateState(state, expected)).digest("hex");
 }
 
+function validateEvent4SeedBridge({ state, event4Proof, expected, expectedLegacyBeforeDigest, expectedLegacyAfterDigest } = {}) {
+	try {
+		const expectedKeys = ["roomId", "rootInstanceId", "firstActSeatId", "seatIds"];
+		const event = event4Proof?.event;
+		const summary = event4Proof?.afterSummary;
+		const beforeSummary = event4Proof?.beforeSummary;
+		if (!expected || Object.keys(expected).sort().join(",") !== expectedKeys.sort().join(",") ||
+			!Array.isArray(expected.seatIds) || !Array.isArray(summary?.seats) ||
+			Object.keys(summary).sort().join(",") !== "action,firstActSeatId,responses,revision,seats" ||
+			!event || event.kind !== "xingbei_native_card_action_v1" || event.name !== "gongJiOrFaShu" ||
+			event.nativeEventName !== "gongJiOrFaShu" || event.nativeEventCompleted !== true ||
+			event.useResultCount !== 1 || event.useCardChildName !== "useCard" ||
+			event.nativeUseCardChildCompleted !== true || event.nativeChildWaitCompleted !== true ||
+			event.nativeEventInstanceMatches !== true || event.gameMeNull !== true || event.connectedTransports !== 0 ||
+			event.rootInstanceId !== expected.rootInstanceId ||
+			event4Proof.kind !== "native_authority_event_v1" || event4Proof.checkpoint !== null ||
+			event4Proof.eventSequence !== 4 || event4Proof.stateRevisionBefore !== 3 || event4Proof.stateRevisionAfter !== 4 ||
+			event4Proof.beforeDigest !== expectedLegacyBeforeDigest || event4Proof.afterDigest !== expectedLegacyAfterDigest ||
+			!DIGEST.test(expectedLegacyBeforeDigest || "") || !DIGEST.test(expectedLegacyAfterDigest || "") ||
+			!beforeSummary || Object.keys(beforeSummary).sort().join(",") !== "firstActSeatId,revision,seats" ||
+			beforeSummary.revision !== 3 || beforeSummary.firstActSeatId !== expected.firstActSeatId ||
+			summary.revision !== 4 || summary.firstActSeatId !== expected.firstActSeatId ||
+			!Array.isArray(summary.responses) || !summary.action || Object.keys(summary.action).sort().join(",") !==
+			"cardName,nativeEventId,nativeEventName,optionId,seatId,targetSeatId,usedCardPosition" ||
+			summary.action.nativeEventName !== "gongJiOrFaShu") {
+			return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_SEED_BRIDGE_REJECTED" });
+		}
+		if (!Array.isArray(event.responseActions) || canonicalize(event.responseActions) !== canonicalize(summary.responses) ||
+			!IDENTIFIER.test(event.nativeEventId || "") || event.nativeEventId !== summary.action.nativeEventId ||
+			event.seatId !== summary.action.seatId || event.cardName !== summary.action.cardName ||
+			event.targetSeatId !== summary.action.targetSeatId || event.optionId !== summary.action.optionId ||
+			event.usedCardPosition !== summary.action.usedCardPosition) {
+			return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_SEED_BRIDGE_REJECTED" });
+		}
+		const oldDigest = crypto.createHash("sha256").update(canonicalize(summary)).digest("hex");
+		const oldBeforeDigest = crypto.createHash("sha256").update(canonicalize(beforeSummary)).digest("hex");
+		if (oldDigest !== expectedLegacyAfterDigest || oldBeforeDigest !== expectedLegacyBeforeDigest ||
+			summary.seats.length !== expected.seatIds.length || beforeSummary.seats?.length !== expected.seatIds.length) {
+			return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_SEED_BRIDGE_REJECTED" });
+		}
+		validateState(state, { roomId: expected.roomId, rootInstanceId: expected.rootInstanceId,
+			firstActSeatId: expected.firstActSeatId, seatIds: expected.seatIds });
+		if (state.authorityEventSequence !== 4 || state.authorityStateRevision !== 4 || state.turn.phase !== "xingDong" ||
+			state.turn.currentSeatId !== event.seatId || summary.seats.some((seat, index) => {
+				const projected = state.seats[index];
+				return Object.keys(seat).sort().join(",") !== "character,handCommitment,handCount,position,seatId,side" ||
+					seat.seatId !== expected.seatIds[index] || seat.position !== index ||
+					seat.seatId !== projected.seatId || seat.position !== projected.position ||
+					seat.character !== projected.character || seat.side !== projected.side ||
+					seat.handCount !== projected.handCount || seat.handCommitment !== projected.handCommitment;
+			})) return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_SEED_BRIDGE_REJECTED" });
+		return Object.freeze({ ok: true, legacyDigest: oldDigest, authorityStateDigest: digestState(state, expected),
+			legacyEventSequence: 4, authorityEventSequence: state.authorityEventSequence,
+			legacyRevision: 4, authorityStateRevision: state.authorityStateRevision, checkpointAvailable: false });
+	} catch (_) {
+		return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_SEED_BRIDGE_REJECTED" });
+	}
+}
+
 function validateTransition({ before, after, event, expected, validateNativeEvent }) {
 	try {
 		const beforeEncoded = validateState(before, expected);
@@ -181,4 +240,5 @@ function createAuthorityStateChainV2({ initialState, expected, validateInitialSt
 	return Object.freeze({ inspect, commit });
 }
 
-module.exports = Object.freeze({ SCHEMA, VERSION, canonicalize, validateState, digestState, validateTransition, createAuthorityStateChainV2 });
+module.exports = Object.freeze({ SCHEMA, VERSION, canonicalize, validateState, digestState, validateEvent4SeedBridge,
+	validateTransition, createAuthorityStateChainV2 });
