@@ -1255,6 +1255,13 @@ async function applyManagedNativeResponseDelivery(message) {
 	  const legal=Object.values(checks).every(Boolean);
 	  if(!legal||g.status!=='waiting'||g.useCardChildrenStarted!==0){const resultUntouched=event.result===resultBefore;if(testFault)testFault.resultUntouched=resultUntouched;
 	   return {ok:false,code:'NATIVE_VIEWAS_REVALIDATION_REJECTED',checks,testFault,resultUntouched};}
+	  if(faultMode==='viewas_result_assignment_throws'){
+	   const snapshot={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,nativeEventId:g.nativeEventId,seatId:g.seatId,
+	    candidateWasGenerated:true,originalChecksAccepted:Object.values(checks).every(Boolean),resultUntouched:event.result===resultBefore,useCardChildrenStarted:g.useCardChildrenStarted,
+	    failureCode:'NATIVE_VIEWAS_RESULT_SET_FAILED',gameMeAbsent:game.me===null};
+	   try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_viewas_result_assignment_exception',snapshot}))}catch{}
+	   throw Error('NATIVE_VIEWAS_RESULT_SET_FAILED')
+	  }
 	  g.status='applying';g.delivery={choiceId:${JSON.stringify(message.choiceId)},deliveryId:${JSON.stringify(message.deliveryId)},optionId:${JSON.stringify(optionId)},status:'applying'};
 	  event.result={bool:true,card:virtual,cards:[material],targets:[target],skill:o.skillId};g.waitResolved=true;g.resolveWait();
 	  return {ok:true,kind:'view_as_skill',skillId:o.skillId,physicalMaterialCount:1,targetCount:1,globalPaused:Boolean(core._status?.paused)};
@@ -1282,7 +1289,9 @@ async function applyManagedNativeResponseDelivery(message) {
 				observed: { kind: "native_viewas_revalidation_v1", stage: "native_viewas_revalidation_rejected", failedChecks: Object.keys(value.checks).filter(key => !value.checks[key]).slice(0, 12),
 					...(fault ? { testFault: fault } : {}) } });
 		}
-		throw new Error(value?.code || "NATIVE_RESPONSE_APPLY_UNCERTAIN");
+		const exceptionText = String(applied.exceptionDetails?.exception?.description || "");
+		const testFailureCode = /\bNATIVE_VIEWAS_RESULT_SET_FAILED\b/.exec(exceptionText)?.[0];
+		throw new Error(testFailureCode || value?.code || "NATIVE_RESPONSE_APPLY_UNCERTAIN");
 	}
 	delivery.status = "dispatched";
 }
@@ -1643,7 +1652,8 @@ function emitNativeStartDiagnostic(observed) {
 	if (nativeStartDiagnosticRing.length > 128) nativeStartDiagnosticRing.shift();
 	process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: interactiveChoice?.nativeEventId || null,
 		observed: { kind: "native_start_diagnostic", ...entry } });
-	if (!nativeFailureReported && ["wait_next_error", "native_useResult_exception", "native_useCard_child_exception"].includes(observed.stage) && interactiveChoice?.nativeInputGate?.controllerManaged) {
+	if (!nativeFailureReported && ["wait_next_error", "native_useResult_exception", "native_useCard_child_exception", "native_viewas_result_assignment_exception",
+		"native_viewas_useCard_child_exception", "native_viewas_partial_effect_exception"].includes(observed.stage) && interactiveChoice?.nativeInputGate?.controllerManaged) {
 		nativeFailureReported = true;
 		const code = /^[A-Z0-9_]{3,96}$/.test(observed.snapshot?.failureCode || "") ? observed.snapshot.failureCode : "HOST_NATIVE_EVENT_UNCERTAIN";
 		process.send?.({ ...identity, type: "host_failure", code }, () => cleanup().finally(() => process.exit(1)));
@@ -1755,7 +1765,8 @@ async function runNativeStartDiagnostic(message) {
 				if (payload?.kind !== "native_start_trace_v1" || typeof payload.stage !== "string" ||
 					!payload.snapshot || typeof payload.snapshot !== "object") return;
 				if (event.params.payload.length > 8192) {
-					const criticalStages = new Set(["native_useResult_entered", "native_useResult_exception", "native_useCard_child_exception", "wait_next_error", "root_promise_rejected",
+					const criticalStages = new Set(["native_useResult_entered", "native_useResult_exception", "native_useCard_child_exception", "native_viewas_result_assignment_exception",
+						"native_viewas_useCard_child_exception", "native_viewas_partial_effect_exception", "native_viewas_partial_effect_barrier", "wait_next_error", "root_promise_rejected",
 						"native_input_gate_expired", "native_input_resume_rejected", "native_input_cancel_rejected", "native_input_resume_accepted", "native_input_cancelled"]);
 					if (!criticalStages.has(payload.stage)) return;
 					const snapshot = payload.snapshot;
@@ -1942,10 +1953,37 @@ async function runNativeStartDiagnostic(message) {
 	  };
 	  GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;emit('wait_next_begin');return originalWaitNext.apply(this,args).then(value=>{state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};if(event===state.inputEvent&&state.nativeAction?.eventId===event.__v2NativeEventId&&state.nativeAction.useResultCount===1){const mapping=window.__v2ManagedNativeActionOptions.get(state.nativeAction.optionId);state.nativeAction.nativeChildWaitCompleted=true;state.nativeAction.nativeEventInstanceMatches=event===state.nativeInputResumeGate?.event;state.nativeAction.nativeEventStepAfterWait=Number.isSafeInteger(event.step)?event.step:null;state.nativeAction.cardInHandAfterNativeWait=Boolean(mapping&&event.player.getCards('h').includes(mapping.card));state.nativeAction.cardPositionAfterNativeWait=mapping?get.position(mapping.card):null;state.nativeAction.status='native_child_wait_completed';emit('native_action_child_wait_completed')}emit('wait_next_end');return value},error=>{const name=typeof error?.name==='string'&&/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(error.name)?error.name:'Error',message=typeof error?.message==='string'?error.message:'';const nullProperty=/^Cannot read properties of (null|undefined) \(reading '([A-Za-z_$][A-Za-z0-9_$]{0,48})'\)$/.exec(message),notFunction=/^([A-Za-z_$][A-Za-z0-9_$]{0,48}) is not a function$/.exec(message),code=/^[A-Z][A-Z0-9_]{0,80}$/.test(message)?message:null;state.nativeWaitError={name,...(nullProperty?{nullBase:nullProperty[1],property:nullProperty[2]}:{}),...(notFunction?{notFunction:notFunction[1]}:{}),...(code?{code}:{})};state.failureCode='NATIVE_WAIT_NEXT_REJECTED';emit('wait_next_error');throw error})};
 	 const completedActionStart=GameEvent.prototype.start;
-	 GameEvent.prototype.start=function(...args){const event=this,result=completedActionStart.apply(this,args);if(!result||typeof result.then!=='function')return result;return result.then(value=>{const action=state.nativeAction;if(event===state.inputEvent&&action?.eventId===event.__v2NativeEventId&&action.useResultCount===1&&action.nativeChildWaitCompleted===true&&action.nativeUseCardChildCompleted===true&&!state.nativeActionCompletionReported){state.nativeActionCompletionReported=true;const completion={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,eventFinished:Boolean(event.finished),paused:Boolean(_status.paused),eventStack:manager.eventStack.map(item=>item.name||null),phaseLoopParentName:state.phaseLoop?.parent?.name||null,nativeInputGateStatus:state.nativeInputGate?.status||null,nativeInputGate:state.nativeInputGate?{nativeEventId:state.nativeInputGate.nativeEventId,seatId:state.nativeInputGate.seatId,eventName:state.nativeInputGate.eventName,parentEventName:state.nativeInputGate.parentEventName,status:state.nativeInputGate.status||null,nativeSendCount:state.nativeInputGate.nativeSendCount||0,nativeResumeCount:state.nativeInputGate.nativeResumeCount||0,useResultCount:state.nativeInputGate.useResultCount||0}:null,nativeAction:{eventId:action.eventId,seatId:action.seatId,optionId:action.optionId,status:action.status||null,cardName:action.cardName||null,targetSeatId:action.targetSeatId||null,useResultCount:action.useResultCount,useResultChildName:action.useResultChildName||null,useCardChildName:action.nativeUseCardChildName||null,useCardChildStep:Number.isSafeInteger(action.nativeUseCardChildStep)?action.nativeUseCardChildStep:null,nativeUseCardChildCompleted:true,nativeChildWaitCompleted:true,nativeEventInstanceMatches:action.nativeEventInstanceMatches===true,nativeEventStepAfterWait:action.nativeEventStepAfterWait,cardInHandAfterNativeWait:action.cardInHandAfterNativeWait===true,cardPositionAfterNativeWait:action.cardPositionAfterNativeWait||null,result:action.result?{...action.result}:null},hostPlayerAbsent:game.me===null,connectedTransports:game.players.filter(player=>player.ws).length,seats:game.players.map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')}))};try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_action_event_completed',snapshot:completion}))}catch{}}return value})};
+	 GameEvent.prototype.start=function(...args){const event=this,result=completedActionStart.apply(this,args);if(!result||typeof result.then!=='function')return result;return result.then(value=>{
+	  const faultMode=${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")};
+	  if(['viewas_partial_effect_throws','viewas_partial_effect_stop'].includes(faultMode)&&event.name==='changeZhiShiWu'&&event.zhiShiWu==='guiHuo'){
+	   const gate=[...(state.managedNativeResponseGates?.values()||[])].find(candidate=>{const selected=candidate.delivery?.optionId?candidate.options.get(candidate.delivery.optionId):null;if(candidate.delivery?.status!=='applying'||selected?.kind!=='view_as_skill'||candidate.event?.player!==event.player)return false;for(let parent=event,count=0;parent&&count<24;parent=parent.parent,count++)if(parent===candidate.event)return true;return false});
+	   if(gate){const guiHuoAfter=event.player?.countZhiShiWu('guiHuo')??null,guiHuoBefore=gate.yinYangBaseline?.guiHuo??null,partialEffectApplied=Number.isSafeInteger(guiHuoAfter)&&Number.isSafeInteger(guiHuoBefore)&&guiHuoAfter>guiHuoBefore;
+	    state.failureCode=faultMode==='viewas_partial_effect_stop'?'NATIVE_VIEWAS_PARTIAL_EFFECT_STOP_TEST':'NATIVE_VIEWAS_PARTIAL_EFFECT_FAILED';
+	    const snapshot={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,nativeEventId:gate.nativeEventId,seatId:gate.seatId,
+	     partialEffectApplied,guiHuoDelta:Number.isSafeInteger(guiHuoAfter)&&Number.isSafeInteger(guiHuoBefore)?guiHuoAfter-guiHuoBefore:null,
+	     useCardChildrenStarted:gate.useCardChildrenStarted,useCardChildrenCompleted:gate.useCardChildrenCompleted,gameMeAbsent:game.me===null,failureCode:state.failureCode};
+	    const stage=faultMode==='viewas_partial_effect_stop'?'native_viewas_partial_effect_barrier':'native_viewas_partial_effect_exception';
+	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage,snapshot}))}catch{}
+	    if(!partialEffectApplied)throw Error('NATIVE_VIEWAS_PARTIAL_EFFECT_NOT_OBSERVED');
+	    if(faultMode==='viewas_partial_effect_stop')return new Promise(()=>{});
+	    throw Error(state.failureCode)
+	   }
+	  }
+	  const action=state.nativeAction;if(event===state.inputEvent&&action?.eventId===event.__v2NativeEventId&&action.useResultCount===1&&action.nativeChildWaitCompleted===true&&action.nativeUseCardChildCompleted===true&&!state.nativeActionCompletionReported){state.nativeActionCompletionReported=true;const completion={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,eventFinished:Boolean(event.finished),paused:Boolean(_status.paused),eventStack:manager.eventStack.map(item=>item.name||null),phaseLoopParentName:state.phaseLoop?.parent?.name||null,nativeInputGateStatus:state.nativeInputGate?.status||null,nativeInputGate:state.nativeInputGate?{nativeEventId:state.nativeInputGate.nativeEventId,seatId:state.nativeInputGate.seatId,eventName:state.nativeInputGate.eventName,parentEventName:state.nativeInputGate.parentEventName,status:state.nativeInputGate.status||null,nativeSendCount:state.nativeInputGate.nativeSendCount||0,nativeResumeCount:state.nativeInputGate.nativeResumeCount||0,useResultCount:state.nativeInputGate.useResultCount||0}:null,nativeAction:{eventId:action.eventId,seatId:action.seatId,optionId:action.optionId,status:action.status||null,cardName:action.cardName||null,targetSeatId:action.targetSeatId||null,useResultCount:action.useResultCount,useResultChildName:action.useResultChildName||null,useCardChildName:action.nativeUseCardChildName||null,useCardChildStep:Number.isSafeInteger(action.nativeUseCardChildStep)?action.nativeUseCardChildStep:null,nativeUseCardChildCompleted:true,nativeChildWaitCompleted:true,nativeEventInstanceMatches:action.nativeEventInstanceMatches===true,nativeEventStepAfterWait:action.nativeEventStepAfterWait,cardInHandAfterNativeWait:action.cardInHandAfterNativeWait===true,cardPositionAfterNativeWait:action.cardPositionAfterNativeWait||null,result:action.result?{...action.result}:null},hostPlayerAbsent:game.me===null,connectedTransports:game.players.filter(player=>player.ws).length,seats:game.players.map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')}))};try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_action_event_completed',snapshot:completion}))}catch{}}return value})};
 	 GameEvent.prototype.loop=function(...args){
 	   if(managedStart){
 	    const event=this,step=Number.isSafeInteger(event.step)?event.step:null,seatId=event.player?.playerid||null;
+	    const activeResponseGate=event.name==='useCard'&&event.parent?.name==='yingZhan'?event.parent.__v2ManagedResponseGate:null;
+	    const selectedResponse=activeResponseGate?.delivery?.optionId?activeResponseGate.options.get(activeResponseGate.delivery.optionId):null;
+	    if(${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")}==='viewas_useCard_child_throws'&&activeResponseGate?.delivery?.status==='applying'&&
+	     selectedResponse?.kind==='view_as_skill'&&activeResponseGate.event===event.parent&&activeResponseGate.seatId===event.player?.playerid){
+	     state.failureCode='NATIVE_VIEWAS_USE_CARD_CHILD_FAILED';
+	     const failure={eventName:event.name,eventStep:step,parentEventName:event.parent?.name||null,nativeEventId:activeResponseGate.nativeEventId,seatId,
+	      useCardChildrenStarted:activeResponseGate.useCardChildrenStarted,useCardChildrenCompleted:activeResponseGate.useCardChildrenCompleted,
+	      responseResultAssigned:event.parent.result?.bool===true,gameMeAbsent:game.me===null,failureCode:state.failureCode};
+	     try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_viewas_useCard_child_exception',snapshot:failure}))}catch{}
+	     throw Error(state.failureCode)
+	    }
 	    if(${process.env.V2_NATIVE_YINYANG_VIEWAS_PROBE === "1"}&&event.name==='yingZhan'&&event.player?.playerid===state.yinyangFixtureSeatId&&!state.yinyangSkillProbe?.nativeContractProbe){
 	     const skill=lib.skill.yinYangZhanHuan,info=skill,physical=event.player.getCards('h').find(card=>get.type(card)==='gongJi'&&get.mingGe(card)===get.mingGe(event.card));
 	     let virtual=null,nativeEventFilterAccepted=false,materialFilterAccepted=false,engineSkillEnabled=false,nativeSkillExpanded=false,nativeEventEnableMatches=false,nativeSkillFilterAccepted=false,nativeCardEnabled=false,legalTargetCount=0,probeError=null;

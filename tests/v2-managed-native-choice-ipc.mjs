@@ -15,6 +15,8 @@ const script = path.join(root, "game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
 const roomId = "native_choice_room";
 const setup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({ length: 4 }, (_, position) => ({ seatId: `native_seat_${position + 1}`, position })) };
+const viewasRevalidationFaultModes = ["viewas_material_removed_before_revalidation", "viewas_skill_removed_before_revalidation", "viewas_condition_invalid_before_revalidation"];
+const viewasExecutionFaultModes = ["viewas_result_assignment_throws", "viewas_useCard_child_throws", "viewas_partial_effect_throws", "viewas_partial_effect_stop"];
 
 async function until(check, timeoutMs = 45000, diagnostic = () => null) {
 	const deadline = Date.now() + timeoutMs;
@@ -48,7 +50,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, engineReadyProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
+	let manager, controller, sessionSecret, engineReadyProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -150,7 +152,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				const marked = controller.markDeliveryApplying({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret });
 				assert.equal(marked.ok, true, `authenticated native delivery receipt rejected: ${marked.code}`);
 				applyingReceipts.push({ choiceId: message.choiceId, deliveryId: message.deliveryId, nativeEventId: message.nativeEventId });
-				if (["viewas_material_removed_before_revalidation", "viewas_skill_removed_before_revalidation", "viewas_condition_invalid_before_revalidation"].includes(nativeFaultMode) &&
+				if ([...viewasRevalidationFaultModes, ...viewasExecutionFaultModes].includes(nativeFaultMode) &&
 					message.choiceId === nativeResponseChoice?.choiceId && !viewasRedeliveryIssued) {
 					const beforeRetry = controller.inspect(roomId, message.choiceId);
 					assert.equal(beforeRetry?.state, "applying");
@@ -431,6 +433,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 			} else if (type === "host_choice_diagnostic") {
 				 nativeDiagnostic.push({ ...message.observed, receivedAt: Date.now() });
+				if (nativeFaultMode === "viewas_partial_effect_stop" && message.observed?.stage === "native_viewas_partial_effect_barrier" && !nativeFaultStopPromise) {
+					nativeFaultStopPromise = manager.stop(roomId, "native_viewas_partial_effect_stop_race");
+				}
 				if (message.observed?.stage === "native_action_delivery_joined_authority_commit") {
 					event4AuthorityJoinCount++;
 					if (!event4AckBarrierReleased) {
@@ -575,7 +580,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		await failedHandle.waitForCleanup();
 		return;
 	}
-	if (["viewas_material_removed_before_revalidation", "viewas_skill_removed_before_revalidation", "viewas_condition_invalid_before_revalidation"].includes(nativeFaultMode)) {
+	if (viewasRevalidationFaultModes.includes(nativeFaultMode)) {
 		await until(() => manager.inspect(roomId)?.authorityStateRevision === 3,
 			45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), nativeDiagnostic }));
 		if (process.env.V2_NATIVE_C3_UNIFIED_ROOT !== "1") {
@@ -623,6 +628,91 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal(controller.pendingCount(), 0);
 		assert.equal(sessionEnds.filter(entry => entry.sessionId === failedSession.sessionId).length, 1,
 			"failed native revalidation must end the host session exactly once");
+		const failedHandle = launchedHandles.get(failedSession.sessionId);
+		await until(() => failedHandle.resources().length === 0, 10000, () => ({ resources: failedHandle.resources() }));
+		await failedHandle.waitForCleanup();
+		return;
+	}
+	if (viewasExecutionFaultModes.includes(nativeFaultMode)) {
+		await until(() => manager.inspect(roomId)?.authorityStateRevision === 3,
+			45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), nativeDiagnostic }));
+		if (process.env.V2_NATIVE_C3_UNIFIED_ROOT !== "1") assert.equal((await manager.diagnoseNativeStart(roomId, probeMode)).ok, true);
+		await until(() => nativeResponseChoice || ["failed", "stopped", "stopping"].includes(manager.inspect(roomId)?.state), 20000,
+			() => ({ session: manager.inspect(roomId), actionCandidate: nativeActionCandidate && { eventName: nativeActionCandidate.eventName, seatId: nativeActionCandidate.seatId },
+				stages: nativeDiagnostic.slice(-24).map(entry => entry?.stage) }));
+		assert.ok(nativeResponseChoice, `native skill failure did not reach its managed response choice: ${JSON.stringify({ session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-20).map(entry => entry?.stage) })}`);
+		assert.equal(nativeResponseCandidate?.optionKinds?.[nativeResponseOptionId], "view_as_skill");
+		assert.equal(nativeResponseAccepted, true, "fault must occur after a valid ordinary-seat selection was accepted");
+		assert.equal(viewasRedeliveryIssued, true, "the applying skill result was not retried with its original immutable identity");
+		assert.equal(viewasRedeliveryIdentity?.choiceId, nativeResponseChoice.choiceId);
+		assert.equal(viewasRedeliveryIdentity?.nativeEventId, nativeResponseChoice.nativeEventId);
+		if (nativeFaultMode === "viewas_partial_effect_stop") {
+			const barrier = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_viewas_partial_effect_barrier"), 15000,
+				() => ({ session: manager.inspect(roomId), response: controller.inspect(roomId, nativeResponseChoice.choiceId), stages: nativeDiagnostic.slice(-12) }));
+			assert.equal(barrier.snapshot?.eventName, "changeZhiShiWu");
+			assert.equal(barrier.snapshot?.partialEffectApplied, true, "native guiHuo change must have completed before stop barrier");
+			assert.ok(barrier.snapshot?.guiHuoDelta > 0);
+			assert.equal(barrier.snapshot?.useCardChildrenStarted, 1);
+			assert.equal(barrier.snapshot?.useCardChildrenCompleted, 0, "the parent native useCard must remain incomplete at the stop barrier");
+			assert.equal(barrier.snapshot?.gameMeAbsent, true);
+			assert.ok(nativeFaultStopPromise, "the parent process did not issue stop while the native effect was held at its barrier");
+			const stopped = await nativeFaultStopPromise;
+			assert.equal(stopped.ok, true, `managed host stop lost its race with the partial skill effect: ${stopped.code}`);
+			const stoppedSession = manager.inspect(roomId);
+			assert.equal(stoppedSession.state, "stopped");
+			assert.equal(stoppedSession.authorityStateRevision, 3);
+			assert.deepEqual(stoppedSession.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+			assert.equal(event4SubmissionCount, 0);
+			assert.equal(nativeResponseAckCount, 0, "stop during partial effect cannot emit response success ACK");
+			assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_response_applied"), false);
+			assert.equal(controller.inspect(roomId, nativeResponseChoice.choiceId), null);
+			assert.equal(controller.pendingCount(), 0);
+			assert.equal(sessionEnds.filter(entry => entry.sessionId === stoppedSession.sessionId).length, 1);
+			const stoppedHandle = launchedHandles.get(stoppedSession.sessionId);
+			await until(() => stoppedHandle.resources().length === 0, 10000, () => ({ resources: stoppedHandle.resources() }));
+			await stoppedHandle.waitForCleanup();
+			return;
+		}
+		const expectedStage = nativeFaultMode === "viewas_result_assignment_throws" ? "native_viewas_result_assignment_exception" :
+			nativeFaultMode === "viewas_useCard_child_throws" ? "native_viewas_useCard_child_exception" : "native_viewas_partial_effect_exception";
+		const expectedFailureCode = nativeFaultMode === "viewas_result_assignment_throws" ? "NATIVE_VIEWAS_RESULT_SET_FAILED" :
+			nativeFaultMode === "viewas_useCard_child_throws" ? "NATIVE_VIEWAS_USE_CARD_CHILD_FAILED" : "NATIVE_VIEWAS_PARTIAL_EFFECT_FAILED";
+		const faultProof = await until(() => nativeDiagnostic.find(entry => entry?.stage === expectedStage), 15000,
+			() => ({ session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-18).map(entry => entry?.stage) }));
+		await until(() => manager.inspect(roomId)?.state === "failed", 12000,
+			() => ({ session: manager.inspect(roomId), faultProof, ends: sessionEnds.slice(-3) }));
+		const failedSession = manager.inspect(roomId);
+		assert.equal(failedSession.failureCode, expectedFailureCode);
+		assert.equal(failedSession.authorityStateRevision, 3, "incomplete native skill settlement cannot submit Event #4");
+		assert.deepEqual(failedSession.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+		assert.equal(event4SubmissionCount, 0);
+		assert.equal(authoritySubmissions.some(entry => entry.proof?.eventSequence === 4), false);
+		assert.equal(nativeResponseAckCount, 0, "native response result cannot ACK before the full skill child completes");
+		assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_response_applied"), false);
+		assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_card_action_event_4_accepted"), false);
+		assert.equal(faultProof.snapshot?.gameMeAbsent, true);
+		if (nativeFaultMode === "viewas_result_assignment_throws") {
+			assert.equal(faultProof.snapshot?.candidateWasGenerated, true);
+			assert.equal(faultProof.snapshot?.originalChecksAccepted, true);
+			assert.equal(faultProof.snapshot?.resultUntouched, true);
+			assert.equal(faultProof.snapshot?.useCardChildrenStarted, 0);
+		} else if (nativeFaultMode === "viewas_useCard_child_throws") {
+			assert.equal(faultProof.snapshot?.eventName, "useCard");
+			assert.equal(faultProof.snapshot?.parentEventName, "yingZhan");
+			assert.equal(faultProof.snapshot?.responseResultAssigned, true);
+			assert.equal(faultProof.snapshot?.useCardChildrenStarted, 1);
+			assert.equal(faultProof.snapshot?.useCardChildrenCompleted, 0);
+		} else {
+			assert.equal(faultProof.snapshot?.eventName, "changeZhiShiWu");
+			assert.equal(faultProof.snapshot?.partialEffectApplied, true,
+				"the fault must occur after a real native guiHuo state-change child completes");
+			assert.ok(faultProof.snapshot?.guiHuoDelta > 0);
+			assert.equal(faultProof.snapshot?.useCardChildrenStarted, 1);
+			assert.equal(faultProof.snapshot?.useCardChildrenCompleted, 0);
+		}
+		assert.equal(controller.inspect(roomId, nativeResponseChoice.choiceId), null, "failed host must clear the pending native skill choice");
+		assert.equal(controller.pendingCount(), 0);
+		assert.equal(sessionEnds.filter(entry => entry.sessionId === failedSession.sessionId).length, 1);
 		const failedHandle = launchedHandles.get(failedSession.sessionId);
 		await until(() => failedHandle.resources().length === 0, 10000, () => ({ resources: failedHandle.resources() }));
 		await failedHandle.waitForCleanup();
