@@ -463,12 +463,33 @@ async function boot(message) {
 		  for(let row=0;row<rows;row++){const tr=table.insertRow();for(let column=0;column<columns;column++)tr.insertCell();}
 		  parent?.appendChild(table);return table;
 		 };
+		 let targetlessDeckFixture=null;
 		 if(!ui.arena)ui.create.arena();
 		 game.prepareArena(setup.seats.length);
 		 // Normal startup defers ui.create.cardsAsync() through the global onfree
 		 // queue. A managed headless room has no free-screen transition, so execute
 		 // only that native card-pile initialization callback now.
-		 if(_status.waitingForCards){const args=_status.waitingForCards;delete _status.waitingForCards;ui.create.cards.apply(ui.create,args)}
+		 if(_status.waitingForCards){const args=_status.waitingForCards;delete _status.waitingForCards;
+		  // Opt-in test fixture: arrange real native deck entries so every opening
+		  // hand can contain a real no-target ShengGuang. Native card creation,
+		  // gameDraw/dealing and response filtering still run unchanged.
+		  if(${process.env.V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE === "1"}){
+		   if(${process.env.V2_NATIVE_MANAGED_RESPONSE === "1"}!==true||!${process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1"}||
+		      ${process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1"}!==true)throw Error('TARGETLESS_DECK_FIXTURE_SCOPE_REJECTED');
+		   const source=lib.card.list;
+		   if(!Array.isArray(source)||args.length!==0)throw Error('TARGETLESS_DECK_FIXTURE_INPUT_REJECTED');
+		   const picked=[],remaining=[];
+		   for(const card of source){if(card?.[2]==='shengGuang'&&picked.length<4)picked.push(card);else remaining.push(card)}
+		   if(picked.length!==4||source.length<16)throw Error('TARGETLESS_DECK_FIXTURE_CARDS_UNAVAILABLE');
+		   const arranged=Array.from({length:source.length});
+		   for(let index=0;index<4;index++)arranged[index*4]=picked[index];
+		   let cursor=0;for(let index=0;index<arranged.length;index++)if(arranged[index]===undefined)arranged[index]=remaining[cursor++];
+		   if(cursor!==remaining.length||arranged.some((card,index)=>card!==source[index]&&card===undefined))throw Error('TARGETLESS_DECK_FIXTURE_ARRANGEMENT_INVALID');
+		   lib.card.list=arranged;args[0]=true;
+		   targetlessDeckFixture={kind:'native_card_pile_order_fixture_v1',selectedNativeEntries:picked.length,
+		    openingHandSlots:[0,4,8,12],nativeCardCreation:true,nativeGameDraw:true};
+		  }
+		  ui.create.cards.apply(ui.create,args)}
 		 if(game.players.length!==setup.seats.length||!_status.prepareArena)throw Error('ARENA_INITIALIZATION_FAILED');
 		 lib.playerOL=Object.create(null);
 		 for(let index=0;index<setup.seats.length;index++){
@@ -483,6 +504,7 @@ async function boot(message) {
 		  seats:game.players.map(player=>({seatId:player.playerid,position:Number(player.dataset.position),dead:false})),
 		  nativePlayers:game.players.every(player=>player instanceof lib.element.Player),
 		  cardDefinitionCount:Object.keys(lib.card).length,configuredCardCount:lib.card.list.length,
+		  ...(targetlessDeckFixture?{targetlessDeckFixture}:{}),
 		  hostPlayerAbsent:game.me===null,
 		  connectedTransports:game.players.filter(player=>player.ws).length,
 		  legacyModeFunctionsRequireGameMe:gameMeReferenceCount>0,gameMeReferenceCount,
@@ -512,6 +534,8 @@ async function boot(message) {
 		throw new Error(`GAME_INITIALIZATION_FAILED:${initialized.exceptionDetails?.text || JSON.stringify(preGameSummary)}`);
 	}
 	const preGameSummaryDigest = createHash("sha256").update(canonicalize(preGameSummary)).digest("hex");
+	if (preGameSummary.targetlessDeckFixture) process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: null,
+		observed: { stage: "native_targetless_deck_fixture_ready", ...preGameSummary.targetlessDeckFixture } });
 	process.send?.({
 		...identity,
 		type: "host_game_ready",
