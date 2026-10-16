@@ -48,7 +48,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, engineReadyProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
+	let manager, controller, sessionSecret, engineReadyProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], ackTrace = [];
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -150,6 +150,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				const marked = controller.markDeliveryApplying({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret });
 				assert.equal(marked.ok, true, `authenticated native delivery receipt rejected: ${marked.code}`);
 				applyingReceipts.push({ choiceId: message.choiceId, deliveryId: message.deliveryId, nativeEventId: message.nativeEventId });
+				if (["viewas_material_removed_before_revalidation", "viewas_skill_removed_before_revalidation", "viewas_condition_invalid_before_revalidation"].includes(nativeFaultMode) &&
+					message.choiceId === nativeResponseChoice?.choiceId && !viewasRedeliveryIssued) {
+					const beforeRetry = controller.inspect(roomId, message.choiceId);
+					assert.equal(beforeRetry?.state, "applying");
+					viewasRedeliveryIdentity = { choiceId: beforeRetry.choiceId, deliveryId: beforeRetry.deliveryId,
+						nativeEventId: beforeRetry.nativeEventId, option: beforeRetry.resolution?.option };
+					viewasRedeliveryIssued = true;
+					assert.equal(controller.retryDelivery({ roomId, choiceId: message.choiceId }).ok, true,
+						"the unchanged native viewAs delivery should be safely fenced when retried while applying");
+					const afterRetry = controller.inspect(roomId, message.choiceId);
+					assert.deepEqual({ choiceId: afterRetry.choiceId, deliveryId: afterRetry.deliveryId,
+						nativeEventId: afterRetry.nativeEventId, option: afterRetry.resolution?.option }, viewasRedeliveryIdentity,
+					"a retry must retain the immutable original native skill result identity");
+				}
 			} else if (type === "host_choice_candidates") {
 				sessionSecret = message.secret;
 				candidatesSeen = message.choices;
@@ -325,6 +339,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							"an option issued for the parent card action cannot be replayed as a native skill response");
 						assert.equal(controller.submitChoice({ ...request, nativeEventId: `${message.nativeEventId}_stale` }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 						assert.equal(controller.submitChoice({ ...request, eventSequence: message.eventSequence + 1 }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+						assert.equal(controller.submitChoice({ ...request, hostSessionId: `hs_${"b".repeat(32)}` }).code,
+							"MANAGED_CHOICE_SUBMIT_REJECTED", "an old host session cannot submit against the live native choice");
 						assert.equal(controller.submitChoice({ ...request, roomId: `${roomId}_other` }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 						const otherSeat = setup.seats.find(seat => seat.seatId !== message.seatId);
 						assert.ok(otherSeat);
@@ -351,9 +367,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"seat disconnect/rebind must not restart or replace the managed game host");
 					const rebound = controller.submitChoice({ ...request, connectionId: replacementConnectionId });
 					assert.equal(rebound.ok, true, `rebound ordinary seat could not submit its native response: ${rebound.code}`);
+					if (firstManagedResponse) nativeResponseAccepted = rebound.ok === true;
 				} else {
 					const submitted = controller.submitChoice(request);
 					assert.equal(submitted.ok, true, `authenticated ordinary seat could not submit its native response: ${submitted.code}`);
+					if (firstManagedResponse) nativeResponseAccepted = submitted.ok === true;
 				}
 			} else if (type === "host_choice_ack") {
 				ackCount++;
@@ -553,6 +571,59 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(childFailure?.snapshot?.nativeAction?.cardInHandAtFailure, false);
 		}
 		const failedHandle = launchedHandles.get(manager.inspect(roomId).sessionId);
+		await until(() => failedHandle.resources().length === 0, 10000, () => ({ resources: failedHandle.resources() }));
+		await failedHandle.waitForCleanup();
+		return;
+	}
+	if (["viewas_material_removed_before_revalidation", "viewas_skill_removed_before_revalidation", "viewas_condition_invalid_before_revalidation"].includes(nativeFaultMode)) {
+		await until(() => manager.inspect(roomId)?.authorityStateRevision === 3,
+			45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), nativeDiagnostic }));
+		if (process.env.V2_NATIVE_C3_UNIFIED_ROOT !== "1") {
+			assert.equal((await manager.diagnoseNativeStart(roomId, probeMode)).ok, true);
+		}
+		await until(() => nativeResponseChoice || manager.inspect(roomId)?.state === "failed", 20000,
+			() => ({ session: manager.inspect(roomId), actionCandidate: Boolean(nativeActionCandidate), stages: nativeDiagnostic.slice(-20).map(entry => entry?.stage) }));
+		assert.ok(nativeResponseChoice, `viewAs fault did not reach an actual managed native response choice: ${JSON.stringify({ session: manager.inspect(roomId),
+			actionCandidate: nativeActionCandidate && { nativeEventId: nativeActionCandidate.nativeEventId, optionCount: nativeActionCandidate.options?.length },
+			stages: nativeDiagnostic.slice(-24).map(entry => entry?.stage), response: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response")).slice(-12) })}`);
+		assert.ok(nativeResponseCandidate);
+		assert.equal(nativeResponseCandidate.optionKinds[nativeResponseOptionId], "view_as_skill",
+			"fault injection requires the live native viewAs candidate, not a synthetic option");
+		assert.equal(nativeResponseAccepted, true, "the ordinary player's valid credential must first be accepted by the controller");
+		const rejected = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_viewas_revalidation_rejected"), 12000,
+			() => ({ session: manager.inspect(roomId), response: controller.inspect(roomId, nativeResponseChoice.choiceId),
+				stages: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("viewas")).slice(-6) }));
+		const expectedFailedCheck = nativeFaultMode === "viewas_material_removed_before_revalidation" ? "materialInHand" :
+			nativeFaultMode === "viewas_skill_removed_before_revalidation" ? "skillOwned" : "skillFilter";
+		assert.deepEqual(rejected.testFault, { mode: nativeFaultMode, candidateWasGenerated: true,
+			invalidationApplied: true, resultUntouched: true, postValidationResultUntouched: true },
+		"test-only invalidation must occur after a real candidate was issued and before native result assignment");
+		assert.ok(rejected.failedChecks.includes(expectedFailedCheck),
+			`existing native legality revalidation did not reject ${nativeFaultMode}: ${JSON.stringify(rejected.failedChecks)}`);
+		await until(() => manager.inspect(roomId)?.state === "failed", 12000,
+			() => ({ session: manager.inspect(roomId), rejected, ends: sessionEnds.slice(-3) }));
+		const failedSession = manager.inspect(roomId);
+		assert.equal(failedSession.failureCode, "NATIVE_VIEWAS_REVALIDATION_REJECTED");
+		assert.equal(failedSession.authorityStateRevision, 3, "invalidated skill context must not submit or accept Event #4");
+		assert.deepEqual(failedSession.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+		assert.equal(event4SubmissionCount, 0);
+		assert.equal(authoritySubmissions.some(entry => entry.proof?.eventSequence === 4), false);
+		assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_response_applied"), false,
+			"revalidation failure must not report a native response as applied");
+		assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_card_action_event_4_accepted"), false);
+		assert.equal(viewasRedeliveryIssued, true, "same immutable native delivery was not retried during application");
+		assert.equal(viewasRedeliveryIdentity?.choiceId, nativeResponseChoice.choiceId);
+		assert.equal(viewasRedeliveryIdentity?.nativeEventId, nativeResponseChoice.nativeEventId);
+		assert.equal(nativeDiagnostic.filter(entry => entry?.stage === "native_viewas_revalidation_rejected").length, 1,
+			"the immutable retry must not apply or revalidate the skill a second time");
+		assert.equal(ackTrace.some(entry => entry.choiceId === nativeResponseChoice.choiceId && entry.nativeApplied), false,
+			"invalid native response must not emit a success ACK");
+		assert.equal(controller.inspect(roomId, nativeResponseChoice.choiceId), null,
+			"managed-host failure cleanup must remove the pending skill choice and its timers");
+		assert.equal(controller.pendingCount(), 0);
+		assert.equal(sessionEnds.filter(entry => entry.sessionId === failedSession.sessionId).length, 1,
+			"failed native revalidation must end the host session exactly once");
+		const failedHandle = launchedHandles.get(failedSession.sessionId);
 		await until(() => failedHandle.resources().length === 0, 10000, () => ({ resources: failedHandle.resources() }));
 		await failedHandle.waitForCleanup();
 		return;

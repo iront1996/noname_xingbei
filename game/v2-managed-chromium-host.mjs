@@ -1234,14 +1234,27 @@ async function applyManagedNativeResponseDelivery(message) {
 	 const {card,target}=o,shape=g.optionShapes[${JSON.stringify(optionId)}];
 		 if(o.kind==='view_as_skill'){
 	  const previousStatusEvent=core._status?.event;try{if(core._status)core._status.event=event;
-	  const info=core.lib.skill?.[o.skillId],material=o.material,virtual=info?.viewAs?.call(info,[material],player),
+	  const info=core.lib.skill?.[o.skillId],material=o.material,resultBefore=event.result;let testFault=null;
+	  const faultMode=${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")};
+	  if(['viewas_material_removed_before_revalidation','viewas_skill_removed_before_revalidation','viewas_condition_invalid_before_revalidation'].includes(faultMode)){
+	   const originalVirtual=info?.viewAs?.call(info,[material],player),candidateWasGenerated=o.kind==='view_as_skill'&&g.optionIds.includes(${JSON.stringify(optionId)})&&o.event===event&&o.seatId===player.playerid&&
+	    Boolean(info&&player.hasSkill(o.skillId)&&core.lib.filter.filterEnable(event,player,o.skillId)===true&&info.filter?.call(info,event,player)===true&&material&&player.getCards('h').includes(material)&&
+	     info.filterCard?.call(info,material,player)===true&&originalVirtual&&event.filterCard?.(originalVirtual,player,event)&&target&&event.filterTarget?.(originalVirtual,player,target)&&core.lib.filter.targetEnabled(originalVirtual,player,target));
+	   if(!candidateWasGenerated||g.status!=='waiting'||g.waitResolved)return {ok:false,code:'NATIVE_VIEWAS_FAULT_PRECONDITION_REJECTED'};
+	   if(faultMode==='viewas_material_removed_before_revalidation')material.classList.add('removing');
+	   else if(faultMode==='viewas_skill_removed_before_revalidation')player.removeSkill(o.skillId);
+	   else event.canYingZhan=false;
+	   testFault={mode:faultMode,candidateWasGenerated:true,invalidationApplied:true};
+	  }
+	  const virtual=info?.viewAs?.call(info,[material],player),
 	   checks={skillBound:o.skillId==='yinYangZhanHuan'&&o.kind==='view_as_skill',skillOwned:Boolean(info&&player.hasSkill(o.skillId)),skillEnabled:Boolean(info&&core.lib.filter.filterEnable(event,player,o.skillId)===true),
 	    skillFilter:Boolean(info&&info.filter?.call(info,event,player)===true),eventBound:o.event===event&&o.seatId===player.playerid,materialInHand:Boolean(material&&player.getCards('h').includes(material)),
 	    materialFilter:Boolean(info&&info.filterCard?.call(info,material,player)===true),virtualMatches:Boolean(virtual&&virtual.name===o.virtualCard?.name&&virtual.xiBie===o.virtualCard?.xiBie&&virtual.isCard===true),
 	    eventCardFilter:Boolean(virtual&&event.filterCard?.(virtual,player,event)),cardEnabled:Boolean(virtual&&core.lib.filter.cardEnabled(virtual,player,'forceEnable')),
 	    targetFilter:Boolean(virtual&&target&&event.filterTarget?.(virtual,player,target)),targetEnabled:Boolean(virtual&&target&&core.lib.filter.targetEnabled(virtual,player,target))};
 	  const legal=Object.values(checks).every(Boolean);
-	  if(!legal||g.status!=='waiting'||g.useCardChildrenStarted!==0)return {ok:false,code:'NATIVE_VIEWAS_REVALIDATION_REJECTED',checks};
+	  if(!legal||g.status!=='waiting'||g.useCardChildrenStarted!==0){const resultUntouched=event.result===resultBefore;if(testFault)testFault.resultUntouched=resultUntouched;
+	   return {ok:false,code:'NATIVE_VIEWAS_REVALIDATION_REJECTED',checks,testFault,resultUntouched};}
 	  g.status='applying';g.delivery={choiceId:${JSON.stringify(message.choiceId)},deliveryId:${JSON.stringify(message.deliveryId)},optionId:${JSON.stringify(optionId)},status:'applying'};
 	  event.result={bool:true,card:virtual,cards:[material],targets:[target],skill:o.skillId};g.waitResolved=true;g.resolveWait();
 	  return {ok:true,kind:'view_as_skill',skillId:o.skillId,physicalMaterialCount:1,targetCount:1,globalPaused:Boolean(core._status?.paused)};
@@ -1261,8 +1274,13 @@ async function applyManagedNativeResponseDelivery(message) {
 	if (applied.exceptionDetails || value?.ok !== true) {
 		delivery.status = "uncertain";
 		if (value?.checks && Object.keys(value.checks).every(key => /^[A-Za-z]{1,32}$/.test(key)) && Object.values(value.checks).every(item => typeof item === "boolean")) {
+			const fault = value.testFault && ["viewas_material_removed_before_revalidation", "viewas_skill_removed_before_revalidation", "viewas_condition_invalid_before_revalidation"].includes(value.testFault.mode) ? {
+				mode: value.testFault.mode, candidateWasGenerated: value.testFault.candidateWasGenerated === true,
+				invalidationApplied: value.testFault.invalidationApplied === true, resultUntouched: value.testFault.resultUntouched === true,
+				postValidationResultUntouched: value.resultUntouched === true } : null;
 			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
-				observed: { kind: "native_viewas_revalidation_v1", stage: "native_viewas_revalidation_rejected", failedChecks: Object.keys(value.checks).filter(key => !value.checks[key]).slice(0, 12) } });
+				observed: { kind: "native_viewas_revalidation_v1", stage: "native_viewas_revalidation_rejected", failedChecks: Object.keys(value.checks).filter(key => !value.checks[key]).slice(0, 12),
+					...(fault ? { testFault: fault } : {}) } });
 		}
 		throw new Error(value?.code || "NATIVE_RESPONSE_APPLY_UNCERTAIN");
 	}
