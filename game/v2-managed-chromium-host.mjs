@@ -2695,7 +2695,18 @@ async function snapshotNativeCardLedger(message) {
 			return {schema:'xingbei_native_private_card_ledger_v1',rootInstanceId:state.rootInstanceId,
 				seatIds:command.seatIds,cards};})()`, returnByValue: true }, 3000);
 		const snapshot = result.result?.value;
-		if (result.exceptionDetails || snapshot?.schema !== "xingbei_native_private_card_ledger_v1") throw new Error("NATIVE_CARD_LEDGER_CAPTURE_FAILED");
+		if (result.exceptionDetails) {
+			const allowedFailureCodes = ["NATIVE_CARD_LEDGER_FENCE_INVALID", "NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID",
+				"NATIVE_CARD_LEDGER_ZONE_MISSING", "NATIVE_CARD_LEDGER_SEAT_SET_INVALID", "NATIVE_CARD_LEDGER_SEAT_DUPLICATE",
+				"NATIVE_CARD_LEDGER_PLAYER_ZONE_INVALID", "NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD"];
+			const exception = `${result.exceptionDetails.text || ""} ${result.exceptionDetails.exception?.description || ""}`;
+			const failureCode = allowedFailureCodes.find(candidate => exception.includes(candidate)) ||
+				(result.exceptionDetails.exception?.className === "ReferenceError" || exception.includes("ReferenceError")
+					? "NATIVE_CARD_LEDGER_CDP_REFERENCE_ERROR" : result.exceptionDetails.exception?.className === "TypeError" || exception.includes("TypeError")
+						? "NATIVE_CARD_LEDGER_CDP_TYPE_ERROR" : "NATIVE_CARD_LEDGER_CDP_EXCEPTION");
+			throw new Error(failureCode);
+		}
+		if (snapshot?.schema !== "xingbei_native_private_card_ledger_v1") throw new Error("NATIVE_CARD_LEDGER_CAPTURE_FAILED");
 		const commitment = managedNativeCardLedger.commit(snapshot);
 		if (commitment.snapshotOrdinal !== (message.mode === "pre_native_action" ? 1 : 2)) throw new Error("NATIVE_CARD_LEDGER_SEQUENCE_INVALID");
 		process.send?.({ ...identity, type: "host_private_card_ledger_commitment", requestId: message.requestId,
@@ -2703,7 +2714,8 @@ async function snapshotNativeCardLedger(message) {
 	} catch (error) {
 		const allowed = new Set(["NATIVE_CARD_LEDGER_COMMAND_REJECTED", "NATIVE_CARD_LEDGER_CAPTURE_FAILED", "NATIVE_CARD_LEDGER_FENCE_INVALID",
 			"NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID", "NATIVE_CARD_LEDGER_ZONE_MISSING", "NATIVE_CARD_LEDGER_SEAT_SET_INVALID",
-			"NATIVE_CARD_LEDGER_SEAT_DUPLICATE", "NATIVE_CARD_LEDGER_PLAYER_ZONE_INVALID", "NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD", "NATIVE_CARD_LEDGER_ROW_INVALID",
+			"NATIVE_CARD_LEDGER_SEAT_DUPLICATE", "NATIVE_CARD_LEDGER_PLAYER_ZONE_INVALID", "NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD",
+			"NATIVE_CARD_LEDGER_CDP_REFERENCE_ERROR", "NATIVE_CARD_LEDGER_CDP_TYPE_ERROR", "NATIVE_CARD_LEDGER_CDP_EXCEPTION", "NATIVE_CARD_LEDGER_ROW_INVALID",
 			"NATIVE_CARD_LEDGER_OWNER_INVALID", "NATIVE_CARD_LEDGER_ORDER_INVALID", "NATIVE_CARD_LEDGER_ROOT_CHANGED", "NATIVE_CARD_LEDGER_SEQUENCE_INVALID"]);
 		const code = allowed.has(error?.message) ? error.message : "NATIVE_CARD_LEDGER_CAPTURE_FAILED";
 		process.send?.({ ...identity, type: "host_private_card_ledger_failed", requestId: message.requestId, mode: message.mode, code });
