@@ -100,7 +100,7 @@ function digestState(state, expected) {
 	return crypto.createHash("sha256").update(validateState(state, expected)).digest("hex");
 }
 
-function validateTransition({ before, after, event, expected }) {
+function validateTransition({ before, after, event, expected, validateNativeEvent }) {
 	try {
 		const beforeEncoded = validateState(before, expected);
 		const afterEncoded = validateState(after, expected);
@@ -113,7 +113,8 @@ function validateTransition({ before, after, event, expected }) {
 			event.stateRevisionAfter !== after.authorityStateRevision ||
 			before.roomId !== after.roomId || before.firstActSeatId !== after.firstActSeatId ||
 			before.seats.length !== after.seats.length || before.seats.some((seat, index) => seat.seatId !== after.seats[index].seatId) ||
-			beforeEncoded === afterEncoded) return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_TRANSITION_INVALID" });
+			beforeEncoded === afterEncoded || typeof validateNativeEvent !== "function" ||
+			validateNativeEvent({ before, after, event }) !== true) return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_TRANSITION_INVALID" });
 		return Object.freeze({ ok: true, beforeDigest: crypto.createHash("sha256").update(beforeEncoded).digest("hex"),
 			afterDigest: crypto.createHash("sha256").update(afterEncoded).digest("hex") });
 	} catch (error) {
@@ -121,4 +122,49 @@ function validateTransition({ before, after, event, expected }) {
 	}
 }
 
-module.exports = Object.freeze({ SCHEMA, VERSION, canonicalize, validateState, digestState, validateTransition });
+function createAuthorityStateChainV2({ initialState, expected, validateNativeEvent, maxAcceptedDigests = 64 } = {}) {
+	if (typeof validateNativeEvent !== "function" || !Number.isSafeInteger(maxAcceptedDigests) || maxAcceptedDigests < 1 || maxAcceptedDigests > 256) {
+		throw new TypeError("XINGBEI_AUTHORITY_CHAIN_V2_CONFIG_INVALID");
+	}
+	let current = JSON.parse(canonicalize(initialState));
+	let currentDigest = digestState(current, expected);
+	const accepted = new Map();
+	const digestChain = [];
+	function inspect() {
+		return Object.freeze({ schema: SCHEMA, schemaVersion: VERSION, roomId: current.roomId,
+			rootInstanceId: current.rootInstanceId, authorityEventSequence: current.authorityEventSequence,
+			authorityStateRevision: current.authorityStateRevision, authorityStateDigest: currentDigest,
+			checkpointAvailable: false, digestChain: Object.freeze(digestChain.slice()) });
+	}
+	function commit(proof) {
+		let proofDigest;
+		try { proofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex"); }
+		catch (_) { return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_PROOF_V2_INVALID" }); }
+		const sequence = proof?.event?.eventSequence;
+		if (Number.isSafeInteger(sequence) && sequence <= current.authorityEventSequence) {
+			return accepted.get(sequence) === proofDigest ? Object.freeze({ ok: true, idempotent: true, state: inspect() }) :
+				Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_REPLAY_V2_REJECTED" });
+		}
+		let beforeMatches = false;
+		try { beforeMatches = canonicalize(proof?.beforeState) === canonicalize(current); } catch (_) {}
+		if (!proof || !beforeMatches || proof.beforeDigest !== currentDigest || proof.event?.eventSequence !== current.authorityEventSequence + 1 ||
+			proof.event?.stateRevisionBefore !== current.authorityStateRevision ||
+			proof.event?.stateRevisionAfter !== current.authorityStateRevision + 1) {
+			return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_PREDECESSOR_V2_REJECTED" });
+		}
+		const validation = validateTransition({ before: current, after: proof.afterState, event: proof.event, expected, validateNativeEvent });
+		if (!validation.ok || proof.beforeDigest !== validation.beforeDigest || proof.afterDigest !== validation.afterDigest) {
+			return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_TRANSITION_V2_REJECTED" });
+		}
+		current = JSON.parse(canonicalize(proof.afterState));
+		currentDigest = validation.afterDigest;
+		accepted.set(sequence, proofDigest);
+		if (accepted.size > maxAcceptedDigests) accepted.delete(accepted.keys().next().value);
+		digestChain.push(Object.freeze({ eventSequence: sequence, beforeDigest: validation.beforeDigest, afterDigest: validation.afterDigest }));
+		if (digestChain.length > 8) digestChain.shift();
+		return Object.freeze({ ok: true, idempotent: false, state: inspect() });
+	}
+	return Object.freeze({ inspect, commit });
+}
+
+module.exports = Object.freeze({ SCHEMA, VERSION, canonicalize, validateState, digestState, validateTransition, createAuthorityStateChainV2 });
