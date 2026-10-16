@@ -828,7 +828,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_REJECT_PARENT_FENCE_EVENT4 === "1") {
 		const waiting = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_parent_fence_waiting"), 10000,
 			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), session: manager.inspect(roomId) }));
-		assert.ok(event4SubmissionCount >= 1, `the altered Event #4 proof never reached the server validation boundary: ${JSON.stringify({
+		await until(() => event4SubmissionCount >= 1, 10000, () => ({
 			session: (() => { const current = manager.inspect(roomId); return current && { state: current.state,
 				failureCode: current.failureCode, authorityFailureReason: current.authorityFailureReason,
 				authorityStateRevision: current.authorityStateRevision, lastAuthorityEvent: current.lastAuthorityEvent }; })(),
@@ -842,7 +842,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				nativeUseCardChildCompleted: entry?.snapshot?.nativeUseCardChildCompleted ?? null })),
 			fence: waiting?.snapshot && { status: waiting.snapshot.status, eventName: waiting.snapshot.parentEventName,
 				nativeEventIdPresent: typeof waiting.snapshot.nativeEventId === "string" },
-		})}`);
+		}));
+		assert.equal(event4SubmissionCount, 1, "the held native parent must produce exactly one Event #4 proof before any release");
 		assert.equal(JSON.parse(event4ProofSubmissions[0]).afterDigest, "0".repeat(64), "test mutation did not reach the authority validator");
 		await until(() => manager.inspect(roomId)?.state === "failed", 10000,
 			() => ({ session: manager.inspect(roomId), stages: nativeDiagnostic.map(entry => entry?.stage) }));
