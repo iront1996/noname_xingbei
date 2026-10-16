@@ -616,6 +616,26 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const expectedAuthorityRevision = process.env.V2_NATIVE_OPENING_DRAW_EVENT3 === "1" ?
 		(process.env.V2_NATIVE_START_PROBE_MODE?.startsWith("managed_opening_root_action_event4") ? 4 : 3) : 2;
 	const probeMode = process.env.V2_NATIVE_START_PROBE_MODE || "native_start";
+	if (process.env.V2_NATIVE_RANDOM_FAILURE_PROBE === "1") {
+		assert.equal(expectedAuthorityRevision, 3, "the runtime RNG failure probe must stop after accepted native opening draw");
+		await until(() => manager.inspect(roomId)?.authorityStateRevision === 3, 45000,
+			() => ({ session: manager.inspect(roomId), nativeDiagnostic: nativeDiagnostic.slice(-12) }));
+		assert.equal((await manager.diagnoseNativeStart(roomId, "managed_random_failure_probe")).ok, true);
+		await until(() => manager.inspect(roomId)?.state === "failed", 10000,
+			() => ({ session: manager.inspect(roomId), nativeDiagnostic: nativeDiagnostic.slice(-12) }));
+		const failed = manager.inspect(roomId);
+		assert.equal(failed.failureCode, "MANAGED_RANDOM_SOURCE_FAILED");
+		assert.equal(failed.authorityStateRevision, 3, "an RNG failure must not advance authority state beyond Event #3");
+		assert.deepEqual(failed.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+		assert.equal(failed.nextAuthorityEventSequence, 4, "the RNG-failed game must not create Event #4 or Event #5");
+		assert.equal(authoritySubmissions.some(entry => entry.proof?.eventSequence >= 4), false);
+		assert.ok(nativeDiagnostic.some(entry => entry?.stage === "managed_random_failure_binding_invoked"));
+		assert.ok(opened.every(choice => controller.inspect(roomId, choice.choiceId) === null), "host failure must clear all native choices");
+		const failedHandle = launchedHandles.get(failed.sessionId);
+		await until(() => failedHandle.resources().length === 0, 10000, () => ({ resources: failedHandle.resources() }));
+		await failedHandle.waitForCleanup();
+		return;
+	}
 	let actionDiagnosticDispatched = process.env.V2_NATIVE_C3_UNIFIED_ROOT === "1";
 	let completed;
 	let openingDrawAccepted = null;

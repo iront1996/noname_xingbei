@@ -885,6 +885,8 @@ CI `38938940057` then showed the emitted object did contain the live phase, but 
 
 CI `38939406104` validated the read-only phase-boundary observation and targetless/deadline response scenarios, but the separate Event #4 action-trustee case reached a real `yingZhan` where the responding seat had no legal response and therefore no pending controller choice. That scenario now opts into the same native card-pile fixture but retains its ordinary supported-shape selection (it does not require the targetless-specific assertion). Native dealing/filtering and trustee behavior remain real. The runtime change is covered by the release lock, and full Linux revalidation is pending.
 
+T2-C2 extension — post-ready RNG failure boundary: a fixed allowlisted callback through the exact private loopback-CDP binding now causes an authenticated HostSession failure and resource cleanup if managed WebCrypto fails during play. A zero-seed real-Chromium integration probe is now added to the Linux workflow after accepted Event #3; it must verify no Event #4/#5, revision held at 3, pending choices cleared, and Chromium/profile cleanup. Its full Linux CI is pending. The source release lock for this worktree is `087842a14398724eb45f2f0f4e23bcce99b7ec2e6951e48ceab8d0cca13c6968`.
+
 ### P1-C3-T2 continuation — controlled CDP diagnosis and managed RNG fail-closed path
 
 The approved `xingbei_managed_native_trust_v1` Model A contract remains the governing M2 trust contract. Model A trusts the isolated managed native engine for rule semantics, but provides no independent proof against arbitrary native-engine defects or compromised Chromium and no remote hardware attestation. It does not authorize a seed, Event #5, revision changes, checkpoints, production changes or deployment.

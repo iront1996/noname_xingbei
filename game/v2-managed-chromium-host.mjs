@@ -2024,7 +2024,14 @@ async function cancelManagedNativeInput(message) {
 
 async function runNativeStartDiagnostic(message) {
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !interactiveChoice?.completed || !validHostCommand(message) ||
-		!cdp || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "controlled_block"].includes(message.mode)) throw new Error("NATIVE_START_DIAGNOSTIC_REJECTED");
+		!cdp || !["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "controlled_block", "managed_random_failure_probe"].includes(message.mode) ||
+		(message.mode === "managed_random_failure_probe" && process.env.V2_NATIVE_RANDOM_FAILURE_PROBE !== "1")) throw new Error("NATIVE_START_DIAGNOSTIC_REJECTED");
+	if (message.mode === "managed_random_failure_probe") {
+		const probe = await cdp.send("Runtime.evaluate", { expression: `(()=>{const notify=window.__v2ManagedRandomFailureNotify;if(typeof notify!=='function')return {ok:false,code:'MANAGED_RANDOM_FAILURE_BINDING_MISSING'};notify('MANAGED_RANDOM_SOURCE_FAILED');return {ok:true}})()`, returnByValue: true }, 1500);
+		if (probe.exceptionDetails || probe.result?.value?.ok !== true) throw new Error(probe.result?.value?.code || "MANAGED_RANDOM_FAILURE_PROBE_FAILED");
+		emitNativeStartDiagnostic({ stage: "managed_random_failure_binding_invoked", classification: "test_only_binding_probe" });
+		return;
+	}
 	if (!nativeStartDiagnosticUnsubscribe) {
 		await cdp.send("Runtime.enable");
 		await cdp.send("Runtime.addBinding", { name: "__v2NativeStartTrace" });
