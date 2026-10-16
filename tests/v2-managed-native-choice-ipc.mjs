@@ -1651,8 +1651,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							"currentPhase must be an actual seat, not inferred from the immutable first actor");
 						assert.ok(setup.seats.some(seat => seat.seatId === audit.firstActSeatId),
 							"the original first actor must remain a separate, stable identity");
-						assert.notEqual(audit.currentSeatId, audit.firstActSeatId,
-							"after Event #4 the native root has already advanced beyond the first actor; the legacy Event #4 tip is not a current-turn snapshot");
+						const acceptedEvent4 = authoritySubmissions.find(entry => entry.proof?.eventSequence === 4)?.proof;
+						assert.ok(acceptedEvent4?.afterSummary, "the accepted Event #4 summary must remain available for boundary comparison");
+						assert.equal(acceptedEvent4.afterSummary.firstActSeatId, audit.firstActSeatId,
+							"the legacy Event #4 summary retains the original first actor identity");
+						assert.equal(Object.hasOwn(acceptedEvent4.afterSummary, "currentSeatId"), false,
+							"the legacy Event #4 tip does not claim to capture the live current turn");
 						assert.ok(Number.isSafeInteger(audit.roundNumber) && audit.roundNumber >= 0);
 						assert.ok(Number.isSafeInteger(audit.phaseNumber) && audit.phaseNumber > 0);
 						assert.equal(audit.phaseEvent?.name, "phase");
