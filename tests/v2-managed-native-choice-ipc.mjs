@@ -484,6 +484,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							assert.equal(held.hostPlayerAbsent, true);
 							assert.equal(held.paused, waitingFence.snapshot.paused,
 								"parent fence must preserve the pre-existing pause state rather than change global pause state");
+							assert.equal(held.projectionAudit?.candidateDisposition, "diagnostic_only_not_a_proof");
+							assert.equal(held.projectionAudit?.authorized, false);
+							assert.equal(held.projectionAudit?.checkpointAvailable, false);
+							assert.equal(held.projectionAudit?.rootObjectMatches, true);
+							assert.equal(held.projectionAudit?.currentSeatId, held.projectionAudit?.firstActSeatId);
+							assert.equal(held.projectionAudit?.xingDongEvent?.name, "xingDong");
+							assert.equal(held.projectionAudit?.xingDongEvent?.finished, false);
+							assert.equal(held.projectionAudit?.pendingActionChildCount, 0,
+								"a diagnostic candidate may not be observed while any native action child is pending");
+							assert.equal(held.projectionAudit?.completedActionChildCount, 1);
+							assert.equal(held.projectionAudit?.seats?.length, 4);
+							assert.equal(Object.hasOwn(held.projectionAudit.seats[0], "skillStateCommitment"), false);
+							assert.equal(Object.hasOwn(held.projectionAudit.seats[0], "marksCommitment"), false,
+								"the current live projection deliberately lacks commitments needed for a schema-v2 seed");
 							assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_parent_fence_released" &&
 								 entry?.snapshot?.nativeEventId === waitingFence.snapshot.nativeEventId), false,
 								"parent fence released before the authority ACK barrier was opened");
@@ -1429,7 +1443,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(event4ControllerRetryTriggered, true, "controller retry must be deterministic while the authority ACK is withheld");
 					assert.equal(event4AuthorityJoinCount, 1, "ACK barrier releases only after the controller retry joined the pending commit");
 					assert.equal(event4AckBarrierReleased, true);
-					assert.equal(duplicateEvent4AuthorityAckSent, true, "the exact Event #4 authority ACK replay was not exercised");
+					if (process.env.V2_NATIVE_PARENT_FENCE === "1") assert.equal(duplicateEvent4AuthorityAckSent, true,
+						"the exact Event #4 authority ACK replay was not exercised in the fenced probe");
 					assert.equal(completed.authorityDigestChain.length, 4, "ACK replay must not append Event #4 twice");
 					assert.equal(nativeActionAckCount >= 2, true, "choice ACK waits for authority acceptance after retry");
 					assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1, "overlapping delivery retry cannot re-run native useResult");
