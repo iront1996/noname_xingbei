@@ -64,7 +64,9 @@ test("seat order, uniqueness, numeric ranges, phase and digest commitments are v
 	duplicate.seats[1].seatId = duplicate.seats[0].seatId;
 	assert.throws(() => validateState(duplicate), /INVALID/);
 	assert.throws(() => validateState(state({ turn: { ...state().turn, phase: "invented" } })), /INVALID/);
-	assert.throws(() => validateState(state({ resources: { ...state().resources, hongShiQi: -1 } })), /INVALID/);
+	assert.doesNotThrow(() => validateState(state({ resources: { ...state().resources, hongShiQi: -1 } })),
+		"native Xingbei resource events may produce a value below zero before checkResult resolves the match");
+	assert.throws(() => validateState(state({ resources: { ...state().resources, hongShiQi: -1000001 } })), /INVALID/);
 	assert.throws(() => validateState(state({ cardZones: { ...state().cardZones, drawCommitment: "not-a-digest" } })), /INVALID/);
 });
 

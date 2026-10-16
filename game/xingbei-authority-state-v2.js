@@ -64,7 +64,8 @@ function validateState(state, expected = {}) {
 	if (!ownObject(state.resources, ["hongShiQi", "lanShiQi", "hongXingBei", "lanXingBei", "hongZhanJiCount", "hongZhanJiCommitment", "lanZhanJiCount", "lanZhanJiCommitment"])) {
 		throw new TypeError("XINGBEI_AUTHORITY_STATE_V2_INVALID");
 	}
-	for (const key of ["hongShiQi", "lanShiQi", "hongXingBei", "lanXingBei", "hongZhanJiCount", "lanZhanJiCount"]) assertInteger(state.resources[key], 0, MAX_COLLECTION_COUNT);
+	for (const key of ["hongShiQi", "lanShiQi", "hongXingBei", "lanXingBei"]) assertInteger(state.resources[key], -1000000, 1000000);
+	for (const key of ["hongZhanJiCount", "lanZhanJiCount"]) assertInteger(state.resources[key], 0, MAX_COLLECTION_COUNT);
 	for (const key of ["hongZhanJiCommitment", "lanZhanJiCommitment"]) if (!DIGEST.test(state.resources[key] || "")) throw new TypeError("XINGBEI_AUTHORITY_STATE_V2_INVALID");
 	if (!ownObject(state.cardZones, ["drawCount", "drawCommitment", "discardCount", "discardCommitment", "orderingCount", "orderingCommitment", "specialCount", "specialCommitment"])) {
 		throw new TypeError("XINGBEI_AUTHORITY_STATE_V2_INVALID");
