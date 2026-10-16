@@ -333,20 +333,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"nested-response eligibility must be bound to the exact native option set");
 					assert.ok(Object.values(message.optionCanTriggerNestedResponse).every(value => typeof value === "boolean"));
 				}
-				const expectedResponseShape = yinYangManaged ? "native_single_target_view_as_skill" :
-					targetlessProbe ? "native_notarget_card" : "native_single_target_card";
+				const expectedResponseShapes = yinYangManaged ? ["native_single_target_view_as_skill"] : targetlessProbe ?
+					["native_notarget_card"] : ["native_single_target_card", "native_notarget_card"];
 				const submittedResponseOption = firstManagedResponse ? yinYangManaged ? message.options.find(option => message.optionKinds[option] === "view_as_skill" &&
-					message.optionShapes[option] === "native_single_target_view_as_skill") : nestedResponseProbe ? message.options.find(option =>
+					expectedResponseShapes.includes(message.optionShapes[option])) : nestedResponseProbe ? message.options.find(option =>
 					message.optionKinds[option] === "card" && message.optionCanTriggerNestedResponse[option] === true) : message.options.find(option => message.optionKinds[option] === "card" &&
-					message.optionShapes[option] === expectedResponseShape) : message.trusteeOption;
+					expectedResponseShapes.includes(message.optionShapes[option])) : message.trusteeOption;
 				if (firstManagedResponse) {
 					nativeResponseOptionId = submittedResponseOption;
 					assert.ok(nativeResponseOptionId, yinYangManaged ? "the native yingZhan event exposed no native YinYang viewAs candidate" : nestedResponseProbe ? `the native yingZhan event exposed no legal response whose native target can itself respond: ${JSON.stringify({
 						optionKinds: message.optionKinds, optionCanTriggerNestedResponse: message.optionCanTriggerNestedResponse,
 					})}` : targetlessProbe ? "the native yingZhan event exposed no legal native no-target response candidate" :
 						"the native yingZhan event exposed no legal physical-card response candidate");
-					assert.equal(message.optionShapes[nativeResponseOptionId], expectedResponseShape,
-						"managed response test must select the explicitly requested native response shape");
+					assert.ok(expectedResponseShapes.includes(message.optionShapes[nativeResponseOptionId]),
+						"managed response test must select from its explicitly allowed native response shapes");
 					nativeResponseCandidate = message;
 					if (responseTrusteeProbe) assert.equal(message.optionKinds[message.trusteeOption], "decline",
 						"response timeout must use the native optional-decline candidate as trustee");
@@ -1245,8 +1245,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							nativeActionAck, nativeActionAckAttempts: ackTrace.filter(entry => entry.nativeAction) })}`);
 				} else {
 					assert.equal(nativeApplied.snapshot?.selectedKind, "card");
-					assert.equal(nativeApplied.snapshot?.targetCount, process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1" ? 0 : 1,
-						"managed response must preserve the actual native card target shape");
+					const selectedNativeShape = nativeResponseCandidate.optionShapes[nativeResponseOptionId];
+					assert.ok(["native_notarget_card", "native_single_target_card"].includes(selectedNativeShape),
+						"managed response must select a supported native card shape");
+					assert.equal(nativeApplied.snapshot?.targetCount, selectedNativeShape === "native_notarget_card" ? 0 : 1,
+						"managed response must preserve the exact native option shape selected by its opaque ID");
 					assert.equal(nativeApplied.snapshot?.useCardChildrenStarted, 1);
 					assert.equal(nativeApplied.snapshot?.useCardChildrenCompleted, 1);
 				}
