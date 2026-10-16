@@ -45,7 +45,7 @@ function safeNativeDiagnostic(value) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -1211,6 +1211,38 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			}
 			await until(() => controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved", 15000,
 				() => ({ choice: controller.inspect(roomId, nativeActionChoice.choiceId), host: manager.inspect(roomId), stages: nativeDiagnostic.map(entry => entry?.stage) }));
+			if (process.env.V2_NATIVE_PARENT_FENCE_AUDIT === "1" && probeMode.startsWith("managed_opening_root_action_event4")) {
+				const actionCompleted = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_event_completed"), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), host: manager.inspect(roomId) }));
+				const parentWait = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_parent_action_child_wait_completed" &&
+					entry?.snapshot?.completedChildName === "gongJiOrFaShu" && entry?.snapshot?.completedChildFinished === true), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-8), host: manager.inspect(roomId) }));
+				const nextActionStart = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_parent_next_action_child_start" &&
+					nativeDiagnostic.indexOf(entry) > nativeDiagnostic.indexOf(parentWait) && entry?.snapshot?.eventName === "gongJiOrFaShu" &&
+					entry?.snapshot?.eventParentName === "xingDong"), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-8), host: manager.inspect(roomId) }));
+				const event4Accepted = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_card_action_event_4_accepted"), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-8), host: manager.inspect(roomId) }));
+				const actionIndex = nativeDiagnostic.indexOf(actionCompleted);
+				const parentIndex = nativeDiagnostic.indexOf(parentWait);
+				const nextActionIndex = nativeDiagnostic.indexOf(nextActionStart);
+				const event4Index = nativeDiagnostic.indexOf(event4Accepted);
+				assert.ok(actionIndex >= 0 && parentIndex > actionIndex,
+					"native action completion must be observed before the xingDong parent resumes after waitNext");
+				assert.ok(nextActionIndex > parentIndex && event4Index >= 0,
+					"the same root must expose the next native action boundary and accepted Event #4");
+				assert.equal(parentWait.snapshot.parentEventName, "xingDong");
+				assert.equal(parentWait.snapshot.completedChildParentMatches, true);
+				assert.equal(parentWait.snapshot.rootObjectMatches, true);
+				assert.equal(parentWait.snapshot.gameMeAbsent, true);
+				assert.ok(parentWait.snapshot.quotas && Object.values(parentWait.snapshot.quotas).every(value => value === null || Number.isSafeInteger(value)));
+				assert.equal(nextActionStart.snapshot.rootObjectMatches, true);
+				assert.equal(nextActionStart.snapshot.gameMeAbsent, true);
+				t.diagnostic(`native parent boundary order: ${JSON.stringify({ actionCompleted: actionIndex, parentWaitNextCompleted: parentIndex,
+					nextActionChildStarted: nextActionIndex, event4AuthorityAccepted: event4Index,
+					firstUnfencedSuccessor: nextActionIndex < event4Index ? "next native action began before Event #4 acceptance" : "Event #4 accepted before next native action began",
+					parentWait: parentWait.snapshot, nextAction: nextActionStart.snapshot })}`);
+			}
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.kind,
 				["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(probeMode) ? "trustee" : "player");
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.option,
