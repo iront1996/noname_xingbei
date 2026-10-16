@@ -596,6 +596,13 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	assert.equal(cardCommitted.session.nextAuthorityEventSequence, 5);
 	assert.deepEqual(cardCommitted.session.lastAuthorityEvent, { sequence: 4, name: "gongJiOrFaShu" });
 	assert.equal(cardCommitted.session.authorityStateDigest, cardAction.afterDigest);
+	const unsupportedEvent5 = { ...cardAction, eventSequence: 5, stateRevisionBefore: 4, stateRevisionAfter: 5,
+		beforeDigest: cardAction.afterDigest, afterDigest: "ef".repeat(32), event: { ...cardAction.event,
+			kind: "xingbei_native_transition_v2", name: "phaseLoop", nativeEventId: "native_event_" + "e".repeat(32) } };
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: unsupportedEvent5 })).code,
+		"HOST_AUTHORITY_EVENT_REJECTED", "Event #5 remains disabled until a trusted schema-v2 seed and event-specific validator exist");
+	assert.equal(f.manager.inspect(bootstrap.roomId).authorityStateRevision, 4,
+		"an unsupported Event #5 must not advance the legacy authority revision");
 	const publicSessionJson = JSON.stringify(cardCommitted.session);
 	assert.equal(publicSessionJson.includes("handCommitment"), false, "public session inspection must not disclose hidden-hand commitments");
 	assert.equal(Object.hasOwn(cardCommitted.session, "secret"), false, "public session inspection must not expose the managed-host secret field");
