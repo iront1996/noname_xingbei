@@ -333,17 +333,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"nested-response eligibility must be bound to the exact native option set");
 					assert.ok(Object.values(message.optionCanTriggerNestedResponse).every(value => typeof value === "boolean"));
 				}
+				const expectedResponseShape = yinYangManaged ? "native_single_target_view_as_skill" :
+					targetlessProbe ? "native_notarget_card" : "native_single_target_card";
 				const submittedResponseOption = firstManagedResponse ? yinYangManaged ? message.options.find(option => message.optionKinds[option] === "view_as_skill" &&
 					message.optionShapes[option] === "native_single_target_view_as_skill") : nestedResponseProbe ? message.options.find(option =>
 					message.optionKinds[option] === "card" && message.optionCanTriggerNestedResponse[option] === true) : message.options.find(option => message.optionKinds[option] === "card" &&
-					(!targetlessProbe || message.optionShapes[option] === "native_notarget_card")) : message.trusteeOption;
+					message.optionShapes[option] === expectedResponseShape) : message.trusteeOption;
 				if (firstManagedResponse) {
 					nativeResponseOptionId = submittedResponseOption;
 					assert.ok(nativeResponseOptionId, yinYangManaged ? "the native yingZhan event exposed no native YinYang viewAs candidate" : nestedResponseProbe ? `the native yingZhan event exposed no legal response whose native target can itself respond: ${JSON.stringify({
 						optionKinds: message.optionKinds, optionCanTriggerNestedResponse: message.optionCanTriggerNestedResponse,
 					})}` : targetlessProbe ? "the native yingZhan event exposed no legal native no-target response candidate" :
 						"the native yingZhan event exposed no legal physical-card response candidate");
-					if (targetlessProbe) assert.equal(message.optionShapes[nativeResponseOptionId], "native_notarget_card");
+					assert.equal(message.optionShapes[nativeResponseOptionId], expectedResponseShape,
+						"managed response test must select the explicitly requested native response shape");
 					nativeResponseCandidate = message;
 					if (responseTrusteeProbe) assert.equal(message.optionKinds[message.trusteeOption], "decline",
 						"response timeout must use the native optional-decline candidate as trustee");
