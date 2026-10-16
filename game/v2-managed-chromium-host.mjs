@@ -2566,7 +2566,7 @@ async function snapshotNativeStart(message) {
 					discard:Number.isSafeInteger(core.ui.discardPile?.childElementCount)?core.ui.discardPile.childElementCount:null,
 					ordering:Number.isSafeInteger(core.ui.ordering?.childElementCount)?core.ui.ordering.childElementCount:null,
 					special:Number.isSafeInteger(core.ui.special?.childElementCount)?core.ui.special.childElementCount:null}:null,
-				seats:(game?.players||[]).map(player=>({seatId:player.playerid||null,character:typeof player.name1==='string'?player.name1:null,
+				seats:(game?.players||[]).map(player=>({seatId:player.playerid||null,position:Number.isSafeInteger(Number(player.dataset?.position))?Number(player.dataset.position):null,character:typeof player.name1==='string'?player.name1:null,
 					side:typeof player.side==='boolean'?player.side:null,alive:typeof player.isIn==='function'?player.isIn():null,
 					hp:Number.isSafeInteger(player.hp)?player.hp:null,maxHp:Number.isSafeInteger(player.maxHp)?player.maxHp:null,
 					zhiLiao:Number.isSafeInteger(player.zhiLiao)?player.zhiLiao:null,hujia:player.hujia===undefined?0:Number.isSafeInteger(player.hujia)?player.hujia:null,
