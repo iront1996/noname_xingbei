@@ -1335,6 +1335,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(phaseBoundary.snapshot.rootObjectMatches, true);
 				assert.equal(phaseBoundary.snapshot.gameMeAbsent, true);
 				assert.equal(phaseBoundary.snapshot.connectedTransports, 0);
+				const phaseBoundaryAuthority = manager.inspect(roomId);
+				assert.equal(phaseBoundaryAuthority.authorityStateRevision, 4);
+				assert.equal(phaseBoundaryAuthority.nextAuthorityEventSequence, 5);
+				assert.equal(phaseBoundaryAuthority.authorityStateDigest, phaseBoundary.snapshot.priorAuthorityFence.releaseResolution.afterDigest,
+					"the read-only boundary audit must not seed or advance the authority chain");
+				assert.equal(phaseBoundaryAuthority.checkpointAvailable, false);
 				assert.deepEqual(phaseBoundary.snapshot.priorAuthorityFence, {
 					status: "released", releaseCount: 1, nativeEventId: nativeActionCandidate.nativeEventId,
 					releaseResolution: { eventSequence: 4, stateRevision: 4, afterDigest: manager.inspect(roomId).authorityStateDigest },
