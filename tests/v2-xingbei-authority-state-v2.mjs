@@ -111,7 +111,7 @@ test("server canonical chain accepts one validated transition and exact proof re
 	const event = { kind: "xingbei_native_transition_v2", nativeEventId: "native_evt_5", nativeEventName: "gongJiOrFaShu",
 		eventSequence: 5, stateRevisionBefore: 4, stateRevisionAfter: 5, rootInstanceId: "root_p1", completed: true, pendingChildCount: 0 };
 	const proof = { beforeState, afterState, event, beforeDigest: digestState(beforeState), afterDigest: digestState(afterState) };
-	const chain = createAuthorityStateChainV2({ initialState: beforeState, validateNativeEvent: () => true });
+	const chain = createAuthorityStateChainV2({ initialState: beforeState, validateInitialState: () => true, validateNativeEvent: () => true });
 	assert.equal(chain.commit(proof).ok, true);
 	assert.equal(chain.inspect().authorityEventSequence, 5);
 	assert.equal(chain.inspect().authorityStateRevision, 5);
@@ -132,11 +132,17 @@ test("authority chain rejects missing/failed event validator, stale predecessor 
 	const event = { kind: "xingbei_native_transition_v2", nativeEventId: "native_evt_5", nativeEventName: "gongJiOrFaShu",
 		eventSequence: 5, stateRevisionBefore: 4, stateRevisionAfter: 5, rootInstanceId: "root_p1", completed: true, pendingChildCount: 0 };
 	const baseProof = { beforeState, afterState, event, beforeDigest: digestState(beforeState), afterDigest: digestState(afterState) };
-	assert.throws(() => createAuthorityStateChainV2({ initialState: beforeState }), /CONFIG_INVALID/);
-	const failedValidator = createAuthorityStateChainV2({ initialState: beforeState, validateNativeEvent: () => false });
+	assert.throws(() => createAuthorityStateChainV2({ initialState: beforeState, validateNativeEvent: () => true }), /CONFIG_INVALID/);
+	assert.throws(() => createAuthorityStateChainV2({ initialState: beforeState, validateInitialState: () => false,
+		validateNativeEvent: () => true }), /INITIAL_STATE_REJECTED/);
+	let observedInitial;
+	const failedValidator = createAuthorityStateChainV2({ initialState: beforeState,
+		validateInitialState: value => { observedInitial = value; return true; }, validateNativeEvent: () => false });
+	assert.notEqual(observedInitial.state, beforeState, "initializer must receive a detached candidate, not mutable internal state");
+	assert.equal(failedValidator.inspect().authorityStateRevision, 4, "the accepted native boundary seeds revision 4 explicitly");
 	assert.equal(failedValidator.commit(baseProof).ok, false);
 	const staleProof = { ...baseProof, beforeDigest: digest("0") };
-	const chain = createAuthorityStateChainV2({ initialState: beforeState, validateNativeEvent: () => true });
+	const chain = createAuthorityStateChainV2({ initialState: beforeState, validateInitialState: () => true, validateNativeEvent: () => true });
 	assert.equal(chain.commit(staleProof).code, "XINGBEI_AUTHORITY_PREDECESSOR_V2_REJECTED");
 	assert.equal(chain.commit({ ...baseProof, afterState: { ...afterState, authorityStateRevision: 6 },
 		event: { ...event, stateRevisionAfter: 6 } }).code,

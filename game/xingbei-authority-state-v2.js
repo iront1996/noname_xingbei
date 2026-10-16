@@ -123,11 +123,20 @@ function validateTransition({ before, after, event, expected, validateNativeEven
 	}
 }
 
-function createAuthorityStateChainV2({ initialState, expected, validateNativeEvent, maxAcceptedDigests = 64 } = {}) {
-	if (typeof validateNativeEvent !== "function" || !Number.isSafeInteger(maxAcceptedDigests) || maxAcceptedDigests < 1 || maxAcceptedDigests > 256) {
+function createAuthorityStateChainV2({ initialState, expected, validateInitialState, validateNativeEvent, maxAcceptedDigests = 64 } = {}) {
+	if (typeof validateInitialState !== "function" || typeof validateNativeEvent !== "function" ||
+		!Number.isSafeInteger(maxAcceptedDigests) || maxAcceptedDigests < 1 || maxAcceptedDigests > 256) {
 		throw new TypeError("XINGBEI_AUTHORITY_CHAIN_V2_CONFIG_INVALID");
 	}
-	let current = JSON.parse(canonicalize(initialState));
+	let current;
+	try {
+		current = JSON.parse(validateState(initialState, expected));
+	} catch (_) {
+		throw new TypeError("XINGBEI_AUTHORITY_CHAIN_V2_INITIAL_STATE_REJECTED");
+	}
+	let initialAccepted = false;
+	try { initialAccepted = validateInitialState({ state: JSON.parse(canonicalize(current)), expected }) === true; } catch (_) {}
+	if (!initialAccepted) throw new TypeError("XINGBEI_AUTHORITY_CHAIN_V2_INITIAL_STATE_REJECTED");
 	let currentDigest = digestState(current, expected);
 	const accepted = new Map();
 	const digestChain = [];
