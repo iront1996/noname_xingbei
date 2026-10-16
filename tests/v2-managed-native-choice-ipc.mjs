@@ -454,6 +454,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 				ackTrace.push({ at: Date.now(), choiceId: message.choiceId, nativeAction: nativeActionChoice?.choiceId === message.choiceId, nativeResponse: isNativeResponseAck, dropAcks,
 					responseEventCompleted: message.nativeResponseEventCompleted === true,
+					nativeCompletionOrdinal: Number.isSafeInteger(message.nativeCompletionOrdinal) ? message.nativeCompletionOrdinal : null,
 					choiceState: controller.inspect(roomId, message.choiceId)?.state || null,
 					nativeApplied: message.nativeApplied === true, authorityEventSequence: message.authorityEventSequence || null });
 				if (isNativeResponseAck && dropNativeResponseAckOnce &&
@@ -1309,8 +1310,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					const nativeResponseAck = ackTrace.find(entry => entry.choiceId === nativeResponseChoice.choiceId);
 					const authorityEvent4 = nativeDiagnostic.find(entry => entry?.stage === "native_card_action_event_4_accepted");
 					const nativeActionAck = ackTrace.find(entry => entry.nativeAction && entry.authorityEventSequence === 4);
-					assert.ok(nativeApplied.at <= nativeResponseAck?.at,
-						"the native skill effects must be observed before its response ACK reaches the controller");
+					assert.ok(Number.isSafeInteger(nativeApplied.snapshot?.nativeCompletionOrdinal) && nativeApplied.snapshot.nativeCompletionOrdinal > 0,
+						"the native engine must stamp the completed response after validating its child effects");
+					assert.equal(nativeResponseAck?.nativeCompletionOrdinal, nativeApplied.snapshot.nativeCompletionOrdinal,
+						"the response ACK must reference the exact native completion proof; parent IPC receive-time ordering is not a native execution order");
 					assert.ok(nativeResponseAck?.at < authorityEvent4?.receivedAt,
 						`response acknowledgement ordering mismatch: ${JSON.stringify({ nativeAppliedAt: nativeApplied.at,
 							responseAck: nativeResponseAck, authorityEvent4At: authorityEvent4?.receivedAt,
@@ -1355,8 +1358,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					const results = nativeResponseAckResults.filter(ack => ack.choiceId === entry.choice.choiceId);
 					const accepted = results.filter(ack => ack.accepted === true);
 					const duplicateAfterResolve = results.filter(ack => ack.before === "resolved");
+					const completed = nativeDiagnostic.find(item => item?.stage === "native_response_applied" && item?.snapshot?.nativeEventId === entry.candidate.nativeEventId);
+					const ackAttempts = ackTrace.filter(item => item.choiceId === entry.choice.choiceId);
 					return accepted.length === 1 && accepted[0].responseEventCompleted === true &&
-						duplicateAfterResolve.every(ack => ack.accepted === false && ack.result === "MANAGED_CHOICE_ACK_REJECTED");
+						duplicateAfterResolve.every(ack => ack.accepted === false && ack.result === "MANAGED_CHOICE_ACK_REJECTED") &&
+						Number.isSafeInteger(completed?.snapshot?.nativeCompletionOrdinal) && completed.snapshot.nativeCompletionOrdinal > 0 &&
+						ackAttempts.length >= 1 && ackAttempts.every(ack => ack.nativeCompletionOrdinal === completed.snapshot.nativeCompletionOrdinal);
 				}), `each native response must have exactly one accepted post-completion ACK; retries after resolution must be rejected without reapplying: ${JSON.stringify({ nativeResponseChoices: nativeResponseChoices.map(entry => entry.choice.choiceId), nativeResponseAckResults, ackTrace: ackTrace.slice(-12) })}`);
 				assert.ok(nativeResponseChoices.every(entry => nativeResponseAckResults.some(ack => ack.choiceId === entry.choice.choiceId && ack.accepted && ack.responseEventCompleted)),
 					"controller must accept each post-completion ACK before its host session is cleaned up");

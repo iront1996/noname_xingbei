@@ -1410,7 +1410,8 @@ async function applyManagedNativeResponseDelivery(message) {
 						seatId: gate.seatId, choiceId: prior.choiceId, deliveryId: prior.deliveryId } });
 				process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: prior.choiceId,
 					deliveryId: prior.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true,
-					nativeResponseEventCompleted: true, nativeUseCardChildCount: completion.useCardChildrenCompleted });
+					nativeResponseEventCompleted: true, nativeUseCardChildCount: completion.useCardChildrenCompleted,
+					nativeCompletionOrdinal: completion.nativeCompletionOrdinal });
 			}
 			return;
 		}
@@ -1420,7 +1421,8 @@ async function applyManagedNativeResponseDelivery(message) {
 				seatId: gate.seatId, choiceId: prior.choiceId, deliveryId: prior.deliveryId } });
 		process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: prior.choiceId,
 			deliveryId: prior.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true,
-			nativeResponseEventCompleted: true, nativeUseCardChildCount: gate.useCardChildrenCompleted });
+			nativeResponseEventCompleted: true, nativeUseCardChildCount: gate.useCardChildrenCompleted,
+			nativeCompletionOrdinal: gate.completedProof?.nativeCompletionOrdinal });
 		return;
 	}
 	if (gate.status !== "waiting" || !gate.optionIds.includes(optionId)) throw new Error("NATIVE_RESPONSE_OPTION_REJECTED");
@@ -1539,10 +1541,11 @@ async function inspectNativeResponseDelivery(gate, delivery) {
 		  selectedKind:r.selectedKind,bool:r.bool,hasCardName:typeof r.cardName==='string'&&r.cardName.length>0,
 		  targetSeatId:r.targetSeatId||null,targetCount:r.targetCount,useCardChildrenStarted:r.useCardChildrenStarted,
 		  useCardChildrenCompleted:r.useCardChildrenCompleted,skillId:r.skillId||null,physicalMaterialConsumed:r.physicalMaterialConsumed===true,
-		  xiBieApplied:r.xiBieApplied===true,guiHuoDelta:Number.isSafeInteger(r.guiHuoDelta)?r.guiHuoDelta:null};
+		  xiBieApplied:r.xiBieApplied===true,guiHuoDelta:Number.isSafeInteger(r.guiHuoDelta)?r.guiHuoDelta:null,
+		  nativeCompletionOrdinal:r.nativeCompletionOrdinal};
 	 })()`, returnByValue: true }, 1500);
 		const proof = response.result?.value;
-		if (response.exceptionDetails || !proof || proof.found !== true) return null;
+		if (response.exceptionDetails || !proof || proof.found !== true || !Number.isSafeInteger(proof.nativeCompletionOrdinal) || proof.nativeCompletionOrdinal < 1) return null;
 		const kind = gate.optionKinds?.[delivery.optionId];
 		const identityMatches = proof.nativeEventId === gate.nativeEventId && proof.seatId === gate.seatId &&
 			proof.eventName === "yingZhan" && proof.rootObjectMatches === true && proof.rootInstanceId === gate.rootInstanceId &&
@@ -1559,7 +1562,8 @@ async function inspectNativeResponseDelivery(gate, delivery) {
 			kind === "decline" && proof.bool === false && proof.selectedKind === "decline" && proof.targetCount === 0 &&
 			proof.useCardChildrenStarted === 0 && proof.useCardChildrenCompleted === 0;
 		if (!identityMatches || !resultMatches) return null;
-		return Object.freeze({ applied: true, useCardChildrenCompleted: proof.useCardChildrenCompleted });
+		return Object.freeze({ applied: true, useCardChildrenCompleted: proof.useCardChildrenCompleted,
+			nativeCompletionOrdinal: proof.nativeCompletionOrdinal });
 	} catch (_) { return null; }
 }
 
@@ -1827,6 +1831,7 @@ function emitNativeStartDiagnostic(observed) {
 		const selectedKind = delivery && gate.optionKinds?.[delivery.optionId];
 		const nativeCompletionValid = proof?.nativeEventId === gate.nativeEventId && proof?.seatId === gate.seatId &&
 			proof?.eventName === "yingZhan" && proof?.rootObjectMatches === true &&
+			Number.isSafeInteger(proof?.nativeCompletionOrdinal) && proof.nativeCompletionOrdinal > 0 &&
 			(!gate.rootInstanceId || proof?.rootInstanceId === gate.rootInstanceId) && proof?.gameMeAbsent === true &&
 			(selectedKind === "view_as_skill" ? proof?.bool === true && proof?.selectedKind === "view_as_skill" &&
 				proof?.skillId === "yinYangZhanHuan" && proof?.physicalMaterialConsumed === true && proof?.xiBieApplied === true &&
@@ -1848,11 +1853,12 @@ function emitNativeStartDiagnostic(observed) {
 				useCardChildrenStarted: proof.useCardChildrenStarted, useCardChildrenCompleted: proof.useCardChildrenCompleted,
 				...(proof.selectedKind === "view_as_skill" ? { skillId: proof.skillId, physicalMaterialConsumed: proof.physicalMaterialConsumed,
 					xiBieApplied: proof.xiBieApplied, resolvedXiBie: proof.resolvedXiBie, guiHuoDelta: proof.guiHuoDelta } : {}),
-				rootInstanceId: proof.rootInstanceId });
+				rootInstanceId: proof.rootInstanceId, nativeCompletionOrdinal: proof.nativeCompletionOrdinal });
 			if (!delivery.ackSent) {
 				delivery.ackSent = true;
 				const ack = { ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: delivery.choiceId,
 					deliveryId: delivery.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true,
+					nativeCompletionOrdinal: proof.nativeCompletionOrdinal,
 					nativeResponseEventCompleted: true, nativeUseCardChildCount: proof.useCardChildrenCompleted };
 				process.send?.(ack);
 				if (delivery.ackRetryRequested) {
@@ -2225,7 +2231,8 @@ async function runNativeStartDiagnostic(message) {
 	       targetProof:Boolean(targetProof),...(skillProof?{skillProof}:{}),gameMeAbsent:game.me===null};
 	       try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_completion_proof_rejected',snapshot:proof}))}catch{}
 	       emit('native_response_completion_proof_rejected',proof);throw Error('NATIVE_RESPONSE_COMPLETION_PROOF_REJECTED')}
-	      gate.status='applied';gate.delivery.status='applied';gate.completedResult={bool:event.result.bool,selectedKind:selected.kind,
+	      const nativeCompletionOrdinal=(state.nativeResponseCompletionOrdinal||0)+1;if(!Number.isSafeInteger(nativeCompletionOrdinal)||nativeCompletionOrdinal>1000000)throw Error('NATIVE_RESPONSE_COMPLETION_SEQUENCE_EXHAUSTED');state.nativeResponseCompletionOrdinal=nativeCompletionOrdinal;
+	      gate.status='applied';gate.delivery.status='applied';gate.completedResult={nativeCompletionOrdinal,bool:event.result.bool,selectedKind:selected.kind,
 	       ...(selected.kind==='card'?{cardName:selected.card?.name||null}:{}),targetSeatId:selected.target?.playerid||null,targetCount:event.result?.targets?.length||0,
 	       useCardChildrenStarted:gate.useCardChildrenStarted,useCardChildrenCompleted:gate.useCardChildrenCompleted,
 	      ...(selected.kind==='view_as_skill'?{skillId:selected.skillId,physicalMaterialConsumed:gate.nativeSkillEffectProof.materialStillInHand===false,
@@ -2242,7 +2249,6 @@ async function runNativeStartDiagnostic(message) {
 	    }
 	    if(event===state.nativeUseCardChildEvent&&state.nativeAction){state.nativeAction.nativeUseCardChildCompleted=true;state.nativeAction.nativeUseCardChildStep=Number.isSafeInteger(event.step)?event.step:null;state.nativeAction.nativeUseCardChildName=event.name||null;state.nativeUseCardChildName=event.name||null;emit('native_useCard_child_completed')}
 	    if(${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")}==='use_card_child_throws'&&event===state.nativeUseCardChildEvent){const action=state.nativeAction,mapping=window.__v2ManagedNativeActionOptions?.get(action?.optionId),player=event.player;action.status='uncertain';action.childEventName=event.name;action.childEventStep=event.step;action.cardInHandAtFailure=Boolean(mapping&&player.getCards('h').includes(mapping.card));action.nativeUseCardHistoryEntries=player.getHistory('useCard').filter(item=>item===event).length;state.failureCode='NATIVE_USE_CARD_CHILD_FAILED';emit('native_useCard_child_exception');throw Error('INJECTED_USE_CARD_CHILD_SETTLEMENT_EXCEPTION')}
-	    if(responseEvent&&event.__v2ManagedResponseGate){const gate=event.__v2ManagedResponseGate,delivery=gate.delivery;if(delivery?.status==='applying'){delivery.status='applied';gate.status='applied';process.send?.({...identity,type:'host_choice_ack',seatId:gate.seatId,choiceId:delivery.choiceId,deliveryId:delivery.deliveryId,nativeEventId:gate.nativeEventId,nativeApplied:true,nativeResponseEventCompleted:true,nativeUseCardChildCount:gate.useCardChildrenCompleted})}}
 	    return value
 	   })
 	  };
