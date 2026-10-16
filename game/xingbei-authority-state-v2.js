@@ -11,6 +11,7 @@ const PHASES = new Set(["phaseLoop", "phase", "xingDong", "between_turns"]);
 const MAX_SEATS = 8;
 const MAX_COLLECTION_COUNT = 512;
 const MAX_CANONICAL_BYTES = 65536;
+const MAX_PROOF_BYTES = 160000;
 
 function ownObject(value, keys) {
 	return Boolean(value && Object.getPrototypeOf(value) === Object.prototype &&
@@ -138,7 +139,11 @@ function createAuthorityStateChainV2({ initialState, expected, validateNativeEve
 	}
 	function commit(proof) {
 		let proofDigest;
-		try { proofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex"); }
+		try {
+			const encodedProof = canonicalize(proof);
+			if (Buffer.byteLength(encodedProof, "utf8") > MAX_PROOF_BYTES) return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_PROOF_V2_INVALID" });
+			proofDigest = crypto.createHash("sha256").update(encodedProof).digest("hex");
+		}
 		catch (_) { return Object.freeze({ ok: false, code: "XINGBEI_AUTHORITY_PROOF_V2_INVALID" }); }
 		const sequence = proof?.event?.eventSequence;
 		if (Number.isSafeInteger(sequence) && sequence <= current.authorityEventSequence) {

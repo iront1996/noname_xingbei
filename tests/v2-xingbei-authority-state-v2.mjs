@@ -141,6 +141,8 @@ test("authority chain rejects missing/failed event validator, stale predecessor 
 	assert.equal(chain.commit({ ...baseProof, afterState: { ...afterState, authorityStateRevision: 6 },
 		event: { ...event, stateRevisionAfter: 6 } }).code,
 		"XINGBEI_AUTHORITY_PREDECESSOR_V2_REJECTED");
+	assert.equal(chain.commit({ ...baseProof, padding: "x".repeat(170000) }).code,
+		"XINGBEI_AUTHORITY_PROOF_V2_INVALID");
 	assert.equal(chain.inspect().authorityStateRevision, 4);
 });
 
