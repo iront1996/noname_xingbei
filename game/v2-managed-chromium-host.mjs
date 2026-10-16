@@ -27,6 +27,7 @@ const nativeAuthorityAckWaiters = new Map();
 const nativeStartDiagnosticRing = [];
 let nativeStartDiagnosticUnsubscribe = null;
 let nativeFailureReported = false;
+let nativeFaultApplyBarrier = null;
 const chromiumStartupStderr = [];
 
 function safeChromiumStartupDiagnostics() {
@@ -1221,7 +1222,32 @@ async function applyManagedNativeResponseDelivery(message) {
 	}
 	if (gate.status !== "waiting" || !gate.optionIds.includes(optionId)) throw new Error("NATIVE_RESPONSE_OPTION_REJECTED");
 	const delivery = gate.delivery = { choiceId: message.choiceId, deliveryId: message.deliveryId, optionId, status: "applying" };
+	const faultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
+	const executionFaultModes = ["viewas_result_assignment_throws", "viewas_useCard_child_throws", "viewas_partial_effect_throws", "viewas_partial_effect_stop"];
+	let faultBarrier = null;
+	if (executionFaultModes.includes(faultMode)) {
+		let release;
+		const released = new Promise(resolve => { release = resolve; });
+		const timer = setTimeout(() => {
+			if (nativeFaultApplyBarrier?.choiceId === message.choiceId && nativeFaultApplyBarrier.deliveryId === message.deliveryId) {
+				nativeFaultApplyBarrier = null;
+				release(false);
+			}
+		}, 10000);
+		if (timer.unref) timer.unref();
+		faultBarrier = { choiceId: message.choiceId, deliveryId: message.deliveryId, nativeEventId: gate.nativeEventId, release, timer, released };
+		nativeFaultApplyBarrier = faultBarrier;
+	}
 	await notifyChoiceDeliveryApplying({ ...delivery, nativeEventId: gate.nativeEventId, seatId: gate.seatId });
+	if (faultBarrier) {
+		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
+			observed: { kind: "native_viewas_fault_barrier_v1", stage: "native_viewas_delivery_preapply_barrier",
+				choiceId: message.choiceId, deliveryId: message.deliveryId, seatId: gate.seatId } });
+		const released = await faultBarrier.released;
+		clearTimeout(faultBarrier.timer);
+		if (nativeFaultApplyBarrier === faultBarrier) nativeFaultApplyBarrier = null;
+		if (released !== true) throw new Error("NATIVE_VIEWAS_FAULT_BARRIER_TIMEOUT");
+	}
 	const applied = await cdp.send("Runtime.evaluate", { expression: `(()=>{
 	 const s=window.__v2NativeStartDiagnosticState,g=s?.managedNativeResponseGates?.get(${JSON.stringify(gate.nativeEventId)}),o=g?.options?.get(${JSON.stringify(optionId)}),
 	  core=window.__v2ManagedEngine?.core,game=core?.game,event=g?.event,player=event?.player;
@@ -2139,6 +2165,19 @@ process.on("message", message => {
 	}
 	if (message?.type === "host_stop") {
 		cleanup().finally(() => process.exit(0));
+		return;
+	}
+	if (message?.type === "host_native_fault_release" && validHostCommand(message) &&
+		["viewas_result_assignment_throws", "viewas_useCard_child_throws", "viewas_partial_effect_throws", "viewas_partial_effect_stop"].includes(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "") &&
+		Object.keys(message).sort().join(",") === "choiceId,deliveryId,kind,protocol,roomId,secret,sessionId,type" &&
+		nativeFaultApplyBarrier?.choiceId === message.choiceId && nativeFaultApplyBarrier.deliveryId === message.deliveryId) {
+		const barrier = nativeFaultApplyBarrier;
+		nativeFaultApplyBarrier = null;
+		clearTimeout(barrier.timer);
+		barrier.release(true);
+		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: barrier.nativeEventId,
+			observed: { kind: "native_viewas_fault_barrier_v1", stage: "native_viewas_delivery_preapply_released",
+				choiceId: barrier.choiceId, deliveryId: barrier.deliveryId } });
 		return;
 	}
 	if (message?.type === "host_authority_event_ack" && validHostCommand(message) &&
