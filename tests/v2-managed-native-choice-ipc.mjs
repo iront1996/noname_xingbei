@@ -45,7 +45,7 @@ function safeNativeDiagnostic(value) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -1314,6 +1314,38 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					"the next native action must observe the immutable server-accepted Event #4 release tuple");
 				assert.equal(successor.snapshot.rootObjectMatches, true);
 				assert.equal(successor.snapshot.gameMeAbsent, true);
+			}
+			if (process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1") {
+				const phaseBoundary = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&
+					entry?.snapshot?.isCompletedPhaseBoundary === true), 5000,
+					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-12), host: manager.inspect(roomId) }));
+				assert.equal(phaseBoundary.snapshot.eventName, "phaseLoop");
+				assert.equal(phaseBoundary.snapshot.eventStep, 1);
+				assert.equal(phaseBoundary.snapshot.completedChildName, "phase");
+				assert.equal(phaseBoundary.snapshot.completedChildFinished, true);
+				assert.equal(phaseBoundary.snapshot.completedChildParentMatches, true);
+				assert.equal(phaseBoundary.snapshot.pendingChildCount, 0);
+				assert.equal(phaseBoundary.snapshot.nextCount, 0);
+				assert.equal(phaseBoundary.snapshot.eventStackTop, "phaseLoop");
+				assert.equal(phaseBoundary.snapshot.eventStack.includes("phase"), false);
+				assert.equal(phaseBoundary.snapshot.currentPhaseSeatId, null);
+				assert.equal(phaseBoundary.snapshot.loopSeatId, phaseBoundary.snapshot.firstActSeatId);
+				assert.equal(phaseBoundary.snapshot.loopSeatId, nativeActionCandidate.seatId);
+				assert.match(phaseBoundary.snapshot.rootInstanceId, /^native_root_[A-Za-z0-9_-]{16,96}$/);
+				assert.equal(phaseBoundary.snapshot.rootObjectMatches, true);
+				assert.equal(phaseBoundary.snapshot.gameMeAbsent, true);
+				assert.equal(phaseBoundary.snapshot.connectedTransports, 0);
+				assert.deepEqual(phaseBoundary.snapshot.priorAuthorityFence, {
+					status: "released", releaseCount: 1, nativeEventId: nativeActionCandidate.nativeEventId,
+					releaseResolution: { eventSequence: 4, stateRevision: 4, afterDigest: manager.inspect(roomId).authorityStateDigest },
+				}, "the completed native phase must follow, not precede, accepted Event #4");
+				const phaseBoundaryIndex = nativeDiagnostic.indexOf(phaseBoundary);
+				const nextActionStartIndex = nativeDiagnostic.findIndex(entry => entry?.stage === "native_parent_next_action_child_start" &&
+					entry?.snapshot?.priorParentFence?.status === "released");
+				assert.ok(nextActionStartIndex > phaseBoundaryIndex,
+					"phaseLoop must expose a completed, empty phase boundary before starting the next native action");
+				t.diagnostic(`native phase boundary candidate: ${JSON.stringify({ phaseBoundary: phaseBoundary.snapshot,
+					nextActionStartIndex, phaseBoundaryIndex, transitionAuthorized: false, seedAuthorized: false })}`);
 			}
 			if (process.env.V2_NATIVE_PARENT_FENCE_AUDIT === "1" && probeMode.startsWith("managed_opening_root_action_event4")) {
 				const actionCompleted = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_event_completed"), 5000,

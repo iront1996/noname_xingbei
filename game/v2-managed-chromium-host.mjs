@@ -1994,6 +1994,23 @@ async function runNativeStartDiagnostic(message) {
 	   })
 	  };
 	  GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;emit('wait_next_begin');return originalWaitNext.apply(this,args).then(async value=>{state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};if(event===state.inputEvent&&state.nativeAction?.eventId===event.__v2NativeEventId&&state.nativeAction.useResultCount===1){const mapping=window.__v2ManagedNativeActionOptions.get(state.nativeAction.optionId);state.nativeAction.nativeChildWaitCompleted=true;state.nativeAction.nativeEventInstanceMatches=event===state.nativeInputResumeGate?.event;state.nativeAction.nativeEventStepAfterWait=Number.isSafeInteger(event.step)?event.step:null;state.nativeAction.cardInHandAfterNativeWait=Boolean(mapping&&event.player.getCards('h').includes(mapping.card));state.nativeAction.cardPositionAfterNativeWait=mapping?get.position(mapping.card):null;state.nativeAction.status='native_child_wait_completed';emit('native_action_child_wait_completed')}
+	   if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1")}&&event.name==='phaseLoop'){
+	    const children=Array.isArray(event.childEvents)?event.childEvents:[],completedChild=[...children].reverse().find(child=>child?.finished===true),pendingChildren=children.filter(child=>child?.finished!==true).length+(Array.isArray(event.next)?event.next.filter(child=>child&&child.finished!==true).length:0);
+	    const phaseBoundary=event.step===1&&completedChild?.name==='phase'&&completedChild.parent===event&&pendingChildren===0;
+	    const snapshot={boundary:'phaseLoop_wait_next_after_child',isCompletedPhaseBoundary:phaseBoundary,eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,
+	     loopSeatId:event.player?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,currentPhaseSeatId:_status.currentPhase?.playerid||null,
+	     completedChildName:completedChild?.name||null,completedChildFinished:completedChild?.finished===true,completedChildParentMatches:completedChild?.parent===event,
+	     completedChildSeatId:completedChild?.player?.playerid||null,completedChildStep:Number.isSafeInteger(completedChild?.step)?completedChild.step:null,
+	     pendingChildCount:pendingChildren,childEventCount:children.length,nextCount:Array.isArray(event.next)?event.next.length:null,
+	     eventStack:manager.eventStack.map(item=>item.name||null),eventStackTop:manager.eventStack.at(-1)?.name||null,
+	     phaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:null,roundNumber:Number.isSafeInteger(game.roundNumber)?game.roundNumber:null,
+	     rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,
+	     priorAuthorityFence:state.nativeParentContinuationFence?{status:state.nativeParentContinuationFence.status||null,releaseCount:state.nativeParentContinuationFence.releaseCount||0,
+	      nativeEventId:state.nativeParentContinuationFence.nativeEventId||null,releaseResolution:state.nativeParentContinuationFence.releaseResolution||null}:null,
+	     gameMeAbsent:game.me===null,connectedTransports:game.players.filter(player=>player.ws).length};
+	    state.nativePhaseLoopBoundaryAudit??=[];state.nativePhaseLoopBoundaryAudit.push(snapshot);if(state.nativePhaseLoopBoundaryAudit.length>8)state.nativePhaseLoopBoundaryAudit.shift();
+	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_loop_wait_next_boundary',snapshot}))}catch{}
+	   }
 	   if(${JSON.stringify(process.env.V2_NATIVE_PARENT_FENCE_AUDIT === "1")}&&event.name==='xingDong'){
 	    const completedChild=[...(event.childEvents||[])].reverse().find(child=>child.action===true&&child.finished===true),player=event.player;
 	    const snapshot={boundary:'parent_wait_next_child_completed',parentEventName:event.name,parentEventStep:Number.isSafeInteger(event.step)?event.step:null,parentFinished:event.finished===true,
