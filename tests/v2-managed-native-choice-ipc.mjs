@@ -1335,6 +1335,40 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(liveSnapshot.hostPlayerAbsent, true);
 						assert.equal(liveSnapshot.responseGates.every(gate => gate.status === "applied"), true,
 							"the read-only snapshot must expose no stranded managed response gate after Event #4");
+						const audit = liveSnapshot.projectionAudit;
+						assert.equal(audit?.kind, "xingbei_authority_projection_audit_v1");
+						assert.equal(audit.candidateDisposition, "diagnostic_only_not_a_proof");
+						assert.equal(audit.authorized, false, "a diagnostic projection audit must never authorize the v2 seed");
+						assert.equal(audit.checkpointAvailable, false);
+						assert.equal(audit.rootObjectMatches, true);
+						assert.ok(setup.seats.some(seat => seat.seatId === audit.currentSeatId),
+							"currentPhase must be an actual seat, not inferred from the immutable first actor");
+						assert.ok(setup.seats.some(seat => seat.seatId === audit.firstActSeatId),
+							"the original first actor must remain a separate, stable identity");
+						assert.notEqual(audit.currentSeatId, audit.firstActSeatId,
+							"after Event #4 the native root has already advanced beyond the first actor; the legacy Event #4 tip is not a current-turn snapshot");
+						assert.ok(Number.isSafeInteger(audit.roundNumber) && audit.roundNumber >= 0);
+						assert.ok(Number.isSafeInteger(audit.phaseNumber) && audit.phaseNumber > 0);
+						assert.equal(audit.phaseEvent?.name, "phase");
+						assert.equal(audit.xingDongEvent?.name, "xingDong");
+						assert.ok(setup.seats.some(seat => seat.seatId === audit.xingDongEvent?.seatId),
+							"the live xingDong event must expose its own actual actor independently from currentPhase");
+						assert.equal(audit.xingDongEvent.seatId, audit.currentSeatId,
+							"this live snapshot records the next player's actual native action phase, not the immutable first actor");
+						assert.ok(Number.isSafeInteger(audit.xingDongEvent.actionChildCount) && audit.xingDongEvent.actionChildCount >= 1);
+						assert.ok(Number.isSafeInteger(audit.pendingActionChildCount) && audit.pendingActionChildCount >= 1,
+							`expected the live snapshot to identify its pending native child: ${JSON.stringify(audit.xingDongEvent)}`);
+						assert.ok(Number.isSafeInteger(audit.completedActionChildCount) && audit.completedActionChildCount >= 0);
+						assert.deepEqual(audit.seats.map(seat => seat.seatId), setup.seats.map(seat => seat.seatId));
+						assert.ok(audit.seats.every(seat => typeof seat.character === "string" && typeof seat.side === "boolean" &&
+							typeof seat.alive === "boolean" && Number.isSafeInteger(seat.hp) && Number.isSafeInteger(seat.maxHp) &&
+							Number.isSafeInteger(seat.zhiLiao) && Number.isSafeInteger(seat.hujia) &&
+							[seat.handCount, seat.equipmentCount, seat.judgmentCount, seat.expansionCount, seat.skillCount, seat.markKeyCount, seat.storageKeyCount]
+								.every(Number.isSafeInteger) && Number.isSafeInteger(seat.nengLiang?.baoShi) && Number.isSafeInteger(seat.nengLiang?.shuiJing)),
+							`native seat audit contains an unsupported/missing field: ${JSON.stringify(audit.seats)}`);
+						assert.ok(["draw", "discard", "ordering", "special"].every(zone => Number.isSafeInteger(audit.cardZoneCounts?.[zone])));
+						assert.ok(["hongShiQi", "lanShiQi", "hongXingBei", "lanXingBei", "hongZhanJiCount", "lanZhanJiCount"]
+							.every(key => Number.isSafeInteger(audit.resources?.[key])));
 					}
 				}
 				for (let index = 0; index < authoritySubmissions.length; index++) {

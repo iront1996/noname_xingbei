@@ -3,7 +3,7 @@
 const crypto = require("node:crypto");
 
 const SCHEMA = "xingbei_authority_state_v2";
-const VERSION = 1;
+const VERSION = 2;
 const DIGEST = /^[a-f0-9]{64}$/;
 const IDENTIFIER = /^[A-Za-z0-9_-]{1,128}$/;
 const SIDES = new Set([true, false]);
@@ -77,7 +77,7 @@ function validateState(state, expected = {}) {
 	}
 	const ids = new Set();
 	state.seats.forEach((seat, position) => {
-		if (!ownObject(seat, ["seatId", "position", "character", "side", "alive", "hp", "maxHp", "handCount", "handCommitment", "equipmentCount", "judgmentCount", "nengLiangCommitment", "skillStateCommitment", "marksCommitment"]) ||
+		if (!ownObject(seat, ["seatId", "position", "character", "side", "alive", "hp", "maxHp", "zhiLiao", "hujia", "handCount", "handCommitment", "equipmentCount", "equipmentCommitment", "judgmentCount", "judgmentCommitment", "expansionCount", "expansionCommitment", "specialCount", "specialCommitment", "nengLiangCommitment", "skillStateCommitment", "marksCommitment"]) ||
 			!IDENTIFIER.test(seat.seatId || "") || ids.has(seat.seatId) || seat.position !== position ||
 			typeof seat.character !== "string" || seat.character.length < 1 || seat.character.length > 128 ||
 			!SIDES.has(seat.side) || typeof seat.alive !== "boolean") {
@@ -86,8 +86,9 @@ function validateState(state, expected = {}) {
 		ids.add(seat.seatId);
 		assertInteger(seat.maxHp, 0, 1000);
 		assertInteger(seat.hp, 0, Math.max(1000, seat.maxHp));
-		for (const key of ["handCount", "equipmentCount", "judgmentCount"]) assertInteger(seat[key], 0, MAX_COLLECTION_COUNT);
-		for (const key of ["handCommitment", "nengLiangCommitment", "skillStateCommitment", "marksCommitment"]) {
+		for (const key of ["zhiLiao", "hujia"]) assertInteger(seat[key], 0, 1000000);
+		for (const key of ["handCount", "equipmentCount", "judgmentCount", "expansionCount", "specialCount"]) assertInteger(seat[key], 0, MAX_COLLECTION_COUNT);
+		for (const key of ["handCommitment", "equipmentCommitment", "judgmentCommitment", "expansionCommitment", "specialCommitment", "nengLiangCommitment", "skillStateCommitment", "marksCommitment"]) {
 			if (!DIGEST.test(seat[key] || "")) throw new TypeError("XINGBEI_AUTHORITY_STATE_V2_INVALID");
 		}
 	});

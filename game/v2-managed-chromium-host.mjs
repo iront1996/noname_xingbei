@@ -2134,7 +2134,72 @@ async function snapshotNativeStart(message) {
 		throw new Error("NATIVE_START_SNAPSHOT_REJECTED");
 	}
 	try {
-		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{const state=window.__v2NativeStartDiagnosticState,managed=window.__v2ManagedEngine,core=managed?.core,game=core?.game,status=core?._status,manager=status?.eventManager,current=status?.event,stack=manager?.eventStack||[];return {kind:'native_start_live_snapshot_v1',rootEventName:manager?.rootEvent?.name||null,rootInstanceId:state?.rootInstanceId||null,rootObjectMatches:state?.root?manager?.rootEvent===state.root:null,eventName:current?.name||null,eventStep:Number.isSafeInteger(current?.step)?current.step:null,parentEventName:current?.parent?.name||null,eventStack:stack.map(event=>({name:event.name||null,step:Number.isSafeInteger(event.step)?event.step:null,parentName:event.parent?.name||null,seatId:event.player?.playerid||null,nextCount:Array.isArray(event.next)?event.next.length:null,nextHeadName:event.next?.[0]?.name||null,nextHeadStep:Number.isSafeInteger(event.next?.[0]?.step)?event.next[0].step:null,nextHeadFinished:Boolean(event.next?.[0]?.finished)})),paused:Boolean(status?.paused),rootPromiseState:state?.rootPromiseState||null,failureCode:state?.failureCode||null,nativeAction:state?.nativeAction?{eventId:state.nativeAction.eventId||null,seatId:state.nativeAction.seatId||null,status:state.nativeAction.status||null,useResultCount:state.nativeAction.useResultCount||0,nativeChildWaitCompleted:state.nativeAction.nativeChildWaitCompleted===true,nativeUseCardChildCompleted:state.nativeAction.nativeUseCardChildCompleted===true}:null,responseGates:[...(state?.managedNativeResponseGates?.values()||[])].slice(-16).map(gate=>({nativeEventId:gate.nativeEventId||null,seatId:gate.seatId||null,actionEventId:gate.actionEventId||null,sourceSeatId:gate.sourceSeatId||null,eventStep:Number.isSafeInteger(gate.event?.step)?gate.event.step:null,status:gate.status||null,waitEventName:gate.waitEvent?.name||null,waitEventFinished:Boolean(gate.waitEvent?.finished),waitResolved:gate.waitResolved===true,optionCount:gate.optionIds?.length||0,deliveryId:gate.delivery?.deliveryId||null,deliveryStatus:gate.delivery?.status||null,useCardChildrenStarted:gate.useCardChildrenStarted||0,useCardChildrenCompleted:gate.useCardChildrenCompleted||0})),hostPlayerAbsent:game?.me===null,seats:(game?.players||[]).map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')}))}})()`, returnByValue: true }, 1500);
+		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{
+			const state=window.__v2NativeStartDiagnosticState,managed=window.__v2ManagedEngine,core=managed?.core,game=core?.game,status=core?._status,manager=status?.eventManager,current=status?.event,stack=manager?.eventStack||[];
+			const currentPhase=status?.currentPhase||null,phaseEvent=[...stack].reverse().find(event=>event.name==='phase')||null;
+			const xingDongEvent=[...stack].reverse().find(event=>event.name==='xingDong')||null;
+			const quota=player=>({gongJiOrFaShu:Number.isSafeInteger(player?.storage?.gongJiOrFaShu)?player.storage.gongJiOrFaShu:null,
+				faShu:Number.isSafeInteger(player?.storage?.faShu)?player.storage.faShu:null,
+				gongJi:Number.isSafeInteger(player?.storage?.gongJi)?player.storage.gongJi:null,
+				extraXingDongCount:Array.isArray(player?.storage?.extraXingDong)?player.storage.extraXingDong.length:null});
+			const pendingActionChildCount=(stack||[]).filter(event=>event.name==='xingDong'&&Array.isArray(event.childEvents))
+				.reduce((count,event)=>count+event.childEvents.filter(child=>child.action===true&&child.finished!==true).length,0);
+			const completedActionChildCount=(stack||[]).filter(event=>event.name==='xingDong'&&Array.isArray(event.childEvents))
+				.reduce((count,event)=>count+event.childEvents.filter(child=>child.action===true&&child.finished===true).length,0);
+			const projectionAudit={kind:'xingbei_authority_projection_audit_v1',candidateDisposition:'diagnostic_only_not_a_proof',
+				authorized:false,checkpointAvailable:false,pendingActionChildCount,completedActionChildCount,
+				roomInstancePresent:Boolean(game),rootEventName:manager?.rootEvent?.name||null,
+				rootInstanceId:state?.rootInstanceId||null,rootObjectMatches:state?.root?manager?.rootEvent===state.root:null,
+				roundNumber:Number.isSafeInteger(game?.roundNumber)?game.roundNumber:null,
+				phaseNumber:Number.isSafeInteger(game?.phaseNumber)?game.phaseNumber:null,
+				currentSeatId:typeof currentPhase?.playerid==='string'?currentPhase.playerid:null,
+				firstActSeatId:typeof status?.firstAct?.playerid==='string'?status.firstAct.playerid:null,
+				phaseEvent:phaseEvent?{name:phaseEvent.name,step:Number.isSafeInteger(phaseEvent.step)?phaseEvent.step:null,
+					seatId:phaseEvent.player?.playerid||null,finished:phaseEvent.finished===true}:null,
+				xingDongEvent:xingDongEvent?{name:xingDongEvent.name,step:Number.isSafeInteger(xingDongEvent.step)?xingDongEvent.step:null,
+					seatId:xingDongEvent.player?.playerid||null,finished:xingDongEvent.finished===true,
+					actionChildCount:Array.isArray(xingDongEvent.childEvents)?xingDongEvent.childEvents.filter(child=>child.action===true).length:null,
+					completedActionChildCount:Array.isArray(xingDongEvent.childEvents)?xingDongEvent.childEvents.filter(child=>child.action===true&&child.finished===true).length:null,
+					quotas:quota(xingDongEvent.player)}:null,
+				resources:game?{hongShiQi:Number.isSafeInteger(game.hongShiQi)?game.hongShiQi:null,
+					lanShiQi:Number.isSafeInteger(game.lanShiQi)?game.lanShiQi:null,
+					hongXingBei:Number.isSafeInteger(game.hongXingBei)?game.hongXingBei:null,
+					lanXingBei:Number.isSafeInteger(game.lanXingBei)?game.lanXingBei:null,
+					hongZhanJiCount:Array.isArray(game.hongZhanJi)?game.hongZhanJi.length:null,
+					lanZhanJiCount:Array.isArray(game.lanZhanJi)?game.lanZhanJi.length:null}:null,
+				cardZoneCounts:core?.ui?{draw:Number.isSafeInteger(core.ui.cardPile?.childElementCount)?core.ui.cardPile.childElementCount:null,
+					discard:Number.isSafeInteger(core.ui.discardPile?.childElementCount)?core.ui.discardPile.childElementCount:null,
+					ordering:Number.isSafeInteger(core.ui.ordering?.childElementCount)?core.ui.ordering.childElementCount:null,
+					special:Number.isSafeInteger(core.ui.special?.childElementCount)?core.ui.special.childElementCount:null}:null,
+				seats:(game?.players||[]).map(player=>({seatId:player.playerid||null,character:typeof player.name1==='string'?player.name1:null,
+					side:typeof player.side==='boolean'?player.side:null,alive:typeof player.isIn==='function'?player.isIn():null,
+					hp:Number.isSafeInteger(player.hp)?player.hp:null,maxHp:Number.isSafeInteger(player.maxHp)?player.maxHp:null,
+					zhiLiao:Number.isSafeInteger(player.zhiLiao)?player.zhiLiao:null,hujia:player.hujia===undefined?0:Number.isSafeInteger(player.hujia)?player.hujia:null,
+					handCount:player.countCards('h'),equipmentCount:player.countCards('e'),judgmentCount:player.countCards('j'),expansionCount:player.countCards('x'),
+					nengLiang:{baoShi:player.countNengLiang('baoShi'),shuiJing:player.countNengLiang('shuiJing')},
+					skillCount:player.getSkills(null,false,false).length,markKeyCount:Object.keys(player.marks||{}).length,
+					storageKeyCount:Object.keys(player.storage||{}).length}))};
+			return {kind:'native_start_live_snapshot_v1',rootEventName:manager?.rootEvent?.name||null,rootInstanceId:state?.rootInstanceId||null,
+				rootObjectMatches:state?.root?manager?.rootEvent===state.root:null,eventName:current?.name||null,
+				eventStep:Number.isSafeInteger(current?.step)?current.step:null,parentEventName:current?.parent?.name||null,
+				eventStack:stack.map(event=>({name:event.name||null,step:Number.isSafeInteger(event.step)?event.step:null,parentName:event.parent?.name||null,
+					seatId:event.player?.playerid||null,nextCount:Array.isArray(event.next)?event.next.length:null,
+					nextHeadName:event.next?.[0]?.name||null,nextHeadStep:Number.isSafeInteger(event.next?.[0]?.step)?event.next[0].step:null,
+					nextHeadFinished:Boolean(event.next?.[0]?.finished)})),paused:Boolean(status?.paused),
+				rootPromiseState:state?.rootPromiseState||null,failureCode:state?.failureCode||null,
+				nativeAction:state?.nativeAction?{eventId:state.nativeAction.eventId||null,seatId:state.nativeAction.seatId||null,
+					status:state.nativeAction.status||null,useResultCount:state.nativeAction.useResultCount||0,
+					nativeChildWaitCompleted:state.nativeAction.nativeChildWaitCompleted===true,
+					nativeUseCardChildCompleted:state.nativeAction.nativeUseCardChildCompleted===true}:null,
+				responseGates:[...(state?.managedNativeResponseGates?.values()||[])].slice(-16).map(gate=>({nativeEventId:gate.nativeEventId||null,
+					seatId:gate.seatId||null,actionEventId:gate.actionEventId||null,sourceSeatId:gate.sourceSeatId||null,
+					eventStep:Number.isSafeInteger(gate.event?.step)?gate.event.step:null,status:gate.status||null,
+					waitEventName:gate.waitEvent?.name||null,waitEventFinished:Boolean(gate.waitEvent?.finished),waitResolved:gate.waitResolved===true,
+					optionCount:gate.optionIds?.length||0,deliveryId:gate.delivery?.deliveryId||null,deliveryStatus:gate.delivery?.status||null,
+					useCardChildrenStarted:gate.useCardChildrenStarted||0,useCardChildrenCompleted:gate.useCardChildrenCompleted||0})),
+				hostPlayerAbsent:game?.me===null,seats:(game?.players||[]).map(player=>({seatId:player.playerid||null,
+					characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')})),projectionAudit};
+		})()`, returnByValue: true }, 1500);
 		const snapshot = result.result?.value;
 		if (result.exceptionDetails || snapshot?.kind !== "native_start_live_snapshot_v1") throw new Error("NATIVE_START_SNAPSHOT_EVALUATION_FAILED");
 		const trace = await cdp.send("Runtime.evaluate", { expression: `(()=>{const state=window.__v2NativeStartDiagnosticState;return {traceCount:state?.traceCount||0,tail:(state?.ring||[]).slice(-24).map(entry=>({stage:entry.stage,eventName:entry.snapshot?.eventName||null,eventStep:entry.snapshot?.eventStep??null,seatId:entry.snapshot?.nativeAction?.seatId||entry.snapshot?.seatId||null}))}})()`, returnByValue: true }, 1000);

@@ -23,8 +23,10 @@ function state(overrides = {}) {
 		cardZones: { drawCount: 60, drawCommitment: digest("c"), discardCount: 0, discardCommitment: digest("d"),
 			orderingCount: 0, orderingCommitment: digest("e"), specialCount: 0, specialCommitment: digest("f") },
 		seats: ["seat_a", "seat_b", "seat_c", "seat_d"].map((seatId, position) => ({ seatId, position,
-			character: `char_${seatId}`, side: position % 2 === 0, alive: true, hp: 4, maxHp: 4,
-			handCount: 4, handCommitment: digest(String(position)), equipmentCount: 0, judgmentCount: 0,
+			character: `char_${seatId}`, side: position % 2 === 0, alive: true, hp: 0, maxHp: 2, zhiLiao: 0, hujia: 0,
+			handCount: 4, handCommitment: digest(String(position)), equipmentCount: 0, equipmentCommitment: digest(`3${position}`),
+			judgmentCount: 0, judgmentCommitment: digest(`4${position}`), expansionCount: 0, expansionCommitment: digest(`5${position}`),
+			specialCount: 0, specialCommitment: digest(`6${position}`),
 			nengLiangCommitment: digest("0"), skillStateCommitment: digest("1"), marksCommitment: digest("2") })),
 		...overrides,
 	};
@@ -69,6 +71,8 @@ test("seat order, uniqueness, numeric ranges, phase and digest commitments are v
 		"native Xingbei resource events may produce a value below zero before checkResult resolves the match");
 	assert.throws(() => validateState(state({ resources: { ...state().resources, hongShiQi: -1000001 } })), /INVALID/);
 	assert.throws(() => validateState(state({ cardZones: { ...state().cardZones, drawCommitment: "not-a-digest" } })), /INVALID/);
+	assert.throws(() => validateState(state({ seats: state().seats.map((seat, index) => index ? seat : { ...seat, zhiLiao: -1 }) })), /INVALID/);
+	assert.throws(() => validateState(state({ seats: state().seats.map((seat, index) => index ? seat : { ...seat, expansionCommitment: "not-a-digest" }) })), /INVALID/);
 });
 
 test("Event #4 to v2 seed bridge is explicit, recomputed and cross-checks the native seat projection", () => {
