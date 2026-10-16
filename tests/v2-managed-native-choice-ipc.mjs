@@ -652,6 +652,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.ok(nativeResponseChoice, `native skill failure did not reach its managed response choice: ${JSON.stringify({ session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-20).map(entry => entry?.stage) })}`);
 		assert.equal(nativeResponseCandidate?.optionKinds?.[nativeResponseOptionId], "view_as_skill");
 		assert.equal(nativeResponseAccepted, true, "fault must occur after a valid ordinary-seat selection was accepted");
+		await until(() => viewasRedeliveryIssued, 5000, () => ({
+			choice: controller.inspect(roomId, nativeResponseChoice.choiceId),
+			applyingReceipts: applyingReceipts.map(entry => ({ choiceId: entry.choiceId, nativeEventId: entry.nativeEventId })),
+			responseNativeEventId: nativeResponseChoice.nativeEventId,
+			session: manager.inspect(roomId) ? { state: manager.inspect(roomId).state, failureCode: manager.inspect(roomId).failureCode } : null,
+		}));
 		assert.equal(viewasRedeliveryIssued, true, `the applying skill result was not retried with its original immutable identity: ${JSON.stringify({
 			responseChoiceId: nativeResponseChoice?.choiceId || null, responseOptionId: nativeResponseOptionId || null,
 			responseOptionKind: nativeResponseCandidate?.optionKinds?.[nativeResponseOptionId] || null,
