@@ -2668,15 +2668,17 @@ async function snapshotNativeCardLedger(message) {
 				(command.mode==='post_phase_over'&&(!state.nativePhaseBoundaryFence||state.nativePhaseBoundaryFence.status!=='waiting'||
 					state.nativePhaseBoundaryFence.rootInstanceId!==state.rootInstanceId||state.nativePhaseBoundaryFence.pendingDescendantCount!==0||
 					state.nativePhaseBoundaryFence.phaseOverTriggerComplete!==true))) throw Error('NATIVE_CARD_LEDGER_FENCE_INVALID');
-			const cards=[],seenPlayers=new Set();
+			const cards=[],seenPlayers=new Set(),registryEntries=Object.entries(core.lib?.cardOL||{}),registryByCard=new Map();
+			for(const [id,card] of registryEntries){if(typeof id!=='string'||!id||registryByCard.has(card))throw Error('NATIVE_CARD_LEDGER_CARD_REGISTRY_INVALID');registryByCard.set(card,id);}
 			const append=(card,zone,ownerSeatId,position)=>{
 				if(!(card instanceof Element)||!card.classList?.contains('card')) throw Error('NATIVE_CARD_LEDGER_CARD_NODE_INVALID');
-				if(typeof card.cardid!=='string'||!card.cardid) throw Error('NATIVE_CARD_LEDGER_CARD_ID_INVALID');
+				const cardId=registryByCard.get(card);
+				if(typeof cardId!=='string'||!cardId||(card.cardid&&card.cardid!==cardId)) throw Error('NATIVE_CARD_LEDGER_CARD_ID_INVALID');
 				if(typeof card.name!=='string') throw Error('NATIVE_CARD_LEDGER_CARD_NAME_INVALID');
 				if(typeof card.xiBie!=='string') throw Error('NATIVE_CARD_LEDGER_CARD_XIBIE_INVALID');
 				if(!(typeof card.mingGe==='string'||Number.isSafeInteger(card.mingGe))) throw Error('NATIVE_CARD_LEDGER_CARD_MINGGE_INVALID');
 				if(card.duYou!==undefined&&card.duYou!==null&&typeof card.duYou!=='string') throw Error('NATIVE_CARD_LEDGER_CARD_DUYOU_INVALID');
-				cards.push({cardId:card.cardid,zone,ownerSeatId,position,name:card.name,xiBie:card.xiBie,mingGe:card.mingGe,
+				cards.push({cardId,zone,ownerSeatId,position,name:card.name,xiBie:card.xiBie,mingGe:card.mingGe,
 					duYou:card.duYou===undefined?null:card.duYou,kind:'physical_dom_card_v1'});
 			};
 			const appendGlobal=(root,zone)=>{
@@ -2692,8 +2694,8 @@ async function snapshotNativeCardLedger(message) {
 			for(const seatId of command.seatIds){const player=players.find(item=>item.playerid===seatId);if(seenPlayers.has(player))throw Error('NATIVE_CARD_LEDGER_SEAT_DUPLICATE');seenPlayers.add(player);
 				for(const [slot,zone] of zoneTypes){const list=player.getCards(slot);if(!Array.isArray(list))throw Error('NATIVE_CARD_LEDGER_PLAYER_ZONE_INVALID');
 					list.forEach((card,position)=>append(card,zone,seatId,position));}}
-			const tracked=new Set(cards.map(card=>card.cardId)),registry=Object.entries(core.lib?.cardOL||{});
-			if(registry.length!==tracked.size||registry.some(([id,card])=>id!==card?.cardid||!tracked.has(id)||
+			const tracked=new Set(cards.map(card=>card.cardId)),trackedObjects=new Set(registryEntries.filter(([id])=>tracked.has(id)).map(([,card])=>card));
+			if(registryEntries.length!==tracked.size||registryEntries.some(([id,card])=>id!==registryByCard.get(card)||!tracked.has(id)||!trackedObjects.has(card)||
 				!(card instanceof Element)||!card.classList.contains('card'))) throw Error('NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD');
 			return {schema:'xingbei_native_private_card_ledger_v1',rootInstanceId:state.rootInstanceId,
 				seatIds:command.seatIds,cards};})()`, returnByValue: true }, 3000);
@@ -2702,6 +2704,7 @@ async function snapshotNativeCardLedger(message) {
 			const allowedFailureCodes = ["NATIVE_CARD_LEDGER_FENCE_INVALID", "NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID",
 				"NATIVE_CARD_LEDGER_CARD_NODE_INVALID", "NATIVE_CARD_LEDGER_CARD_ID_INVALID", "NATIVE_CARD_LEDGER_CARD_NAME_INVALID",
 				"NATIVE_CARD_LEDGER_CARD_XIBIE_INVALID", "NATIVE_CARD_LEDGER_CARD_MINGGE_INVALID", "NATIVE_CARD_LEDGER_CARD_DUYOU_INVALID",
+				"NATIVE_CARD_LEDGER_CARD_REGISTRY_INVALID",
 				"NATIVE_CARD_LEDGER_ZONE_MISSING", "NATIVE_CARD_LEDGER_SEAT_SET_INVALID", "NATIVE_CARD_LEDGER_SEAT_DUPLICATE",
 				"NATIVE_CARD_LEDGER_PLAYER_ZONE_INVALID", "NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD"];
 			const exception = `${result.exceptionDetails.text || ""} ${result.exceptionDetails.exception?.description || ""}`;
@@ -2720,7 +2723,7 @@ async function snapshotNativeCardLedger(message) {
 		const allowed = new Set(["NATIVE_CARD_LEDGER_COMMAND_REJECTED", "NATIVE_CARD_LEDGER_CAPTURE_FAILED", "NATIVE_CARD_LEDGER_FENCE_INVALID",
 			"NATIVE_CARD_LEDGER_PHYSICAL_CARD_INVALID", "NATIVE_CARD_LEDGER_CARD_NODE_INVALID", "NATIVE_CARD_LEDGER_CARD_ID_INVALID",
 			"NATIVE_CARD_LEDGER_CARD_NAME_INVALID", "NATIVE_CARD_LEDGER_CARD_XIBIE_INVALID", "NATIVE_CARD_LEDGER_CARD_MINGGE_INVALID",
-			"NATIVE_CARD_LEDGER_CARD_DUYOU_INVALID", "NATIVE_CARD_LEDGER_ZONE_MISSING", "NATIVE_CARD_LEDGER_SEAT_SET_INVALID",
+			"NATIVE_CARD_LEDGER_CARD_DUYOU_INVALID", "NATIVE_CARD_LEDGER_CARD_REGISTRY_INVALID", "NATIVE_CARD_LEDGER_ZONE_MISSING", "NATIVE_CARD_LEDGER_SEAT_SET_INVALID",
 			"NATIVE_CARD_LEDGER_SEAT_DUPLICATE", "NATIVE_CARD_LEDGER_PLAYER_ZONE_INVALID", "NATIVE_CARD_LEDGER_UNASSIGNED_PHYSICAL_CARD",
 			"NATIVE_CARD_LEDGER_CDP_REFERENCE_ERROR", "NATIVE_CARD_LEDGER_CDP_TYPE_ERROR", "NATIVE_CARD_LEDGER_CDP_EXCEPTION", "NATIVE_CARD_LEDGER_ROW_INVALID",
 			"NATIVE_CARD_LEDGER_OWNER_INVALID", "NATIVE_CARD_LEDGER_ORDER_INVALID", "NATIVE_CARD_LEDGER_ROOT_CHANGED", "NATIVE_CARD_LEDGER_SEQUENCE_INVALID"]);
