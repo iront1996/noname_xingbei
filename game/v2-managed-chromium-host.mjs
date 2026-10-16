@@ -474,7 +474,7 @@ async function boot(message) {
 		  // hand can contain a real no-target ShengGuang. Native card creation,
 		  // gameDraw/dealing and response filtering still run unchanged.
 		  if(${process.env.V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE === "1"}){
-		   if(${process.env.V2_NATIVE_MANAGED_RESPONSE === "1"}!==true||!${process.env.V2_NATIVE_RESPONSE_TARGETLESS === "1"}||
+		   if(${process.env.V2_NATIVE_MANAGED_RESPONSE === "1"}!==true||
 		      ${process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1"}!==true)throw Error('TARGETLESS_DECK_FIXTURE_SCOPE_REJECTED');
 		   const source=lib.card.list;
 		   if(!Array.isArray(source)||args.length!==0)throw Error('TARGETLESS_DECK_FIXTURE_INPUT_REJECTED');
