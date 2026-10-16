@@ -1631,11 +1631,18 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(actionGate?.rootObjectMatches, true);
 					assert.equal(actionGate?.rootInstanceId, rootIds[0]);
 					if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
-						const beforeSnapshot = nativeDiagnostic.length;
-						assert.equal((await manager.snapshotNativeStart(roomId, "managed_opening_root_action_event4")).ok, true,
-							"authenticated live snapshot must not restart/re-instrument the continuing native root");
-						const liveSnapshot = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot"), 3000,
-							() => ({ session: manager.inspect(roomId), diagnostics: nativeDiagnostic.slice(beforeSnapshot) }));
+						const snapshotDeadline = Date.now() + 3000;
+						let liveSnapshot = null, lastSnapshot = null;
+						while (!liveSnapshot && Date.now() < snapshotDeadline) {
+							const beforeSnapshot = nativeDiagnostic.length;
+							assert.equal((await manager.snapshotNativeStart(roomId, "managed_opening_root_action_event4")).ok, true,
+								"authenticated live snapshot must not restart/re-instrument the continuing native root");
+							const remaining = Math.max(1, snapshotDeadline - Date.now());
+							lastSnapshot = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot")?.snapshot,
+								Math.min(remaining, 1000), () => ({ session: manager.inspect(roomId), diagnostics: nativeDiagnostic.slice(beforeSnapshot) }));
+							if (lastSnapshot?.phaseEvent?.name === "phase" && lastSnapshot?.xingDongEvent?.name === "xingDong") liveSnapshot = lastSnapshot;
+						}
+						assert.ok(liveSnapshot, `native phase snapshot was not observed at a stable phase/xingDong boundary: ${JSON.stringify(lastSnapshot)}`);
 						assert.equal(liveSnapshot.rootObjectMatches, true);
 						assert.equal(liveSnapshot.rootInstanceId, rootIds[0]);
 						assert.equal(liveSnapshot.hostPlayerAbsent, true);
