@@ -1324,8 +1324,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 								item?.deliveryId === controller.inspect(roomId, droppedNativeResponseAckChoiceId)?.deliveryId),
 							responseAckCounts: nativeResponseChoices.map(entry => ({ choiceId: entry.choice.choiceId, count: nativeResponseAckAttempts.get(entry.choice.choiceId) || 0 })) }));
 				}
-				assert.equal(nativeResponseAckCount, nativeResponseChoices.length + (nativeResponseAckDropped ? 1 : 0),
-					`each native response must ACK exactly once after its event and any useCard child completed: ${JSON.stringify({ nativeResponseChoices: nativeResponseChoices.map(entry => entry.choice.choiceId), nativeResponseAckResults, ackTrace: ackTrace.slice(-12) })}`);
+				assert.ok(nativeResponseChoices.every(entry => {
+					const results = nativeResponseAckResults.filter(ack => ack.choiceId === entry.choice.choiceId);
+					const accepted = results.filter(ack => ack.accepted === true);
+					const duplicateAfterResolve = results.filter(ack => ack.before === "resolved");
+					return accepted.length === 1 && accepted[0].responseEventCompleted === true &&
+						duplicateAfterResolve.every(ack => ack.accepted === false && ack.result === "MANAGED_CHOICE_ACK_REJECTED");
+				}), `each native response must have exactly one accepted post-completion ACK; retries after resolution must be rejected without reapplying: ${JSON.stringify({ nativeResponseChoices: nativeResponseChoices.map(entry => entry.choice.choiceId), nativeResponseAckResults, ackTrace: ackTrace.slice(-12) })}`);
 				assert.ok(nativeResponseChoices.every(entry => nativeResponseAckResults.some(ack => ack.choiceId === entry.choice.choiceId && ack.accepted && ack.responseEventCompleted)),
 					"controller must accept each post-completion ACK before its host session is cleaned up");
 				assert.ok(nativeResponseChoices.every(entry => nativeDiagnostic.filter(item => item?.stage === "native_response_applied" &&
