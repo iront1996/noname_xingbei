@@ -1270,7 +1270,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					await until(() => (nativeResponseAckAttempts.get(droppedNativeResponseAckChoiceId) || 0) >= 2, 5000,
 						() => ({ nativeResponseAckCount, nativeResponseChoices: nativeResponseChoices.map(entry => entry.choice.choiceId),
 							droppedNativeResponseAckChoiceId, nativeResponseAckAttempts: Object.fromEntries(nativeResponseAckAttempts),
+							droppedChoice: controller.inspect(roomId, droppedNativeResponseAckChoiceId),
 							choice: controller.inspect(roomId, nativeResponseChoice.choiceId), host: manager.inspect(roomId), ackTrace: ackTrace.slice(-8),
+							retryDiagnostics: nativeDiagnostic.filter(item => item?.choiceId === droppedNativeResponseAckChoiceId ||
+								item?.deliveryId === controller.inspect(roomId, droppedNativeResponseAckChoiceId)?.deliveryId),
 							responseAckCounts: nativeResponseChoices.map(entry => ({ choiceId: entry.choice.choiceId, count: nativeResponseAckAttempts.get(entry.choice.choiceId) || 0 })) }));
 				}
 				assert.equal(nativeResponseAckCount, nativeResponseChoices.length + (nativeResponseAckDropped ? 1 : 0),
