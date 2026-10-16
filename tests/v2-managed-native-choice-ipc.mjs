@@ -152,8 +152,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				const marked = controller.markDeliveryApplying({ ...message, hostSessionId: message.sessionId, hostProof: sessionSecret });
 				assert.equal(marked.ok, true, `authenticated native delivery receipt rejected: ${marked.code}`);
 				applyingReceipts.push({ choiceId: message.choiceId, deliveryId: message.deliveryId, nativeEventId: message.nativeEventId });
+				const managedResponseForDelivery = nativeResponseChoices.find(entry => entry.choice.choiceId === message.choiceId);
 				if ([...viewasRevalidationFaultModes, ...viewasExecutionFaultModes].includes(nativeFaultMode) &&
-					message.choiceId === nativeResponseChoice?.choiceId && !viewasRedeliveryIssued) {
+					managedResponseForDelivery?.candidate?.optionKinds?.[managedResponseForDelivery.option] === "view_as_skill" && !viewasRedeliveryIssued) {
 					const beforeRetry = controller.inspect(roomId, message.choiceId);
 					assert.equal(beforeRetry?.state, "applying");
 					viewasRedeliveryIdentity = { choiceId: beforeRetry.choiceId, deliveryId: beforeRetry.deliveryId,
