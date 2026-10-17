@@ -1600,8 +1600,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 				}
 			}
-			await until(() => controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved", 15000,
-				() => ({ choice: controller.inspect(roomId, nativeActionChoice.choiceId), host: manager.inspect(roomId), stages: nativeDiagnostic.map(entry => entry?.stage) }));
+			await until(() => {
+				const session = manager.inspect(roomId);
+				if (session?.state === "failed") {
+					const waitErrors = nativeDiagnostic.filter(entry => entry?.stage === "wait_next_error").slice(-4)
+						.map(entry => ({ eventName: entry?.snapshot?.eventName || null,
+							eventStep: Number.isSafeInteger(entry?.snapshot?.eventStep) ? entry.snapshot.eventStep : null,
+							parentEventName: entry?.snapshot?.parentEventName || null,
+							error: entry?.snapshot?.nativeWaitError || null }));
+					throw new Error(`native action host failed before choice resolution:${JSON.stringify({ failureCode: session.failureCode,
+						choiceState: controller.inspect(roomId, nativeActionChoice.choiceId)?.state || null, waitErrors,
+						recentStages: nativeDiagnostic.slice(-16).map(entry => entry?.stage) })}`);
+				}
+				return controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved";
+			}, 15000, () => ({ choice: controller.inspect(roomId, nativeActionChoice.choiceId), host: manager.inspect(roomId), stages: nativeDiagnostic.map(entry => entry?.stage) }));
 			if (process.env.V2_NATIVE_PARENT_FENCE === "1") {
 				const fenceReleased = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_parent_fence_released" &&
 					entry?.snapshot?.nativeEventId === nativeActionCandidate?.nativeEventId), 5000,
