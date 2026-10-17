@@ -45,7 +45,7 @@ function safeNativeDiagnostic(value) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -1653,6 +1653,16 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(waitingSnapshot.seatId, nativeActionCandidate.seatId);
 					assert.equal(waitingSnapshot.completedPhaseFinished, true);
 					assert.equal(waitingSnapshot.completedPhaseParentMatches, true);
+					assert.equal(waitingSnapshot.completionEvidence?.rootInstanceId, waitingSnapshot.rootInstanceId);
+					assert.equal(waitingSnapshot.completionEvidence?.eventName, "phase");
+					assert.equal(waitingSnapshot.completionEvidence?.parentEventName, "phaseLoop");
+					assert.equal(waitingSnapshot.completionEvidence?.seatId, waitingSnapshot.seatId);
+					assert.ok(Number.isSafeInteger(waitingSnapshot.completionEvidence?.completionOrdinal));
+					assert.ok(Number.isSafeInteger(waitingSnapshot.nativeCompletionOrdinal));
+					assert.ok(waitingSnapshot.completionEvidence.completionOrdinal <= waitingSnapshot.nativeCompletionOrdinal);
+					assert.equal(waitingSnapshot.runtimeHujiaMethodPresent, false);
+					assert.equal(waitingSnapshot.runtimeHujiaValuePresent, false);
+					assert.equal(waitingSnapshot.runtimeHujiaPrototypeOwnerCount, 0);
 					assert.equal(waitingSnapshot.pendingDescendantCount, 0);
 					assert.deepEqual(waitingSnapshot.completedActorQuotas, { gongJiOrFaShu: 0, faShu: 0, gongJi: 0, extraXingDongCount: 0 });
 					assert.equal(waitingSnapshot.priorAuthority.afterDigest, phaseBoundaryAuthority.authorityStateDigest);
@@ -1663,7 +1673,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							"checkpointAvailable", "commitment", "engineBuildId", "nativeCompletionOrdinal", "projectionCount", "rootInstanceId",
 							"schema", "schemaVersion", "stableProjectionsWithPrevious", "stableWithPrevious"].sort());
 						assert.equal(atomic.snapshot.captureOrdinal, 1);
-						assert.equal(atomic.snapshot.nativeCompletionOrdinal, waitingSnapshot.phaseOverTriggerCount);
+						assert.equal(atomic.snapshot.nativeCompletionOrdinal, waitingSnapshot.nativeCompletionOrdinal,
+							"the ordinal must come from completed native GameEvent.start/waitNext boundaries, not phaseOverTriggerCount");
 						assert.equal(atomic.snapshot.projectionCount, 3);
 						assert.equal(atomic.snapshot.atomicWithEffectSnapshots, true);
 						assert.equal(atomic.snapshot.authoritySeedAuthorized, false);
@@ -1810,6 +1821,29 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-12), host: manager.inspect(roomId) }));
 					assert.equal(successor.snapshot.rootObjectMatches, true);
 					assert.equal(successor.snapshot.gameMeAbsent, true);
+					if (process.env.V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE === "1") {
+						const nextSeatBoundary = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&
+							entry.snapshot?.eventStep === 2 && entry.snapshot?.isCompletedPhaseOverBoundary === true &&
+							entry.snapshot?.loopSeatId !== waitingSnapshot.firstActSeatId &&
+							Number.isSafeInteger(entry.snapshot?.nativeCompletionOrdinal) &&
+							entry.snapshot.nativeCompletionOrdinal > waitingSnapshot.nativeCompletionOrdinal), 10000,
+							() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), phaseBoundaries: nativeDiagnostic.filter(entry =>
+								entry?.stage === "native_phase_loop_wait_next_boundary").slice(-8), host: manager.inspect(roomId) }));
+						assert.equal(nextSeatBoundary.snapshot.rootInstanceId, waitingSnapshot.rootInstanceId);
+						assert.equal(nextSeatBoundary.snapshot.rootObjectMatches, true);
+						assert.equal(nextSeatBoundary.snapshot.completedPhaseChildFinished, true);
+						assert.equal(nextSeatBoundary.snapshot.completedPhaseChildParentMatches, true);
+						assert.equal(nextSeatBoundary.snapshot.nativeCompletionEvidence?.eventName, "phase");
+						assert.equal(nextSeatBoundary.snapshot.nativeCompletionEvidence?.parentEventName, "phaseLoop");
+						assert.equal(nextSeatBoundary.snapshot.nativeCompletionEvidence?.seatId, nextSeatBoundary.snapshot.loopSeatId);
+						assert.ok(nextSeatBoundary.snapshot.nativeCompletionEvidence.completionOrdinal > waitingSnapshot.nativeCompletionOrdinal);
+						assert.equal(nextSeatBoundary.snapshot.gameMeAbsent, true);
+						assert.equal(nextSeatBoundary.snapshot.connectedTransports, 0);
+						t.diagnostic(`second-seat native phase completion sequence: ${JSON.stringify({ first: { seatId: waitingSnapshot.seatId,
+							ordinal: waitingSnapshot.nativeCompletionOrdinal }, second: { seatId: nextSeatBoundary.snapshot.loopSeatId,
+							ordinal: nextSeatBoundary.snapshot.nativeCompletionOrdinal }, sameRoot: nextSeatBoundary.snapshot.rootObjectMatches,
+							gameMeAbsent: nextSeatBoundary.snapshot.gameMeAbsent })}`);
+					}
 					t.diagnostic(`native phaseLoop waitNext boundaries: ${JSON.stringify(nativeDiagnostic.filter(entry => entry?.stage === "native_phase_loop_wait_next_boundary").map(entry => ({
 						eventStep: entry.snapshot?.eventStep, childName: entry.snapshot?.completedChildName, childFinished: entry.snapshot?.completedChildFinished,
 						parentMatches: entry.snapshot?.completedChildParentMatches, pending: entry.snapshot?.pendingChildCount, top: entry.snapshot?.eventStackTop,

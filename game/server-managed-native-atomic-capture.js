@@ -5,7 +5,7 @@ const { validateNativeCardLedgerSnapshot } = require("./server-managed-native-ca
 const { validateManagedNativeEffectStateSnapshot } = require("./server-managed-native-effect-state.js");
 const { validateNativeTurnResourceProjectionV2 } = require("./server-managed-native-turn-resource-state-v2.js");
 
-const SCHEMA = "xingbei_native_private_atomic_capture_v1";
+const SCHEMA = "xingbei_native_private_atomic_capture_v2";
 const ROOT = /^native_root_[A-Za-z0-9_-]{16,96}$/;
 
 function fail(code) { throw new TypeError(code); }
@@ -52,11 +52,19 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			}
 			const fence = envelope.fence;
 			if (!fence || Object.getPrototypeOf(fence) !== Object.prototype || Object.keys(fence).sort().join(",") !==
-				"allChildrenCompleted,captureLocked,eventName,eventStackConsistent,eventStep,nativeCompletionOrdinal,pendingChildCount,rootMatches,seatId" ||
+				"allChildrenCompleted,captureLocked,completionEvidence,eventName,eventStackConsistent,eventStep,nativeCompletionOrdinal,pendingChildCount,rootMatches,seatId" ||
 				fence.allChildrenCompleted !== true || fence.captureLocked !== true || fence.eventName !== "phaseLoop" ||
 				fence.eventStep !== 2 || fence.eventStackConsistent !== true || fence.rootMatches !== true ||
 				fence.pendingChildCount !== 0 || !Number.isSafeInteger(fence.nativeCompletionOrdinal) || fence.nativeCompletionOrdinal < 1 ||
 				!seatIds.includes(fence.seatId)) fail("NATIVE_ATOMIC_CAPTURE_FENCE_INVALID");
+			const proof = fence.completionEvidence;
+			if (!proof || Object.getPrototypeOf(proof) !== Object.prototype || Object.keys(proof).sort().join(",") !==
+				"completionOrdinal,eventInstanceId,eventName,eventStep,parentEventInstanceId,parentEventName,rootInstanceId,seatId" ||
+				proof.rootInstanceId !== rootInstanceId || proof.eventName !== "phase" || proof.parentEventName !== "phaseLoop" ||
+				!/^event_[1-9][0-9]{0,6}$/.test(proof.eventInstanceId || "") || !/^event_[1-9][0-9]{0,6}$/.test(proof.parentEventInstanceId || "") ||
+				proof.eventInstanceId === proof.parentEventInstanceId || !Number.isSafeInteger(proof.eventStep) || proof.eventStep < 0 ||
+				!Number.isSafeInteger(proof.completionOrdinal) || proof.completionOrdinal < 1 || proof.completionOrdinal > fence.nativeCompletionOrdinal ||
+				proof.seatId !== fence.seatId) fail("NATIVE_ATOMIC_CAPTURE_COMPLETION_EVIDENCE_INVALID");
 			const expected = { roomId, hostSessionId: sessionId, engineBuildId, rootInstanceId, seatIds };
 			const cardRows = validateNativeCardLedgerSnapshot(envelope.cardLedger, seatIds);
 			const effect = validateManagedNativeEffectStateSnapshot(envelope.effectState, expected);
@@ -80,7 +88,7 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			previousDigest = stateDigest;
 			previousProjectionDigests = projectionDigests;
 			ordinal++;
-			return Object.freeze({ schema: "xingbei_native_private_atomic_commitment_v1", schemaVersion: 1,
+			return Object.freeze({ schema: "xingbei_native_private_atomic_commitment_v2", schemaVersion: 2,
 				captureOrdinal: ordinal, nativeCompletionOrdinal: fence.nativeCompletionOrdinal, rootInstanceId, engineBuildId,
 				commitment: digest, stableWithPrevious, stableProjectionsWithPrevious, projectionCount: 3, atomicWithEffectSnapshots: true,
 				authoritySeedAuthorized: false, checkpointAvailable: false });

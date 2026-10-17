@@ -14,10 +14,12 @@ function envelope(ordinal = 1) {
 		side: position < 2, alive: true, hp: 4, maxHp: 4, zhiLiao: 0, hujiaSupported: false,
 		nengLiang: { baoShi: 0, shuiJing: 0, effectiveLimit: 3 } }));
 	return {
-		schema: "xingbei_native_private_atomic_capture_v1", captureOrdinal: ordinal, roomId: "room_a", hostSessionId: sessionId,
+		schema: "xingbei_native_private_atomic_capture_v2", captureOrdinal: ordinal, roomId: "room_a", hostSessionId: sessionId,
 		engineBuildId, rootInstanceId: root, seatIds: [...seats],
 		fence: { allChildrenCompleted: true, captureLocked: true, eventName: "phaseLoop", eventStep: 2,
-			eventStackConsistent: true, nativeCompletionOrdinal: 9, pendingChildCount: 0, rootMatches: true, seatId: "seat_a" },
+			eventStackConsistent: true, nativeCompletionOrdinal: 9, pendingChildCount: 0, rootMatches: true, seatId: "seat_a",
+			completionEvidence: { rootInstanceId: root, eventInstanceId: "event_4", parentEventInstanceId: "event_3",
+				completionOrdinal: 8, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_a", eventStep: 4 } },
 		cardLedger: { schema: "xingbei_native_private_card_ledger_v1", rootInstanceId: root, seatIds: [...seats], cards: [
 			{ cardId: "card_1", duYou: null, kind: "physical_dom_card_v1", mingGe: "red", name: "sha", ownerSeatId: null,
 				position: 0, xiBie: "fire", zone: "draw" },
@@ -74,4 +76,16 @@ test("atomic capture rejects projection boundary drift, replay and post-destroy 
 	assert.equal(first.captureOrdinal, 1);
 	capture.destroy();
 	assert.throws(() => capture.commit(envelope(2)), /NATIVE_ATOMIC_CAPTURE_DESTROYED/);
+});
+
+test("atomic capture requires same-root native phase completion evidence before commitment", () => {
+	const capture = coordinator();
+	const invalid = envelope();
+	invalid.fence.completionEvidence.parentEventName = "otherRoot";
+	assert.throws(() => capture.commit(invalid), /NATIVE_ATOMIC_CAPTURE_COMPLETION_EVIDENCE_INVALID/);
+	assert.equal(capture.commit(envelope()).captureOrdinal, 1, "invalid completion evidence must not consume a capture ordinal");
+	const replay = envelope(2);
+	replay.fence.completionEvidence.eventInstanceId = replay.fence.completionEvidence.parentEventInstanceId;
+	assert.throws(() => capture.commit(replay), /NATIVE_ATOMIC_CAPTURE_COMPLETION_EVIDENCE_INVALID/);
+	capture.destroy();
 });
