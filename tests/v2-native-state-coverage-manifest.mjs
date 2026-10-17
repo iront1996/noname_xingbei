@@ -22,8 +22,26 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 		assert.ok(Array.isArray(family.unsupported) && family.unsupported.length > 0, `${family.id} must identify its gaps`);
 		if (family.status === "unsupported") assert.equal(family.supportedBoundary, null);
 	}
-	assert.equal(manifest.families.find(family => family.id === "hujia").requiresNativeRuleChangeAuthorization, true);
-	assert.equal(manifest.families.find(family => family.id === "dynamic_skills_storage_and_effects").status, "unsupported");
+	const hujia = manifest.families.find(family => family.id === "hujia");
+	assert.equal(hujia.requiresNativeRuleChangeAuthorization, true);
+	assert.deepEqual(hujia.sourceAudit, {
+		damagePath: "changeHp content computes absorbed amount from player.hujia then invokes player.changeHujia(-event.hujia)",
+		buffPath: "Player.getBuff case 3 invokes this.changeHujia()",
+		repositoryDefinitionSearch: "no changeHujia method definition or prototype assignment found in the tracked source tree; references are call sites and diagnostics only",
+		runtimeRecheckedInThisBatch: false,
+		interpretation: "source-level unresolved implementation gap; do not infer armor mutation semantics or repair without explicit native-rule authorization",
+	});
+	const dynamic = manifest.families.find(family => family.id === "dynamic_skills_storage_and_effects");
+	assert.equal(dynamic.status, "unsupported");
+	assert.deepEqual(dynamic.sourceAudit, {
+		tempSkills: "Player.addTempSkill stores a skill-keyed expiry that may be a trigger descriptor or function; GameEvent.trigger removes expired entries and removes the skill",
+		additionalSkills: "Player.addAdditionalSkill/addAdditionalSkills mutate skill-keyed strings or arrays, affecting getSkills and later trigger/legality evaluation",
+		when: "Player.when creates a random player_when skill with dynamic filter/content/vars and may retain closures or generated functions; trigger completion removes that skill and its lib.skill/translation entries",
+		extraXingDong: "xingDong step 0 resets the queue; Player.addExtraXingDong and native skills can push payload objects; step 4 pops them LIFO and calls the named native action with the payload",
+		extraXingDongPayload: "payload may contain xingDong, prompt, forced, filterCard, filterTarget and createDialog; callback fields and arbitrary object spread prevent a generic canonical representation",
+		markStorage: "reviewed guiHuo is a bounded special case only; general marks are read from heterogeneous player.storage and player.marks includes UI state",
+		canonicalizationDecision: "no general extractor accepted; preserve unsupported and fail closed until each rule-relevant family has a typed allowlist, lifetime boundary and native evidence",
+	});
 	const turn = manifest.families.find(family => family.id === "turn_and_action_quotas");
 	assert.equal(turn.status, "partial");
 	assert.match(turn.supportedBoundary, /two distinct completed native seat phases/);

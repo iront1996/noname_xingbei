@@ -1,5 +1,13 @@
 # V2 Codex engineering handoff
 
+## T3 native dynamic-state source audit — unsupported families remain fail-closed
+
+- A bounded source-only follow-up inspected Noname's `tempSkills`, `additionalSkills`, `Player.when`, `extraXingDong`, and the current `hujia` call paths. It did not alter managed-engine or native game source and did not claim new state support.
+- `addTempSkill` accepts trigger descriptors or function expiry predicates; trigger processing can remove expired skill state. `additionalSkills` is a skill-keyed string/array map consumed by `getSkills` and therefore can affect later legal actions. `Player.when` generates temporary skill identities and dynamic filters/content/vars, which may contain callbacks/closures and are removed after trigger completion. These are not safely represented by generic JSON serialization.
+- `extraXingDong` is reset at `xingDong` step 0, can be populated by helper and direct native-skill call sites, and is popped LIFO to invoke a named action. Payloads can carry `filterCard`, `filterTarget`, `createDialog`, and other fields; only an empty queue is currently representable. The manifest now records these source/lifecycle findings while keeping the family `unsupported` and fail-closed.
+- The `hujia` source audit found `changeHp`'s armor absorption call and `Player.getBuff` case 3 call `changeHujia`, but no method definition or prototype assignment in the tracked tree. This is not proof of runtime absence in every loading mode; runtime was not rechecked in this audit. No rule patch was authorized or made. The manifest preserves `hujia` as unsupported and flags native-rule modification as requiring separate approval.
+- Focused manifest/source-lock regression is required for this audit commit. Full T3 remains incomplete; no schema promotion, seed, Event #5, or checkpoint is implied. Gates remain closed.
+
 ## T3 cross-seat phase/quota evidence — narrow acceptance only
 
 - Commit `16e39151552bb6ab40ddcb2d099987e299995ba2`; Linux CI `39065347253` passed 86/86 workflow steps and 266/266 tests, zero failures and zero skips. The real Chromium cross-seat atomic-capture step (step 33) passed, along with steps 32/34 and all subsequent regressions.
