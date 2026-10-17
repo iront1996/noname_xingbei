@@ -72,17 +72,23 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 				!Number.isSafeInteger(proof.completionOrdinal) || proof.completionOrdinal < 1 || proof.completionOrdinal > fence.nativeCompletionOrdinal ||
 				proof.seatId !== fence.seatId) fail("NATIVE_ATOMIC_CAPTURE_COMPLETION_EVIDENCE_INVALID");
 			const phaseOverProof = fence.phaseOverCompletionEvidence;
+			const phaseOverChildValid = phaseOverProof?.childEventInstanceId === null
+				? phaseOverProof.childEventName === null && phaseOverProof.childParentEventInstanceId === null && phaseOverProof.childCompletionOrdinal === null
+				: Boolean(/^event_[1-9][0-9]{0,6}$/.test(phaseOverProof?.childEventInstanceId || "") &&
+					phaseOverProof.childEventInstanceId !== phaseOverProof.ownerEventInstanceId &&
+					phaseOverProof.childParentEventInstanceId === phaseOverProof.ownerEventInstanceId &&
+					typeof phaseOverProof.childEventName === "string" && phaseOverProof.childEventName.length >= 1 && phaseOverProof.childEventName.length <= 64 &&
+					Number.isSafeInteger(phaseOverProof.childCompletionOrdinal) && phaseOverProof.childCompletionOrdinal >= 1 &&
+					phaseOverProof.childCompletionOrdinal <= fence.nativeCompletionOrdinal);
 			if (!phaseOverProof || Object.getPrototypeOf(phaseOverProof) !== Object.prototype || Object.keys(phaseOverProof).sort().join(",") !==
-				"completionOrdinal,eventInstanceId,eventName,eventStep,parentEventInstanceId,parentEventName,rootInstanceId,seatId" ||
-				phaseOverProof.rootInstanceId !== rootInstanceId || phaseOverProof.parentEventName !== "phaseLoop" ||
-				!/^event_[1-9][0-9]{0,6}$/.test(phaseOverProof.eventInstanceId || "") ||
-				!/^event_[1-9][0-9]{0,6}$/.test(phaseOverProof.parentEventInstanceId || "") ||
-				phaseOverProof.eventInstanceId === phaseOverProof.parentEventInstanceId || phaseOverProof.eventInstanceId === proof.eventInstanceId ||
-				phaseOverProof.parentEventInstanceId !== proof.parentEventInstanceId ||
-				typeof phaseOverProof.eventName !== "string" || phaseOverProof.eventName.length < 1 || phaseOverProof.eventName.length > 64 ||
-				!Number.isSafeInteger(phaseOverProof.eventStep) || phaseOverProof.eventStep < 0 ||
-				!Number.isSafeInteger(phaseOverProof.completionOrdinal) || phaseOverProof.completionOrdinal < 1 ||
-				phaseOverProof.completionOrdinal > proof.completionOrdinal || phaseOverProof.seatId !== fence.seatId) {
+				"childCompletionOrdinal,childEventInstanceId,childEventName,childParentEventInstanceId,dispatchOrdinal,kind,ownerEventInstanceId,ownerEventName,ownerEventStep,rootInstanceId,seatId,triggerName" ||
+				phaseOverProof.kind !== "native_phase_over_dispatch_v1" || phaseOverProof.rootInstanceId !== rootInstanceId ||
+				phaseOverProof.ownerEventName !== "phaseLoop" || phaseOverProof.ownerEventInstanceId !== proof.parentEventInstanceId ||
+				!/^event_[1-9][0-9]{0,6}$/.test(phaseOverProof.ownerEventInstanceId || "") ||
+				phaseOverProof.ownerEventStep !== 2 ||
+				!Number.isSafeInteger(phaseOverProof.dispatchOrdinal) || phaseOverProof.dispatchOrdinal !== fence.phaseOverTriggerCount ||
+				phaseOverProof.triggerName !== "phaseOver" || phaseOverProof.seatId !== fence.seatId ||
+				!phaseOverChildValid) {
 				fail("NATIVE_ATOMIC_CAPTURE_PHASE_OVER_EVIDENCE_INVALID");
 			}
 			if (previousCompletionProof) {

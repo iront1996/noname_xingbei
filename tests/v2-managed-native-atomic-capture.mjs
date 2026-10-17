@@ -20,8 +20,9 @@ function envelope(ordinal = 1) {
 			eventStackConsistent: true, nativeCompletionOrdinal: 9, pendingChildCount: 0, phaseOverTriggerCount: 1, rootMatches: true, seatId: "seat_a",
 			completionEvidence: { rootInstanceId: root, eventInstanceId: "event_4", parentEventInstanceId: "event_3",
 				completionOrdinal: 8, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_a", eventStep: 4 },
-			phaseOverCompletionEvidence: { rootInstanceId: root, eventInstanceId: "event_5", parentEventInstanceId: "event_3",
-				completionOrdinal: 7, eventName: "phaseOver", parentEventName: "phaseLoop", seatId: "seat_a", eventStep: 1 } },
+			phaseOverCompletionEvidence: { kind: "native_phase_over_dispatch_v1", rootInstanceId: root, ownerEventInstanceId: "event_3",
+				ownerEventName: "phaseLoop", ownerEventStep: 2, dispatchOrdinal: 1, triggerName: "phaseOver", seatId: "seat_a",
+				childEventInstanceId: null, childEventName: null, childParentEventInstanceId: null, childCompletionOrdinal: null } },
 		cardLedger: { schema: "xingbei_native_private_card_ledger_v1", rootInstanceId: root, seatIds: [...seats], cards: [
 			{ cardId: "card_1", duYou: null, kind: "physical_dom_card_v1", mingGe: "red", name: "sha", ownerSeatId: null,
 				position: 0, xiBie: "fire", zone: "draw" },
@@ -93,6 +94,39 @@ test("atomic capture requires same-root native phase completion evidence before 
 	capture.destroy();
 });
 
+test("atomic capture distinguishes an empty native trigger dispatch from a completed trigger child", () => {
+	const capture = coordinator();
+	const noChild = envelope();
+	assert.equal(capture.commit(noChild).captureOrdinal, 1,
+		"a real phaseOver trigger dispatch with no scheduled trigger event is valid only at the completed parent boundary");
+	const childBoundary = envelope(2);
+	childBoundary.fence.nativeCompletionOrdinal = 10;
+	childBoundary.fence.boundaryOrdinal = 2;
+	childBoundary.fence.completionEvidence.completionOrdinal = 9;
+	childBoundary.fence.completionEvidence.eventInstanceId = "event_8";
+	childBoundary.fence.completionEvidence.parentEventInstanceId = "event_7";
+	childBoundary.fence.completionEvidence.seatId = "seat_b";
+	childBoundary.fence.phaseOverTriggerCount = 2;
+	childBoundary.fence.phaseOverCompletionEvidence = { kind: "native_phase_over_dispatch_v1", rootInstanceId: root,
+		ownerEventInstanceId: "event_7", ownerEventName: "phaseLoop", ownerEventStep: 2, dispatchOrdinal: 2,
+		triggerName: "phaseOver", seatId: "seat_b", childEventInstanceId: "event_9", childEventName: "arrangeTrigger",
+		childParentEventInstanceId: "event_7", childCompletionOrdinal: 8 };
+	childBoundary.fence.seatId = "seat_b";
+	childBoundary.turnResource.turn.actorSeatId = "seat_b";
+	childBoundary.turnResource.turn.phaseLoopSeatId = "seat_b";
+	childBoundary.turnResource.fence.nativeCompletionOrdinal = 10;
+	assert.equal(capture.commit(childBoundary).captureOrdinal, 2,
+		"a scheduled native trigger child must be represented by a completed child instance and ordinal");
+	capture.destroy();
+
+	const invalid = coordinator();
+	const missingChildCompletion = envelope();
+	missingChildCompletion.fence.phaseOverCompletionEvidence = { ...missingChildCompletion.fence.phaseOverCompletionEvidence,
+		childEventInstanceId: "event_6", childEventName: "arrangeTrigger" };
+	assert.throws(() => invalid.commit(missingChildCompletion), /NATIVE_ATOMIC_CAPTURE_PHASE_OVER_EVIDENCE_INVALID/);
+	invalid.destroy();
+});
+
 test("atomic capture accepts a later completed phase from another seat on the same root", () => {
 	const capture = coordinator();
 	const first = capture.commit(envelope());
@@ -104,8 +138,9 @@ test("atomic capture accepts a later completed phase from another seat on the sa
 	later.fence.nativeCompletionOrdinal = 12;
 	later.fence.completionEvidence = { rootInstanceId: root, eventInstanceId: "event_8", parentEventInstanceId: "event_7",
 		completionOrdinal: 11, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_b", eventStep: 4 };
-	later.fence.phaseOverCompletionEvidence = { rootInstanceId: root, eventInstanceId: "event_9", parentEventInstanceId: "event_7",
-		completionOrdinal: 10, eventName: "phaseOver", parentEventName: "phaseLoop", seatId: "seat_b", eventStep: 1 };
+	later.fence.phaseOverCompletionEvidence = { kind: "native_phase_over_dispatch_v1", rootInstanceId: root, ownerEventInstanceId: "event_7",
+		ownerEventName: "phaseLoop", ownerEventStep: 2, dispatchOrdinal: 2, triggerName: "phaseOver", seatId: "seat_b",
+		childEventInstanceId: null, childEventName: null, childParentEventInstanceId: null, childCompletionOrdinal: null };
 	later.turnResource.fence.nativeCompletionOrdinal = 12;
 	later.turnResource.turn.actorSeatId = "seat_b";
 	later.turnResource.turn.phaseLoopSeatId = "seat_b";
@@ -124,17 +159,14 @@ test("atomic capture rejects completion ordinal rollback and replayed event inst
 	const forkedSameOrdinal = envelope(2);
 	forkedSameOrdinal.fence.completionEvidence.eventInstanceId = "event_6";
 	forkedSameOrdinal.fence.completionEvidence.parentEventInstanceId = "event_5";
-	forkedSameOrdinal.fence.phaseOverCompletionEvidence.eventInstanceId = "event_7";
-	forkedSameOrdinal.fence.phaseOverCompletionEvidence.parentEventInstanceId = "event_5";
+	forkedSameOrdinal.fence.phaseOverCompletionEvidence.ownerEventInstanceId = "event_5";
 	assert.throws(() => capture.commit(forkedSameOrdinal), /NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID/);
 	const rollback = envelope(2);
 	rollback.fence.nativeCompletionOrdinal = 8;
 	rollback.fence.completionEvidence.completionOrdinal = 7;
 	rollback.fence.completionEvidence.eventInstanceId = "event_6";
 	rollback.fence.completionEvidence.parentEventInstanceId = "event_5";
-	rollback.fence.phaseOverCompletionEvidence.eventInstanceId = "event_7";
-	rollback.fence.phaseOverCompletionEvidence.parentEventInstanceId = "event_5";
-	rollback.fence.phaseOverCompletionEvidence.completionOrdinal = 6;
+	rollback.fence.phaseOverCompletionEvidence.ownerEventInstanceId = "event_5";
 	rollback.turnResource.fence.nativeCompletionOrdinal = 8;
 	assert.throws(() => capture.commit(rollback), /NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID/);
 	const replay = envelope(2);
@@ -152,6 +184,7 @@ test("atomic capture rejects skipped, reused-seat and non-advancing native fence
 		{ code: "NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID", mutate: later => {
 			later.fence.boundaryOrdinal = 3;
 			later.fence.phaseOverTriggerCount = 3;
+			later.fence.phaseOverCompletionEvidence.dispatchOrdinal = 3;
 		} },
 		{ code: "NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID", mutate: later => {
 			later.fence.boundaryOrdinal = 2;
@@ -165,6 +198,7 @@ test("atomic capture rejects skipped, reused-seat and non-advancing native fence
 		{ code: "NATIVE_ATOMIC_CAPTURE_FENCE_INVALID", mutate: later => {
 			later.fence.boundaryOrdinal = 2;
 			later.fence.phaseOverTriggerCount = 1;
+			later.fence.phaseOverCompletionEvidence.dispatchOrdinal = 1;
 		} },
 	];
 	for (const { code, mutate } of cases) {
@@ -175,8 +209,9 @@ test("atomic capture rejects skipped, reused-seat and non-advancing native fence
 		later.fence.nativeCompletionOrdinal = 12;
 		later.fence.completionEvidence = { rootInstanceId: root, eventInstanceId: "event_8", parentEventInstanceId: "event_7",
 			completionOrdinal: 11, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_b", eventStep: 4 };
-		later.fence.phaseOverCompletionEvidence = { rootInstanceId: root, eventInstanceId: "event_9", parentEventInstanceId: "event_7",
-			completionOrdinal: 10, eventName: "phaseOver", parentEventName: "phaseLoop", seatId: "seat_b", eventStep: 1 };
+			later.fence.phaseOverCompletionEvidence = { kind: "native_phase_over_dispatch_v1", rootInstanceId: root, ownerEventInstanceId: "event_7",
+				ownerEventName: "phaseLoop", ownerEventStep: 2, dispatchOrdinal: 2, triggerName: "phaseOver", seatId: "seat_b",
+				childEventInstanceId: null, childEventName: null, childParentEventInstanceId: null, childCompletionOrdinal: null };
 		later.turnResource.fence.nativeCompletionOrdinal = 12;
 		later.turnResource.turn.actorSeatId = "seat_b";
 		later.turnResource.turn.phaseLoopSeatId = "seat_b";

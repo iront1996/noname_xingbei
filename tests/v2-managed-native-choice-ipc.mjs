@@ -1903,10 +1903,23 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(secondFence.snapshot.gameMeAbsent, true);
 						assert.equal(secondFence.snapshot.connectedTransports, 0);
 						assert.equal(secondFence.snapshot.completionEvidence.eventName, "phase");
-						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.parentEventInstanceId,
+						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.kind, "native_phase_over_dispatch_v1");
+						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.ownerEventInstanceId,
 							secondFence.snapshot.completionEvidence.parentEventInstanceId);
-						assert.ok(secondFence.snapshot.phaseOverCompletionEvidence.completionOrdinal <
-							secondFence.snapshot.completionEvidence.completionOrdinal);
+						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.ownerEventStep, 2);
+						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.triggerName, "phaseOver");
+						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.seatId, secondFence.snapshot.seatId);
+						if (secondFence.snapshot.phaseOverCompletionEvidence.childEventInstanceId === null) {
+							assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.childEventName, null);
+							assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.childParentEventInstanceId, null);
+							assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.childCompletionOrdinal, null,
+								"the native trigger dispatcher explicitly scheduled no child event at this boundary");
+						} else {
+							assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.childParentEventInstanceId,
+								secondFence.snapshot.phaseOverCompletionEvidence.ownerEventInstanceId);
+							assert.ok(Number.isSafeInteger(secondFence.snapshot.phaseOverCompletionEvidence.childCompletionOrdinal),
+								"a scheduled phaseOver child must have actual native completion evidence");
+						}
 						const secondCaptureResult = await manager.snapshotNativeAtomicCapture(roomId);
 						assert.equal(secondCaptureResult.ok, true, `second-seat atomic capture rejected: ${secondCaptureResult.code}`);
 						assert.equal(secondCaptureResult.snapshot.captureOrdinal, 3);
