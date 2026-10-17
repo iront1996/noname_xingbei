@@ -1983,6 +1983,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 								phaseBoundaries: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_loop_wait_next_boundary").slice(-8).map(entry => entry.snapshot),
 								host: manager.inspect(roomId) }));
 						assert.notEqual(secondFence.snapshot.seatId, waitingSnapshot.seatId);
+						assert.equal(secondFence.snapshot.phaseNumber, waitingSnapshot.phaseNumber + 1,
+							"native phaseNumber must advance once through the original phaseLoop, not through a synthesized actor change");
+						assert.equal(waitingSnapshot.completedPhasePlayerPhaseNumber, 1);
+						assert.equal(secondFence.snapshot.completedPhasePlayerPhaseNumber, 1,
+							"the next ordinary seat's native phaseNumber must come from that Player's own phase initialization");
 						assert.equal(secondFence.snapshot.rootInstanceId, waitingSnapshot.rootInstanceId);
 						assert.equal(secondFence.snapshot.rootObjectMatches, true);
 						assert.equal(secondFence.snapshot.loopSeatId, nextSeatBoundary.snapshot.loopSeatId);
