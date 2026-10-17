@@ -2465,7 +2465,7 @@ async function runNativeStartDiagnostic(message) {
 	      completedPhaseOverEvidence.childEventName!==phaseOverChildCompletion.eventName))
 	     throw Error('NATIVE_EVENT_COMPLETION_EVIDENCE_MISSING');
 	     const fence={status:'waiting',releaseCount:0,nativeEventId:action?.eventId||completedPhaseEvidence.eventInstanceId,seatId:phaseChild.player?.playerid||null,
-	     boundaryOrdinal,rootInstanceId:state.rootInstanceId,rootEvent:state.root,phaseLoopEvent:event,completedPhaseEvent:phaseChild,phaseOverDispatchEvidence,
+	     boundaryOrdinal,rootInstanceId:state.rootInstanceId,rootEvent:state.root,phaseLoopEvent:event,completedPhaseEvent:phaseChild,phaseOverDispatchEvidence:phaseOverDispatch,
 	      seatPlayer:phaseChild.player,nextActorSeatId:event.player?.playerid||null,
 	     phaseLoopStep:event.step,phaseOverTriggerCount:state.nativePhaseOverTriggerCount,phaseOverTriggerComplete,
 	     nativeCompletionOrdinal:completionLedger.completionOrdinal,completionEvidence:completedPhaseEvidence,phaseOverCompletionEvidence:completedPhaseOverEvidence,
