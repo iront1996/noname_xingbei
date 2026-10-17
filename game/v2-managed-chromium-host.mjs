@@ -2093,7 +2093,15 @@ async function runNativeStartDiagnostic(message) {
 					emitNativeStartDiagnostic({ stage: payload.stage, snapshot: {
 						eventName: snapshot.eventName || null, eventStep: Number.isSafeInteger(snapshot.eventStep) ? snapshot.eventStep : null,
 						parentEventName: snapshot.parentEventName || null, rootInstanceId: snapshot.rootInstanceId || null,
-						rootObjectMatches: snapshot.rootObjectMatches === true, phaseLoopIdentityMatches: snapshot.phaseLoopIdentityMatches === true,
+						rootObjectMatches: snapshot.managerRootIsStateRoot === true, managerRootEventName: snapshot.managerRootEventName || null,
+						managerRootEventInstanceId: typeof snapshot.managerRootEventInstanceId === "string" ? snapshot.managerRootEventInstanceId : null,
+						stateRootEventInstanceId: typeof snapshot.stateRootEventInstanceId === "string" ? snapshot.stateRootEventInstanceId : null,
+						managerEventStackRootName: snapshot.managerEventStackRootName || null,
+						managerEventStackRootInstanceId: typeof snapshot.managerEventStackRootInstanceId === "string" ? snapshot.managerEventStackRootInstanceId : null,
+						eventInstanceId: typeof snapshot.eventInstanceId === "string" ? snapshot.eventInstanceId : null,
+						eventParentName: snapshot.eventParentName || null,
+						eventParentInstanceId: typeof snapshot.eventParentInstanceId === "string" ? snapshot.eventParentInstanceId : null,
+						phaseLoopIdentityMatches: snapshot.phaseLoopIdentityMatches === true,
 						ownerEventInstanceId: typeof snapshot.ownerEventInstanceId === "string" ? snapshot.ownerEventInstanceId : null,
 						entryStep: Number.isSafeInteger(snapshot.entryStep) ? snapshot.entryStep : null,
 						triggerOrdinal: Number.isSafeInteger(snapshot.triggerOrdinal) ? snapshot.triggerOrdinal : null,
@@ -2366,12 +2374,20 @@ async function runNativeStartDiagnostic(message) {
 	  };
 	  GameEvent.prototype.waitNext=function(...args){
 	   const event=this;
-	   const phaseOverWaitContext=(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")})&&event===state.phaseLoop&&[2,3].includes(event.step)?Object.freeze({
-	    event,rootInstanceId:state.rootInstanceId,ownerEventInstanceId:completionLedgerForRoot()?.eventIds.get(event)||null,
+	   const phaseOverLedger=(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")})&&event===state.phaseLoop&&[2,3].includes(event.step)?completionLedgerForRoot():null;
+	   const phaseOverEventInstanceId=phaseOverLedger?registerNativeEventInstance(event,phaseOverLedger):null;
+	   const phaseOverWaitContext=phaseOverLedger?Object.freeze({
+	    event,rootInstanceId:state.rootInstanceId,ownerEventInstanceId:phaseOverEventInstanceId,
 	    entryStep:event.step,triggerOrdinal:state.nativePhaseOverTriggerCount||0,draft:state.nativePhaseOverDispatchDraft||null,
 	    completionOrdinal:completionLedgerForRoot()?.completionOrdinal??null}):null;
-	   if(phaseOverWaitContext){const draft=phaseOverWaitContext.draft;try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'phase_over_wait_next_entered',snapshot:{eventName:event.name,eventStep:phaseOverWaitContext.entryStep,
-	    rootInstanceId:phaseOverWaitContext.rootInstanceId,ownerEventInstanceId:phaseOverWaitContext.ownerEventInstanceId,phaseLoopIdentityMatches:event===state.phaseLoop,
+	   if(phaseOverLedger&&!phaseOverEventInstanceId)throw Error('NATIVE_PHASE_OVER_OWNER_EVENT_ID_MISSING');
+	   if(phaseOverWaitContext){const draft=phaseOverWaitContext.draft,ledger=state.nativeEventCompletionLedger;try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'phase_over_wait_next_entered',snapshot:{eventName:event.name,eventStep:phaseOverWaitContext.entryStep,
+	    rootInstanceId:phaseOverWaitContext.rootInstanceId,ownerEventInstanceId:phaseOverWaitContext.ownerEventInstanceId,
+	    managerRootEventName:manager.rootEvent?.name||null,
+	    managerRootEventInstanceId:ledger?.eventIds.get(manager.rootEvent)||null,stateRootEventInstanceId:ledger?.eventIds.get(state.root)||null,
+	    managerEventStackRootName:manager.eventStack[0]?.name||null,managerEventStackRootInstanceId:ledger?.eventIds.get(manager.eventStack[0])||null,
+	    eventInstanceId:ledger?.eventIds.get(event)||null,eventParentName:event.parent?.name||null,eventParentInstanceId:ledger?.eventIds.get(event.parent)||null,
+	    managerRootIsStateRoot:manager.rootEvent===state.root,phaseLoopIdentityMatches:event===state.phaseLoop,
 	    triggerOrdinal:phaseOverWaitContext.triggerOrdinal,draftPresent:Boolean(draft),draftRootMatches:draft?.rootInstanceId===phaseOverWaitContext.rootInstanceId,
 	    draftOwnerMatches:draft?.phaseLoopEvent===event,draftOwnerEventInstanceId:draft?.ownerEventInstanceId||null,draftSeatId:draft?.seatId||null,
 	    draftOwnerStep:Number.isSafeInteger(draft?.ownerEventStep)?draft.ownerEventStep:null,draftTriggerOrdinal:Number.isSafeInteger(draft?.triggerOrdinal)?draft.triggerOrdinal:null,

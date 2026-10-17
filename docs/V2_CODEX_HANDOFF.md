@@ -1,5 +1,12 @@
 # V2 Codex engineering handoff
 
+## Current T3 repair follow-up — phaseOver root diagnostics restored, Linux rerun pending
+
+- Starting from remote commit `8af7b6b4dc16114281f74a6e7c55ce2b2c54cf0f`, CI `39068890162` failed at step 32; steps 33–34 and later regressions did not run. The reported root mismatch was a diagnostic normalization defect: `rootObjectMatches` was emitted as false when the diagnostic payload omitted that field, even though the managed event manager's root was the state root. Safe trace fields now include the manager/state/event-stack root names and instance IDs, while the strict root identity assertion remains enabled.
+- The phaseOver wait wrapper now registers the actual event through the existing root-ancestry validator before capturing its instance ID. If registration fails it rejects with `NATIVE_PHASE_OVER_OWNER_EVENT_ID_MISSING`; it does not synthesize a draft or relax the phaseOver proof. This also corrects the diagnostic ordering that had sampled the owner ID before the event was present in the ledger.
+- Local validation on this Windows host: the exact normal managed-opening-root Chromium case passed 1/1, and the exact `managed_opening_root_action_event4_ack_loss` case passed 1/1; both used real Chromium and had zero skips. Focused Node coverage passed 23/23 with one Windows-only symlink capability skip (`EPERM`); that skip is not Linux CI evidence. Syntax, diff whitespace, and managed-engine release-lock checks passed; lock build ID is `d491d3fd09ff1a2f6a9c1ef5631b9ceb852245d172f296210704636ace3cdc77` for 209 files.
+- Full Linux CI for this repair is pending. Before pushing, the branch was locally reproduced in both required Chromium modes. Cloudflare's persisted branch exclusion had previously been read-only confirmed; deployment-history verification for the next push is still pending. No production configuration was changed. T3 remains incomplete and all seed/Event #5/checkpoint gates remain closed.
+
 ## T3 native dynamic-state source audit — unsupported families remain fail-closed
 
 - A bounded source-only follow-up inspected Noname's `tempSkills`, `additionalSkills`, `Player.when`, `extraXingDong`, and the current `hujia` call paths. It did not alter managed-engine or native game source and did not claim new state support.

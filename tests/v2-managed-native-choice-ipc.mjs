@@ -1223,7 +1223,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		const completedWait = nativeDiagnostic.find(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&
 			entry?.snapshot?.eventStep === 3 && entry?.snapshot?.phaseOverWaitEntryStep === 3);
 		assert.ok(dispatch, "the native phaseOver trigger dispatch must be observed");
-		assert.ok(waitEntry, "the step-2 native phaseOver dispatch wait must capture its entry state before awaiting children");
+		assert.ok(waitEntry, `the step-2 native phaseOver dispatch wait must capture its entry state before awaiting children: ${JSON.stringify(
+			nativeDiagnostic.filter(entry => entry?.stage === "phase_over_wait_next_entered" && [2, 3].includes(entry?.snapshot?.eventStep))
+				.slice(-8).map(entry => ({ eventStep: entry.snapshot?.eventStep, ownerEventInstanceId: entry.snapshot?.ownerEventInstanceId || null,
+					managerRootEventName: entry.snapshot?.managerRootEventName || null,
+					managerRootEventInstanceId: entry.snapshot?.managerRootEventInstanceId || null,
+					stateRootEventInstanceId: entry.snapshot?.stateRootEventInstanceId || null,
+					managerEventStackRootName: entry.snapshot?.managerEventStackRootName || null,
+					managerEventStackRootInstanceId: entry.snapshot?.managerEventStackRootInstanceId || null,
+					managerRootIsStateRoot: entry.snapshot?.rootObjectMatches ?? null,
+					eventInstanceId: entry.snapshot?.eventInstanceId || null,
+					eventParentName: entry.snapshot?.eventParentName || null,
+					eventParentInstanceId: entry.snapshot?.eventParentInstanceId || null,
+					phaseLoopIdentityMatches: entry.snapshot?.phaseLoopIdentityMatches ?? null,
+					triggerOrdinal: entry.snapshot?.triggerOrdinal ?? null, draftPresent: entry.snapshot?.draftPresent ?? false })))}`);
 		assert.ok(proofWaitEntry, "the step-3 native continuation wait must capture the draft before its asynchronous completion");
 		assert.ok(completedWait, `the phaseOver wait invocation must carry its captured step context through native completion: ${JSON.stringify(
 			nativeDiagnostic.filter(entry => ["phase_over_wait_next_entered", "native_phase_over_trigger_called", "native_phase_loop_wait_next_boundary"].includes(entry?.stage))
@@ -2281,8 +2294,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(authoritySubmissions[0].proof.event.sideEventParentName, "chooseCharacterOL");
 					assert.equal(authoritySubmissions[0].proof.event.selectionParentName, "game");
 					assert.equal(authoritySubmissions[2].proof.event.rootEventName, "game");
-					assert.equal(nativeDiagnostic.some(entry => entry?.snapshot?.rootObjectMatches === false), false,
-						"native root object identity changed during the four-event chain");
+					const rootIdentityMismatches = nativeDiagnostic.filter(entry => entry?.snapshot?.rootObjectMatches === false)
+						.map(entry => ({ stage: entry.stage || null, eventName: entry.snapshot?.eventName || null,
+							eventStep: Number.isSafeInteger(entry.snapshot?.eventStep) ? entry.snapshot.eventStep : null,
+							parentEventName: entry.snapshot?.parentEventName || null,
+							rootInstanceId: entry.snapshot?.rootInstanceId || null,
+							managerRootEventName: entry.snapshot?.managerRootEventName || null,
+							managerRootEventInstanceId: entry.snapshot?.managerRootEventInstanceId || null,
+							stateRootEventInstanceId: entry.snapshot?.stateRootEventInstanceId || null,
+							managerEventStackRootName: entry.snapshot?.managerEventStackRootName || null,
+							managerEventStackRootInstanceId: entry.snapshot?.managerEventStackRootInstanceId || null,
+							phaseLoopIdentityMatches: typeof entry.snapshot?.phaseLoopIdentityMatches === "boolean"
+								? entry.snapshot.phaseLoopIdentityMatches : null }));
+					assert.equal(rootIdentityMismatches.length, 0,
+						`native root object identity changed during the four-event chain: ${JSON.stringify(rootIdentityMismatches)}`);
 					const actionGate = nativeDiagnostic.find(entry => entry?.stage === "native_start_probe_outcome")?.snapshot;
 					assert.equal(actionGate?.rootObjectMatches, true);
 					assert.equal(actionGate?.rootInstanceId, rootIds[0]);
