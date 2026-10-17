@@ -51,6 +51,23 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 		authorityStateRevision: 4,
 		event5Enabled: false,
 	});
+	assert.deepEqual(turn.nativeQuotaBoundaryEvidence, {
+		linuxCiRunId: "39063275363",
+		pendingInputGate: {
+			workflowStep: "V2 M2 C3 authority Event 1-4 same-session and Chromium-chain audit",
+			eventName: "xingDong",
+			eventStep: 0,
+			quotas: { gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0 },
+			actorBoundToPendingNativeAction: true,
+			atomicCapture: false,
+		},
+		completedPhaseFence: {
+			workflowStep: "V2 M2 T3-B1 ledger plus restricted atomic capture across a real four-seat action",
+			nativeCompletionOrdinal: 112,
+			quotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0, extraXingDongCount: 0 },
+		},
+		scope: "observed native reset and consumed values only; not general quota semantics",
+	});
 	assert.match(turn.unsupported[0], /arbitrary multi-turn capture/);
 	assert.match(turn.unsupported[2], /all quota reset\/decrement and round-boundary semantics/);
 	assert.equal(turn.verifiedEvidence.inputGateQuotaReset.observationIsAtomicCapture, false,

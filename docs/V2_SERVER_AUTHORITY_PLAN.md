@@ -1,5 +1,12 @@
 # V2 server-authority plan and evidence
 
+## T3 quota coverage follow-up — manifest records a narrow native boundary
+
+- On code commit `f3157a0cba4fb34f15af42c1b4f381b9c65a9624`, Linux CI `39063275363` passed 86/86 workflow steps and 266/266 tests with zero failures/skips. A true managed Chromium run observed the native `xingDong` step-0 quota reset (`gongJiOrFaShu=1`, other reviewed quotas zero) at a pending ordinary-seat input gate and verified the actor binding. A separate completed phase fence observed those quota counters consumed to zero.
+- These observations have different boundaries: the live gate projection is explicitly non-atomic, while the consumed values are tied to the completed phase fence. The manifest now records both evidence paths separately and has a regression test against conflation. The manifest remains `incomplete`; `turn_and_action_quotas` remains `partial`, and the manifest test asserts arbitrary quota/round semantics remain unsupported.
+- Commit `969d51a291f4f9987b3e89fed5e4141fa8ccc725` contains only manifest/test/documentation evidence updates; its focused Node test passed 1/1 with zero skips. Full Linux CI for this documentation/manifest HEAD is pending. No engine source changed, so the managed-source release lock is unchanged.
+- No authority state was advanced: seed unauthorized, revision 4, Event #5 rejected, checkpoint unavailable. T3 remains incomplete.
+
 ## Latest T3 evidence — narrow quota observation (partial only)
 
 - Linux CI `39063275363` on `f3157a0cba4fb34f15af42c1b4f381b9c65a9624` passed the full serialized workflow: 86/86 steps and 266/266 TAP tests, zero failures/skips. The real Chromium Event #1–#4 input-gate test confirms the pending action's native actor is the immutable server-bound ordinary seat and the active `xingDong` step 0 holds the original native reset values `{gongJiOrFaShu:1, faShu:0, gongJi:0, extraXingDongCount:0}`. The phase fence separately confirms consumed quota values after the completed action.

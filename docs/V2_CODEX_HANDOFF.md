@@ -1,5 +1,11 @@
 # V2 Codex engineering handoff
 
+## T3 quota coverage follow-up — evidence recorded, full T3 remains incomplete
+
+- Linux CI `39063275363` on code commit `f3157a0cba4fb34f15af42c1b4f381b9c65a9624` passed 86/86 workflow steps and 266/266 tests, with zero failures/skips. The real Chromium chain observed the active ordinary player's native `xingDong` step-0 reset values at the pending input gate and verified they belonged to the actor-bound native action. The separately completed phase fence verifies the consumed counters are zero; these are distinct lifecycle observations, not one atomic before/after snapshot.
+- Commit `969d51a291f4f9987b3e89fed5e4141fa8ccc725` records those exact boundaries in the coverage manifest, with an assertion that the live gate observation is not an atomic capture. Focused manifest test passed 1/1, zero skips. This documentation/manifest follow-up does not change executable engine code; Linux CI is pending for this exact HEAD.
+- Turn/quota coverage remains partial. Arbitrary reset/decrement behavior, arbitrary multi-turn/action shapes, nonempty `extraXingDong`, round-boundary semantics and integration into complete schema v2 remain unsupported. No Event #5, authority seed or checkpoint was created; gates remain closed. PR #1 is open/unmerged; Cloudflare exclusion remains in force, and no production/VPS service was touched.
+
 ## Latest T3 evidence — cross-seat capture and native quota boundary (not full T3)
 
 - Remote/local isolated branch HEAD `f3157a0cba4fb34f15af42c1b4f381b9c65a9624`; Linux CI `39063275363` passed 86/86 workflow steps and 266/266 tests, zero failures and zero skips. It includes the real Chromium same-root Event #1–#4 chain, two-seat repeated atomic capture, ACK-loss/stop and state-family regressions.

@@ -58,6 +58,23 @@
 				"authorityStateRevision": 4,
 				"event5Enabled": false
 			},
+			"nativeQuotaBoundaryEvidence": {
+				"linuxCiRunId": "39063275363",
+				"pendingInputGate": {
+					"workflowStep": "V2 M2 C3 authority Event 1-4 same-session and Chromium-chain audit",
+					"eventName": "xingDong",
+					"eventStep": 0,
+					"quotas": { "gongJiOrFaShu": 1, "faShu": 0, "gongJi": 0, "extraXingDongCount": 0 },
+					"actorBoundToPendingNativeAction": true,
+					"atomicCapture": false
+				},
+				"completedPhaseFence": {
+					"workflowStep": "V2 M2 T3-B1 ledger plus restricted atomic capture across a real four-seat action",
+					"nativeCompletionOrdinal": 112,
+					"quotas": { "gongJiOrFaShu": 0, "faShu": 0, "gongJi": 0, "extraXingDongCount": 0 }
+				},
+				"scope": "observed native reset and consumed values only; not general quota semantics"
+			},
 			"unsupported": ["arbitrary multi-turn capture across all seat orders and phase/action shapes", "nonempty extraXingDong", "all quota reset/decrement and round-boundary semantics"]
 		},
 		{
