@@ -1722,7 +1722,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						const atomic = await manager.snapshotNativeAtomicCapture(roomId);
 						assert.equal(atomic.ok, true, `native atomic capture rejected: ${atomic.code}`);
 						assert.deepEqual(Object.keys(atomic.snapshot).sort(), ["atomicWithEffectSnapshots", "authoritySeedAuthorized", "captureOrdinal",
-							"checkpointAvailable", "commitment", "engineBuildId", "nativeCompletionOrdinal", "nativeFenceOrdinal", "projectionCount", "rootInstanceId",
+							"checkpointAvailable", "commitment", "engineBuildId", "nativeCompletionOrdinal", "nativeFenceOrdinal", "nativeTurnSummary", "projectionCount", "rootInstanceId",
 							"schema", "schemaVersion", "stableProjectionsWithPrevious", "stableWithPrevious"].sort());
 						assert.equal(atomic.snapshot.captureOrdinal, 1);
 						assert.equal(atomic.snapshot.nativeFenceOrdinal, 1);
