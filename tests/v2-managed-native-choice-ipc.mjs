@@ -2049,10 +2049,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"the card ledger pre-action capture is bound to the native candidate boundary, not a completed action ordinal");
 					assert.equal(nativeCardLedgerCaptureContexts[1].nativeCompletionOrdinal, null,
 						"the card ledger protocol does not expose a shared native completion ordinal for its post-phaseOver boundary");
-					assert.equal(nativeCardLedgerBefore.rootInstanceId, nativeEffectStateBefore?.snapshot?.rootInstanceId);
-					assert.equal(nativeCardLedgerAfter.rootInstanceId, nativeEffectStateAfter?.snapshot?.rootInstanceId);
-					assert.equal(nativeCardLedgerBefore.engineBuildId, nativeEffectStateBefore?.snapshot?.engineBuildId);
-					assert.equal(nativeCardLedgerAfter.engineBuildId, nativeEffectStateAfter?.snapshot?.engineBuildId);
+					if (process.env.V2_NATIVE_EFFECT_STATE_PROBE === "1") {
+						assert.ok(nativeEffectStateBefore?.snapshot && nativeEffectStateAfter?.snapshot,
+							"combined B1/B2 acceptance requires both effect snapshots before comparing their bindings");
+						assert.equal(nativeCardLedgerBefore.rootInstanceId, nativeEffectStateBefore.snapshot.rootInstanceId);
+						assert.equal(nativeCardLedgerAfter.rootInstanceId, nativeEffectStateAfter.snapshot.rootInstanceId);
+						assert.equal(nativeCardLedgerBefore.engineBuildId, nativeEffectStateBefore.snapshot.engineBuildId);
+						assert.equal(nativeCardLedgerAfter.engineBuildId, nativeEffectStateAfter.snapshot.engineBuildId);
+					}
 					assert.equal(nativeCardLedgerAfter.virtualCardsIncluded, false,
 						"virtual YinYang viewAs cards must not be added to the physical card ledger");
 					const privateSummary = JSON.stringify([nativeCardLedgerBefore, nativeCardLedgerAfter]);
