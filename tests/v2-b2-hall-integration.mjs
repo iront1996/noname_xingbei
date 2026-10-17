@@ -72,6 +72,8 @@ function runFakeHall(code){
     return realRequire("../tools/connection-recovery/seat-registry.js");
    if(spec==="./xingbei-hall-progress-watch.js")
     return realRequire("../tools/connection-recovery/xingbei-hall-progress-watch.js");
+   if(spec==="./server-room-lifecycle.js")
+    return realRequire("../game/server-room-lifecycle.js");
    throw Error("UNEXPECTED_DEPENDENCY:"+spec);
   },
   setTimeout:()=>1,clearTimeout:()=>{},setInterval:()=>2,clearInterval:()=>{},

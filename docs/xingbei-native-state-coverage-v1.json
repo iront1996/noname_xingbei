@@ -1,0 +1,182 @@
+{
+	"schema": "xingbei_native_state_coverage_v1",
+	"status": "incomplete",
+	"fullCanonicalStateEligible": false,
+	"seedAuthorized": false,
+	"authorityStateRevision": 4,
+	"event5Enabled": false,
+	"checkpointAvailable": false,
+	"unknownStatePolicy": "fail_closed",
+	"families": [
+		{
+			"id": "native_event_completion",
+			"status": "partial",
+			"nativeSources": ["GameEvent.start", "GameEvent.waitNext", "eventStack", "parent.childEvents", "parent.next"],
+			"supportedBoundary": "managed-root child completion after original start promise resolves and parent waitNext resumes",
+			"unsupported": ["all possible parent-child schedules", "all in-flight trigger and dynamic effect families", "unbounded whole-game transition semantics"]
+		},
+		{
+			"id": "physical_card_zones",
+			"status": "partial",
+			"nativeSources": ["lib.cardOL", "native card pile/discard/ordering/special nodes", "Player.getCards"],
+			"supportedBoundary": "restricted four-seat atomic capture at the verified initial post-phaseOver fence",
+			"unsupported": ["virtual-card source/material relation", "all native card storage and movement causes", "all game zones not explicitly enumerated"]
+		},
+		{
+			"id": "skill_and_effect_state",
+			"status": "partial",
+			"nativeSources": ["Player.hasSkill(yinYangZhanHuan)", "Player.countZhiShiWu(guiHuo)"],
+			"supportedBoundary": "limited yinYangZhanHuan presence and guiHuo count projection",
+			"unsupported": ["unknown skills", "dynamic effects", "arbitrary storage", "temporary and additional skill lifecycle", "unknown marks"]
+		},
+		{
+			"id": "turn_and_action_quotas",
+			"status": "partial",
+			"nativeSources": ["phaseLoop.player", "phase child", "_status.currentPhase", "reviewed Player storage quota fields"],
+			"supportedBoundary": "two distinct completed native seat phases in one managed root/session/build, each with atomic capture plus stable same-fence repeat and empty extraXingDong queue",
+			"verifiedEvidence": {
+				"linuxCiRunId": "39061677334",
+				"workflowStep": 33,
+				"completedSeatCount": 2,
+				"acceptedCaptureCountIncludingStableRepeats": 4,
+				"nativeCompletionOrdinals": [112, 223],
+				"inputGateQuotaReset": {
+					"linuxCiRunId": "39063275363",
+					"workflowStep": "V2 M2 C3 authority Event 1-4 same-session and Chromium-chain audit",
+					"nativeEvent": "xingDong",
+					"nativeStep": 0,
+					"quotas": { "gongJiOrFaShu": 1, "faShu": 0, "gongJi": 0, "extraXingDongCount": 0 },
+					"actorBoundToPendingAction": true,
+					"observationIsAtomicCapture": false
+				},
+				"completedPhaseQuotaConsumption": {
+					"linuxCiRunId": "39063275363",
+					"workflowStep": "V2 M2 T3-B1 ledger plus restricted atomic capture across a real four-seat action",
+					"nativeCompletionOrdinal": 112,
+					"consumedQuotas": { "gongJiOrFaShu": 0, "faShu": 0, "gongJi": 0 }
+				},
+				"authorityStateRevision": 4,
+				"event5Enabled": false
+			},
+			"nativeQuotaBoundaryEvidence": {
+				"linuxCiRunId": "39063275363",
+				"pendingInputGate": {
+					"workflowStep": "V2 M2 C3 authority Event 1-4 same-session and Chromium-chain audit",
+					"eventName": "xingDong",
+					"eventStep": 0,
+					"quotas": { "gongJiOrFaShu": 1, "faShu": 0, "gongJi": 0, "extraXingDongCount": 0 },
+					"actorBoundToPendingNativeAction": true,
+					"atomicCapture": false
+				},
+				"completedPhaseFence": {
+					"workflowStep": "V2 M2 T3-B1 ledger plus restricted atomic capture across a real four-seat action",
+					"nativeCompletionOrdinal": 112,
+					"quotas": { "gongJiOrFaShu": 0, "faShu": 0, "gongJi": 0, "extraXingDongCount": 0 }
+				},
+				"scope": "observed native reset and consumed values only; not general quota semantics"
+			},
+			"crossSeatPhaseAndQuotaBoundary": {
+				"linuxCiRunId": "39065347253",
+				"workflowStep": "V2 M2 T3 cross-seat repeated native atomic capture in real Chromium",
+				"sameRoomSessionHostChromiumRootBuildAndImmutableSeats": true,
+				"gameMeAbsent": true,
+				"connectedPlayerTransports": 0,
+				"seats": [
+					{
+						"seatId": "native_seat_2",
+						"nativeCompletionOrdinal": 112,
+						"gamePhaseNumber": 1,
+						"completedPlayerPhaseNumber": 1,
+						"completedQuotas": { "gongJiOrFaShu": 0, "faShu": 0, "gongJi": 0, "extraXingDongCount": 0 }
+					},
+					{
+						"seatId": "native_seat_3",
+						"nativeCompletionOrdinal": 223,
+						"gamePhaseNumber": 2,
+						"completedPlayerPhaseNumber": 1,
+						"completedQuotas": { "gongJiOrFaShu": 0, "faShu": 0, "gongJi": 0, "extraXingDongCount": 0 }
+					}
+				],
+				"secondSeatResetObservation": {
+					"eventName": "xingDong",
+					"eventStep": 1,
+					"parentEventName": "phase",
+					"observedAfterNativeStepZeroCompleted": true,
+					"boundToSecondCompletedSeatPhase": true,
+					"sameRootInstance": true,
+					"quotas": { "gongJiOrFaShu": 1, "faShu": 0, "gongJi": 0, "extraXingDongCount": 0 },
+					"observationIsAtomicCapture": false
+				},
+				"acceptedAtomicCaptureOrdinals": [1, 2, 3, 4],
+				"captureBoundaryOrdinals": [1, 2],
+				"projectionCountPerEnvelope": 3,
+				"sameFenceRepeatsStable": true,
+				"authorityStateRevision": 4,
+				"event5Enabled": false,
+				"checkpointAvailable": false,
+				"scope": "two adjacent native seat phases only; global game.phaseNumber advanced once and each seat's player.phaseNumber initialized once; the second-seat xingDong step-1 quota reset is a separate non-atomic observation, not general quota semantics"
+			},
+			"unsupported": ["arbitrary multi-turn capture across all seat orders and phase/action shapes", "nonempty extraXingDong", "all quota reset/decrement and round-boundary semantics"]
+		},
+		{
+			"id": "team_resources",
+			"status": "partial",
+			"nativeSources": ["game.hongShiQi", "game.lanShiQi", "game.hongXingBei", "game.lanXingBei", "game.hongZhanJi", "game.lanZhanJi"],
+			"supportedBoundary": "bounded values and reviewed baoShi/shuiJing records in the restricted projection",
+			"unsupported": ["all resource mutation event semantics", "unreviewed achievement kinds", "terminal-result transition semantics"]
+		},
+		{
+			"id": "player_health_and_resources",
+			"status": "partial",
+			"nativeSources": ["Player.hp", "Player.maxHp", "Player.zhiLiao", "Player.countNengLiang", "Player.getNengLiangLimit"],
+			"supportedBoundary": "bounded hp/zhiLiao and baoShi/shuiJing/effectiveLimit projection",
+			"unsupported": ["hujia", "all damage/recovery/death chain semantics", "all mod-driven resource variants"]
+		},
+		{
+			"id": "hujia",
+			"status": "unsupported",
+			"nativeSources": ["noname/library/element/content.js changeHp: damage absorption and changeHujia call", "noname/library/element/player.js getBuff case 3", "Player prototype assembly in noname/library/index.js"],
+			"supportedBoundary": null,
+			"unsupported": ["changeHujia implementation/source not located", "mutation, expiry and death/reset semantics"],
+			"sourceAudit": {
+				"damagePath": "changeHp content computes absorbed amount from player.hujia then invokes player.changeHujia(-event.hujia)",
+				"buffPath": "Player.getBuff case 3 invokes this.changeHujia()",
+				"repositoryDefinitionSearch": "no changeHujia method definition or prototype assignment found in the tracked source tree; references are call sites and diagnostics only",
+				"historyBoundary": "the earliest tracked player.js revision is dba1d323a530453f09fcaaec776c706eba54e1fd; that baseline also has no changeHujia definition, while content.js contains the moved-to-changeHp comment and call sites",
+				"runtimeEvidence": {
+					"linuxCiRunId": "39066874592",
+					"probe": "managed Chromium four-seat native phaseOver fence",
+					"methodPresent": false,
+					"valuePresent": false,
+					"prototypeOwnerCount": 0,
+					"scope": "observed for the four tested Players in this managed runtime boundary; not evidence for every possible loading mode or armor behavior"
+				},
+				"interpretation": "tracked source history and the tested managed Chromium runtime both lack the method/value at the reviewed boundary; do not infer armor mutation semantics or repair without explicit native-rule authorization"
+			},
+			"requiresNativeRuleChangeAuthorization": true
+		},
+		{
+			"id": "dynamic_skills_storage_and_effects",
+			"status": "unsupported",
+			"nativeSources": ["Player.tempSkills", "Player.additionalSkills", "Player.when", "Player.storage", "Player.marks", "Player.storage.extraXingDong"],
+			"supportedBoundary": null,
+			"unsupported": ["dynamic callback/closure payloads", "arbitrary object references", "temporary effect trigger lifetime", "nonempty extraXingDong payloads", "unreviewed mark/storage keys"],
+			"sourceAudit": {
+				"tempSkills": "Player.addTempSkill stores a skill-keyed expiry that may be a trigger descriptor or function; GameEvent.trigger removes expired entries and removes the skill",
+				"additionalSkills": "Player.addAdditionalSkill/addAdditionalSkills mutate skill-keyed strings or arrays, affecting getSkills and later trigger/legality evaluation",
+				"when": "Player.when creates a random player_when skill with dynamic filter/content/vars and may retain closures or generated functions; trigger completion removes that skill and its lib.skill/translation entries",
+				"extraXingDong": "xingDong step 0 resets the queue; Player.addExtraXingDong and native skills can push payload objects; step 4 pops them LIFO and calls the named native action with the payload",
+				"extraXingDongPayload": "payload may contain xingDong, prompt, forced, filterCard, filterTarget and createDialog; callback fields and arbitrary object spread prevent a generic canonical representation",
+				"markStorage": "reviewed guiHuo is a bounded special case only; general marks are read from heterogeneous player.storage and player.marks includes UI state",
+				"canonicalizationDecision": "no general extractor accepted; preserve unsupported and fail closed until each rule-relevant family has a typed allowlist, lifetime boundary and native evidence"
+			}
+		},
+		{
+			"id": "history_statistics_and_event_payloads",
+			"status": "unsupported",
+			"nativeSources": ["Player.getHistory", "Player.stat", "native event payloads"],
+			"supportedBoundary": null,
+			"unsupported": ["complete history/stat semantics", "arbitrary event result and callback payloads"]
+		}
+	]
+}

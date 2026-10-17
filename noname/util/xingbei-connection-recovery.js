@@ -93,7 +93,7 @@ export class ConnectionRecovery {
   }
   synchronized(kind = 'reinit') {
     if (!this.active || this.phase !== 'SYNCING') return false;
-    if (kind !== 'reinit' && !(kind === 'roomlist' && !this.wasInGame)) return false;
+    if (kind !== 'reinit' && kind !== 'owner_resume' && !(kind === 'roomlist' && !this.wasInGame)) return false;
     this.clearPending();
     this.active = false;
     this.generation++;

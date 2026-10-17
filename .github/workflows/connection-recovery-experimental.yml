@@ -5,6 +5,9 @@ on:
     branches:
       - feature/connection-health-recovery
       - feature/v2-connection-stability
+  pull_request:
+    branches:
+      - feature/v2-connection-stability
   workflow_dispatch:
 
 permissions:
@@ -13,7 +16,7 @@ permissions:
 jobs:
   node-recovery-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 6
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,5 +42,566 @@ jobs:
         run: node --test tests/v2-host-reinit-handshake.mjs
       - name: V2 seat reclaim and reinit safety gates
         run: node --test tests/v2-recovery-gate.mjs
+      - name: V2 server-owned room lifecycle foundation
+        run: node --test tests/v2-server-room-lifecycle.mjs
+      - name: V2 owner browser recovery protocol
+        run: node --test tests/v2-owner-recovery.mjs tests/v2-owner-client-events.mjs
+      - name: Install isolated WebSocket test dependency
+        run: npm install --prefix "$RUNNER_TEMP/xingbei-ws" --ignore-scripts --no-save ws@8.18.3
+      - name: V2 real HALL WebSocket process lifecycle
+        env:
+          NODE_PATH: ${{ runner.temp }}/xingbei-ws/node_modules
+        run: node --test tests/v2-hall-process-integration.mjs
+      - name: V2 generated B2 and M1 same-process integration
+        env:
+          NODE_PATH: ${{ runner.temp }}/xingbei-ws/node_modules
+        run: node --test tests/v2-b2-m1-process-integration.mjs
+      - name: V2 M2 managed host-session lifecycle and authority boundary
+        run: node --test tests/v2-host-session-manager.mjs tests/v2-managed-host-process.mjs tests/v2-managed-choice-controller.mjs
+      - name: V2 M2 versioned Xingbei canonical authority-state contract
+        run: node --test tests/v2-xingbei-authority-state-v2.mjs tests/v2-managed-native-card-ledger.mjs tests/v2-managed-native-effect-state.mjs tests/v2-managed-native-turn-state.mjs tests/v2-managed-native-turn-resource-state-v2.mjs tests/v2-managed-native-atomic-capture.mjs tests/v2-native-state-coverage-manifest.mjs
+      - name: V2 M2 managed native source integrity manifest
+        run: node --test tests/v2-managed-engine-integrity.mjs tests/v2-managed-random-source.mjs
+      - name: V2 M2 deterministic choice and host-session race barriers
+        run: node --test tests/v2-managed-choice-races.mjs
+      - name: V2 M2 real Chromium off-board lifecycle proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_CHROMIUM_START_DIAGNOSTICS=1 node --test --test-concurrency=1 tests/v2-managed-chromium-host.mjs tests/v2-managed-engine-init.mjs tests/v2-managed-native-event.mjs tests/v2-managed-character-selection.mjs tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 block and verify native match-record egress in isolated Chromium
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_TEST_MATCH_RECORD_POST=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native Xingbei opening draw authority Event 3
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          for attempt in 1 2 3; do
+            env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+          done
+      - name: V2 M2 managed runtime random-source failure fences native host
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_RANDOM_FAILURE_PROBE=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 resume accepted opening root into native phaseLoop input gate
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action V2_NATIVE_ACTION_KIND=gongJi V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native Xingbei card action authority Event 4
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native Xingbei spell action authority Event 4
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_ACTION_KIND=faShu V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 C3 authority Event 1-4 same-session and Chromium-chain audit
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 C3-A native start root owns Events 1-4
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 T3-B1 ledger plus restricted atomic capture across a real four-seat action
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_CARD_LEDGER_PROBE=1 V2_NATIVE_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1 V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE=1 V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_ACTION_KIND=gongJi V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 T3 cross-seat repeated native atomic capture in real Chromium
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_CARD_LEDGER_PROBE=1 V2_NATIVE_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1 V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE=1 V2_NATIVE_QUOTA_RESET_AUDIT=1 V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_ACTION_KIND=gongJi V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 P1-C2 fences native parent until Event 4 acceptance
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4_ack_loss V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 holds the completed native phase boundary until scoped host release
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          export V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4_ack_loss V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 stopping a held native phase boundary fails closed and cleans the host
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          export V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4_ack_loss V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 diagnostic-only Event 4 to post-phaseOver native state delta
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          export V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_T4_DELTA_AUDIT=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_ACTION_KIND=faShu V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 P1-C2 rejected Event 4 fails closed before native parent release
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_REJECT_PARENT_FENCE_EVENT4=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native attack enters native yingZhan child topology
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_START_PROBE_MODE=managed_native_response_probe V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native YinYang fixture validates original skill predicate in real yingZhan
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_native_response_probe V2_NATIVE_YINYANG_FIXTURE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 inspect native YinYang viewAs contract in managed response event
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_native_response_probe V2_NATIVE_YINYANG_FIXTURE=1 V2_NATIVE_YINYANG_VIEWAS_PROBE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed YinYang viewAs response commits native authority Event 4
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          export V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_YINYANG_FIXTURE=1 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_MANAGED_YINYANG=1 V2_NATIVE_EFFECT_STATE_PROBE=1 V2_NATIVE_CARD_LEDGER_PROBE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_TEST_RANDOM_SEED=1 V2_NATIVE_RESPONSE_ACK_LOSS=1 V2_NATIVE_RESPONSE_REBIND=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 private native YinYang effect-state commitments
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          export V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_YINYANG_FIXTURE=1 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_MANAGED_YINYANG=1 V2_NATIVE_EFFECT_STATE_PROBE=1 V2_NATIVE_EFFECT_STATE_ONLY=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_TEST_RANDOM_SEED=1 V2_NATIVE_RESPONSE_ACK_LOSS=1 V2_NATIVE_RESPONSE_REBIND=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 stop managed host after native private effect capture before IPC delivery
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          export V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_YINYANG_FIXTURE=1 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_MANAGED_YINYANG=1 V2_NATIVE_EFFECT_STATE_PROBE=1 V2_NATIVE_EFFECT_STOP_BARRIER=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 YinYang managed-choice stale native context fails closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          for fault in viewas_material_removed_before_revalidation viewas_skill_removed_before_revalidation viewas_condition_invalid_before_revalidation; do
+            env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_YINYANG_FIXTURE=1 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_MANAGED_YINYANG=1 V2_NATIVE_TEST_RANDOM_SEED=1 V2_NATIVE_RESPONSE_REBIND=1 V2_MANAGED_NATIVE_FAULT_INJECTION="$fault" node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+          done
+      - name: V2 M2 YinYang native settlement exceptions fail closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          for fault in viewas_result_assignment_throws viewas_useCard_child_throws viewas_partial_effect_throws viewas_partial_effect_stop; do
+            env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_YINYANG_FIXTURE=1 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_MANAGED_YINYANG=1 V2_NATIVE_TEST_RANDOM_SEED=1 V2_NATIVE_RESPONSE_REBIND=1 V2_MANAGED_NATIVE_FAULT_INJECTION="$fault" node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+          done
+      - name: V2 M2 YinYang response deadline uses native trustee decline
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_YINYANG_FIXTURE=1 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_MANAGED_YINYANG=1 V2_NATIVE_TEST_RANDOM_SEED=1 V2_NATIVE_RESPONSE_TRUSTEE=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed ordinary-player yingZhan response through native event
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 V2_NATIVE_RESPONSE_ACK_LOSS=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native no-target shengGuang response through managed choice and authority chain
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 V2_NATIVE_RESPONSE_TARGETLESS=1 V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE=1 V2_TEST_BLOCK_EXTERNAL_NETWORK=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native no-legal-response fallback stays in Xingbei rules
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESPONSE_NO_OPTIONS=1 V2_NATIVE_TEST_RANDOM_SEED=2 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native response deadline applies legal trustee decline
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESPONSE_TRUSTEE=1 V2_NATIVE_RESPONSE_TARGETLESS=1 V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE=1 V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native response preserves choice across seat rebind
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESPONSE_REBIND=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 nested native yingZhan choices resume their parent event
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESPONSE_REQUIRE_NESTED=1 V2_NATIVE_TEST_RANDOM_SEED=3 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 C3 authority proof and public-data disclosure regression
+        shell: bash
+        run: node --test tests/v2-host-session-manager.mjs
+      - name: V2 M2 C3 Chromium player-choice and diagnostic disclosure regression
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 rejected opening draw cannot release native phase loop
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_REJECT_OPENING_DRAW_EVENT3=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 stop accepted opening root before phase-loop release
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_stop_before_release node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 Event 4 authority ACK loss retries idempotently
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4_ack_loss V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 Event 4 native trustee deadline commits legal action
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4_trustee V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE=1 V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native useResult failure cannot commit Event 4
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_MANAGED_NATIVE_FAULT_INJECTION=use_result_throws node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native useCard child failure cannot commit Event 4
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_MANAGED_NATIVE_FAULT_INJECTION=use_card_child_throws node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 opt-in native start event-stack diagnostics
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=native_start node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native start coordinator proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_start node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native input gate proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_gate node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native input resume proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_resume node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native input deadline proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_timeout node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native input cancellation proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_cancel node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed native input stop cleanup proof
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_stop node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native card choice controller player path
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native card choice controller trustee path
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller_trustee node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 F3 native action rebind with managed Seat Registry
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller_registry node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 fail-closed native useResult fault injection
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller_fault_before_apply node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native result-set failure is fail-closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=before_native_result_set node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 dispatched CDP outcome ambiguity is fail-closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=cdp_result_unknown_after_dispatch node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native useResult exception is fail-closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=use_result_throws node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native useCard child failure is fail-closed
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=use_card_child_throws node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 same native action delivery retry while applying
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=retry_while_applying node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 stale native action delivery after completion is rejected
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=late_stale_delivery node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 native cancel and resume race is single-winner
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_cancel_resume_race node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 managed host stop fences a blocked native delivery
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller V2_MANAGED_NATIVE_FAULT_INJECTION=delivery_stop_barrier node --test tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 F3 managed room Seat Registry credential and session isolation
+        run: node --test tests/v2-managed-room-seat-registry.mjs
       - name: Guest-seat registry tests
         run: node tools/connection-recovery/test-seat-registry.js
+      - name: V2 F4 final real Chromium Seat Registry action repeat
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_input_controller_registry node --test tests/v2-managed-native-choice-ipc.mjs
