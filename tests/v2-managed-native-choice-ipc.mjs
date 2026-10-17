@@ -62,6 +62,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
 	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeLiveSnapshotAtInputGate = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
+	const nativeInputGateQuotaObservations = [];
 	let event4AcceptedProjection = null;
 	let firstAtomicCapture = null, firstAtomicRepeat = null, atomicCaptureSessionId = null, atomicCapturePid = null, atomicChromiumPid = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
@@ -378,13 +379,18 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(liveProjection.phaseEvent?.seatId, liveActorSeatId);
 						assert.equal(liveProjection.xingDongEvent?.name, "xingDong");
 						assert.equal(liveProjection.currentSeatId, liveActorSeatId);
-						assert.deepEqual(liveProjection.xingDongEvent.quotas, {
+						const expectedNativeQuotas = {
 							gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0,
-						}, "the live native xingDong input boundary must expose the original step-0 quota reset, not a synthesized quota");
+						};
+						assert.deepEqual(liveProjection.xingDongEvent.quotas, expectedNativeQuotas,
+							"the live native xingDong input boundary must expose the original step-0 quota reset, not a synthesized quota");
 						assert.ok(liveProjection.pendingActionChildCount >= 1,
 							"snapshot must remain inside the native input gate before the ordinary player's choice is applied");
 						assert.equal(liveActorSeatId, nativeActionCandidate.seatId,
 							"the quota snapshot must belong to the same server-bound actor as the pending native action");
+						nativeInputGateQuotaObservations.push({ seatId: liveActorSeatId, eventName: liveProjection.xingDongEvent.name,
+							eventStep: liveProjection.xingDongEvent.step, quotas: liveProjection.xingDongEvent.quotas,
+							pendingActionChildCount: liveProjection.pendingActionChildCount, actorBound: liveActorSeatId === nativeActionCandidate.seatId });
 					}
 					const accepted = { ...request, connectionId, credential: credentialFor(message.seatId), option: nativeActionOptionId };
 					assert.equal(controller.submitChoice(accepted).ok, true);
@@ -1992,6 +1998,17 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							secondFence.snapshot.phaseOverTriggerCount > waitingSnapshot.phaseOverTriggerCount);
 						assert.ok(secondFence.snapshot.completedActorQuotas &&
 							Object.values(secondFence.snapshot.completedActorQuotas).every(value => Number.isSafeInteger(value)));
+						const secondSeatInputGate = nativeInputGateQuotaObservations.find(observation =>
+							observation.seatId === secondFence.snapshot.completedPhaseSeatId);
+						assert.ok(secondSeatInputGate,
+							"the second completed actor must have a separate real pending-input quota observation in its own native phase");
+						assert.equal(secondSeatInputGate.eventName, "xingDong");
+						assert.equal(secondSeatInputGate.eventStep, 0);
+						assert.equal(secondSeatInputGate.actorBound, true);
+						assert.ok(secondSeatInputGate.pendingActionChildCount >= 1);
+						assert.deepEqual(secondSeatInputGate.quotas,
+							{ gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0 },
+							"the next actor's reset must be observed from its own native xingDong, not inferred from the prior phase");
 						assert.equal(secondFence.snapshot.currentPhaseSeatId, null);
 						assert.equal(secondFence.snapshot.gameMeAbsent, true);
 						assert.equal(secondFence.snapshot.connectedTransports, 0);
