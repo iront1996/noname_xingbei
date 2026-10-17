@@ -1,5 +1,13 @@
 # V2 Codex engineering handoff
 
+## Latest accepted status and coverage ledger
+
+- Linux CI `39043484263` on `8551e63` succeeded: 85/85 workflow steps and 258/258 TAP tests, zero failures and zero skips. It validated the current restricted completion-evidence and first-boundary atomic-capture implementation; it did not run the newly added native-state coverage-manifest test below, which is awaiting its first CI execution.
+- Added `game/xingbei-native-state-coverage-v1.json` and `tests/v2-native-state-coverage-manifest.mjs` in the current uncommitted batch. The manifest is intentionally `incomplete`, enumerates partial and unsupported state families, and asserts the hard gates remain closed. Focused local Node validation passed 7/7 with zero skips. The workflow canonical-state step now includes this manifest test.
+- Current supported capture is still one restricted post-`phaseOver` boundary: three private projections (physical card zones, limited `yinYangZhanHuan/guiHuo`, and partial turn/resource state), sharing a protected ordinal and commitment. A later seat's native phase completion has been observed, but no second-turn atomic envelope has been accepted. The native event-completion ledger is root/session-scoped evidence, not proof that every trigger/effect family is covered.
+- The coverage manifest explicitly leaves `hujia`, dynamic skills/storage/effects, nonempty `extraXingDong`, history/statistics/event payloads, broad card-zone causes and multi-turn resource semantics unsupported. `changeHujia` was not found in the checked source; runtime fixture evidence is not universal absence. Do not modify native rules without separate explicit authorization.
+- No managed engine source changed in this batch; pinned release lock remains `476c8867eaa73d728c25f1b518651e619c783f74a858588a8148563a3b2a59d3`. Full T3 remains incomplete. Keep `seedAuthorized=false`, `authorityStateRevision=4`, Event #5 rejected and `checkpointAvailable=false`; historical ACK/cleanup and CI `38969578478` stop-state risks remain open.
+
 ## Current continuation status (restricted completion-evidence slice accepted; full T3 incomplete)
 
 - Commits `0c988ca`, `ea50a46`, and `e22676f` add root/session-scoped native GameEvent completion evidence, enable it for held phase-fence workflow cases, and add a test-only failure-site diagnostic. Linux CI `39041797379` on `e22676feb548d58ee9b963515db452fb5dac2f43` succeeded: 85/85 workflow steps, 256/256 tests, zero failures, zero skips. Real Chromium atomic capture, held native phase fences, and stop-before-release passed (step 56). Earlier run `39041050917` did fail that stop case with `HOST_CHOICE_IPC_HANDLER_FAILED`; the failure did not reproduce, so the root cause remains unknown and this is not a proven race fix.

@@ -1,0 +1,76 @@
+{
+	"schema": "xingbei_native_state_coverage_v1",
+	"status": "incomplete",
+	"fullCanonicalStateEligible": false,
+	"seedAuthorized": false,
+	"authorityStateRevision": 4,
+	"event5Enabled": false,
+	"checkpointAvailable": false,
+	"unknownStatePolicy": "fail_closed",
+	"families": [
+		{
+			"id": "native_event_completion",
+			"status": "partial",
+			"nativeSources": ["GameEvent.start", "GameEvent.waitNext", "eventStack", "parent.childEvents", "parent.next"],
+			"supportedBoundary": "managed-root child completion after original start promise resolves and parent waitNext resumes",
+			"unsupported": ["all possible parent-child schedules", "all in-flight trigger and dynamic effect families", "unbounded whole-game transition semantics"]
+		},
+		{
+			"id": "physical_card_zones",
+			"status": "partial",
+			"nativeSources": ["lib.cardOL", "native card pile/discard/ordering/special nodes", "Player.getCards"],
+			"supportedBoundary": "restricted four-seat atomic capture at the verified initial post-phaseOver fence",
+			"unsupported": ["virtual-card source/material relation", "all native card storage and movement causes", "all game zones not explicitly enumerated"]
+		},
+		{
+			"id": "skill_and_effect_state",
+			"status": "partial",
+			"nativeSources": ["Player.hasSkill(yinYangZhanHuan)", "Player.countZhiShiWu(guiHuo)"],
+			"supportedBoundary": "limited yinYangZhanHuan presence and guiHuo count projection",
+			"unsupported": ["unknown skills", "dynamic effects", "arbitrary storage", "temporary and additional skill lifecycle", "unknown marks"]
+		},
+		{
+			"id": "turn_and_action_quotas",
+			"status": "partial",
+			"nativeSources": ["phaseLoop.player", "phase child", "_status.currentPhase", "reviewed Player storage quota fields"],
+			"supportedBoundary": "one verified initial actor post-phaseOver boundary with empty extraXingDong queue",
+			"unsupported": ["multi-turn atomic capture", "nonempty extraXingDong", "all quota reset/decrement and round-boundary semantics"]
+		},
+		{
+			"id": "team_resources",
+			"status": "partial",
+			"nativeSources": ["game.hongShiQi", "game.lanShiQi", "game.hongXingBei", "game.lanXingBei", "game.hongZhanJi", "game.lanZhanJi"],
+			"supportedBoundary": "bounded values and reviewed baoShi/shuiJing records in the restricted projection",
+			"unsupported": ["all resource mutation event semantics", "unreviewed achievement kinds", "terminal-result transition semantics"]
+		},
+		{
+			"id": "player_health_and_resources",
+			"status": "partial",
+			"nativeSources": ["Player.hp", "Player.maxHp", "Player.zhiLiao", "Player.countNengLiang", "Player.getNengLiangLimit"],
+			"supportedBoundary": "bounded hp/zhiLiao and baoShi/shuiJing/effectiveLimit projection",
+			"unsupported": ["hujia", "all damage/recovery/death chain semantics", "all mod-driven resource variants"]
+		},
+		{
+			"id": "hujia",
+			"status": "unsupported",
+			"nativeSources": ["damage absorption call sites", "getBuff read call site"],
+			"supportedBoundary": null,
+			"unsupported": ["changeHujia implementation/source not located", "mutation, expiry and death/reset semantics"],
+			"requiresNativeRuleChangeAuthorization": true
+		},
+		{
+			"id": "dynamic_skills_storage_and_effects",
+			"status": "unsupported",
+			"nativeSources": ["Player.tempSkills", "Player.additionalSkills", "Player.when", "Player.storage", "Player.marks", "Player.storage.extraXingDong"],
+			"supportedBoundary": null,
+			"unsupported": ["dynamic callback/closure payloads", "arbitrary object references", "temporary effect trigger lifetime", "nonempty extraXingDong payloads", "unreviewed mark/storage keys"]
+		},
+		{
+			"id": "history_statistics_and_event_payloads",
+			"status": "unsupported",
+			"nativeSources": ["Player.getHistory", "Player.stat", "native event payloads"],
+			"supportedBoundary": null,
+			"unsupported": ["complete history/stat semantics", "arbitrary event result and callback payloads"]
+		}
+	]
+}
