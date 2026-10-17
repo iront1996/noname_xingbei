@@ -42,6 +42,14 @@ function safeNativeDiagnostic(value) {
 	return copy;
 }
 
+function safeChoiceHandlerFailure(type, error) {
+	const location = typeof error?.stack === "string" ? error.stack.match(/v2-managed-native-choice-ipc\.mjs:(\d+):(\d+)/) : null;
+	return { type: typeof type === "string" && /^[a-z_]{1,64}$/.test(type) ? type : "unknown",
+		name: error?.name === "AssertionError" ? "AssertionError" : "Error",
+		code: /^[A-Z][A-Z0-9_]{0,64}$/.test(error?.code || "") ? error.code : null,
+		failureSite: location ? `${location[1]}:${location[2]}` : "unknown" };
+}
+
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	if (process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1") assert.equal(process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE, "1",
 		"a held native phase boundary requires the managed native event-completion evidence source");
@@ -52,7 +60,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
+	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
 	let event4AcceptedProjection = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
 	const nativeCardLedgerCaptureContexts = [];
@@ -187,7 +195,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		browserReadyTimeoutMs: 20000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000,
 		onSessionEnd: event => { sessionEnds.push({ roomId: event.roomId, sessionId: event.sessionId, state: event.state, code: event.code });
 			controller.cleanupHostSession(event.roomId, event.sessionId); },
-			onManagedChoiceMessage: async ({ type, message }) => {
+		onManagedChoiceMessage: async ({ type, message }) => {
+			try {
 			if (type === "host_choice_diagnostic" && message?.observed?.stage === "native_targetless_deck_fixture_ready") {
 				targetlessDeckFixtureProof = message.observed;
 				assert.equal(targetlessDeckFixtureProof.kind, "native_card_pile_order_fixture_v1");
@@ -617,6 +626,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"same immutable delivery could not be retried during native applying");
 				}
 			}
+			} catch (error) {
+				managedChoiceHandlerFailures.push(safeChoiceHandlerFailure(type, error));
+				throw error;
+			}
 		},
 	});
 	t.after(() => manager.stop(roomId, "test_cleanup"));
@@ -824,6 +837,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal((await manager.stop(roomId, "event3_accepted_before_phase_release")).ok, true);
 		assert.equal(manager.inspect(roomId)?.state, "stopped", JSON.stringify({
 			session: manager.inspect(roomId), sessionEnds: sessionEnds.slice(-3),
+			managedChoiceHandlerFailures: managedChoiceHandlerFailures.slice(-4),
 			nativeStages: safeNativeDiagnostic(nativeDiagnostic.slice(-12).map(entry => ({ stage: entry?.stage,
 				classification: entry?.classification, failureCode: entry?.failureCode, snapshot: entry?.snapshot || null }))),
 		}));

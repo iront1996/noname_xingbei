@@ -1,5 +1,10 @@
 # V2 server-authority plan and evidence
 
+## T3 continuation update — run 39041050917 not accepted
+
+- Current pushed isolated HEAD: `ea50a46fa4c0395484ca7458e730bd0541213651`. The native GameEvent completion producer is enabled in all held phase-fence CI cases. Linux CI `39041050917` passed real atomic-capture step 32, the previously failing held phase-fence step 34, and native-choice tests through step 55, but failed at step 56: the opening-root stop-before-release scenario ended as `failed / HOST_CHOICE_IPC_HANDLER_FAILED` before reaching the expected `stopped` state at revision 3. A bounded, test-only redacted callback-error diagnostic is being prepared to identify the underlying failure; it is not yet accepted.
+- No broader T3 completion is claimed. Repeated cross-turn atomic capture, full schema-v2 coverage, dynamic effects, `hujia`, and the historical ACK/cleanup and stop-state risks remain open. Seed remains unauthorized, Event #5 rejected and checkpoint unavailable. No formal deployment or merge occurred.
+
 ## Current T3 continuation: generic native event-completion evidence (CI pending; T3 incomplete)
 
 - Starting from isolated branch HEAD `75eb97312cd69c8711397e8ff274b32b6473531c` (remote matched after fetch), this batch adds an opt-in, root/session-local native GameEvent completion ledger for the existing managed Chromium probe. Event instance IDs are assigned only along actual parent links to the pinned root. A completion ordinal advances only after the original `GameEvent.start()` promise resolves, the event is finished and belongs to the current manager/root, its parent retains the exact child, the event stack has returned to that parent, and the parent's `next[0]` is that child (the native `waitNext()` continuation boundary). A WeakSet prevents duplicate completion records; instance/completion counters are bounded. This evidence is deliberately separate from `phaseOverTriggerCount`.
