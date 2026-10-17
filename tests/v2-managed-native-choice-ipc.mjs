@@ -15,6 +15,7 @@ const script = path.join(root, "game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
 const roomId = "native_choice_room";
 const setup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({ length: 4 }, (_, position) => ({ seatId: `native_seat_${position + 1}`, position })) };
+const immutableServerSeatIds = Object.freeze(setup.seats.map(({ seatId }) => seatId));
 const viewasRevalidationFaultModes = ["viewas_material_removed_before_revalidation", "viewas_skill_removed_before_revalidation", "viewas_condition_invalid_before_revalidation"];
 const viewasExecutionFaultModes = ["viewas_result_assignment_throws", "viewas_useCard_child_throws", "viewas_partial_effect_throws", "viewas_partial_effect_stop"];
 
@@ -1294,8 +1295,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					const liveProjection = nativeLiveSnapshotAtInputGate.projectionAudit;
 					assert.ok(liveProjection, "the live native projection audit must be present");
 					const liveActorSeatId = liveProjection.xingDongEvent?.seatId;
-					assert.ok(setup.seats.some(seat => seat.seatId === liveActorSeatId),
-						"the live native actor must be one of the server-bound ordinary seats");
+					assert.ok(immutableServerSeatIds.includes(liveActorSeatId),
+						`the live native actor ${String(liveActorSeatId)} must be one of the immutable server-bound ordinary seats [${immutableServerSeatIds.join(",")}]`);
 					assert.equal(liveProjection.phaseEvent?.name, "phase");
 					assert.equal(liveProjection.phaseEvent?.seatId, liveActorSeatId,
 						"the active phase and Xingdong events must identify the same native seat");
