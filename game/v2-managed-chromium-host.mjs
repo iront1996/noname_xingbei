@@ -2357,6 +2357,15 @@ async function runNativeStartDiagnostic(message) {
 	  GameEvent.prototype.waitNext=function(...args){
 	   const event=this;
 	   if(event.name==='gameDraw')state.drawEntered=true;
+	   if(${JSON.stringify(process.env.V2_NATIVE_QUOTA_RESET_AUDIT === "1")}&&event.name==='xingDong'&&event.step===1){
+	    const player=event.player,ledger=completionLedgerForRoot(),eventInstanceId=ledger?.eventIds.get(event)||null;
+	    const snapshot={eventName:event.name,eventStep:event.step,parentEventName:event.parent?.name||null,seatId:player?.playerid||null,
+	     eventInstanceId,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:Boolean(state.root&&manager.rootEvent===state.root),
+	     quotas:{gongJiOrFaShu:Number.isSafeInteger(player?.storage?.gongJiOrFaShu)?player.storage.gongJiOrFaShu:null,
+	      faShu:Number.isSafeInteger(player?.storage?.faShu)?player.storage.faShu:null,gongJi:Number.isSafeInteger(player?.storage?.gongJi)?player.storage.gongJi:null,
+	      extraXingDongCount:Array.isArray(player?.storage?.extraXingDong)?player.storage.extraXingDong.length:null},gameMeAbsent:game.me===null};
+	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_xingDong_step0_completed',snapshot}))}catch{}
+	   }
 	   if(event===state.phaseLoop&&event.step===3){const diagnostic=snapshot();try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'phase_over_wait_next_entered',snapshot:{eventName:diagnostic.eventName,eventStep:diagnostic.eventStep,parentEventName:diagnostic.parentEventName,rootInstanceId:diagnostic.rootInstanceId,rootObjectMatches:diagnostic.rootObjectMatches,phaseLoopIdentityMatches:diagnostic.phaseLoopIdentityMatches,phaseOverTriggerCount:diagnostic.phaseOverTriggerCount,phaseOverDraftPresent:diagnostic.phaseOverDraftPresent,phaseOverDraftRootMatches:diagnostic.phaseOverDraftRootMatches,phaseOverDraftOwnerMatches:diagnostic.phaseOverDraftOwnerMatches,phaseOverDraftSeatId:diagnostic.phaseOverDraftSeatId,phaseOverDraftStep:diagnostic.phaseOverDraftStep,phaseOverDraftOrdinal:diagnostic.phaseOverDraftOrdinal,hostPlayerAbsent:diagnostic.hostPlayerAbsent}}))}catch{}}
 	   emit('wait_next_begin');
 	   return originalWaitNext.apply(this,args).then(async value=>{
