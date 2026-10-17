@@ -8,6 +8,7 @@
 - Recomputed and locally verified managed-source release lock: `6e52bb7b0456c6f95ad4f58c5989154e4583c298f48f87316651ab40e2f00f9e` (209 files; 18,877,910 bytes).
 - `hujia` is still unsupported: repository search finds call sites but no implementation/assignment of `changeHujia`; this fixture's bounded runtime-presence probe cannot prove the absence of dynamic injection in all contexts. No native rule was edited. Dynamic/nonempty `extraXingDong`, unknown skills/storage/temp effects and unfinished native children remain unsupported and fail closed.
 - Full T3 is incomplete. No seed, Event #5, or checkpoint is authorized: `seedAuthorized=false`, authority revision 4, Event #5 rejected, `checkpointAvailable=false`. Historical ACK/cleanup and CI `38969578478` stop-state risks remain open. PR #1 remains open/unmerged; formal V1/V2/V3, VPS, monitoring and external services are untouched.
+- First Linux run `39040680694` passed the new step 32 real Chromium atomic-capture/multi-seat completion probe, then failed step 34 because the held phase-boundary CI scenario had not enabled the evidence producer now required by the fence. This fail-closed configuration omission surfaced as `NATIVE_WAIT_NEXT_REJECTED` after the precise missing-proof refusal. All phase-boundary-fence commands now enable the producer and the test asserts that dependency. Follow-up full Linux CI is pending; do not report this correction as accepted until it passes.
 
 ## Current working batch: T3 restricted atomic capture foundation (accepted slice; full T3 incomplete)
 
