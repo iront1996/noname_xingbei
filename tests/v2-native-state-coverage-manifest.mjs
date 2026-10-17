@@ -29,8 +29,15 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 		buffPath: "Player.getBuff case 3 invokes this.changeHujia()",
 		repositoryDefinitionSearch: "no changeHujia method definition or prototype assignment found in the tracked source tree; references are call sites and diagnostics only",
 		historyBoundary: "the earliest tracked player.js revision is dba1d323a530453f09fcaaec776c706eba54e1fd; that baseline also has no changeHujia definition, while content.js contains the moved-to-changeHp comment and call sites",
-		runtimeRecheckedInThisBatch: false,
-		interpretation: "source-level unresolved implementation gap; do not infer armor mutation semantics or repair without explicit native-rule authorization",
+		runtimeEvidence: {
+		linuxCiRunId: "39066874592",
+		probe: "managed Chromium four-seat native phaseOver fence",
+		methodPresent: false,
+		valuePresent: false,
+		prototypeOwnerCount: 0,
+		scope: "observed for the four tested Players in this managed runtime boundary; not evidence for every possible loading mode or armor behavior",
+	},
+	interpretation: "tracked source history and the tested managed Chromium runtime both lack the method/value at the reviewed boundary; do not infer armor mutation semantics or repair without explicit native-rule authorization",
 	});
 	const dynamic = manifest.families.find(family => family.id === "dynamic_skills_storage_and_effects");
 	assert.equal(dynamic.status, "unsupported");
