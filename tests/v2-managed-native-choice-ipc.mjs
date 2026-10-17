@@ -674,7 +674,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(manager.inspect(roomId)?.state, "stopped");
 		}
 	});
-	assert.equal((await manager.start(roomId, setup)).ok, true);
+	const startResult = await manager.start(roomId, setup);
+	assert.equal(startResult.ok, true, `managed host start rejected: ${startResult.code || "unknown"}`);
 	if (process.env.V2_NATIVE_EFFECT_STATE_ONLY === "1") {
 		await until(() => nativeEffectStateFailures.length > 0 || nativeEffectStateRepeat?.ok && nativeResponseChoice &&
 			controller.inspect(roomId, nativeResponseChoice.choiceId)?.state === "resolved" && manager.inspect(roomId)?.state === "playable_probe",

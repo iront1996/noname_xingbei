@@ -2093,7 +2093,9 @@ async function runNativeStartDiagnostic(message) {
 					emitNativeStartDiagnostic({ stage: payload.stage, snapshot: {
 						eventName: snapshot.eventName || null, eventStep: Number.isSafeInteger(snapshot.eventStep) ? snapshot.eventStep : null,
 						parentEventName: snapshot.parentEventName || null, rootInstanceId: snapshot.rootInstanceId || null,
-						rootObjectMatches: snapshot.managerRootIsStateRoot === true, managerRootEventName: snapshot.managerRootEventName || null,
+						rootObjectMatches: typeof snapshot.managerRootIsStateRoot === "boolean"
+							? snapshot.managerRootIsStateRoot : snapshot.rootObjectMatches === true,
+						managerRootEventName: snapshot.managerRootEventName || null,
 						managerRootEventInstanceId: typeof snapshot.managerRootEventInstanceId === "string" ? snapshot.managerRootEventInstanceId : null,
 						stateRootEventInstanceId: typeof snapshot.stateRootEventInstanceId === "string" ? snapshot.stateRootEventInstanceId : null,
 						managerEventStackRootName: snapshot.managerEventStackRootName || null,
