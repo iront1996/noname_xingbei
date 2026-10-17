@@ -111,6 +111,39 @@ test("managed child accepts only the scoped opt-in private effect snapshot comma
 	}
 });
 
+test("managed child accepts only scoped atomic capture commands with a valid boundary ordinal", async t => {
+	const envKeys = ["V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_START_DIAGNOSTICS",
+		"V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_TEST_BLOCK_EXTERNAL_NETWORK"];
+	const prior = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
+	for (const key of envKeys) process.env[key] = "1";
+	t.after(() => { for (const key of envKeys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key]; });
+	const engineSourceManifest = createManagedEngineSourceManifest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
+	const bootstrap = Object.freeze({ kind: "host_session_bootstrap", protocol: 1, roomId: "atomic_process_room",
+		sessionId: `hs_${"a".repeat(32)}`, secret: "b".repeat(64), setupDigest: "c".repeat(64), gameSetup,
+		engineSourceManifest });
+	const handle = await createManagedHostProcessLauncher({ script: fixture })(bootstrap);
+	const observed = [];
+	handle.on("message", message => observed.push(message));
+	try {
+		await handle.start();
+		await until(() => observed.some(message => message?.type === "host_game_ready"));
+		const command = { kind: "managed_host", type: "host_native_atomic_capture", protocol: 1, roomId: bootstrap.roomId,
+			sessionId: bootstrap.sessionId, secret: bootstrap.secret, requestId: `atomic_${"d".repeat(32)}`, captureOrdinal: 1,
+			boundaryOrdinal: 1, engineBuildId: engineSourceManifest.buildId, rootInstanceId: `native_root_${"e".repeat(32)}`,
+			seatIds: gameSetup.seats.map(seat => seat.seatId) };
+		await handle.sendHostCommand(command);
+		await until(() => observed.some(message => message?.type === "host_command_observed" && message.command === command.type));
+		await handle.sendHostCommand({ ...command, requestId: `atomic_${"f".repeat(32)}`, captureOrdinal: 2, boundaryOrdinal: 2 });
+		await until(() => observed.filter(message => message?.type === "host_command_observed" && message.command === command.type).length === 2);
+		await assert.rejects(handle.sendHostCommand({ ...command, boundaryOrdinal: 0 }), /HOST_COMMAND_REJECTED/);
+		await assert.rejects(handle.sendHostCommand({ ...command, boundaryOrdinal: 3 }), /HOST_COMMAND_REJECTED/);
+		await assert.rejects(handle.sendHostCommand({ ...command, unreviewed: true }), /HOST_COMMAND_REJECTED/);
+		assert.equal(observed.filter(message => message?.type === "host_command_observed" && message.command === command.type).length, 2);
+	} finally {
+		await handle.stop("test_complete");
+	}
+});
+
 test("real child abnormal exit fails its hostSession without affecting another room", async t => {
 	const manager = createHostSessionManager({
 		launch: createManagedHostProcessLauncher({ script: fixture }),
