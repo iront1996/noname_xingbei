@@ -2970,10 +2970,13 @@ async function snapshotNativeAtomicCapture(message) {
 			if(!fence||fence.status!=='waiting'||fence.releaseCount!==0||fence.boundaryOrdinal!==command.boundaryOrdinal||
 				state.nativePhaseBoundaryFences?.at(-1)!==fence||fence.rootEvent!==state.root||fence.phaseLoopEvent!==loop||
 				fence.rootInstanceId!==command.rootInstanceId||fence.pendingDescendantCount!==0||fence.phaseOverTriggerComplete!==true||
-				loop?.name!=='phaseLoop'||loop.step!==3||!loop.player||loop.player!==phase?.player||!command.seatIds.includes(loop.player.playerid)||phase?.name!=='phase'||
+				loop?.name!=='phaseLoop'||loop.step!==3||!loop.player||!phase?.player||phase.player!==fence.seatPlayer||
+				phase.player.playerid!==fence.seatId||loop.player.playerid!==fence.nextActorSeatId||
+				!command.seatIds.includes(fence.seatId)||!command.seatIds.includes(loop.player.playerid)||phase?.name!=='phase'||
 				phase.parent!==loop||phase.finished!==true||core._status.currentPhase!=null||manager.eventStack.at(-1)!==loop||
 				descendants.overflow||descendants.pending!==0||state.nativePhaseOverTriggerCount!==fence.phaseOverTriggerCount||
-				fence.phaseOverDispatchEvidence!==state.nativePhaseOverDispatchEvidence||state.nativePhaseOverDispatchOwner!==loop||state.nativePhaseOverTriggerSeatId!==loop.player.playerid)
+				fence.phaseOverDispatchEvidence!==state.nativePhaseOverDispatchEvidence||state.nativePhaseOverDispatchOwner!==loop||
+				state.nativePhaseOverTriggerSeatId!==fence.seatId)
 				throw Error('NATIVE_ATOMIC_CAPTURE_NATIVE_FENCE_INVALID');
 			const completionLedger=state.nativeEventCompletionLedger,phaseProof=completionLedger?.completionEvidence.get(phase),
 				phaseOverProof=fence.phaseOverCompletionEvidence;
