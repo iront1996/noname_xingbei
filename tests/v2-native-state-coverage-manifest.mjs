@@ -24,5 +24,17 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 	}
 	assert.equal(manifest.families.find(family => family.id === "hujia").requiresNativeRuleChangeAuthorization, true);
 	assert.equal(manifest.families.find(family => family.id === "dynamic_skills_storage_and_effects").status, "unsupported");
-	assert.equal(manifest.families.find(family => family.id === "turn_and_action_quotas").status, "partial");
+	const turn = manifest.families.find(family => family.id === "turn_and_action_quotas");
+	assert.equal(turn.status, "partial");
+	assert.match(turn.supportedBoundary, /two distinct completed native seat phases/);
+	assert.deepEqual(turn.verifiedEvidence, {
+		linuxCiRunId: "39061677334",
+		workflowStep: 33,
+		completedSeatCount: 2,
+		acceptedCaptureCountIncludingStableRepeats: 4,
+		nativeCompletionOrdinals: [112, 223],
+		authorityStateRevision: 4,
+		event5Enabled: false,
+	});
+	assert.match(turn.unsupported[0], /arbitrary multi-turn capture/);
 });

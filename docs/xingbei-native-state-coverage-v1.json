@@ -33,8 +33,17 @@
 			"id": "turn_and_action_quotas",
 			"status": "partial",
 			"nativeSources": ["phaseLoop.player", "phase child", "_status.currentPhase", "reviewed Player storage quota fields"],
-			"supportedBoundary": "one verified initial actor post-phaseOver boundary with empty extraXingDong queue",
-			"unsupported": ["multi-turn atomic capture", "nonempty extraXingDong", "all quota reset/decrement and round-boundary semantics"]
+			"supportedBoundary": "two distinct completed native seat phases in one managed root/session/build, each with atomic capture plus stable same-fence repeat and empty extraXingDong queue",
+			"verifiedEvidence": {
+				"linuxCiRunId": "39061677334",
+				"workflowStep": 33,
+				"completedSeatCount": 2,
+				"acceptedCaptureCountIncludingStableRepeats": 4,
+				"nativeCompletionOrdinals": [112, 223],
+				"authorityStateRevision": 4,
+				"event5Enabled": false
+			},
+			"unsupported": ["arbitrary multi-turn capture across all seat orders and phase/action shapes", "nonempty extraXingDong", "all quota reset/decrement and round-boundary semantics"]
 		},
 		{
 			"id": "team_resources",
