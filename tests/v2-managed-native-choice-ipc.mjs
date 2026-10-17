@@ -378,8 +378,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(liveProjection.phaseEvent?.seatId, liveActorSeatId);
 						assert.equal(liveProjection.xingDongEvent?.name, "xingDong");
 						assert.equal(liveProjection.currentSeatId, liveActorSeatId);
+						assert.deepEqual(liveProjection.xingDongEvent.quotas, {
+							gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0,
+						}, "the live native xingDong input boundary must expose the original step-0 quota reset, not a synthesized quota");
 						assert.ok(liveProjection.pendingActionChildCount >= 1,
 							"snapshot must remain inside the native input gate before the ordinary player's choice is applied");
+						assert.equal(liveActorSeatId, nativeActionCandidate.seatId,
+							"the quota snapshot must belong to the same server-bound actor as the pending native action");
 					}
 					const accepted = { ...request, connectionId, credential: credentialFor(message.seatId), option: nativeActionOptionId };
 					assert.equal(controller.submitChoice(accepted).ok, true);
