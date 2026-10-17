@@ -3,6 +3,7 @@
 const crypto = require("node:crypto");
 const path = require("node:path");
 const { verifyManagedEngineRelease, MANAGED_ENGINE_TRUST_CONTRACT } = require("./server-managed-engine-integrity.js");
+const { createManagedNativeEffectStateCommitment } = require("./server-managed-native-effect-state.js");
 
 const PROTOCOL = 1;
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -132,9 +133,31 @@ function createHostSessionManager({
 		}
 	}
 
+	function cancelPrivateNativeEffectRequests(record) {
+		for (const [requestId, pending] of record.privateNativeEffectRequests) {
+			clearTimeout(pending.timer);
+			pending.resolve(failure("NATIVE_EFFECT_STATE_SESSION_ENDED"));
+			record.privateNativeEffectRequests.delete(requestId);
+		}
+	}
+
+	function destroyPrivateNativeEffectState(record) {
+		cancelPrivateNativeEffectRequests(record);
+		try { record.privateNativeEffectState?.destroy(); } catch (_) {}
+		record.privateNativeEffectState = null;
+		record.privateNativeEffectKey?.fill(0);
+		record.privateNativeEffectKey = null;
+		record.privateNativeEffectLast = null;
+		record.privateNativeEffectEvent = null;
+		record.privateNativeEffectCandidate = null;
+		record.privateNativeEffectRequestCount = 0;
+		record.privateNativeEffectSnapshotCount = 0;
+	}
+
 	function finish(record, code) {
 		clearPhaseTimer(record);
 		cancelPrivateCardLedgerRequests(record);
+		destroyPrivateNativeEffectState(record);
 		let ended = false;
 		if (record.state === "stopping") {
 			record.state = "stopped";
@@ -158,6 +181,7 @@ function createHostSessionManager({
 		if (!record || !ACTIVE_STATES.has(record.state)) return;
 		clearPhaseTimer(record);
 		cancelPrivateCardLedgerRequests(record);
+		destroyPrivateNativeEffectState(record);
 		record.state = "failed";
 		record.failureCode = code;
 		notifySessionEnd(record);
@@ -196,6 +220,38 @@ function createHostSessionManager({
 		if (orderedZones.some(zone => !Number.isSafeInteger(snapshot.zoneDelta[zone]) ||
 			snapshot.zoneDelta[zone] !== snapshot.zoneCounts[zone] - record.privateCardLedgerPriorZoneCounts[zone])) return false;
 		return Object.values(snapshot.zoneDelta).reduce((sum, value) => sum + value, 0) === 0;
+	}
+
+	function validatePrivateNativeEffectMessage(record, message, pending) {
+		const keys = "captureBoundary,kind,mode,nativeCompletionOrdinal,nativeEventId,protocol,requestId,roomId,schema,seatId,secret,sessionId,snapshot,type";
+		if (!pending || !message || Object.getPrototypeOf(message) !== Object.prototype ||
+			Object.keys(message).sort().join(",") !== keys || message.type !== "host_private_native_effect_state" ||
+			message.schema !== "xingbei_native_private_effect_state_v1" || message.requestId !== pending.requestId ||
+			message.mode !== pending.mode || message.nativeEventId !== record.privateNativeEffectEvent?.nativeEventId ||
+			message.seatId !== record.privateNativeEffectEvent?.seatId ||
+			message.captureBoundary !== pending.captureBoundary ||
+			message.nativeCompletionOrdinal !== pending.nativeCompletionOrdinal ||
+			message.snapshot?.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId) return false;
+		if (pending.mode === "before_native_response") {
+			return pending.captureBoundary === "native_response_waiting" && pending.nativeCompletionOrdinal === null;
+		}
+		return pending.captureBoundary === "native_response_completed" && Number.isSafeInteger(pending.nativeCompletionOrdinal) &&
+			pending.nativeCompletionOrdinal > 0 && Number.isSafeInteger(record.privateNativeEffectEvent?.nativeCompletionOrdinal) &&
+			record.privateNativeEffectEvent.nativeCompletionOrdinal === pending.nativeCompletionOrdinal;
+	}
+
+	function validPrivateNativeEffectCommitment(record, message, commitment, pending) {
+		return commitment && Object.getPrototypeOf(commitment) === Object.prototype &&
+			Object.keys(commitment).sort().join(",") === "checkpointAvailable,commitment,engineBuildId,rootInstanceId,schema,schemaVersion,snapshotOrdinal,stableWithPrevious" &&
+			commitment.schema === "xingbei_native_private_effect_commitment_v1" && commitment.schemaVersion === 1 &&
+			commitment.snapshotOrdinal === record.privateNativeEffectSnapshotCount + 1 &&
+			commitment.engineBuildId === record.engineBuildId &&
+			commitment.rootInstanceId === record.xingbeiAuthorityContext?.rootInstanceId && DIGEST.test(commitment.commitment || "") &&
+			commitment.checkpointAvailable === false &&
+			(commitment.snapshotOrdinal === 1 ? commitment.stableWithPrevious === null : typeof commitment.stableWithPrevious === "boolean") &&
+			((pending.mode === "before_native_response" && commitment.snapshotOrdinal === 1) ||
+			 (pending.mode === "after_native_response" && commitment.snapshotOrdinal === 2 && commitment.stableWithPrevious === false) ||
+			 (pending.mode === "repeat_native_response" && commitment.snapshotOrdinal === 3 && commitment.stableWithPrevious === true));
 	}
 
 	async function start(roomId, gameSetup) {
@@ -240,6 +296,14 @@ function createHostSessionManager({
 			privateCardLedgerPriorCommitment: null,
 			privateCardLedgerPriorPhysicalCount: null,
 			privateCardLedgerPriorZoneCounts: null,
+			privateNativeEffectRequests: new Map(),
+			privateNativeEffectRequestCount: 0,
+			privateNativeEffectSnapshotCount: 0,
+			privateNativeEffectKey: null,
+			privateNativeEffectState: null,
+			privateNativeEffectEvent: null,
+			privateNativeEffectCandidate: null,
+			privateNativeEffectLast: null,
 			nextResultSequence: 1,
 			failureCode: null,
 			gameSetup: prepared.setup,
@@ -331,8 +395,69 @@ function createHostSessionManager({
 						pending.resolve(failure(message.code));
 					}
 				}
+				else if (message?.type === "host_private_native_effect_state" && authenticate(record, message)) {
+					const pending = record.privateNativeEffectRequests.get(message.requestId);
+					if (!pending) return;
+					if (!validatePrivateNativeEffectMessage(record, message, pending)) {
+						record.privateNativeEffectRequests.delete(message.requestId);
+						clearTimeout(pending.timer);
+						pending.resolve(failure("NATIVE_EFFECT_STATE_BOUNDARY_REJECTED"));
+						fail(record, "NATIVE_EFFECT_STATE_BOUNDARY_REJECTED");
+						Promise.resolve(record.handle?.stop("native_effect_state_boundary_rejected")).catch(() => {});
+						return;
+					}
+					try {
+						const commitment = record.privateNativeEffectState.commit(message.snapshot);
+						if (!validPrivateNativeEffectCommitment(record, message, commitment, pending)) throw new TypeError("NATIVE_EFFECT_STATE_COMMITMENT_REJECTED");
+						record.privateNativeEffectRequests.delete(message.requestId);
+						clearTimeout(pending.timer);
+						record.privateNativeEffectSnapshotCount++;
+						record.privateNativeEffectLast = commitment.commitment;
+						pending.resolve(Object.freeze({ ok: true, snapshot: Object.freeze({ ...commitment,
+							mode: pending.mode, captureBoundary: pending.captureBoundary,
+							nativeEventId: record.privateNativeEffectEvent.nativeEventId,
+							nativeCompletionOrdinal: pending.nativeCompletionOrdinal }) }));
+					} catch (_) {
+						record.privateNativeEffectRequests.delete(message.requestId);
+						clearTimeout(pending.timer);
+						pending.resolve(failure("NATIVE_EFFECT_STATE_SNAPSHOT_REJECTED"));
+						fail(record, "NATIVE_EFFECT_STATE_SNAPSHOT_REJECTED");
+						Promise.resolve(record.handle?.stop("native_effect_state_rejected")).catch(() => {});
+					}
+				}
+				else if (message?.type === "host_private_native_effect_state_failed" && authenticate(record, message)) {
+					const pending = record.privateNativeEffectRequests.get(message.requestId);
+					if (pending && message.mode === pending.mode && /^[A-Z0-9_]{3,96}$/.test(message.code || "")) {
+						record.privateNativeEffectRequests.delete(message.requestId);
+						clearTimeout(pending.timer);
+						pending.resolve(failure(message.code));
+						fail(record, message.code);
+						Promise.resolve(record.handle?.stop("native_effect_state_capture_failed")).catch(() => {});
+					}
+				}
 					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
 					else if (["host_choice_candidates", "host_choice_delivery_started", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates", "host_native_response_candidates"].includes(message?.type) && authenticate(record, message)) {
+						if (message.type === "host_native_response_candidates" && process.env.V2_NATIVE_EFFECT_STATE_PROBE === "1" &&
+							process.env.V2_NATIVE_MANAGED_YINYANG === "1" && record.privateNativeEffectCandidate === null &&
+							Array.isArray(message.options) && message.optionKinds && Object.getPrototypeOf(message.optionKinds) === Object.prototype &&
+							message.optionShapes && Object.getPrototypeOf(message.optionShapes) === Object.prototype &&
+							message.options.some(option => message.optionKinds[option] === "view_as_skill" &&
+								message.optionShapes[option] === "native_single_target_view_as_skill")) {
+							const keys = Object.keys(message.optionKinds).sort();
+							if (message.eventName !== "yingZhan" || message.eventSequence !== 4 ||
+								!/^native_event_[a-f0-9]{32}$/.test(message.nativeEventId || "") || !record.seatIds.includes(message.seatId) ||
+								message.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId || !Array.isArray(message.options) ||
+								message.options.length < 1 || message.options.length > 64 || new Set(message.options).size !== message.options.length ||
+								message.options.some(option => !/^native_option_[a-f0-9]{32}$/.test(option)) ||
+								keys.length !== message.options.length || keys.join(",") !== [...message.options].sort().join(",") ||
+								Object.keys(message.optionShapes).sort().join(",") !== keys.join(",")) {
+								fail(record, "NATIVE_EFFECT_STATE_CANDIDATE_REJECTED");
+								Promise.resolve(record.handle?.stop("native_effect_state_candidate_rejected")).catch(() => {});
+								return;
+							}
+							record.privateNativeEffectCandidate = Object.freeze({ nativeEventId: message.nativeEventId, seatId: message.seatId,
+								eventSequence: message.eventSequence, rootInstanceId: message.rootInstanceId });
+						}
 						// A trusted-host IPC consumer is part of the authority path.  Do not
 						// silently lose a candidate/ACK and leave the native event paused forever.
 						Promise.resolve(onManagedChoiceMessage(Object.freeze({ type: message.type, roomId: record.roomId, sessionId: record.sessionId, message }))).catch(() => {
@@ -747,6 +872,90 @@ function createHostSessionManager({
 		});
 	}
 
+	async function snapshotNativeEffectState(roomId, input) {
+		const record = sessions.get(roomId);
+		const modes = new Set(["before_native_response", "after_native_response", "repeat_native_response"]);
+		if (process.env.V2_NATIVE_EFFECT_STATE_PROBE !== "1" || process.env.V2_NATIVE_YINYANG_FIXTURE !== "1" ||
+			process.env.V2_NATIVE_MANAGED_YINYANG !== "1" || process.env.V2_NATIVE_MANAGED_RESPONSE !== "1" ||
+			process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
+			process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" || !record || record.state !== "playable_probe" ||
+			!record.handle?.sendHostCommand || record.seatIds?.length !== 4 ||
+			!record.xingbeiAuthorityContext?.rootInstanceId || !input || Object.getPrototypeOf(input) !== Object.prototype ||
+			Object.keys(input).sort().join(",") !== "mode,nativeCompletionOrdinal,nativeEventId,seatId" || !modes.has(input.mode) ||
+			!/^native_event_[a-f0-9]{32}$/.test(input.nativeEventId || "") || !record.seatIds.includes(input.seatId) ||
+			record.privateNativeEffectRequestCount >= 3 || record.privateNativeEffectRequests.size !== 0) {
+			return failure("NATIVE_EFFECT_STATE_PROBE_REJECTED");
+		}
+		const event = record.privateNativeEffectEvent;
+		const pre = input.mode === "before_native_response";
+		const post = input.mode === "after_native_response";
+		const repeat = input.mode === "repeat_native_response";
+		const candidate = record.privateNativeEffectCandidate;
+		const last = record.lastAuthorityEvent;
+		if ((pre && (!candidate || candidate.nativeEventId !== input.nativeEventId || candidate.seatId !== input.seatId ||
+			candidate.eventSequence !== 4 || candidate.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId ||
+			record.privateNativeEffectRequestCount !== 0 || record.authorityStateRevision !== 3 ||
+			last?.sequence !== 3 || last?.name !== "gameDraw" || input.nativeCompletionOrdinal !== null)) ||
+			(post && (record.privateNativeEffectRequestCount !== 1 || record.privateNativeEffectSnapshotCount !== 1 ||
+				!Number.isSafeInteger(input.nativeCompletionOrdinal) || input.nativeCompletionOrdinal < 1 || !event ||
+				event.nativeEventId !== input.nativeEventId || event.seatId !== input.seatId ||
+				!((record.authorityStateRevision === 3 && last?.sequence === 3 && last?.name === "gameDraw") ||
+					(record.authorityStateRevision === 4 && last?.sequence === 4 && last?.name === "gongJiOrFaShu")))) ||
+			(repeat && (record.privateNativeEffectRequestCount !== 2 || record.privateNativeEffectSnapshotCount !== 2 ||
+				!Number.isSafeInteger(input.nativeCompletionOrdinal) || input.nativeCompletionOrdinal !== event?.nativeCompletionOrdinal ||
+				!event || event.nativeEventId !== input.nativeEventId || event.seatId !== input.seatId))) {
+			return failure("NATIVE_EFFECT_STATE_SEQUENCE_REJECTED");
+		}
+		if (pre && event) return failure("NATIVE_EFFECT_STATE_EVENT_EXISTS");
+		if (!pre && !event) return failure("NATIVE_EFFECT_STATE_EVENT_MISSING");
+		if (pre) record.privateNativeEffectEvent = { nativeEventId: input.nativeEventId, seatId: input.seatId, nativeCompletionOrdinal: null };
+		else if (post) record.privateNativeEffectEvent.nativeCompletionOrdinal = input.nativeCompletionOrdinal;
+		if (!record.privateNativeEffectState) {
+			const key = randomBytes(32);
+			if (!Buffer.isBuffer(key) || key.length !== 32) return failure("NATIVE_EFFECT_STATE_KEY_UNAVAILABLE");
+			try {
+				record.privateNativeEffectState = createManagedNativeEffectStateCommitment({ roomId: record.roomId,
+					hostSessionId: record.sessionId, engineBuildId: record.engineBuildId,
+					rootInstanceId: record.xingbeiAuthorityContext.rootInstanceId, seatIds: record.seatIds, key });
+			} catch (_) { key.fill(0); return failure("NATIVE_EFFECT_STATE_INITIALIZATION_REJECTED"); }
+			key.fill(0);
+		}
+		const requestId = `effect_${randomBytes(16).toString("hex")}`;
+		if (!/^effect_[a-f0-9]{32}$/.test(requestId)) return failure("NATIVE_EFFECT_STATE_REQUEST_REJECTED");
+		record.privateNativeEffectRequestCount++;
+		const captureBoundary = pre ? "native_response_waiting" : "native_response_completed";
+		return new Promise(resolve => {
+			const timer = setTimeout(() => {
+				record.privateNativeEffectRequests.delete(requestId);
+				resolve(failure("NATIVE_EFFECT_STATE_TIMEOUT"));
+				if (ACTIVE_STATES.has(record.state)) {
+					fail(record, "NATIVE_EFFECT_STATE_TIMEOUT");
+					Promise.resolve(record.handle?.stop("native_effect_state_timeout")).catch(() => {});
+				}
+			}, 5000);
+			if (timer.unref) timer.unref();
+			record.privateNativeEffectRequests.set(requestId, { requestId, mode: input.mode, captureBoundary,
+				nativeCompletionOrdinal: pre ? null : input.nativeCompletionOrdinal, timer, resolve });
+			Promise.resolve(record.handle.sendHostCommand({ type: "host_native_effect_state_snapshot", kind: "managed_host", protocol: PROTOCOL,
+				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret, requestId, mode: input.mode,
+				nativeEventId: input.nativeEventId, seatId: input.seatId, nativeCompletionOrdinal: pre ? null : input.nativeCompletionOrdinal,
+				captureBoundary, schema: "xingbei_native_private_effect_state_v1",
+				rootInstanceId: record.xingbeiAuthorityContext.rootInstanceId, engineBuildId: record.engineBuildId,
+				seatIds: record.seatIds }))
+				.catch(() => {
+					const pending = record.privateNativeEffectRequests.get(requestId);
+					if (!pending) return;
+					record.privateNativeEffectRequests.delete(requestId);
+					clearTimeout(pending.timer);
+					pending.resolve(failure("NATIVE_EFFECT_STATE_REQUEST_REJECTED"));
+					if (ACTIVE_STATES.has(record.state)) {
+						fail(record, "NATIVE_EFFECT_STATE_REQUEST_REJECTED");
+						Promise.resolve(record.handle?.stop("native_effect_state_request_failed")).catch(() => {});
+					}
+				});
+		});
+	}
+
 	async function releaseNativePhaseBoundary(roomId, input) {
 		const record = sessions.get(roomId);
 		const allowedKeys = ["nativeEventId", "rootInstanceId", "seatId"];
@@ -813,6 +1022,7 @@ function createHostSessionManager({
 		diagnoseNativeStart,
 		snapshotNativeStart,
 		snapshotNativeCardLedger,
+		snapshotNativeEffectState,
 		releaseNativePhaseBoundary,
 		resumeNativeInput,
 		cancelNativeInput,

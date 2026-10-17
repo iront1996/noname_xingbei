@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const { createHostSessionManager } = require("../game/server-host-session-manager.js");
 const { createManagedHostProcessLauncher } = require("../game/server-managed-host-launcher.js");
+const { createManagedEngineSourceManifest } = require("../game/server-managed-engine-integrity.js");
 const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures/v2-managed-host-child.mjs");
 const gameSetup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({ length: 4 }, (_, position) => ({ seatId: `seat_${position + 1}`, position })) };
 
@@ -71,6 +72,40 @@ test("managed child bootstraps once and choice commands cannot bootstrap it agai
 		await assert.rejects(handle.sendHostCommand({ kind: "managed_host", type: "host_authority_event_ack", protocol: 1,
 			roomId: bootstrap.roomId, sessionId: bootstrap.sessionId, secret: bootstrap.secret,
 			eventSequence: 2, stateRevision: 2, afterDigest: "a".repeat(64) }), /HOST_COMMAND_REJECTED/);
+	} finally {
+		await handle.stop("test_complete");
+	}
+});
+
+test("managed child accepts only the scoped opt-in private effect snapshot command", async t => {
+	const envKeys = ["V2_NATIVE_EFFECT_STATE_PROBE", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_MANAGED_YINYANG",
+		"V2_NATIVE_MANAGED_RESPONSE", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_TEST_BLOCK_EXTERNAL_NETWORK"];
+	const prior = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
+	for (const key of envKeys) process.env[key] = "1";
+	t.after(() => { for (const key of envKeys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key]; });
+	const engineSourceManifest = createManagedEngineSourceManifest(path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
+	const bootstrap = Object.freeze({ kind: "host_session_bootstrap", protocol: 1, roomId: "effect_process_room",
+		sessionId: `hs_${"a".repeat(32)}`, secret: "b".repeat(64), setupDigest: "c".repeat(64), gameSetup,
+		engineSourceManifest });
+	const handle = await createManagedHostProcessLauncher({ script: fixture })(bootstrap);
+	const observed = [];
+	handle.on("message", message => observed.push(message));
+	try {
+		await handle.start();
+		await until(() => observed.some(message => message?.type === "host_game_ready"));
+		const command = { kind: "managed_host", type: "host_native_effect_state_snapshot", protocol: 1,
+			roomId: bootstrap.roomId, sessionId: bootstrap.sessionId, secret: bootstrap.secret, requestId: `effect_${"d".repeat(32)}`,
+			mode: "before_native_response", nativeEventId: `native_event_${"e".repeat(32)}`, seatId: gameSetup.seats[0].seatId,
+			nativeCompletionOrdinal: null, captureBoundary: "native_response_waiting", schema: "xingbei_native_private_effect_state_v1",
+			rootInstanceId: `native_root_${"f".repeat(32)}`, engineBuildId: engineSourceManifest.buildId,
+			seatIds: gameSetup.seats.map(seat => seat.seatId) };
+		await handle.sendHostCommand(command);
+		await until(() => observed.some(message => message?.type === "host_command_observed" &&
+			message.command === "host_native_effect_state_snapshot"));
+		await assert.rejects(handle.sendHostCommand({ ...command, secret: "0".repeat(64) }), /HOST_COMMAND_REJECTED/);
+		await assert.rejects(handle.sendHostCommand({ ...command, seatId: "unknown_seat" }), /HOST_COMMAND_REJECTED/);
+		await assert.rejects(handle.sendHostCommand({ ...command, unreviewed: true }), /HOST_COMMAND_REJECTED/);
+		assert.equal(observed.filter(message => message?.command === "host_native_effect_state_snapshot").length, 1);
 	} finally {
 		await handle.stop("test_complete");
 	}

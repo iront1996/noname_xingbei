@@ -1,5 +1,15 @@
 # V2 Codex engineering handoff
 
+## Current working batch: T3-B2-B2 (local real-Chromium evidence; Linux CI pending)
+
+- Starting checkout verified at `a455e070aaec26b92fe5f68cabce656c7750d14d` on `codex/v2-server-authority-m1`, matching the remote branch before edits. No push has been made for this batch.
+- Added a narrowly scoped authenticated HostSession snapshot request and response path. Managed Chromium reads only native `Player.hasSkill("yinYangZhanHuan")` and `Player.countZhiShiWu("guiHuo")` for the immutable four-seat setup; it never traverses arbitrary `player.storage`, DOM marks, functions, or native object graphs. The manager checks current room/session/build/root/seats and a captured native response candidate/completion ordinal before calculating the isolated effect-state HMAC.
+- Real Chromium test takes a before snapshot at the native `yingZhan` waiting boundary, then executes the original YinYang view-as response and takes a post snapshot only after the same native response has completed its `useCard` child and completion fence; a third snapshot confirms stable repeat. Assertions verify same native event/root, actual native effect evidence, changed then stable HMAC, `game.me === null`, and cleanup. Wrong-seat, stale-native-event, and duplicate-pre-boundary requests are rejected at the manager boundary before child IPC, without failing the live host.
+- Commitment envelopes are asserted to have an exact bounded key set and 64-hex commitment, and to exclude skill/mark/storage names, per-seat identities and preimage fields. The projection remains explicitly limited to YinYang presence and `guiHuo` count; it is neither the complete native skill/effect state nor schema-v2 authority.
+- Local Windows validation: effect-only real Chromium **1/1 passed, 0 skipped**; baseline real Chromium Event #1–#4 test without effect probe **1/1 passed, 0 skipped**; focused Node contracts **34 total, 33 passed, 0 failed, 1 Windows symlink-capability skip (`EPERM`)**. Syntax and whitespace checks passed. Linux CI is not yet run, so zero-skip cross-platform acceptance is pending.
+- Managed-source release lock currently verifies as build ID `1ce0adecfc79386c54109281623fbc9bdb9a8ad83fe226e87b683c9f55567ae3`; it must be rechecked after any further managed source edits. Experimental Cloudflare Pages preview exclusion was not independently verified in this turn; therefore no push was made.
+- T3-B2-C/D/E, T3-B3, T4-B and the historical response ACK/cleanup and `manager.stop()` race investigations remain open. No seed or Event #5 is authorized; `seedAuthorized=false`, authority revision 4, Event #5 rejected and `checkpointAvailable=false` remain unchanged.
+
 ## FP-W1a / FP-R2-S1 current investigation checkpoint (not accepted as feature support)
 
 - Remote branch was fetched before this investigation; local and `origin/codex/v2-server-authority-m1` both pointed to `0200c01e85aaa9fa3bbec26499e4b303618fa1b1`. The reported baseline Linux CI is `38792289342` (185/185, zero failures/skips). No feature code or test assertion was added in this checkpoint.

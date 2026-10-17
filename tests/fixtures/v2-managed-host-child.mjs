@@ -5,7 +5,7 @@ let started = false;
 
 process.on("message", message => {
 	if (message?.type === "host_stop") process.exit(0);
-	if (["host_choice_delivery", "host_choice_cancel", "host_authority_event_ack"].includes(message?.type)) {
+	if (["host_choice_delivery", "host_choice_cancel", "host_authority_event_ack", "host_native_effect_state_snapshot"].includes(message?.type)) {
 		process.send?.({ type: "host_command_observed", bootCount: started ? 1 : 0, command: message.type });
 		return;
 	}

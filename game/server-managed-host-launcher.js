@@ -116,6 +116,25 @@ function createManagedHostProcessLauncher({
 				Array.isArray(command.seatIds) && command.seatIds.length === bootstrap.gameSetup.seats.length &&
 				command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
 				Object.keys(command).sort().join(",") === "kind,mode,protocol,requestId,roomId,seatIds,secret,sessionId,type";
+			const nativeEffectStateCommand = process.env.V2_NATIVE_EFFECT_STATE_PROBE === "1" &&
+				process.env.V2_NATIVE_YINYANG_FIXTURE === "1" && process.env.V2_NATIVE_MANAGED_YINYANG === "1" &&
+				process.env.V2_NATIVE_MANAGED_RESPONSE === "1" && process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
+				process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
+				command?.type === "host_native_effect_state_snapshot" && command.kind === "managed_host" &&
+				command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
+				command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret &&
+				/^effect_[a-f0-9]{32}$/.test(command.requestId || "") &&
+				["before_native_response", "after_native_response", "repeat_native_response"].includes(command.mode) &&
+				/^native_event_[a-f0-9]{32}$/.test(command.nativeEventId || "") &&
+				bootstrap.gameSetup?.seats?.some(seat => seat.seatId === command.seatId) &&
+				command.schema === "xingbei_native_private_effect_state_v1" &&
+				/^native_root_[A-Za-z0-9_-]{16,96}$/.test(command.rootInstanceId || "") &&
+				command.engineBuildId === bootstrap.engineSourceManifest?.buildId &&
+				Array.isArray(command.seatIds) && command.seatIds.length === bootstrap.gameSetup.seats.length &&
+				command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
+				(command.mode === "before_native_response" ? command.captureBoundary === "native_response_waiting" && command.nativeCompletionOrdinal === null :
+					command.captureBoundary === "native_response_completed" && Number.isSafeInteger(command.nativeCompletionOrdinal) && command.nativeCompletionOrdinal > 0) &&
+				Object.keys(command).sort().join(",") === "captureBoundary,engineBuildId,kind,mode,nativeCompletionOrdinal,nativeEventId,protocol,requestId,roomId,rootInstanceId,schema,seatId,seatIds,secret,sessionId,type";
 			const nativePhaseBoundaryReleaseCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1" && command?.type === "host_native_phase_boundary_release" &&
 				command.kind === "managed_host" && command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
@@ -131,7 +150,7 @@ function createManagedHostProcessLauncher({
 				typeof command.nativeEventId === "string" && typeof command.seatId === "string" &&
 				Object.keys(command).every(key => ["type", "nativeEventId", "seatId"].includes(key));
 			if (exited || !child.connected || !command ||
-				!(diagnosticCommand || nativeSnapshotCommand || nativeCardLedgerCommand || nativePhaseBoundaryReleaseCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
+				!(diagnosticCommand || nativeSnapshotCommand || nativeCardLedgerCommand || nativeEffectStateCommand || nativePhaseBoundaryReleaseCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
 					(command?.type === "host_authority_event_ack" && command.kind === "managed_host" &&
 						command.accepted === true &&
 						command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&

@@ -53,6 +53,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
 	let event4AcceptedProjection = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
+	let nativeEffectStateBefore = null, nativeEffectStateAfter = null, nativeEffectStateRepeat = null, nativeEffectStateAfterPromise = null,
+		nativeEffectStateFailures = [];
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -386,6 +388,28 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.ok(expectedResponseShapes.includes(message.optionShapes[nativeResponseOptionId]),
 						"managed response test must select from its explicitly allowed native response shapes");
 					nativeResponseCandidate = message;
+					if (yinYangManaged && process.env.V2_NATIVE_EFFECT_STATE_PROBE === "1") {
+						const wrongSeat = setup.seats.find(seat => seat.seatId !== message.seatId);
+						const rejected = await manager.snapshotNativeEffectState(roomId, { mode: "before_native_response",
+							nativeEventId: message.nativeEventId, seatId: wrongSeat.seatId, nativeCompletionOrdinal: null });
+						assert.equal(rejected.ok, false, "effect-state request for another seat must fail closed before touching the child");
+						const staleEvent = await manager.snapshotNativeEffectState(roomId, { mode: "before_native_response",
+							nativeEventId: `${message.nativeEventId}_stale`, seatId: message.seatId, nativeCompletionOrdinal: null });
+						assert.equal(staleEvent.ok, false, "snapshot requests for an unregistered native event must fail before child IPC");
+						nativeEffectStateBefore = await manager.snapshotNativeEffectState(roomId, { mode: "before_native_response",
+							nativeEventId: message.nativeEventId, seatId: message.seatId, nativeCompletionOrdinal: null });
+						assert.equal(nativeEffectStateBefore.ok, true, `pre-skill native snapshot failed: ${nativeEffectStateBefore.code}`);
+						assert.equal(nativeEffectStateBefore.snapshot.snapshotOrdinal, 1);
+						assert.equal(nativeEffectStateBefore.snapshot.captureBoundary, "native_response_waiting");
+						assert.equal(nativeEffectStateBefore.snapshot.nativeEventId, message.nativeEventId);
+						assert.equal(nativeEffectStateBefore.snapshot.nativeCompletionOrdinal, null);
+						assert.equal(nativeEffectStateBefore.snapshot.checkpointAvailable, false);
+						const duplicatePre = await manager.snapshotNativeEffectState(roomId, { mode: "before_native_response",
+							nativeEventId: message.nativeEventId, seatId: message.seatId, nativeCompletionOrdinal: null });
+						assert.equal(duplicatePre.ok, false, "one native response lifecycle must not accept a second pre-state snapshot");
+						assert.equal(manager.inspect(roomId)?.state, "playable_probe",
+							"rejected stale/duplicate diagnostic requests must not mutate the host session");
+					}
 					if (responseTrusteeProbe) assert.equal(message.optionKinds[message.trusteeOption], "decline",
 						"response timeout must use the native optional-decline candidate as trustee");
 				} else assert.equal(message.optionKinds[submittedResponseOption], "decline", "nested response trustee should decline through the native optional-choice contract");
@@ -451,6 +475,25 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				if (isNativeResponseAck) {
 					nativeResponseAckCount++;
 					nativeResponseAckAttempts.set(message.choiceId, (nativeResponseAckAttempts.get(message.choiceId) || 0) + 1);
+				}
+				if (isYinYangResponseAck && process.env.V2_NATIVE_EFFECT_STATE_PROBE === "1" && !nativeEffectStateAfterPromise) {
+					assert.equal(message.nativeApplied, true);
+					assert.equal(message.nativeResponseEventCompleted, true);
+					assert.ok(Number.isSafeInteger(message.nativeCompletionOrdinal) && message.nativeCompletionOrdinal > 0);
+					nativeEffectStateAfterPromise = (async () => {
+						const after = await manager.snapshotNativeEffectState(roomId, { mode: "after_native_response",
+							nativeEventId: nativeResponseEntry.candidate.nativeEventId, seatId: nativeResponseEntry.candidate.seatId,
+							nativeCompletionOrdinal: message.nativeCompletionOrdinal });
+						if (!after.ok) { nativeEffectStateFailures.push({ stage: "post_native_response", code: after.code || null }); return { after, repeat: null }; }
+						const repeat = await manager.snapshotNativeEffectState(roomId, { mode: "repeat_native_response",
+							nativeEventId: nativeResponseEntry.candidate.nativeEventId, seatId: nativeResponseEntry.candidate.seatId,
+							nativeCompletionOrdinal: message.nativeCompletionOrdinal });
+						if (!repeat.ok) nativeEffectStateFailures.push({ stage: "repeat_native_response", code: repeat.code || null });
+						return { after, repeat };
+					})();
+					const captured = await nativeEffectStateAfterPromise;
+					nativeEffectStateAfter = captured.after;
+					nativeEffectStateRepeat = captured.repeat;
 				}
 				ackTrace.push({ at: Date.now(), choiceId: message.choiceId, nativeAction: nativeActionChoice?.choiceId === message.choiceId, nativeResponse: isNativeResponseAck, dropAcks,
 					responseEventCompleted: message.nativeResponseEventCompleted === true,
@@ -566,6 +609,55 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	});
 	t.after(() => manager.stop(roomId, "test_cleanup"));
 	assert.equal((await manager.start(roomId, setup)).ok, true);
+	if (process.env.V2_NATIVE_EFFECT_STATE_ONLY === "1") {
+		await until(() => nativeEffectStateFailures.length > 0 || nativeEffectStateRepeat?.ok && nativeResponseChoice &&
+			controller.inspect(roomId, nativeResponseChoice.choiceId)?.state === "resolved" && manager.inspect(roomId)?.state === "playable_probe",
+			15000, () => ({ session: manager.inspect(roomId), effectSnapshots: [nativeEffectStateBefore?.ok, nativeEffectStateAfter?.ok,
+				nativeEffectStateRepeat?.ok], responseChoiceState: nativeResponseChoice && controller.inspect(roomId, nativeResponseChoice.choiceId)?.state,
+				effectFailures: nativeEffectStateFailures, responseStages: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response")).slice(-8).map(entry => entry?.stage) }));
+		assert.deepEqual(nativeEffectStateFailures, [], `native effect snapshot failure: ${JSON.stringify(nativeEffectStateFailures)}`);
+		assert.equal(manager.inspect(roomId)?.authorityStateRevision, 4,
+			"the constrained effect-state projection must not advance authority beyond the already validated Event #4");
+		assert.deepEqual(manager.inspect(roomId)?.lastAuthorityEvent, { sequence: 4, name: "gongJiOrFaShu" });
+		assert.equal(manager.inspect(roomId)?.nextAuthorityEventSequence, 5);
+		assert.equal(nativeEffectStateBefore?.snapshot?.snapshotOrdinal, 1);
+		assert.equal(nativeEffectStateAfter?.snapshot?.snapshotOrdinal, 2);
+		assert.equal(nativeEffectStateRepeat?.snapshot?.snapshotOrdinal, 3);
+		assert.equal(nativeEffectStateAfter.snapshot.nativeEventId, nativeResponseCandidate.nativeEventId);
+		assert.equal(nativeEffectStateAfter.snapshot.nativeCompletionOrdinal, nativeEffectStateRepeat.snapshot.nativeCompletionOrdinal);
+		assert.equal(nativeEffectStateAfter.snapshot.stableWithPrevious, false);
+		assert.equal(nativeEffectStateRepeat.snapshot.stableWithPrevious, true);
+		assert.equal(nativeEffectStateRepeat.snapshot.commitment, nativeEffectStateAfter.snapshot.commitment);
+		assert.notEqual(nativeEffectStateBefore.snapshot.commitment, nativeEffectStateAfter.snapshot.commitment);
+		assert.ok(nativeDiagnostic.some(entry => entry?.stage === "native_response_completed" &&
+			entry?.snapshot?.nativeEventId === nativeResponseCandidate.nativeEventId &&
+			entry?.snapshot?.responseUseCardChildrenCompleted === 1 && entry?.snapshot?.rootObjectMatches === true &&
+			entry?.snapshot?.gameMeAbsent === true), "effect commitment lacks the completed native response/useCard boundary");
+						assert.equal(nativeEffectStateAfter.snapshot.checkpointAvailable, false);
+						assert.equal(nativeEffectStateRepeat.snapshot.checkpointAvailable, false);
+						assert.equal(manager.inspect(roomId)?.checkpointAvailable, false);
+						for (const snapshot of [nativeEffectStateBefore.snapshot, nativeEffectStateAfter.snapshot,
+							nativeEffectStateRepeat.snapshot]) {
+							assert.deepEqual(Object.keys(snapshot).sort(), ["captureBoundary", "checkpointAvailable", "commitment",
+								"engineBuildId", "mode", "nativeCompletionOrdinal", "nativeEventId", "rootInstanceId", "schema",
+								"schemaVersion", "snapshotOrdinal", "stableWithPrevious"].sort(),
+							"private IPC result must expose only its bounded commitment envelope");
+							assert.match(snapshot.commitment, /^[a-f0-9]{64}$/);
+							assert.equal(snapshot.checkpointAvailable, false);
+						}
+					const publicEffectEnvelope = JSON.stringify([nativeEffectStateBefore.snapshot, nativeEffectStateAfter.snapshot,
+						nativeEffectStateRepeat.snapshot]);
+					for (const privateValue of ["yinYangZhanHuan", "guiHuo", "skills", "storage", ...setup.seats.map(seat => seat.seatId)]) {
+						assert.equal(publicEffectEnvelope.includes(privateValue), false,
+							"effect snapshot envelope must not expose private skill/mark values or seat identities");
+					}
+					const effectHost = launchedHandles.get(manager.inspect(roomId)?.sessionId);
+		assert.ok(effectHost, "effect probe lost its managed host handle before cleanup");
+		assert.equal((await manager.stop(roomId, "native_effect_probe_complete")).ok, true);
+		await until(() => effectHost.resources().length === 0, 10000, () => ({ resources: effectHost.resources() }));
+		await effectHost.waitForCleanup();
+		return;
+	}
 	if (process.env.V2_TEST_MATCH_RECORD_POST === "1") {
 		await until(() => engineReadyProof?.testMatchRecordPostBlocked === 1, 10000,
 			() => ({ engineReady: engineReadyProof && { mode: engineReadyProof.mode, offboard: engineReadyProof.offboard,
@@ -1275,6 +1367,33 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(nativeApplied.snapshot?.targetCount, 1);
 					assert.equal(nativeApplied.snapshot?.useCardChildrenStarted, 1);
 					assert.equal(nativeApplied.snapshot?.useCardChildrenCompleted, 1);
+					if (process.env.V2_NATIVE_EFFECT_STATE_PROBE === "1") {
+						assert.equal(nativeEffectStateBefore?.snapshot?.schema, "xingbei_native_private_effect_commitment_v1");
+						assert.equal(nativeEffectStateAfter?.snapshot?.schema, "xingbei_native_private_effect_commitment_v1");
+						assert.equal(nativeEffectStateRepeat?.snapshot?.schema, "xingbei_native_private_effect_commitment_v1");
+						assert.equal(nativeEffectStateBefore.snapshot.snapshotOrdinal, 1);
+						assert.equal(nativeEffectStateAfter.snapshot.snapshotOrdinal, 2);
+						assert.equal(nativeEffectStateRepeat.snapshot.snapshotOrdinal, 3);
+						assert.equal(nativeEffectStateBefore.snapshot.mode, "before_native_response");
+						assert.equal(nativeEffectStateBefore.snapshot.captureBoundary, "native_response_waiting");
+						assert.equal(nativeEffectStateAfter.snapshot.mode, "after_native_response");
+						assert.equal(nativeEffectStateAfter.snapshot.captureBoundary, "native_response_completed");
+						assert.equal(nativeEffectStateAfter.snapshot.nativeEventId, nativeResponseCandidate.nativeEventId);
+						assert.equal(nativeEffectStateAfter.snapshot.nativeCompletionOrdinal, nativeApplied.snapshot.nativeCompletionOrdinal);
+						assert.equal(nativeEffectStateAfter.snapshot.stableWithPrevious, false,
+							"native guiHuo/skill effect must change the private effect commitment");
+						assert.equal(nativeEffectStateRepeat.snapshot.stableWithPrevious, true,
+							"repeating the same stable native state must reproduce the same private commitment");
+						assert.equal(nativeEffectStateRepeat.snapshot.commitment, nativeEffectStateAfter.snapshot.commitment);
+						assert.notEqual(nativeEffectStateBefore.snapshot.commitment, nativeEffectStateAfter.snapshot.commitment);
+						assert.ok(nativeDiagnostic.some(entry => entry?.stage === "native_response_completed" &&
+							entry?.snapshot?.nativeEventId === nativeResponseCandidate.nativeEventId),
+							"post snapshot must follow the native response GameEvent completion ordinal, not IPC arrival order");
+						assert.equal(nativeEffectStateAfter.snapshot.checkpointAvailable, false);
+						assert.equal(JSON.stringify([nativeEffectStateBefore.snapshot, nativeEffectStateAfter.snapshot,
+							nativeEffectStateRepeat.snapshot]).includes("yinYangZhanHuan"), false,
+							"private effect state must not disclose per-seat skill contents");
+					}
 					const responseStarted = nativeDiagnostic.find(entry => entry?.stage === "native_response_started" &&
 						entry?.snapshot?.eventName === "yingZhan" && entry?.snapshot?.seatId === nativeResponseCandidate.seatId);
 					const responseCompleted = nativeDiagnostic.find(entry => entry?.stage === "native_response_completed" &&

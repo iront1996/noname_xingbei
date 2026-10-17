@@ -11,6 +11,7 @@ const require = createRequire(import.meta.url);
 const { validateManagedEngineSourceManifest, MANAGED_ENGINE_TRUST_CONTRACT } = require("./server-managed-engine-integrity.js");
 const { createManagedRandomBootstrap } = require("./server-managed-random-source.js");
 const { createManagedNativeCardLedger } = require("./server-managed-native-card-ledger.js");
+const EFFECT_STATE_SCHEMA = "xingbei_native_private_effect_state_v1";
 
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const SESSION_ID = /^hs_[a-f0-9]{32}$/;
@@ -40,6 +41,7 @@ let nativeFaultApplyBarrier = null;
 let managedNativeCardLedger = null;
 let managedSeatIds = null;
 let managedCardSidecarNonce = null;
+let managedEngineBuildId = null;
 const chromiumStartupStderr = [];
 
 function safeChromiumStartupDiagnostics() {
@@ -123,6 +125,7 @@ async function cleanup() {
 	managedNativeCardLedger = null;
 	managedSeatIds = null;
 	managedCardSidecarNonce = null;
+	managedEngineBuildId = null;
 	try { networkPolicyUnsubscribe?.(); } catch {}
 	networkPolicyUnsubscribe = null;
 	try { managedRandomFailureUnsubscribe?.(); } catch {}
@@ -392,6 +395,7 @@ async function boot(message) {
 			.find(candidate => detail.includes(candidate));
 		throw new Error(code || "ENGINE_SOURCE_INTEGRITY_FAILED");
 	}
+	managedEngineBuildId = integrity.buildId;
 	if (process.env.V2_NATIVE_CARD_LEDGER_PROBE === "1") {
 		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
 			process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" || message.gameSetup?.mode !== "xingBei" ||
@@ -400,6 +404,15 @@ async function boot(message) {
 		managedCardSidecarNonce = randomBytes(16).toString("hex");
 		managedNativeCardLedger = createManagedNativeCardLedger({ roomId: message.roomId, sessionId: message.sessionId,
 			engineBuildId: integrity.buildId, seatIds: managedSeatIds, key: randomBytes(32) });
+	}
+	if (process.env.V2_NATIVE_EFFECT_STATE_PROBE === "1") {
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
+			process.env.V2_NATIVE_YINYANG_FIXTURE !== "1" || process.env.V2_NATIVE_MANAGED_YINYANG !== "1" ||
+			process.env.V2_NATIVE_MANAGED_RESPONSE !== "1" || process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" ||
+			message.gameSetup?.mode !== "xingBei" || message.gameSetup?.seats?.length !== 4) {
+			throw new Error("NATIVE_EFFECT_STATE_TEST_SCOPE_INVALID");
+		}
+		managedSeatIds = message.gameSetup.seats.map(seat => seat.seatId);
 	}
 	const engine = await cdp.send("Runtime.evaluate", {
 		expression: `(async()=>{
@@ -1908,7 +1921,7 @@ function emitNativeStartDiagnostic(observed) {
 			optionIds: [...snapshot.optionIds], optionKinds: { ...snapshot.optionKinds }, optionShapes: { ...snapshot.optionShapes }, delivery: null };
 		interactiveChoice.nativeResponseGates.set(snapshot.nativeEventId, gate);
 		process.send?.({ ...identity, type: "host_native_response_candidates", eventName: "yingZhan",
-			eventSequence: 4, nativeEventId: snapshot.nativeEventId, seatId: snapshot.seatId,
+			eventSequence: 4, nativeEventId: snapshot.nativeEventId, seatId: snapshot.seatId, rootInstanceId: snapshot.rootInstanceId,
 			options: [...snapshot.optionIds], optionKinds: snapshot.optionKinds, optionShapes: snapshot.optionShapes,
 			...(process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1" ? { optionCanTriggerNestedResponse: snapshot.optionCanTriggerNestedResponse } : {}),
 			trusteeOption: snapshot.declineOptionId || snapshot.optionIds[0],
@@ -2115,7 +2128,7 @@ async function runNativeStartDiagnostic(message) {
 	 window.__v2NativeStartDiagnosticState=state;
 	 if(!state.managedResponseTraceWrapped&&typeof window.__v2NativeStartTrace==='function'){
 	  const nativeTrace=window.__v2NativeStartTrace;
-	  window.__v2NativeStartTrace=function(payload){try{const item=JSON.parse(payload);if(item?.stage==='native_response_wait_open'){const gate=state.managedNativeResponseGates?.get(item.snapshot?.nativeEventId);if(gate){item.snapshot.sourceSeatId=gate.sourceSeatId||null;item.snapshot.actionEventId=gate.actionEventId||null;item.snapshot.forced=gate.forced===true;if(${JSON.stringify(process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1")})item.snapshot.optionCanTriggerNestedResponse=gate.optionCanTriggerNestedResponse;payload=JSON.stringify(item)}}}catch{}return nativeTrace(payload)};
+	  window.__v2NativeStartTrace=function(payload){try{const item=JSON.parse(payload);if(item?.stage==='native_response_wait_open'){const gate=state.managedNativeResponseGates?.get(item.snapshot?.nativeEventId);if(gate){item.snapshot.sourceSeatId=gate.sourceSeatId||null;item.snapshot.actionEventId=gate.actionEventId||null;item.snapshot.forced=gate.forced===true;if(${JSON.stringify(process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1")})item.snapshot.optionCanTriggerNestedResponse=gate.optionCanTriggerNestedResponse;payload=JSON.stringify(item)}}else if(item?.stage==='native_response_completed'){const gate=state.managedNativeResponseGates?.get(item.snapshot?.nativeEventId);if(gate&&item.snapshot?.eventName==='yingZhan'&&item.snapshot?.rootObjectMatches===true&&item.snapshot?.gameMeAbsent===true)gate.nativeCompletionFence=Object.freeze({nativeEventId:gate.nativeEventId,seatId:item.snapshot.seatId,eventInstance:gate.event,rootEvent:state.root,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:true,gameMeAbsent:true,useCardChildrenCompleted:gate.useCardChildrenCompleted})}}catch{}return nativeTrace(payload)};
 	  state.managedResponseTraceWrapped=true;
 	 }
 	 const snapshot=()=>{const current=_status.event,top=manager.eventStack.at(-1),phaseLoop=state.phaseLoop||manager.eventStack.find(event=>event.name==='phaseLoop')||manager.rootEvent?.next?.find(event=>event.name==='phaseLoop'),phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct);return {eventName:current?.name||null,eventStep:Number.isSafeInteger(current?.step)?current.step:null,parentEventName:current?.parent?.name||null,rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,eventStackDepth:manager.eventStack.length,eventStackTop:top?.name||null,eventStack:manager.eventStack.map(event=>event.name),eventStackDetails:manager.eventStack.map(event=>({eventName:event.name||null,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,seatId:event.player?.playerid||null,finished:Boolean(event.finished),nextCount:Array.isArray(event.next)?event.next.length:null,nextHeadName:event.next?.[0]?.name||null,nextHeadStep:Number.isSafeInteger(event.next?.[0]?.step)?event.next[0].step:null,nextHeadFinished:Boolean(event.next?.[0]?.finished)})),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:state.gameStartCount>0,gameStartCount:state.gameStartCount,gameDrawCreated:state.drawCreated||Boolean(manager.rootEvent?.next?.some(event=>event.name==='gameDraw')),gameDrawEntered:state.drawEntered,gameDrawParentName:state.drawParentName||state.draw?.parent?.name||manager.rootEvent?.next?.find(event=>event.name==='gameDraw')?.parent?.name||null,phaseLoopCreated:state.phaseLoopCreated||Boolean(phaseLoop),phaseLoopStartRequested:state.phaseLoopStartRequested||false,phaseLoopStarted:state.phaseLoopStarted||false,phaseLoopPaused:state.phaseLoopPaused||false,phaseLoopReleased:state.phaseLoopReleased||false,phaseLoopParentName:phaseLoop?.parent?.name||state.phaseLoopParentName||null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:state.firstPhaseGate||null,nativeInputGate:state.nativeInputGate||null,nativeInputGateStatus:state.nativeInputResumeGate?.status||null,nativeAction:state.nativeAction||null,nativeResponseGates:[...(state.managedNativeResponseGates?.values()||[])].slice(-16).map(gate=>({nativeEventId:gate.nativeEventId,seatId:gate.seatId,eventName:gate.eventName,eventStep:Number.isSafeInteger(gate.event?.step)?gate.event.step:null,status:gate.status,waitEventName:gate.waitEvent?.name||null,waitEventFinished:Boolean(gate.waitEvent?.finished),waitResolved:gate.waitResolved===true,optionCount:gate.optionIds?.length||0,deliveryStatus:gate.delivery?.status||null,useCardChildrenStarted:gate.useCardChildrenStarted||0,useCardChildrenCompleted:gate.useCardChildrenCompleted||0})),testFaultMode:${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")},prepareArenaCalls:state.prepareArenaCalls,waitForPlayerCalls:state.waitForPlayerCalls,randomMapOLCalls:state.randomMapOLCalls,chooseCharacterCalls:state.chooseCharacterCalls,phaseCalls:state.phaseCalls,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(current?.name||'')?current.name:null,pendingChoiceSeatId:current?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')})),nativeEventTrail:(state.nativeEventTrail||[]).slice(-12),lastSuccessfulEventStep:state.lastSuccessfulEventStep,nativeWaitError:state.nativeWaitError||null,rootPromiseState:state.rootPromiseState,failureCode:state.failureCode,traceCount:state.traceCount}};
@@ -2174,13 +2187,39 @@ async function runNativeStartDiagnostic(message) {
 	   if(options.size===0)return null;let declineOptionId=null;if(event.forced!==true){const bytes=crypto.getRandomValues(new Uint8Array(16));declineOptionId='native_option_'+Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');options.set(declineOptionId,Object.freeze({kind:'decline',event,seatId:player.playerid}));optionKinds[declineOptionId]='decline';optionShapes[declineOptionId]='native_optional_decline';if(nestedResponseProbe)optionCanTriggerNestedResponse[declineOptionId]=false}
 	   if(options.size>64)throw Error('NATIVE_RESPONSE_OPTION_CAPACITY_REJECTED');const bytes=crypto.getRandomValues(new Uint8Array(16)),nativeEventId='native_event_'+Array.from(bytes,value=>value.toString(16).padStart(2,'0')).join('');
 	   const yinYangBaseline={guiHuo:player.countZhiShiWu('guiHuo')};
-	   const gate={nativeEventId,event,seatId:player.playerid,eventName:event.name,nativeContentName:nativeResponseContentNames.get(event)||null,status:'prepared',options,optionIds:[...options.keys()],optionKinds,optionShapes,optionCanTriggerNestedResponse,declineOptionId,useCardChildrenStarted:0,useCardChildrenCompleted:0,yinYangBaseline,delivery:null,waitPromise:null,resolveWait:null,waitEvent:null,waitResolved:false};gate.waitPromise=new Promise(resolve=>{gate.resolveWait=resolve});event.__v2NativeEventId=nativeEventId;event.__v2ManagedResponseGate=gate;
+	   const gate={nativeEventId,event,seatId:player.playerid,eventName:event.name,nativeContentName:nativeResponseContentNames.get(event)||null,
+	    actionEventId:activeAction.nativeEventId,rootInstanceId:state.rootInstanceId,rootEvent:state.root,
+	    status:'prepared',options,optionIds:[...options.keys()],optionKinds,optionShapes,optionCanTriggerNestedResponse,declineOptionId,
+	    useCardChildrenStarted:0,useCardChildrenCompleted:0,yinYangBaseline,delivery:null,waitPromise:null,resolveWait:null,waitEvent:null,waitResolved:false};
+	   gate.waitPromise=new Promise(resolve=>{gate.resolveWait=resolve});event.__v2NativeEventId=nativeEventId;event.__v2ManagedResponseGate=gate;
 	   state.managedNativeResponseGates??=new Map();state.managedNativeResponseGates.set(nativeEventId,gate);
-	   event.isOnline=()=>true;event.send=function(){if(this!==event||gate.status!=='prepared'||gate.waitEvent||gate.waitResolved)throw Error('NATIVE_RESPONSE_SEND_DUPLICATE_REJECTED');gate.status='waiting';const waitEvent=game.createEvent('managedNativeResponseWait',false,event);if(waitEvent.parent!==event)throw Error('NATIVE_RESPONSE_WAIT_PARENT_REJECTED');waitEvent.setContent(async()=>{await gate.waitPromise});gate.waitEvent=waitEvent;state.managedNativeResponseGate=gate;state.nativeResponseGate={nativeEventId,seatId:player.playerid,eventName:'yingZhan',eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,parentChain:(()=>{const chain=[];for(let parent=event.parent,count=0;parent&&count<8;parent=parent.parent,count++)chain.push(parent.name||null);return chain})(),optionIds:gate.optionIds,optionKinds,optionShapes,...(${JSON.stringify(process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1")} ? {optionCanTriggerNestedResponse} : {}),declineOptionId,waiting:true,status:gate.status,waitEventName:waitEvent.name,waitEventParentName:waitEvent.parent?.name||null,paused:Boolean(_status.paused),gameMeAbsent:game.me===null};try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_wait_open',snapshot:{...state.nativeResponseGate,rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null}}))}catch{}return this};
+	   event.isOnline=()=>true;event.send=function(){
+	    if(this!==event)throw Error('NATIVE_RESPONSE_SEND_EVENT_MISMATCH');
+	    // Some native response contents finalize event.player only when they
+	    // reach their own send/wait boundary.  Discard the early, unannounced
+	    // candidate map and rebuild from that now-stable native seat; never bind
+	    // the IPC candidate to a different seat than the rules engine.
+	    if(event.player!==player||event.player?.playerid!==gate.seatId){
+	     gate.status='superseded';state.managedNativeResponseGates.delete(nativeEventId);
+	     delete event.__v2ManagedResponseGate;delete event.__v2NativeEventId;
+	     const rebound=prepareManagedNativeResponseGate(event);if(!rebound)throw Error('NATIVE_RESPONSE_FINAL_SEAT_CANDIDATE_REJECTED');
+	     return event.send.call(this);
+	    }
+	    if(gate.status!=='prepared'||gate.waitEvent||gate.waitResolved)throw Error('NATIVE_RESPONSE_SEND_DUPLICATE_REJECTED');
+	    gate.status='waiting';const waitEvent=game.createEvent('managedNativeResponseWait',false,event);if(waitEvent.parent!==event)throw Error('NATIVE_RESPONSE_WAIT_PARENT_REJECTED');
+	    waitEvent.setContent(async()=>{await gate.waitPromise});gate.waitEvent=waitEvent;state.managedNativeResponseGate=gate;
+	    state.nativeResponseGate={nativeEventId,seatId:player.playerid,eventName:'yingZhan',eventStep:Number.isSafeInteger(event.step)?event.step:null,
+	     parentEventName:event.parent?.name||null,parentChain:(()=>{const chain=[];for(let parent=event.parent,count=0;parent&&count<8;parent=parent.parent,count++)chain.push(parent.name||null);return chain})(),
+	     optionIds:gate.optionIds,optionKinds,optionShapes,...(${JSON.stringify(process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1")} ? {optionCanTriggerNestedResponse} : {}),
+	     declineOptionId,waiting:true,status:gate.status,waitEventName:waitEvent.name,waitEventParentName:waitEvent.parent?.name||null,
+	     paused:Boolean(_status.paused),gameMeAbsent:game.me===null};
+	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_wait_open',snapshot:{...state.nativeResponseGate,
+	     rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null}}))}catch{}
+	    return this};
 	   return gate;
 	  };
-	  const bindManagedResponseContext=event=>{const gate=event?.__v2ManagedResponseGate;if(!gate||gate.actionEventId)return;let sourceSeatId=null,actionEventId=null;for(let parent=event.parent,count=0;parent&&count<24;parent=parent.parent,count++){if(!sourceSeatId&&parent.name==='useCard')sourceSeatId=parent.player?.playerid||null;if(!actionEventId&&parent.name==='gongJiOrFaShu'&&typeof parent.__v2NativeEventId==='string')actionEventId=parent.__v2NativeEventId}gate.sourceSeatId=sourceSeatId;gate.actionEventId=actionEventId;gate.forced=event.forced===true};
-	  const recordNativeResponse=(event,stage)=>{if(!['yingZhan','chooseToRespond'].includes(event?.name))return;const chain=[];for(let parent=event.parent,count=0;parent&&count<8;parent=parent.parent,count++)chain.push(parent.name||null);const nativeContentName=nativeResponseContentNames.get(event)||null,gate=event.__v2ManagedResponseGate;const selected=gate?.delivery?.optionId?gate.options.get(gate.delivery.optionId):null;const snapshot={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,parentChain:chain,eventStack:manager.eventStack.map(item=>item.name||null),eventStackDetails:manager.eventStack.map(item=>({eventName:item.name||null,eventStep:Number.isSafeInteger(item.step)?item.step:null,parentEventName:item.parent?.name||null,seatId:item.player?.playerid||null,finished:Boolean(item.finished),nextCount:Array.isArray(item.next)?item.next.length:null,nextHeadName:item.next?.[0]?.name||null,nextHeadStep:Number.isSafeInteger(item.next?.[0]?.step)?item.next[0].step:null,nextHeadFinished:Boolean(item.next?.[0]?.finished)})),currentEventName:_status.event?.name||null,currentEventStep:Number.isSafeInteger(_status.event?.step)?_status.event.step:null,paused:Boolean(_status.paused),eventIsMine:Boolean(event.isMine()),eventIsOnline:Boolean(event.isOnline()),playerUnderControl:Boolean(event.player?.isUnderControl()),auto:Boolean(_status.auto),waitEventExists:Boolean(gate?.waitEvent),waitResolved:gate?.waitResolved===true,rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,seatId:event.player?.playerid||null,nativeContentName,nativeChooseToUseContent:event.name==='yingZhan'&&nativeContentName==='chooseToUse',resultBool:typeof event.result?.bool==='boolean'?event.result.bool:null,resultCardCount:Array.isArray(event.result?.cards)?event.result.cards.length:0,resultTargetCount:Array.isArray(event.result?.targets)?event.result.targets.length:0,selectedOptionId:gate?.delivery?.optionId||null,selectedKind:selected?.kind||null,selectedCardName:selected?.card?.name||null,selectedTargetSeatId:selected?.target?.playerid||null,responseGateStatus:gate?.status||null,responseUseCardChildrenStarted:gate?.useCardChildrenStarted||0,responseUseCardChildrenCompleted:gate?.useCardChildrenCompleted||0,...(${process.env.V2_NATIVE_YINYANG_FIXTURE === "1"}?{yinYangNativeCandidate:state.yinyangSkillProbe||null}:{}),gameMeAbsent:game.me===null};state.nativeResponseTrace??=[];state.nativeResponseTrace.push({stage,...snapshot});if(state.nativeResponseTrace.length>32)state.nativeResponseTrace.shift();try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_'+stage,snapshot}))}catch{}};
+	  const bindManagedResponseContext=event=>{const gate=event?.__v2ManagedResponseGate;if(!gate)return;let sourceSeatId=gate.sourceSeatId||null,actionEventId=gate.actionEventId||null;for(let parent=event.parent,count=0;parent&&count<24;parent=parent.parent,count++){if(!sourceSeatId&&parent.name==='useCard')sourceSeatId=parent.player?.playerid||null;if(!actionEventId&&parent.name==='gongJiOrFaShu'&&typeof parent.__v2NativeEventId==='string')actionEventId=parent.__v2NativeEventId}gate.sourceSeatId=sourceSeatId;gate.actionEventId=actionEventId;gate.forced=event.forced===true};
+	  const recordNativeResponse=(event,stage)=>{if(!['yingZhan','chooseToRespond'].includes(event?.name))return;const chain=[];for(let parent=event.parent,count=0;parent&&count<8;parent=parent.parent,count++)chain.push(parent.name||null);const nativeContentName=nativeResponseContentNames.get(event)||null,gate=event.__v2ManagedResponseGate;const selected=gate?.delivery?.optionId?gate.options.get(gate.delivery.optionId):null;const snapshot={nativeEventId:gate?.nativeEventId||event.__v2NativeEventId||null,eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,parentChain:chain,eventStack:manager.eventStack.map(item=>item.name||null),eventStackDetails:manager.eventStack.map(item=>({eventName:item.name||null,eventStep:Number.isSafeInteger(item.step)?item.step:null,parentEventName:item.parent?.name||null,seatId:item.player?.playerid||null,finished:Boolean(item.finished),nextCount:Array.isArray(item.next)?item.next.length:null,nextHeadName:item.next?.[0]?.name||null,nextHeadStep:Number.isSafeInteger(item.next?.[0]?.step)?item.next[0].step:null,nextHeadFinished:Boolean(item.next?.[0]?.finished)})),currentEventName:_status.event?.name||null,currentEventStep:Number.isSafeInteger(_status.event?.step)?_status.event.step:null,paused:Boolean(_status.paused),eventIsMine:Boolean(event.isMine()),eventIsOnline:Boolean(event.isOnline()),playerUnderControl:Boolean(event.player?.isUnderControl()),auto:Boolean(_status.auto),waitEventExists:Boolean(gate?.waitEvent),waitResolved:gate?.waitResolved===true,rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,seatId:event.player?.playerid||null,nativeContentName,nativeChooseToUseContent:event.name==='yingZhan'&&nativeContentName==='chooseToUse',resultBool:typeof event.result?.bool==='boolean'?event.result.bool:null,resultCardCount:Array.isArray(event.result?.cards)?event.result.cards.length:0,resultTargetCount:Array.isArray(event.result?.targets)?event.result.targets.length:0,selectedOptionId:gate?.delivery?.optionId||null,selectedKind:selected?.kind||null,selectedCardName:selected?.card?.name||null,selectedTargetSeatId:selected?.target?.playerid||null,responseGateStatus:gate?.status||null,responseUseCardChildrenStarted:gate?.useCardChildrenStarted||0,responseUseCardChildrenCompleted:gate?.useCardChildrenCompleted||0,...(${process.env.V2_NATIVE_YINYANG_FIXTURE === "1"}?{yinYangNativeCandidate:state.yinyangSkillProbe||null}:{}),gameMeAbsent:game.me===null};state.nativeResponseTrace??=[];state.nativeResponseTrace.push({stage,...snapshot});if(state.nativeResponseTrace.length>32)state.nativeResponseTrace.shift();try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_response_'+stage,snapshot}))}catch{}};
 	  GameEvent.prototype.start=function(...args){
 	   const event=this,responseEvent=['yingZhan','chooseToRespond'].includes(event.name);let responseChildOwner=null;
 	   if(event.name==='useCard'&&event.parent?.name==='yingZhan'&&event.parent.__v2ManagedResponseGate){responseChildOwner=event.parent.__v2ManagedResponseGate;responseChildOwner.useCardChildrenStarted++}
@@ -2748,6 +2787,117 @@ async function snapshotNativeCardLedger(message) {
 	}
 }
 
+async function snapshotNativeEffectState(message) {
+	const keys = "captureBoundary,engineBuildId,kind,mode,nativeCompletionOrdinal,nativeEventId,protocol,requestId,roomId,rootInstanceId,schema,seatId,seatIds,secret,sessionId,type";
+	if (process.env.V2_NATIVE_EFFECT_STATE_PROBE !== "1" || process.env.V2_NATIVE_YINYANG_FIXTURE !== "1" ||
+		process.env.V2_NATIVE_MANAGED_YINYANG !== "1" || process.env.V2_NATIVE_MANAGED_RESPONSE !== "1" ||
+		process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
+		process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1") throw new Error("NATIVE_EFFECT_STATE_PROCESS_GATE_CLOSED");
+	if (!validHostCommand(message)) throw new Error("NATIVE_EFFECT_STATE_COMMAND_IDENTITY_INVALID");
+	if (!message || Object.getPrototypeOf(message) !== Object.prototype || Object.keys(message).sort().join(",") !== keys)
+		throw new Error("NATIVE_EFFECT_STATE_COMMAND_KEYS_INVALID");
+	if (message.type !== "host_native_effect_state_snapshot" || !/^effect_[a-f0-9]{32}$/.test(message.requestId || "") ||
+		!["before_native_response", "after_native_response", "repeat_native_response"].includes(message.mode))
+		throw new Error("NATIVE_EFFECT_STATE_COMMAND_REQUEST_INVALID");
+	if (message.schema !== EFFECT_STATE_SCHEMA || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(message.rootInstanceId || "") ||
+		!/^native_event_[a-f0-9]{32}$/.test(message.nativeEventId || "") || !/^[A-Za-z0-9_-]{1,128}$/.test(message.seatId || ""))
+		throw new Error("NATIVE_EFFECT_STATE_COMMAND_BINDING_INVALID");
+	if (!managedEngineBuildId || message.engineBuildId !== managedEngineBuildId) throw new Error("NATIVE_EFFECT_STATE_BUILD_INVALID");
+	if (!Array.isArray(managedSeatIds) || !Array.isArray(message.seatIds) || JSON.stringify(message.seatIds) !== JSON.stringify(managedSeatIds))
+		throw new Error("NATIVE_EFFECT_STATE_SEATS_INVALID");
+	if (!cdp) throw new Error("NATIVE_EFFECT_STATE_CDP_UNAVAILABLE");
+	const request = { requestId: message.requestId, mode: message.mode, nativeEventId: message.nativeEventId,
+		seatId: message.seatId, nativeCompletionOrdinal: message.nativeCompletionOrdinal, captureBoundary: message.captureBoundary,
+		rootInstanceId: message.rootInstanceId, engineBuildId: message.engineBuildId, seatIds: message.seatIds };
+	try {
+		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{
+			const command=${JSON.stringify(request)},state=window.__v2NativeStartDiagnosticState,managed=window.__v2ManagedEngine,
+				core=managed?.core,game=core?.game,status=core?._status,manager=status?.eventManager;
+			if(!state||!game||!status||!manager||manager.rootEvent!==state.root||state.rootInstanceId!==command.rootInstanceId||
+				state.rootInstanceId==null||manager.rootEvent.name!=='game'||game.me!==null||!Array.isArray(game.players)||
+				game.players.length!==4||game.players.some(player=>player.ws)||command.seatIds.length!==4||
+				new Set(game.players.map(player=>player.playerid)).size!==4||command.seatIds.some(seatId=>!game.players.some(player=>player.playerid===seatId)))
+				throw Error('NATIVE_EFFECT_STATE_ROOT_OR_SEATS_INVALID');
+			const gate=state.managedNativeResponseGates?.get(command.nativeEventId);
+			let actionParent=null,rootReached=false;for(let parent=gate?.event?.parent,count=0;parent&&count<24;parent=parent.parent,count++){
+				if(parent.name==='gongJiOrFaShu'&&parent.__v2NativeEventId===gate.actionEventId)actionParent=parent;
+				if(parent===state.root)rootReached=true;
+			}
+			if(!gate)throw Error('NATIVE_EFFECT_STATE_GATE_MISSING');
+			if(gate.nativeEventId!==command.nativeEventId||gate.event?.__v2NativeEventId!==command.nativeEventId)
+				throw Error('NATIVE_EFFECT_STATE_EVENT_ID_BINDING_INVALID');
+			if(gate.seatId!==command.seatId)throw Error('NATIVE_EFFECT_STATE_GATE_SEAT_BINDING_INVALID_'+command.seatIds.indexOf(command.seatId)+'_'+command.seatIds.indexOf(gate.seatId));
+			if(gate.event?.player?.playerid!==command.seatId)throw Error('NATIVE_EFFECT_STATE_PLAYER_SEAT_BINDING_INVALID');
+			if(gate.event?.name!=='yingZhan')throw Error('NATIVE_EFFECT_STATE_EVENT_KIND_BINDING_INVALID');
+			if(!gate.actionEventId||!actionParent)throw Error('NATIVE_EFFECT_STATE_ACTION_BINDING_INVALID');
+			if(gate.rootInstanceId!==command.rootInstanceId||gate.rootEvent!==state.root||!rootReached)
+				throw Error('NATIVE_EFFECT_STATE_ROOT_BINDING_INVALID');
+			const player=game.players.find(item=>item.playerid===command.seatId);
+			if(!player||typeof player.hasSkill!=='function'||typeof player.countZhiShiWu!=='function')throw Error('NATIVE_EFFECT_STATE_NATIVE_SOURCE_INVALID');
+			if(command.mode==='before_native_response'){
+				const hasNativeSkillOption=[...gate.options.values()].some(option=>option?.kind==='view_as_skill'&&option.skillId==='yinYangZhanHuan'&&option.seatId===command.seatId);
+				if(command.captureBoundary!=='native_response_waiting'||command.nativeCompletionOrdinal!==null||gate.status!=='waiting'||
+					!gate.waitEvent||gate.waitResolved===true||gate.delivery||gate.useCardChildrenStarted!==0||gate.useCardChildrenCompleted!==0||
+					!hasNativeSkillOption||!player.hasSkill('yinYangZhanHuan'))throw Error('NATIVE_EFFECT_STATE_PRE_EVENT_FENCE_INVALID');
+			}else{
+				const completion=gate.completedResult,fence=gate.nativeCompletionFence;
+				if(command.captureBoundary!=='native_response_completed'||!Number.isSafeInteger(command.nativeCompletionOrdinal)||command.nativeCompletionOrdinal<1)
+					throw Error('NATIVE_EFFECT_STATE_COMPLETION_COMMAND_INVALID');
+				if(gate.status!=='applied'||!completion||completion.nativeCompletionOrdinal!==command.nativeCompletionOrdinal||
+					completion.selectedKind!=='view_as_skill'||completion.skillId!=='yinYangZhanHuan'||completion.bool!==true||
+					completion.useCardChildrenStarted!==1||completion.useCardChildrenCompleted!==1)
+					throw Error('NATIVE_EFFECT_STATE_NATIVE_RESULT_INVALID');
+				if(gate.nativeSkillEffectProof?.childName!=='useCard'||gate.nativeSkillEffectProof?.skillId!=='yinYangZhanHuan'||
+					gate.nativeSkillEffectProof?.materialIsSource!==true||gate.nativeSkillEffectProof?.materialStillInHand!==false||
+					!Number.isSafeInteger(gate.nativeSkillEffectProof?.guiHuoAfter)||gate.nativeSkillEffectProof.guiHuoAfter<=gate.nativeSkillEffectProof.guiHuoBefore)
+					throw Error('NATIVE_EFFECT_STATE_NATIVE_EFFECT_PROOF_INVALID');
+				if(!fence||fence.nativeEventId!==command.nativeEventId||fence.seatId!==command.seatId||fence.eventInstance!==gate.event||
+					fence.rootEvent!==state.root||fence.rootInstanceId!==command.rootInstanceId||fence.useCardChildrenCompleted!==1)
+					throw Error('NATIVE_EFFECT_STATE_COMPLETION_FENCE_INVALID');
+				if(fence.rootObjectMatches!==true)throw Error('NATIVE_EFFECT_STATE_COMPLETION_TRACE_ROOT_INVALID');
+				if(fence.gameMeAbsent!==true)throw Error('NATIVE_EFFECT_STATE_COMPLETION_TRACE_HOST_PLAYER_INVALID');
+			}
+			const seats=command.seatIds.map(seatId=>{const nativePlayer=game.players.find(item=>item.playerid===seatId);
+				const present=nativePlayer.hasSkill('yinYangZhanHuan'),guiHuo=nativePlayer.countZhiShiWu('guiHuo');
+				if(typeof present!=='boolean'||!Number.isSafeInteger(guiHuo)||guiHuo<0||guiHuo>3)throw Error('NATIVE_EFFECT_STATE_VALUE_INVALID');
+				return {seatId,guiHuo,skills:present?[{id:'yinYangZhanHuan',present:true,source:'native_hasSkill'}]:[]};});
+			return {schema:${JSON.stringify(EFFECT_STATE_SCHEMA)},rootInstanceId:state.rootInstanceId,seatIds:command.seatIds,seats};})()`, returnByValue: true }, 2500);
+		const snapshot=result.result?.value;
+		if(result.exceptionDetails){
+			const detail=`${result.exceptionDetails.text||""} ${result.exceptionDetails.exception?.description||""}`;
+			const allowed=["NATIVE_EFFECT_STATE_ROOT_OR_SEATS_INVALID","NATIVE_EFFECT_STATE_GATE_MISSING","NATIVE_EFFECT_STATE_EVENT_ID_BINDING_INVALID",
+				"NATIVE_EFFECT_STATE_GATE_SEAT_BINDING_INVALID","NATIVE_EFFECT_STATE_PLAYER_SEAT_BINDING_INVALID",
+				"NATIVE_EFFECT_STATE_EVENT_SEAT_BINDING_INVALID","NATIVE_EFFECT_STATE_EVENT_KIND_BINDING_INVALID","NATIVE_EFFECT_STATE_EVENT_BINDING_INVALID",
+				"NATIVE_EFFECT_STATE_ACTION_BINDING_INVALID","NATIVE_EFFECT_STATE_ROOT_BINDING_INVALID","NATIVE_EFFECT_STATE_NATIVE_SOURCE_INVALID",
+				"NATIVE_EFFECT_STATE_PRE_EVENT_FENCE_INVALID","NATIVE_EFFECT_STATE_COMPLETION_COMMAND_INVALID","NATIVE_EFFECT_STATE_NATIVE_RESULT_INVALID",
+				"NATIVE_EFFECT_STATE_NATIVE_EFFECT_PROOF_INVALID","NATIVE_EFFECT_STATE_COMPLETION_TRACE_MISSING",
+				"NATIVE_EFFECT_STATE_COMPLETION_TRACE_ROOT_INVALID","NATIVE_EFFECT_STATE_COMPLETION_TRACE_HOST_PLAYER_INVALID",
+				"NATIVE_EFFECT_STATE_COMPLETION_TRACE_INVALID",
+				"NATIVE_EFFECT_STATE_COMPLETION_FENCE_INVALID","NATIVE_EFFECT_STATE_VALUE_INVALID"];
+			throw new Error(detail.match(/NATIVE_EFFECT_STATE_GATE_SEAT_BINDING_INVALID_-?\d+_-?\d+/)?.[0]||
+				allowed.find(code=>detail.includes(code))||"NATIVE_EFFECT_STATE_CDP_EXCEPTION");
+		}
+		if(snapshot?.schema!==EFFECT_STATE_SCHEMA)throw new Error("NATIVE_EFFECT_STATE_CAPTURE_FAILED");
+		process.send?.({ ...identity, type:"host_private_native_effect_state", requestId:message.requestId, mode:message.mode,
+			nativeEventId:message.nativeEventId, seatId:message.seatId, nativeCompletionOrdinal:message.nativeCompletionOrdinal,
+			captureBoundary:message.captureBoundary, schema:EFFECT_STATE_SCHEMA, snapshot });
+	} catch(error) {
+		const allowed=new Set(["NATIVE_EFFECT_STATE_PROCESS_GATE_CLOSED","NATIVE_EFFECT_STATE_COMMAND_IDENTITY_INVALID","NATIVE_EFFECT_STATE_COMMAND_KEYS_INVALID",
+			"NATIVE_EFFECT_STATE_COMMAND_REQUEST_INVALID","NATIVE_EFFECT_STATE_COMMAND_BINDING_INVALID",
+			"NATIVE_EFFECT_STATE_BUILD_INVALID","NATIVE_EFFECT_STATE_SEATS_INVALID","NATIVE_EFFECT_STATE_CDP_UNAVAILABLE","NATIVE_EFFECT_STATE_CAPTURE_FAILED","NATIVE_EFFECT_STATE_ROOT_OR_SEATS_INVALID",
+			"NATIVE_EFFECT_STATE_GATE_MISSING","NATIVE_EFFECT_STATE_EVENT_ID_BINDING_INVALID","NATIVE_EFFECT_STATE_GATE_SEAT_BINDING_INVALID",
+			"NATIVE_EFFECT_STATE_PLAYER_SEAT_BINDING_INVALID","NATIVE_EFFECT_STATE_EVENT_SEAT_BINDING_INVALID",
+			"NATIVE_EFFECT_STATE_EVENT_KIND_BINDING_INVALID","NATIVE_EFFECT_STATE_EVENT_BINDING_INVALID","NATIVE_EFFECT_STATE_ACTION_BINDING_INVALID",
+			"NATIVE_EFFECT_STATE_NATIVE_SOURCE_INVALID","NATIVE_EFFECT_STATE_PRE_EVENT_FENCE_INVALID",
+			"NATIVE_EFFECT_STATE_COMPLETION_COMMAND_INVALID","NATIVE_EFFECT_STATE_NATIVE_RESULT_INVALID","NATIVE_EFFECT_STATE_NATIVE_EFFECT_PROOF_INVALID",
+			"NATIVE_EFFECT_STATE_COMPLETION_TRACE_MISSING","NATIVE_EFFECT_STATE_COMPLETION_TRACE_ROOT_INVALID",
+			"NATIVE_EFFECT_STATE_COMPLETION_TRACE_HOST_PLAYER_INVALID","NATIVE_EFFECT_STATE_COMPLETION_TRACE_INVALID","NATIVE_EFFECT_STATE_COMPLETION_FENCE_INVALID",
+			"NATIVE_EFFECT_STATE_VALUE_INVALID","NATIVE_EFFECT_STATE_CDP_EXCEPTION"]);
+		process.send?.({ ...identity, type:"host_private_native_effect_state_failed", requestId:message.requestId, mode:message.mode,
+			code:allowed.has(error?.message)||/^NATIVE_EFFECT_STATE_GATE_SEAT_BINDING_INVALID_-?\d+_-?\d+$/.test(error?.message||"") ? error.message : "NATIVE_EFFECT_STATE_CAPTURE_FAILED" });
+	}
+}
+
 async function releaseNativePhaseBoundary(message) {
 	const keys = "afterDigest,eventSequence,kind,nativeEventId,protocol,roomId,rootInstanceId,seatId,secret,sessionId,stateRevision,type";
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
@@ -2856,6 +3006,13 @@ process.on("message", message => {
 		choiceCommandChain = choiceCommandChain.then(() => snapshotNativeCardLedger(message)).catch(() => {
 			process.send?.({ ...identity, type: "host_private_card_ledger_failed", requestId: message?.requestId,
 				mode: message?.mode, code: "NATIVE_CARD_LEDGER_CAPTURE_FAILED" });
+		});
+		return;
+	}
+	if (message?.type === "host_native_effect_state_snapshot" && process.env.V2_NATIVE_EFFECT_STATE_PROBE === "1") {
+		choiceCommandChain = choiceCommandChain.then(() => snapshotNativeEffectState(message)).catch(error => {
+			process.send?.({ ...identity, type:"host_private_native_effect_state_failed", requestId:message?.requestId,
+				mode:message?.mode, code:/^NATIVE_EFFECT_STATE_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "NATIVE_EFFECT_STATE_CAPTURE_FAILED" });
 		});
 		return;
 	}
