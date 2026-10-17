@@ -45,7 +45,7 @@ function safeNativeDiagnostic(value) {
 test("managed Chromium applies four native Xingbei choices through authenticated controller IPC", { skip: !active, timeout: 90000 }, async t => {
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -53,8 +53,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
 	let event4AcceptedProjection = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
+	const nativeCardLedgerCaptureContexts = [];
 	let nativeEffectStateBefore = null, nativeEffectStateAfter = null, nativeEffectStateRepeat = null, nativeEffectStateAfterPromise = null,
 		nativeEffectStateFailures = [];
+	let nativeEffectStopSnapshotPromise = null, nativeEffectStopSnapshotSettled = false;
 	const droppedChoiceAckIds = new Set();
 	const authoritySubmissions = [];
 	let releaseEvent4AckBarrier;
@@ -247,6 +249,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(new Set(message.options).size, message.options.length);
 				assert.ok(message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)));
 				if (process.env.V2_NATIVE_CARD_LEDGER_PROBE === "1") {
+					nativeCardLedgerCaptureContexts.push({ ordinal: 1, mode: "pre_native_action", boundary: "native_action_candidates",
+						nativeEventId: message.nativeEventId, eventSequence: message.eventSequence, nativeCompletionOrdinal: null });
 					const result = await manager.snapshotNativeCardLedger(roomId, "pre_native_action");
 					if (!result.ok) nativeCardLedgerFailures.push({ stage: "pre_native_action", code: result.code });
 					assert.equal(result.ok, true, `private native card ledger baseline failed: ${result.code}`);
@@ -388,6 +392,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.ok(expectedResponseShapes.includes(message.optionShapes[nativeResponseOptionId]),
 						"managed response test must select from its explicitly allowed native response shapes");
 					nativeResponseCandidate = message;
+					if (yinYangManaged && process.env.V2_NATIVE_EFFECT_STOP_BARRIER === "1") {
+						nativeEffectStopSnapshotPromise = manager.snapshotNativeEffectState(roomId, { mode: "before_native_response",
+							nativeEventId: message.nativeEventId, seatId: message.seatId, nativeCompletionOrdinal: null });
+						nativeEffectStopSnapshotPromise.then(() => { nativeEffectStopSnapshotSettled = true; });
+						return;
+					}
 					if (yinYangManaged && process.env.V2_NATIVE_EFFECT_STATE_PROBE === "1") {
 						const wrongSeat = setup.seats.find(seat => seat.seatId !== message.seatId);
 						const rejected = await manager.snapshotNativeEffectState(roomId, { mode: "before_native_response",
@@ -656,6 +666,51 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal((await manager.stop(roomId, "native_effect_probe_complete")).ok, true);
 		await until(() => effectHost.resources().length === 0, 10000, () => ({ resources: effectHost.resources() }));
 		await effectHost.waitForCleanup();
+		return;
+	}
+	if (process.env.V2_NATIVE_EFFECT_STOP_BARRIER === "1") {
+		await until(() => nativeEffectStopSnapshotPromise && nativeResponseCandidate &&
+			nativeDiagnostic.some(entry => entry?.stage === "native_effect_snapshot_captured_before_delivery" &&
+				entry?.nativeEventId === nativeResponseCandidate.nativeEventId), 30000,
+			() => ({ session: manager.inspect(roomId), authoritySubmissions: authoritySubmissions.map(entry => ({
+				sequence: entry.proof?.eventSequence, kind: entry.proof?.event?.kind })), candidate: nativeResponseCandidate && {
+				eventName: nativeResponseCandidate.eventName, seatId: nativeResponseCandidate.seatId,
+				nativeEventId: nativeResponseCandidate.nativeEventId }, stages: nativeDiagnostic.slice(-12).map(entry => entry?.stage) }));
+		assert.equal(nativeEffectStopSnapshotSettled, false,
+			"the host must be blocked after native capture but before sending its authenticated snapshot response");
+		const beforeStop = manager.inspect(roomId);
+		assert.equal(beforeStop.state, "playable_probe");
+		assert.equal(beforeStop.authorityStateRevision, 3);
+		assert.deepEqual(beforeStop.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+		assert.equal(beforeStop.nextAuthorityEventSequence, 4);
+		assert.equal(nativeResponseChoices.length, 0, "no player choice may be registered before this snapshot boundary");
+		const waitOpen = nativeDiagnostic.find(entry => entry?.stage === "native_response_wait_open" &&
+			entry?.snapshot?.nativeEventId === nativeResponseCandidate.nativeEventId);
+		assert.ok(waitOpen, "real native response wait gate was not observed before snapshot capture");
+		assert.equal(waitOpen.snapshot?.waitEventName, "managedNativeResponseWait");
+		assert.equal(waitOpen.snapshot?.waitEventParentName, "yingZhan");
+		const host = launchedHandles.get(beforeStop.sessionId);
+		assert.ok(host?.pid > 0, "the managed Chromium process must exist at the native response boundary");
+		assert.equal((await manager.stop(roomId, "native_effect_snapshot_pending_stop")).ok, true);
+		assert.deepEqual(await nativeEffectStopSnapshotPromise, { ok: false, code: "NATIVE_EFFECT_STATE_SESSION_ENDED" },
+			"a captured but undelivered native snapshot must be canceled when its host stops");
+		const stopped = manager.inspect(roomId);
+		assert.equal(stopped.state, "stopped");
+		assert.equal(stopped.authorityStateRevision, 3, "stopping at the private snapshot fence must not create authority Event #4");
+		assert.deepEqual(stopped.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
+		assert.equal(stopped.nextAuthorityEventSequence, 4);
+		assert.equal(stopped.checkpointAvailable, false);
+		assert.equal(authoritySubmissions.some(entry => entry.proof?.eventSequence >= 4), false);
+		assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_phase_boundary_release_command_accepted"), false);
+		assert.equal(sessionEnds.filter(entry => entry.sessionId === beforeStop.sessionId).length, 1,
+			"stop must notify cleanup exactly once for the matching host session");
+		await until(() => host.resources().length === 0, 10000, () => ({ resources: host.resources(), state: manager.inspect(roomId)?.state }));
+		await host.waitForCleanup();
+		assert.equal(host.resources().length, 0, "Chromium process/profile resources must be fully cleaned after stop");
+		t.diagnostic(`T3-B2-C3 real Chromium stop fence: ${JSON.stringify({ sameRoot: true,
+			nativeEventId: nativeResponseCandidate.nativeEventId, authorityRevision: stopped.authorityStateRevision,
+			lastAuthorityEvent: stopped.lastAuthorityEvent, sessionState: stopped.state, resourcesAfterCleanup: host.resources().length,
+			gameMeNull: waitOpen.snapshot?.gameMeAbsent === true, event5Rejected: true, checkpointAvailable: stopped.checkpointAvailable })}`);
 		return;
 	}
 	if (process.env.V2_TEST_MATCH_RECORD_POST === "1") {
@@ -1016,7 +1071,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	try {
 		completed = await until(() => {
 			const session = manager.inspect(roomId);
-			if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, authorityFailureReason: session.authorityFailureReason, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks, nativeCardLedgerFailures, responseAuthority: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response_authority")).slice(-4), responseSummary: nativeDiagnostic.filter(entry => entry?.stage === "native_response_action_summary").slice(-3), actionAuthorityDiagnostics: nativeDiagnostic.filter(entry => ["event4_local_proof_rejected", "native_action_event_completed"].includes(entry?.stage)).slice(-4), responseStages: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response")).slice(-8).map(entry => entry?.stage) })}`);
+			if (session?.state === "failed") throw new Error(`native choice failed:${JSON.stringify({ failureCode: session.failureCode, authorityFailureReason: session.authorityFailureReason, state: session.state, opened: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), droppedAcks, nativeCardLedgerFailures, responseAuthority: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response_authority")).slice(-4), responseSummary: nativeDiagnostic.filter(entry => entry?.stage === "native_response_action_summary").slice(-3), actionAuthorityDiagnostics: nativeDiagnostic.filter(entry => ["event4_local_proof_rejected", "native_action_event_completed"].includes(entry?.stage)).slice(-4), waitNextErrors: nativeDiagnostic.filter(entry => entry?.stage === "wait_next_error").slice(-3), responseStages: nativeDiagnostic.filter(entry => String(entry?.stage || "").includes("response")).slice(-8).map(entry => entry?.stage) })}`);
 			return session?.authorityStateRevision === expectedAuthorityRevision && session;
 		}, 45000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state), deliveryCount, ackCount, droppedAcks, nativeDiagnostic }));
 	} catch (error) {
@@ -1602,6 +1657,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.deepEqual(waitingSnapshot.completedActorQuotas, { gongJiOrFaShu: 0, faShu: 0, gongJi: 0, extraXingDongCount: 0 });
 					assert.equal(waitingSnapshot.priorAuthority.afterDigest, phaseBoundaryAuthority.authorityStateDigest);
 					if (process.env.V2_NATIVE_CARD_LEDGER_PROBE === "1") {
+						nativeCardLedgerCaptureContexts.push({ ordinal: 2, mode: "post_phase_over", boundary: "completed_native_phaseOver_fence",
+							nativeEventId: waitingSnapshot.nativeEventId, eventSequence: waitingSnapshot.priorAuthority?.eventSequence ?? null,
+							nativeCompletionOrdinal: null });
 						const result = await manager.snapshotNativeCardLedger(roomId, "post_phase_over");
 						if (!result.ok) nativeCardLedgerFailures.push({ stage: "post_phase_over", code: result.code });
 						assert.equal(result.ok, true, `private post-phaseOver ledger failed: ${result.code}`);
@@ -1963,7 +2021,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					"server authority tip must match the final native proof");
 				assert.equal(session.authorityStateRevision, 4);
 				if (process.env.V2_NATIVE_CARD_LEDGER_PROBE === "1") {
-					assert.ok(nativeCardLedgerBefore && nativeCardLedgerAfter, "the real four-seat card action must be bracketed by two private native ledger captures");
+					assert.ok(nativeCardLedgerBefore && nativeCardLedgerAfter,
+						`the real four-seat card action must be bracketed by two private native ledger captures: ${JSON.stringify({
+							before: Boolean(nativeCardLedgerBefore), after: Boolean(nativeCardLedgerAfter), failures: nativeCardLedgerFailures,
+							contexts: nativeCardLedgerCaptureContexts, phaseFence: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_boundary_fence_waiting").slice(-1)[0]?.snapshot || null,
+							session: manager.inspect(roomId)?.state, authorityRevision: manager.inspect(roomId)?.authorityStateRevision })}`);
 					assert.equal(nativeCardLedgerBefore.rootInstanceId, authoritySubmissions[0].proof.event.rootInstanceId);
 					assert.equal(nativeCardLedgerAfter.rootInstanceId, nativeCardLedgerBefore.rootInstanceId);
 					assert.equal(nativeCardLedgerBefore.engineBuildId, session.engineBuildId);
@@ -1978,13 +2040,29 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(Object.values(nativeCardLedgerAfter.zoneDelta).reduce((sum, value) => sum + value, 0), 0);
 					assert.equal(nativeCardLedgerBefore.checkpointAvailable, false);
 					assert.equal(nativeCardLedgerAfter.checkpointAvailable, false);
+					assert.equal(nativeCardLedgerCaptureContexts.length, 2);
+					assert.equal(nativeCardLedgerCaptureContexts[0].nativeEventId, nativeActionCandidate.nativeEventId);
+					assert.equal(nativeCardLedgerCaptureContexts[0].eventSequence, 4);
+					assert.equal(nativeCardLedgerCaptureContexts[1].nativeEventId, nativeActionCandidate.nativeEventId);
+					assert.equal(nativeCardLedgerCaptureContexts[1].eventSequence, 4);
+					assert.equal(nativeCardLedgerCaptureContexts[0].nativeCompletionOrdinal, null,
+						"the card ledger pre-action capture is bound to the native candidate boundary, not a completed action ordinal");
+					assert.equal(nativeCardLedgerCaptureContexts[1].nativeCompletionOrdinal, null,
+						"the card ledger protocol does not expose a shared native completion ordinal for its post-phaseOver boundary");
+					assert.equal(nativeCardLedgerBefore.rootInstanceId, nativeEffectStateBefore?.snapshot?.rootInstanceId);
+					assert.equal(nativeCardLedgerAfter.rootInstanceId, nativeEffectStateAfter?.snapshot?.rootInstanceId);
+					assert.equal(nativeCardLedgerBefore.engineBuildId, nativeEffectStateBefore?.snapshot?.engineBuildId);
+					assert.equal(nativeCardLedgerAfter.engineBuildId, nativeEffectStateAfter?.snapshot?.engineBuildId);
+					assert.equal(nativeCardLedgerAfter.virtualCardsIncluded, false,
+						"virtual YinYang viewAs cards must not be added to the physical card ledger");
 					const privateSummary = JSON.stringify([nativeCardLedgerBefore, nativeCardLedgerAfter]);
 					assert.equal(/physical_[A-Za-z0-9_-]+|gongJi|faShu|mingGe/.test(privateSummary), false,
 						"only HMAC commitments and aggregate deltas may cross the internal host boundary");
 					t.diagnostic(`T3-B1 private native card ledger: ${JSON.stringify({ schema: nativeCardLedgerAfter.schema,
 						physicalCardCount: nativeCardLedgerAfter.physicalCardCount, changedPhysicalCardCount: nativeCardLedgerAfter.changedPhysicalCardCount,
 						movedZonePhysicalCardCount: nativeCardLedgerAfter.movedZonePhysicalCardCount,
-						zoneDelta: nativeCardLedgerAfter.zoneDelta, sameRoot: true, sameBuild: true, checkpointAvailable: false })}`);
+						zoneDelta: nativeCardLedgerAfter.zoneDelta, sameRoot: true, sameBuild: true, checkpointAvailable: false,
+						captureContexts: nativeCardLedgerCaptureContexts, atomicWithEffectSnapshots: false })}`);
 				}
 				const publicViewJson = JSON.stringify(session);
 				const diagnosticJson = JSON.stringify(nativeDiagnostic);

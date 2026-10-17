@@ -398,6 +398,12 @@ function createHostSessionManager({
 				else if (message?.type === "host_private_native_effect_state" && authenticate(record, message)) {
 					const pending = record.privateNativeEffectRequests.get(message.requestId);
 					if (!pending) return;
+					if (record.state !== "playable_probe" || !record.privateNativeEffectState) {
+						record.privateNativeEffectRequests.delete(message.requestId);
+						clearTimeout(pending.timer);
+						pending.resolve(failure("NATIVE_EFFECT_STATE_SESSION_ENDED"));
+						return;
+					}
 					if (!validatePrivateNativeEffectMessage(record, message, pending)) {
 						record.privateNativeEffectRequests.delete(message.requestId);
 						clearTimeout(pending.timer);
@@ -413,10 +419,16 @@ function createHostSessionManager({
 						clearTimeout(pending.timer);
 						record.privateNativeEffectSnapshotCount++;
 						record.privateNativeEffectLast = commitment.commitment;
-						pending.resolve(Object.freeze({ ok: true, snapshot: Object.freeze({ ...commitment,
+						const accepted = Object.freeze({ ok: true, snapshot: Object.freeze({ ...commitment,
 							mode: pending.mode, captureBoundary: pending.captureBoundary,
 							nativeEventId: record.privateNativeEffectEvent.nativeEventId,
-							nativeCompletionOrdinal: pending.nativeCompletionOrdinal }) }));
+							nativeCompletionOrdinal: pending.nativeCompletionOrdinal }) });
+						// IPC validation and commitment happen synchronously in this handler,
+						// but the caller observes the Promise on a later microtask. Re-check
+						// the exact session state at that delivery boundary so a concurrent
+						// stop cannot leak an apparently usable post-stop snapshot.
+						queueMicrotask(() => pending.resolve(record.state === "playable_probe" && record.privateNativeEffectState
+							? accepted : failure("NATIVE_EFFECT_STATE_SESSION_ENDED")));
 					} catch (_) {
 						record.privateNativeEffectRequests.delete(message.requestId);
 						clearTimeout(pending.timer);
@@ -789,6 +801,10 @@ function createHostSessionManager({
 		}
 		clearPhaseTimer(record);
 		record.state = "stopping";
+		// Fence private snapshots as soon as stop is requested, not only after the
+		// child exits. A response already in flight must not mint a commitment for
+		// a session whose shutdown has begun.
+		destroyPrivateNativeEffectState(record);
 		try {
 			await record.handle.stop(reason);
 			if (record.state === "stopping") finish(record);

@@ -38,6 +38,7 @@ let nativeStartDiagnosticUnsubscribe = null;
 let nativeFailureReported = false;
 let managedRandomFailureReported = false;
 let nativeFaultApplyBarrier = null;
+let nativeEffectSnapshotStopBarrier = null;
 let managedNativeCardLedger = null;
 let managedSeatIds = null;
 let managedCardSidecarNonce = null;
@@ -121,6 +122,11 @@ function createCdpSession(url) {
 async function cleanup() {
 	if (stopping) return;
 	stopping = true;
+	if (nativeEffectSnapshotStopBarrier) {
+		const barrier = nativeEffectSnapshotStopBarrier;
+		nativeEffectSnapshotStopBarrier = null;
+		barrier.release(false);
+	}
 	try { managedNativeCardLedger?.destroy(); } catch {}
 	managedNativeCardLedger = null;
 	managedSeatIds = null;
@@ -2878,6 +2884,14 @@ async function snapshotNativeEffectState(message) {
 				allowed.find(code=>detail.includes(code))||"NATIVE_EFFECT_STATE_CDP_EXCEPTION");
 		}
 		if(snapshot?.schema!==EFFECT_STATE_SCHEMA)throw new Error("NATIVE_EFFECT_STATE_CAPTURE_FAILED");
+		if (process.env.V2_NATIVE_EFFECT_STOP_BARRIER === "1" && message.mode === "before_native_response") {
+			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: message.nativeEventId,
+				observed: { stage: "native_effect_snapshot_captured_before_delivery", nativeEventId: message.nativeEventId,
+					captureBoundary: message.captureBoundary } });
+			const continueDelivery = await new Promise(resolve => { nativeEffectSnapshotStopBarrier = { release: resolve }; });
+			nativeEffectSnapshotStopBarrier = null;
+			if (!continueDelivery) throw new Error("NATIVE_EFFECT_STATE_STOPPED_BEFORE_DELIVERY");
+		}
 		process.send?.({ ...identity, type:"host_private_native_effect_state", requestId:message.requestId, mode:message.mode,
 			nativeEventId:message.nativeEventId, seatId:message.seatId, nativeCompletionOrdinal:message.nativeCompletionOrdinal,
 			captureBoundary:message.captureBoundary, schema:EFFECT_STATE_SCHEMA, snapshot });
@@ -2947,6 +2961,11 @@ process.on("message", message => {
 		return;
 	}
 	if (message?.type === "host_stop") {
+		if (nativeEffectSnapshotStopBarrier) {
+			const barrier = nativeEffectSnapshotStopBarrier;
+			nativeEffectSnapshotStopBarrier = null;
+			barrier.release(false);
+		}
 		cleanup().finally(() => process.exit(0));
 		return;
 	}

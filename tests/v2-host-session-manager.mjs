@@ -310,6 +310,117 @@ test("hostSession terminal lifecycle notifies exact room/session once for cleanu
 	await f.manager.stop("lifecycle_b");
 });
 
+test("host stop fences an in-flight private effect snapshot before child exit", async t => {
+	const gated = ["V2_NATIVE_EFFECT_STATE_PROBE", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_MANAGED_YINYANG",
+		"V2_NATIVE_MANAGED_RESPONSE", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_TEST_BLOCK_EXTERNAL_NETWORK"];
+	const previous = new Map(gated.map(name => [name, process.env[name]]));
+	for (const name of gated) process.env[name] = "1";
+	t.after(() => { for (const [name, value] of previous) value === undefined ? delete process.env[name] : process.env[name] = value; });
+
+	const launchRecords = [];
+	let nextPid = 9200;
+	let releaseStop;
+	let stopEntered = false;
+	let holdStop = true;
+	const f = fixture({ launch: async bootstrap => {
+		const handle = new EventEmitter();
+		handle.pid = nextPid++;
+		handle.commands = [];
+		handle.sendHostCommand = command => { handle.commands.push(command); return Promise.resolve(); };
+		handle.stop = async () => {
+			stopEntered = true;
+			if (holdStop) await new Promise(resolve => { releaseStop = resolve; });
+			handle.emit("exit", 0, null);
+		};
+		launchRecords.push({ bootstrap, handle });
+		return handle;
+	} });
+	const roomId = "effect_stop_barrier";
+	assert.equal((await f.manager.start(roomId, gameSetup)).ok, true);
+	const { bootstrap, handle } = launchRecords[0];
+	assert.equal(f.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready")).ok, true);
+	assert.equal(f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready")).ok, true);
+	assert.equal(f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", { proof: gameReadyProof(bootstrap) })).ok, true);
+
+	const rootInstanceId = `native_root_${"a".repeat(32)}`;
+	const side = { kind: "native_authority_event_v1", checkpoint: null, eventSequence: 1, stateRevisionBefore: 0,
+		stateRevisionAfter: 1, beforeDigest: "01".repeat(32), afterDigest: "02".repeat(32),
+		event: { kind: "xingbei_side_assignment_v1", name: "initSideAndPosition", firstActSeatId: "seat_1",
+			sides: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, side: index < 2 })),
+			hostPlayerAbsent: true, connectedTransports: 0, rootInstanceId, rootEventName: "game", rootParentName: null,
+			selectionEventName: "chooseCharacterOL", selectionParentName: "game", sideEventParentName: "chooseCharacterOL" } };
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: side })).ok, true);
+	const selection = { ...side, eventSequence: 2, stateRevisionBefore: 1, stateRevisionAfter: 2,
+		beforeDigest: side.afterDigest, afterDigest: "03".repeat(32), event: { kind: "xingbei_character_selection_v1", name: "chooseCharacterOL",
+			rootInstanceId, rootEventName: "game", rootParentName: null, selectionEventName: "chooseCharacterOL", selectionParentName: "game",
+			characters: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, character: `effect_character_${index}` })),
+			hostPlayerAbsent: true, connectedTransports: 0 } };
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: selection })).ok, true);
+	const draw = { ...selection, eventSequence: 3, stateRevisionBefore: 2, stateRevisionAfter: 3,
+		beforeDigest: selection.afterDigest, afterDigest: "00".repeat(32), event: { kind: "xingbei_opening_draw_v1", name: "gameDraw",
+			nativeEventId: `native_${"b".repeat(32)}`, nativeEventCompleted: true, nativeEventStep: 1, gameStartTriggered: true, gameStartCount: 1,
+			rootInstanceId, rootEventName: "game", parentEventName: "game", phaseLoopCreated: true, phaseLoopStartRequested: true,
+			phaseLoopParentName: "game", phaseLoopPaused: true, firstActSeatId: "seat_1", gameMeNull: true, connectedTransports: 0,
+			seats: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, position: index,
+				character: `effect_character_${index}`, side: index < 2, handCount: 4, handCommitment: `${index + 5}`.padStart(2, "0").repeat(32) })) } };
+	draw.afterDigest = createHash("sha256").update(canonicalize({ revision: 3, firstActSeatId: "seat_1",
+		seats: draw.event.seats.map(({ seatId, position, character, side: playerSide, handCount, handCommitment }) =>
+			({ seatId, position, character, side: playerSide, handCount, handCommitment })) })).digest("hex");
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: draw })).ok, true);
+	const nativeEventId = `native_event_${"c".repeat(32)}`;
+	const optionId = `native_option_${"d".repeat(32)}`;
+	handle.emit("message", hostMessage(bootstrap, "host_native_response_candidates", { eventName: "yingZhan", eventSequence: 4,
+		nativeEventId, seatId: "seat_2", rootInstanceId, options: [optionId], optionKinds: { [optionId]: "view_as_skill" },
+		optionShapes: { [optionId]: "native_single_target_view_as_skill" } }));
+
+	const pendingSnapshot = f.manager.snapshotNativeEffectState(roomId, { mode: "before_native_response",
+		nativeCompletionOrdinal: null, nativeEventId, seatId: "seat_2" });
+	assert.equal(handle.commands.length, 1, "snapshot request must be dispatched before the stop barrier");
+	const request = handle.commands[0];
+	const lateSnapshot = { schema: "xingbei_native_private_effect_state_v1", rootInstanceId, seatIds: gameSetup.seats.map(seat => seat.seatId),
+		seats: gameSetup.seats.map((seat, index) => ({ seatId: seat.seatId, guiHuo: 0,
+			skills: index === 1 ? [{ id: "yinYangZhanHuan", present: true, source: "native_hasSkill" }] : [] })) };
+	handle.emit("message", hostMessage(bootstrap, "host_private_native_effect_state", { schema: "xingbei_native_private_effect_state_v1",
+		requestId: request.requestId, mode: request.mode, nativeEventId: request.nativeEventId, seatId: request.seatId,
+		captureBoundary: request.captureBoundary, nativeCompletionOrdinal: request.nativeCompletionOrdinal, snapshot: lateSnapshot }));
+	const retryAfterAcceptance = f.manager.snapshotNativeEffectState(roomId, { mode: "before_native_response",
+		nativeCompletionOrdinal: null, nativeEventId, seatId: "seat_2" });
+	const stopPromise = f.manager.stop(roomId, "effect_snapshot_stop_barrier");
+	assert.equal(stopEntered, true);
+	assert.equal(f.manager.inspect(roomId).state, "stopping");
+	assert.deepEqual(await pendingSnapshot, { ok: false, code: "NATIVE_EFFECT_STATE_SESSION_ENDED" },
+		"a manager-accepted snapshot must not be delivered as usable after stop wins the reply microtask race");
+	assert.deepEqual(await retryAfterAcceptance, { ok: false, code: "NATIVE_EFFECT_STATE_SEQUENCE_REJECTED" },
+		"retrying an already accepted request cannot mint a second commitment or reuse its ordinal");
+
+	// A duplicate/replayed response after acceptance and stop is ignored; it cannot
+	// mint a second ordinal or turn the stopped host back into a live session.
+	handle.emit("message", hostMessage(bootstrap, "host_private_native_effect_state", { schema: "xingbei_native_private_effect_state_v1",
+		requestId: request.requestId, mode: request.mode, nativeEventId: request.nativeEventId, seatId: request.seatId,
+		captureBoundary: request.captureBoundary, nativeCompletionOrdinal: request.nativeCompletionOrdinal, snapshot: lateSnapshot }));
+	assert.equal(f.manager.inspect(roomId).state, "stopping", "late IPC must not turn stop into failed or revive the session");
+	assert.equal(f.manager.inspect(roomId).authorityStateRevision, 3, "private snapshot cannot advance authority revision");
+	releaseStop();
+	holdStop = false;
+	const stopped = await stopPromise;
+	assert.equal(stopped.ok, true);
+	assert.equal(stopped.session.state, "stopped");
+	const replacementStart = await f.manager.start(roomId, gameSetup);
+	assert.equal(replacementStart.ok, true, "a cleanly stopped room may start a replacement managed session");
+	const replacement = f.manager.inspect(roomId);
+	assert.notEqual(replacement.sessionId, bootstrap.sessionId);
+	handle.emit("message", hostMessage(bootstrap, "host_private_native_effect_state", { schema: "xingbei_native_private_effect_state_v1",
+		requestId: request.requestId, mode: request.mode, nativeEventId: request.nativeEventId, seatId: request.seatId,
+		captureBoundary: request.captureBoundary, nativeCompletionOrdinal: request.nativeCompletionOrdinal, snapshot: lateSnapshot }));
+	assert.equal(f.manager.inspect(roomId).sessionId, replacement.sessionId,
+		"a delayed authenticated response from the stopped session must not be routed into its replacement");
+	assert.equal(f.manager.inspect(roomId).state, "starting");
+	assert.equal(f.manager.inspect(roomId).authorityStateRevision, null);
+	const replacementStopped = await f.manager.stop(roomId, "replacement_cleanup");
+	assert.equal(replacementStopped.ok, true);
+	assert.equal(replacementStopped.session.state, "stopped");
+});
+
 test("host termination cleanup is session-scoped, cancels pending choices and isolates other rooms", async () => {
 	const timers = new Map(); let timerId = 0;
 	let manager;
