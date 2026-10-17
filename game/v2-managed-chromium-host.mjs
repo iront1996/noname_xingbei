@@ -2101,9 +2101,10 @@ async function runNativeStartDiagnostic(message) {
 						nativeWaitError: payload.stage === "wait_next_error" ? {
 							name: typeof waitError.name === "string" && /^[A-Za-z][A-Za-z0-9]{0,31}$/.test(waitError.name) ? waitError.name : "Error",
 							code: typeof waitError.code === "string" && /^[A-Z][A-Z0-9_]{0,80}$/.test(waitError.code) ? waitError.code : null,
-							nullBase: ["null", "undefined"].includes(waitError.nullBase) ? waitError.nullBase : null,
-							property: typeof waitError.property === "string" && /^[A-Za-z_$][A-Za-z0-9_$]{0,48}$/.test(waitError.property) ? waitError.property : null,
-							notFunction: typeof waitError.notFunction === "string" && /^[A-Za-z_$][A-Za-z0-9_$]{0,48}$/.test(waitError.notFunction) ? waitError.notFunction : null,
+			nullBase: ["null", "undefined"].includes(waitError.nullBase) ? waitError.nullBase : null,
+			property: typeof waitError.property === "string" && /^[A-Za-z_$][A-Za-z0-9_$]{0,48}$/.test(waitError.property) ? waitError.property : null,
+			notFunction: typeof waitError.notFunction === "string" && /^[A-Za-z_$][A-Za-z0-9_$]{0,48}$/.test(waitError.notFunction) ? waitError.notFunction : null,
+			referenceIdentifier: typeof waitError.referenceIdentifier === "string" && /^[A-Za-z_$][A-Za-z0-9_$]{0,48}$/.test(waitError.referenceIdentifier) ? waitError.referenceIdentifier : null,
 						} : null,
 						hostPlayerAbsent: snapshot.hostPlayerAbsent === true,
 						nativeInputGateStatus: snapshot.nativeInputGate?.status || null,
@@ -2548,7 +2549,7 @@ async function runNativeStartDiagnostic(message) {
 	     nativeEventId:fence.nativeEventId,seatId:fence.seatId,parentEventName:event.name,parentEventStep:Number.isSafeInteger(event.step)?event.step:null,
 	     releaseCount:fence.releaseCount,releaseResolution:fence.releaseResolution,rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null}}))}catch{}
 	   }
-	   emit('wait_next_end');return value},error=>{const name=typeof error?.name==='string'&&/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(error.name)?error.name:'Error',message=typeof error?.message==='string'?error.message:'';const nullProperty=/^Cannot read properties of (null|undefined) \(reading '([A-Za-z_$][A-Za-z0-9_$]{0,48})'\)$/.exec(message),notFunction=/^([A-Za-z_$][A-Za-z0-9_$]{0,48}) is not a function$/.exec(message),code=/^[A-Z][A-Z0-9_]{0,80}$/.test(message)?message:null;state.nativeWaitError={name,...(nullProperty?{nullBase:nullProperty[1],property:nullProperty[2]}:{}),...(notFunction?{notFunction:notFunction[1]}:{}),...(code?{code}:{})};state.failureCode='NATIVE_WAIT_NEXT_REJECTED';emit('wait_next_error');throw error})};
+	   emit('wait_next_end');return value},error=>{const name=typeof error?.name==='string'&&/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(error.name)?error.name:'Error',message=typeof error?.message==='string'?error.message:'';const nullProperty=/^Cannot read properties of (null|undefined) \(reading '([A-Za-z_$][A-Za-z0-9_$]{0,48})'\)$/.exec(message),notFunction=/^([A-Za-z_$][A-Za-z0-9_$]{0,48}) is not a function$/.exec(message),reference=/^([A-Za-z_$][A-Za-z0-9_$]{0,48}) is not defined$/.exec(message),code=/^[A-Z][A-Z0-9_]{0,80}$/.test(message)?message:null;state.nativeWaitError={name,...(nullProperty?{nullBase:nullProperty[1],property:nullProperty[2]}:{}),...(notFunction?{notFunction:notFunction[1]}:{}),...(reference?{referenceIdentifier:reference[1]}:{}),...(code?{code}:{})};state.failureCode='NATIVE_WAIT_NEXT_REJECTED';emit('wait_next_error');throw error})};
 	 const completedActionStart=GameEvent.prototype.start;
 	 GameEvent.prototype.start=function(...args){const event=this;
 	  if(${JSON.stringify(process.env.V2_NATIVE_PARENT_FENCE_AUDIT === "1")}&&event.action===true&&event.parent?.name==='xingDong'){
