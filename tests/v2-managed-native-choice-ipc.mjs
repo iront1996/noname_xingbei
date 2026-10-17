@@ -1137,8 +1137,22 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal(controller.retryDelivery({ roomId, choiceId: nativeActionChoice.choiceId }).ok, true,
 			"native action result must be redelivered after the intentionally dropped choice ACK");
 	}
-	await until(() => opened.every(choice => controller.inspect(roomId, choice.choiceId)?.state === "resolved") &&
-		(!nativeActionChoice || manager.inspect(roomId)?.authorityStateRevision !== 4 || controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved"),
+	await until(() => {
+		const session = manager.inspect(roomId);
+		if (session?.state === "failed") {
+			const waitErrors = nativeDiagnostic.filter(entry => entry?.stage === "wait_next_error").slice(-4)
+				.map(entry => ({ eventName: entry?.snapshot?.eventName || null,
+					eventStep: Number.isSafeInteger(entry?.snapshot?.eventStep) ? entry.snapshot.eventStep : null,
+					parentEventName: entry?.snapshot?.parentEventName || null,
+					error: entry?.snapshot?.nativeWaitError || null }));
+			throw new Error(`native choice host failed before ACK resolution:${JSON.stringify({ failureCode: session.failureCode,
+				choiceStates: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state || null),
+				actionChoiceState: nativeActionChoice ? controller.inspect(roomId, nativeActionChoice.choiceId)?.state || null : null,
+				waitErrors, recentStages: nativeDiagnostic.slice(-16).map(entry => entry?.stage) })}`);
+		}
+		return opened.every(choice => controller.inspect(roomId, choice.choiceId)?.state === "resolved") &&
+			(!nativeActionChoice || session?.authorityStateRevision !== 4 || controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved");
+	},
 		15000, () => ({ session: manager.inspect(roomId), choices: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state || null),
 			actionChoice: nativeActionChoice && controller.inspect(roomId, nativeActionChoice.choiceId), deliveryCount, ackCount, nativeActionAckCount,
 			event4AckDropCount, event4SubmissionCount, event4AckBarrierWaitCount, event4ControllerRetryTriggered,

@@ -1,6 +1,9 @@
 # V2 server-authority plan and evidence
 
-## Current unaccepted batch — cross-seat native atomic capture (phaseLoop idempotency fix pending Linux CI)
+## Current unaccepted batch — cross-seat native atomic capture (step-32 native wait failure diagnosis)
+
+- Linux CI `39054501574` on `d49f01b` passed the ordinary step-27 action probe and reached step 32, where real Chromium failed the native-choice chain with `NATIVE_WAIT_NEXT_REJECTED`. The post-dispatch phaseLoop boundary was observed after `phaseOver`; the precise native wait error descriptor was not surfaced in the prior timeout report. A test-only fail-fast diagnostic now emits the bounded, allowlisted error descriptor on terminal host failure. This is not an acceptance run and no T3 coverage is promoted.
+- Required next evidence: identify and repair the actual native child/wait failure without relaxing boundary checks, then run the single-root first capture and the second-seat atomic capture as real, non-skipped Linux Chromium cases. Authority revision remains 4; Event #5 remains rejected; seed authorization and checkpoint availability remain false.
 
 - CI `39054286360` confirmed the first observer gate was incomplete: dispatch proof creation was opt-in, but the corresponding `waitNext()` proof consumer still ran for normal action probes and failed on the intentionally absent completion ledger. Both halves are now gated by the same explicit boundary audit/fence setting. Capture-mode validation remains strict and requires the ledger. Release-lock verification and a fresh Linux Chromium run are pending.
 

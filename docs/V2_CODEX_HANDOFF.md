@@ -1,6 +1,9 @@
 # V2 Codex engineering handoff
 
-## Current unaccepted batch — cross-seat native atomic capture (phaseLoop idempotency fix pending Linux CI)
+## Current unaccepted batch — cross-seat native atomic capture (step-32 native wait failure diagnosis)
+
+- Linux CI `39054501574` on `d49f01b` passed through the ordinary native action probe and reached step 32, where the real Chromium native-choice chain ended in `NATIVE_WAIT_NEXT_REJECTED`; downstream steps were skipped, so cross-seat atomic capture is not accepted. The trace proves `phaseOver` was dispatched and the post-dispatch phaseLoop boundary was observed, but does not yet identify the rejected native child/wait error. The failure had previously been reported as a long condition timeout, obscuring the already-available sanitized error descriptor. The test now checks terminal host state during that wait and fails immediately with only allowlisted wait-error fields, event/step names, and bounded stages. This is diagnostic instrumentation only; no timeout was increased, assertion weakened, or capture accepted.
+- The same CI confirms the opt-in phaseOver proof instrumentation no longer breaks the non-capture action probe at step 27. Next: rerun the affected Linux real-Chromium step, use the newly surfaced exact error code to correct only the faulty boundary/child lifecycle, then require both step 32 and the separate second-seat capture step 33 to execute and pass before any coverage promotion.
 
 - Follow-up CI `39054286360` still failed because the previous opt-in correction gated phaseOver proof creation, but the post-`waitNext` proof consumer remained unconditional. The proof consumer now uses the same audit/fence opt-in gate. This keeps capture-mode proof creation and validation paired, while ordinary action probes do not require capture-only completion-ledger state. Release lock is being recomputed; no Linux acceptance yet.
 
