@@ -3041,7 +3041,11 @@ async function snapshotNativeAtomicCapture(message) {
 				fence:commonFence,cardLedger:{schema:'xingbei_native_private_card_ledger_v1',rootInstanceId:command.rootInstanceId,seatIds,cards},
 				effectState:{schema:'xingbei_native_private_effect_state_v1',rootInstanceId:command.rootInstanceId,seatIds,seats:effectSeats},turnResource};})()`, returnByValue: true }, 5000);
 		const envelope = result.result?.value;
-		if (result.exceptionDetails) throw new Error("NATIVE_ATOMIC_CAPTURE_NATIVE_EXTRACTION_REJECTED");
+		if (result.exceptionDetails) {
+			const remoteDescriptor = `${result.exceptionDetails.exception?.description || ""} ${result.exceptionDetails.text || ""}`;
+			const safeCode = remoteDescriptor.match(/\b(NATIVE_ATOMIC_CAPTURE_[A-Z0-9_]{1,80})\b/)?.[1];
+			throw new Error(safeCode || "NATIVE_ATOMIC_CAPTURE_NATIVE_EXTRACTION_REJECTED");
+		}
 		if (!envelope || envelope.schema !== "xingbei_native_private_atomic_capture_v2" || envelope.captureOrdinal !== message.captureOrdinal)
 			throw new Error("NATIVE_ATOMIC_CAPTURE_NATIVE_EXTRACTION_INVALID");
 		process.send?.({ ...identity, type: "host_private_atomic_capture", requestId: message.requestId,
