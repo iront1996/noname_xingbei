@@ -1,6 +1,13 @@
 # V2 server-authority plan and evidence
 
-## Current unaccepted batch — cross-seat native atomic capture (corrected fence; bounded native error diagnostic pending Linux CI)
+## Current unaccepted batch — cross-seat native atomic capture (phaseLoop idempotency fix pending Linux CI)
+
+- Latest remote-confirmed base: `07b5a912ca5c11c48a257ffdd737471a1636e8c2`. CI `39053177630` failed during step 27 only after the real native action had completed. The bounded native error descriptor identified `OPENING_PHASE_LOOP_START_DUPLICATE`.
+- Root cause: native `GameEvent.start()` memoizes its in-flight promise per event instance and returns it on repeat calls. Managed wrappers in both opening-root and unified-root modes intercepted this native idempotency and treated a second call on the same phaseLoop object as a duplicate lifecycle start. The wrapper now caches and returns one gate promise per exact event instance, dispatching native `originalStart` only once. The distinct duplicate release/new-event/root checks remain.
+- Release lock for the changed managed source is `8d1bc0ed16eaff9dd36c90774e3aceb80e0a4f6c593084ec28ed545ba3b3493f` (209 files; 18,895,199 bytes). Focused local suites: 31 pass, 0 fail, one Windows-only symlink-capability skip; Linux real Chromium verification is pending.
+- Next acceptance must execute the preserved native phaseLoop action test and both atomic-capture workflow steps (no skipped dependent step), confirming same room/session/root/build/seats, two true seat-specific completions, ordinal progression, and cleanup. No coverage manifest status is promoted until then.
+
+### Previous diagnostic history
 
 - Full CI `39051543498` on `dd6adfd` failed at the preserved first-boundary Chromium test (step 32). It exposed a real contract mismatch: Noname `GameEvent.trigger("phaseOver")` can return `null` when the native trigger dispatcher schedules no child event. The existing fence incorrectly treated that valid no-child path as missing completion, so no fence was established and a later action proceeded. Bounded CI diagnostics showed the call occurred on phaseLoop step 2 with the expected root and no local player; the failure was not a timeout inference.
 - Corrective change: instrument the actual trigger dispatch and bind it to the native phaseLoop event instance, root, step, seat, trigger ordinal and trigger name. If a child is returned, the fence requires the exact child to be finished and present in the native completion ledger under that phaseLoop parent. If the native dispatcher returns `null`, the proof explicitly represents no child and the boundary is not accepted until the parent `waitNext()` continuation has returned, the trigger is no longer pending, and all relevant descendants are complete. Node validation rejects malformed or inconsistent null/child shapes. The existing first-boundary test is preserved; the second-seat probe remains strictly opt-in.

@@ -867,7 +867,7 @@ async function runManagedUnifiedRoot() {
 	  waitForPlayerCalls:0,randomMapOLCalls:0,prepareArenaCalls:0,chooseCharacterCalls:0,sideAssignmentCalls:0,
 	  dialogBroadcasts:0,trusteeTimerCaptured:false,selectionEventCount:0,sideEventCount:0,gameStartCount:0,
 	  drawCreated:false,drawCompleted:false,phaseLoopCreated:false,phaseLoopStartRequested:false,
-	  phaseLoopStarted:false,phaseLoopPaused:false,phaseLoopReleased:false,phaseLoopGate:null,
+	  phaseLoopStarted:false,phaseLoopPaused:false,phaseLoopReleased:false,phaseLoopGate:null,phaseLoopStartPromise:null,
 	  event1Ready:false,event1Released:false,event2Ready:false,event2Released:false,event3Ready:false,
 	  yinyangFixtureEnabled:yinyangFixture,yinyangFixtureSeatId:null,yinyangCandidatePool:null,yinyangFixtureCandidateObserved:false};
 	 let releaseEvent1,releaseEvent2,releasePhaseLoop;
@@ -964,11 +964,11 @@ async function runManagedUnifiedRoot() {
 	  if(name==='phaseLoop'){if(state.phaseLoopCreated)throw Error('UNIFIED_PHASE_LOOP_DUPLICATE');state.phaseLoopCreated=true;state.phaseLoop=event}
 	  return event};
 	 GameEvent.prototype.start=function(...args){const event=this;
-	  if(event===state.phaseLoop){if(state.phaseLoopStartRequested)throw Error('UNIFIED_PHASE_LOOP_START_DUPLICATE');
+	  if(event===state.phaseLoop){if(state.phaseLoopStartPromise)return state.phaseLoopStartPromise;
 	   state.phaseLoopStartRequested=true;state.phaseLoopPaused=true;state.status='phase_loop_gated';
 	   if(!state.drawCompleted||event.parent!==state.root)throw Error('UNIFIED_PHASE_LOOP_PRECONDITION_REJECTED');state.event3Ready=true;
-	   return state.phaseLoopGate.then(()=>{if(state.phaseLoopStarted)throw Error('UNIFIED_PHASE_LOOP_START_DUPLICATE');state.phaseLoopStarted=true;
-	    state.phaseLoopPaused=false;return originalStart.apply(this,args)})}
+	   state.phaseLoopStartPromise=state.phaseLoopGate.then(()=>{if(state.phaseLoopStarted)throw Error('UNIFIED_PHASE_LOOP_START_DUPLICATE');state.phaseLoopStarted=true;
+	    state.phaseLoopPaused=false;return originalStart.apply(event,args)});return state.phaseLoopStartPromise}
 	  return originalStart.apply(this,args).then(value=>{if(event===state.sideEvent){state.sideEventCompleted=true;state.event1After={revision:1,
 	    firstActSeatId:_status.firstAct?.playerid||null,sides:game.players.map(player=>({seatId:player.playerid,side:player.side}))}}
 	   if(event===state.selectionEvent){state.selectionEventCompleted=true;state.event2After={revision:2,
@@ -1220,7 +1220,7 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 	 if(window.__v2ManagedOpeningDraw)throw Error('OPENING_DRAW_DUPLICATE_REJECTED');
 	 const state={nativeEventId:${JSON.stringify(nativeEventId)},status:'starting',gameStartCount:0,drawCreated:false,
 	  drawEntered:false,drawCompleted:false,phaseLoopCreated:false,phaseLoopStartRequested:false,
-	  phaseLoopStarted:false,phaseLoopPaused:false,phaseLoopGate:null,
+	  phaseLoopStarted:false,phaseLoopPaused:false,phaseLoopGate:null,phaseLoopStartPromise:null,
 	  waitForPlayerCalls:0,randomMapOLCalls:0,rootPromiseState:'pending',failureCode:null};
 	 let releasePhaseLoop;state.phaseLoopGate=new Promise(resolve=>{releasePhaseLoop=resolve});state.releasePhaseLoop=releasePhaseLoop;
 	 window.__v2ManagedOpeningDraw=state;
@@ -1229,10 +1229,10 @@ async function runManagedOpeningDraw(event2After, event2Digest) {
 	 const originalPrepareArena=game.prepareArena,originalChooseCharacter=game.chooseCharacter,originalInit=game.initSideAndPosition;
 	 const originalDraw=game.gameDraw,originalPhaseLoop=game.phaseLoop,originalTrigger=GameEvent.prototype.trigger;
 	 GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;return originalWaitNext.apply(this,args).then(value=>{if(event===state.draw){state.drawCompleted=true;state.drawFinalStep=event.step}return value},error=>{state.failureCode='OPENING_DRAW_CHILD_FAILED';throw error})};
-	 GameEvent.prototype.start=function(...args){if(this===state.phaseLoop){if(state.phaseLoopStartRequested)throw Error('OPENING_PHASE_LOOP_START_DUPLICATE');
+	 GameEvent.prototype.start=function(...args){if(this===state.phaseLoop){if(state.phaseLoopStartPromise)return state.phaseLoopStartPromise;
 	  state.phaseLoopStartRequested=true;state.phaseLoopPaused=true;state.status='phase_loop_gated';
-	  return state.phaseLoopGate.then(()=>{if(state.phaseLoopStarted)throw Error('OPENING_PHASE_LOOP_START_DUPLICATE');
-	   state.phaseLoopStarted=true;state.phaseLoopPaused=false;return originalStart.apply(this,args)})}
+	  state.phaseLoopStartPromise=state.phaseLoopGate.then(()=>{if(state.phaseLoopStarted)throw Error('OPENING_PHASE_LOOP_START_DUPLICATE');
+	   state.phaseLoopStarted=true;state.phaseLoopPaused=false;return originalStart.apply(this,args)});return state.phaseLoopStartPromise}
 	  return originalStart.apply(this,args)};
 	 GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;return originalTrigger.call(this,name,...args)};
 	 game.createEvent=function(name,...args){const event=originalCreateEvent.call(this,name,...args);if(name==='gameDraw'){if(state.drawCreated)throw Error('OPENING_DRAW_DUPLICATE_EVENT');state.drawCreated=true;state.draw=event}
