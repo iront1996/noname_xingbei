@@ -2125,12 +2125,14 @@ async function runNativeStartDiagnostic(message) {
 	 const reuseOpeningRoot=${["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(message.mode)};
 	 const managedInputController=${["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(message.mode)};
 	 const managedNativeResponse=${process.env.V2_NATIVE_MANAGED_RESPONSE === "1"};
+	 const multiTurnCapture=${process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" && process.env.V2_NATIVE_ATOMIC_CAPTURE_PROBE === "1" && message.mode === "managed_opening_root_action_event4"};
 	 const nestedResponseProbe=${process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1"};
 	 const managedInputResume=${["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(message.mode)};
 	 const managedInputDeadlineMs=${message.mode === "managed_input_timeout" ? 1500 : 10000};
 	 const managedStart=${message.mode === "managed_start" || message.mode === "managed_input_gate" || ["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(message.mode)};
 	 const managed=window.__v2ManagedEngine,{game,lib,get,_status}=managed.core,manager=_status.eventManager,Player=lib.element.Player;
 	 const state=reuseOpeningRoot?window.__v2ManagedOpeningDraw:(window.__v2NativeStartDiagnosticState||{traceCount:0,lastSuccessfulEventStep:null,gameStartCount:0,drawCreated:false,drawEntered:false,phaseLoopCreated:false,prepareArenaCalls:0,waitForPlayerCalls:0,randomMapOLCalls:0,chooseCharacterCalls:0,phaseCalls:0,rootPromiseState:'not_started',failureCode:null});
+	 state.multiTurnCaptureProbe=multiTurnCapture;
 	 window.__v2NativeStartDiagnosticState=state;
 	 if(!state.managedResponseTraceWrapped&&typeof window.__v2NativeStartTrace==='function'){
 	  const nativeTrace=window.__v2NativeStartTrace;
@@ -2317,9 +2319,13 @@ async function runNativeStartDiagnostic(message) {
 	  GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;emit('wait_next_begin');return originalWaitNext.apply(this,args).then(async value=>{state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};if(event===state.inputEvent&&state.nativeAction?.eventId===event.__v2NativeEventId&&state.nativeAction.useResultCount===1){const mapping=window.__v2ManagedNativeActionOptions.get(state.nativeAction.optionId);state.nativeAction.nativeChildWaitCompleted=true;state.nativeAction.nativeEventInstanceMatches=event===state.nativeInputResumeGate?.event;state.nativeAction.nativeEventStepAfterWait=Number.isSafeInteger(event.step)?event.step:null;state.nativeAction.cardInHandAfterNativeWait=Boolean(mapping&&event.player.getCards('h').includes(mapping.card));state.nativeAction.cardPositionAfterNativeWait=mapping?get.position(mapping.card):null;state.nativeAction.status='native_child_wait_completed';emit('native_action_child_wait_completed')}
 	   if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1")}&&event.name==='phaseLoop'){
 	    const children=Array.isArray(event.childEvents)?event.childEvents:[],completedChild=[...children].reverse().find(child=>child?.finished===true),phaseChild=[...children].reverse().find(child=>child?.name==='phase'&&child?.finished===true&&child.parent===event&&child.player===event.player),pendingChildren=children.filter(child=>child?.finished!==true).length+(Array.isArray(event.next)?event.next.filter(child=>child&&child.finished!==true).length:0);
-	    const phaseBoundary=event.step===1&&phaseChild?.parent===event&&pendingChildren===0,phaseOverTriggerEvent=state.nativePhaseOverTriggerEvent||null;
-	    const phaseOverTriggerComplete=state.nativePhaseOverTriggerCount>=1&&(!phaseOverTriggerEvent||(phaseOverTriggerEvent.finished===true&&phaseOverTriggerEvent.parent===event));
-	    const phaseOverBoundary=event.step===2&&phaseChild?.parent===event&&phaseChild.player===event.player&&state.nativePhaseOverTriggerCount>=1&&phaseOverTriggerComplete&&pendingChildren===0;
+	    const phaseBoundary=event.step===1&&phaseChild?.parent===event&&pendingChildren===0,phaseOverTriggerEvent=state.nativePhaseOverTriggerEvent||null,
+	     priorBoundary=state.nativePhaseBoundaryFence||null;
+	    const phaseOverTriggerComplete=state.nativePhaseOverTriggerCount>=1&&phaseOverTriggerEvent?.finished===true&&
+	     phaseOverTriggerEvent.parent===event&&state.nativePhaseOverTriggerSeatId===event.player?.playerid;
+	    const phaseOverTriggerFresh=state.nativePhaseOverTriggerCount>(priorBoundary?.phaseOverTriggerCount||0)&&
+	     phaseOverTriggerEvent!==priorBoundary?.phaseOverTriggerEvent&&state.nativePhaseOverTriggerSeatId===event.player?.playerid;
+	    const phaseOverBoundary=event.step===2&&phaseChild?.parent===event&&phaseChild.player===event.player&&phaseOverTriggerFresh&&phaseOverTriggerComplete&&pendingChildren===0;
 	    const completedActor=phaseChild?.player||null,completedActorQuotas={gongJiOrFaShu:Number.isSafeInteger(completedActor?.storage?.gongJiOrFaShu)?completedActor.storage.gongJiOrFaShu:null,
 	     faShu:Number.isSafeInteger(completedActor?.storage?.faShu)?completedActor.storage.faShu:null,
 	     gongJi:Number.isSafeInteger(completedActor?.storage?.gongJi)?completedActor.storage.gongJi:null,
@@ -2343,35 +2349,49 @@ async function runNativeStartDiagnostic(message) {
 	     gameMeAbsent:game.me===null,connectedTransports:game.players.filter(player=>player.ws).length};
 	    state.nativePhaseLoopBoundaryAudit??=[];state.nativePhaseLoopBoundaryAudit.push(snapshot);if(state.nativePhaseLoopBoundaryAudit.length>8)state.nativePhaseLoopBoundaryAudit.shift();
 	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_loop_wait_next_boundary',snapshot}))}catch{}
-	    if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&phaseOverBoundary&&!state.nativePhaseBoundaryFence){
+	    const boundaryOrdinal=(state.nativePhaseBoundaryFences?.length||0)+1;
+	    const firstCaptureBoundary=boundaryOrdinal===1&&!priorBoundary;
+	    const secondCaptureBoundary=multiTurnCapture&&boundaryOrdinal===2&&priorBoundary?.status==='released'&&event.player!==priorBoundary.seatPlayer;
+	    if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&phaseOverBoundary&&
+	     (!priorBoundary||priorBoundary.status==='released')&&(firstCaptureBoundary||secondCaptureBoundary)){
 	     const actionEvent=state.inputEvent,action=state.nativeAction,authority=window.__v2ManagedGame?.authorityState;
 	     const pendingDescendants=(root)=>{const seen=new WeakSet();let pending=0,nodes=0,overflow=false;const walk=node=>{if(!node||typeof node!=='object'||seen.has(node))return;seen.add(node);if(++nodes>4096){overflow=true;return}if(node!==root&&node.finished!==true)pending++;for(const child of [...(Array.isArray(node.childEvents)?node.childEvents:[]),...(Array.isArray(node.next)?node.next:[])])walk(child)};walk(root);return {pending,nodes,overflow}};
 	     const descendants=pendingDescendants(event),priorFence=state.nativeParentContinuationFence;
-	     if(!actionEvent||!action||action.eventId!==actionEvent.__v2NativeEventId||action.useResultCount!==1||
-	      action.nativeChildWaitCompleted!==true||action.nativeUseCardChildCompleted!==true||
-	      priorFence?.status!=='released'||priorFence.releaseCount!==1||priorFence.nativeEventId!==action.eventId||
-	      authority?.revision!==4||window.__v2ManagedOpeningDraw?.authorityDigest!==priorFence.releaseResolution?.afterDigest||
-	      event!==state.phaseLoop||event.step!==2||phaseChild.player!==_status.firstAct||state.nativePhaseOverTriggerCount!==1||
-	      (phaseOverTriggerEvent&&(phaseOverTriggerEvent.finished!==true||phaseOverTriggerEvent.parent!==event))||descendants.overflow||descendants.pending!==0||
-	      manager.rootEvent!==state.root||!state.root||game.me!==null||game.players.some(player=>player.ws)||
-	      _status.currentPhase!=null||event.player!==_status.firstAct)throw Error('NATIVE_PHASE_BOUNDARY_FENCE_PRECONDITION_REJECTED');
+	     const firstFenceValid=firstCaptureBoundary&&actionEvent&&action&&action.eventId===actionEvent.__v2NativeEventId&&action.useResultCount===1&&
+	      action.nativeChildWaitCompleted===true&&action.nativeUseCardChildCompleted===true&&priorFence?.status==='released'&&priorFence.releaseCount===1&&
+	      priorFence.nativeEventId===action.eventId&&event.player===_status.firstAct&&state.nativePhaseOverTriggerCount===1;
+	     const secondFenceValid=secondCaptureBoundary&&priorBoundary?.phaseOverTriggerEvent!==phaseOverTriggerEvent&&
+	      state.nativePhaseOverTriggerCount>priorBoundary.phaseOverTriggerCount&&event.player?.playerid!==_status.firstAct?.playerid;
+	     if((!firstFenceValid&&!secondFenceValid)||authority?.revision!==4||
+	      firstCaptureBoundary&&window.__v2ManagedOpeningDraw?.authorityDigest!==priorFence?.releaseResolution?.afterDigest||
+	      secondCaptureBoundary&&priorBoundary?.releaseResolution?.eventSequence!==4||
+	      event!==state.phaseLoop||event.step!==2||phaseChild.player!==event.player||!phaseOverTriggerComplete||
+	      (phaseOverTriggerEvent.finished!==true||phaseOverTriggerEvent.parent!==event)||descendants.overflow||descendants.pending!==0||
+	      manager.rootEvent!==state.root||!state.root||game.me!==null||game.players.some(player=>player.ws)||_status.currentPhase!=null)
+	      throw Error('NATIVE_PHASE_BOUNDARY_FENCE_PRECONDITION_REJECTED');
 	     let releaseBoundary;const wait=new Promise(resolve=>{releaseBoundary=resolve});
-	     const completionLedger=completionLedgerForRoot(),completedPhaseEvidence=completionLedger?.completionEvidence.get(phaseChild);
+	     const completionLedger=completionLedgerForRoot(),completedPhaseEvidence=completionLedger?.completionEvidence.get(phaseChild),
+	      completedPhaseOverEvidence=completionLedger?.completionEvidence.get(phaseOverTriggerEvent);
 	     if(!completionLedger||completionLedger.rootEvent!==state.root||completionLedger.rootInstanceId!==state.rootInstanceId||
-	      !Number.isSafeInteger(completionLedger.completionOrdinal)||completionLedger.completionOrdinal<1||!completedPhaseEvidence||
+	      !Number.isSafeInteger(completionLedger.completionOrdinal)||completionLedger.completionOrdinal<1||!completedPhaseEvidence||!completedPhaseOverEvidence||
 	      completedPhaseEvidence.rootInstanceId!==state.rootInstanceId||completedPhaseEvidence.eventName!=='phase'||
 	      completedPhaseEvidence.parentEventName!=='phaseLoop'||completedPhaseEvidence.seatId!==phaseChild.player?.playerid||
-	      completedPhaseEvidence.completionOrdinal>completionLedger.completionOrdinal)throw Error('NATIVE_EVENT_COMPLETION_EVIDENCE_MISSING');
-	     const fence={status:'waiting',releaseCount:0,nativeEventId:action.eventId,seatId:actionEvent.player?.playerid||null,
-	      rootInstanceId:state.rootInstanceId,rootEvent:state.root,phaseLoopEvent:event,completedPhaseEvent:phaseChild,phaseOverTriggerEvent,
+	      completedPhaseEvidence.completionOrdinal>completionLedger.completionOrdinal||completedPhaseOverEvidence.rootInstanceId!==state.rootInstanceId||
+	      completedPhaseOverEvidence.parentEventName!=='phaseLoop'||completedPhaseOverEvidence.seatId!==phaseChild.player?.playerid||
+	      completedPhaseOverEvidence.completionOrdinal>=completedPhaseEvidence.completionOrdinal)
+	      throw Error('NATIVE_EVENT_COMPLETION_EVIDENCE_MISSING');
+	     const fence={status:'waiting',releaseCount:0,nativeEventId:action?.eventId||completedPhaseEvidence.eventInstanceId,seatId:phaseChild.player?.playerid||null,
+	      boundaryOrdinal,rootInstanceId:state.rootInstanceId,rootEvent:state.root,phaseLoopEvent:event,completedPhaseEvent:phaseChild,phaseOverTriggerEvent,
+	      seatPlayer:event.player,
 	      phaseLoopStep:event.step,phaseOverTriggerCount:state.nativePhaseOverTriggerCount,phaseOverTriggerComplete,
-	      nativeCompletionOrdinal:completionLedger.completionOrdinal,completionEvidence:completedPhaseEvidence,
-	      priorAuthority:Object.freeze({eventSequence:4,stateRevision:4,afterDigest:priorFence.releaseResolution.afterDigest}),
+	      nativeCompletionOrdinal:completionLedger.completionOrdinal,completionEvidence:completedPhaseEvidence,phaseOverCompletionEvidence:completedPhaseOverEvidence,
+	      priorAuthority:Object.freeze({eventSequence:4,stateRevision:4,afterDigest:firstCaptureBoundary?priorFence.releaseResolution.afterDigest:window.__v2ManagedOpeningDraw?.authorityDigest||null}),
 	      descendantNodeCount:descendants.nodes,pendingDescendantCount:descendants.pending,promise:wait,resolve:releaseBoundary};
 	     state.nativePhaseBoundaryFence=fence;
+	     state.nativePhaseBoundaryFences??=[];state.nativePhaseBoundaryFences.push(fence);
 	     const waiting={status:fence.status,nativeEventId:fence.nativeEventId,seatId:fence.seatId,rootInstanceId:fence.rootInstanceId,
-	      phaseLoopStep:fence.phaseLoopStep,phaseOverTriggerCount:state.nativePhaseOverTriggerCount,phaseOverTriggerComplete,
-	      nativeCompletionOrdinal:fence.nativeCompletionOrdinal,completionEvidence:fence.completionEvidence,
+	      boundaryOrdinal:fence.boundaryOrdinal,phaseLoopStep:fence.phaseLoopStep,phaseOverTriggerCount:state.nativePhaseOverTriggerCount,phaseOverTriggerComplete,
+	      nativeCompletionOrdinal:fence.nativeCompletionOrdinal,completionEvidence:fence.completionEvidence,phaseOverCompletionEvidence:fence.phaseOverCompletionEvidence,
 	      phaseOverTriggerEventName:phaseOverTriggerEvent?.name||null,phaseOverTriggerEventFinished:phaseOverTriggerEvent?.finished===true,
 	      phaseOverTriggerEventParentMatches:phaseOverTriggerEvent?.parent===event,
 	      completedPhaseFinished:phaseChild.finished===true,completedPhaseParentMatches:phaseChild.parent===event,
@@ -2532,7 +2552,8 @@ async function runNativeStartDiagnostic(message) {
 	  };
 	  GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;const activeSkillGate=${JSON.stringify(process.env.V2_NATIVE_YINYANG_FIXTURE === "1")}?[...(state.managedNativeResponseGates?.values()||[])].find(gate=>gate.delivery?.status==='applying'&&gate.options.get(gate.delivery?.optionId)?.kind==='view_as_skill'):null;
 	   const child=originalTrigger.call(this,name,...args);if(this===state.phaseLoop&&name==='phaseOver'){
-	    state.nativePhaseOverTriggerCount=(state.nativePhaseOverTriggerCount||0)+1;state.nativePhaseOverTriggerEvent=child&&typeof child==='object'&&typeof child.start==='function'?child:null;
+	     state.nativePhaseOverTriggerCount=(state.nativePhaseOverTriggerCount||0)+1;state.nativePhaseOverTriggerEvent=child&&typeof child==='object'&&typeof child.start==='function'?child:null;
+	     state.nativePhaseOverTriggerSeatId=this.player?.playerid||null;
 	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_over_trigger_called',snapshot:{triggerCount:state.nativePhaseOverTriggerCount,
 	     triggerEventName:state.nativePhaseOverTriggerEvent?.name||null,triggerEventParentMatches:state.nativePhaseOverTriggerEvent?.parent===this,
 	     triggerEventFinished:state.nativePhaseOverTriggerEvent?.finished===true,phaseLoopStep:Number.isSafeInteger(this.step)?this.step:null,
@@ -2822,16 +2843,18 @@ async function snapshotNativeCardLedger(message) {
 }
 
 async function snapshotNativeAtomicCapture(message) {
-	const keys = "captureOrdinal,engineBuildId,kind,protocol,requestId,roomId,rootInstanceId,seatIds,secret,sessionId,type";
+	const keys = "boundaryOrdinal,captureOrdinal,engineBuildId,kind,protocol,requestId,roomId,rootInstanceId,seatIds,secret,sessionId,type";
 	if (process.env.V2_NATIVE_ATOMIC_CAPTURE_PROBE !== "1" || process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" ||
 		process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" || process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" ||
 		!validHostCommand(message) || message.type !== "host_native_atomic_capture" || Object.keys(message).sort().join(",") !== keys ||
 		!/^atomic_[a-f0-9]{32}$/.test(message.requestId || "") || !Number.isSafeInteger(message.captureOrdinal) || message.captureOrdinal < 1 ||
+		!Number.isSafeInteger(message.boundaryOrdinal) || message.boundaryOrdinal < 1 || message.boundaryOrdinal > 2 ||
+		(message.boundaryOrdinal === 2 && process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE !== "1") ||
 		message.engineBuildId !== managedEngineBuildId || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(message.rootInstanceId || "") ||
 		!Array.isArray(message.seatIds) || message.seatIds.length !== 4 || JSON.stringify(message.seatIds) !== JSON.stringify(managedSeatIds) || !cdp) {
 		throw new Error("NATIVE_ATOMIC_CAPTURE_COMMAND_REJECTED");
 	}
-	const request = { requestId: message.requestId, captureOrdinal: message.captureOrdinal, roomId: message.roomId,
+	const request = { requestId: message.requestId, captureOrdinal: message.captureOrdinal, boundaryOrdinal: message.boundaryOrdinal, roomId: message.roomId,
 		hostSessionId: message.sessionId, engineBuildId: message.engineBuildId, rootInstanceId: message.rootInstanceId, seatIds: message.seatIds };
 	try {
 		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{
@@ -2842,16 +2865,23 @@ async function snapshotNativeAtomicCapture(message) {
 				manager.rootEvent?.name!=='game'||game.me!==null||!Array.isArray(game.players)||game.players.length!==4||
 				game.players.some(player=>player.ws)||command.seatIds.some(id=>!game.players.some(player=>player.playerid===id))||
 				new Set(game.players.map(player=>player.playerid)).size!==4)throw Error('NATIVE_ATOMIC_CAPTURE_ROOT_OR_SEATS_INVALID');
-			if(!fence||fence.status!=='waiting'||fence.releaseCount!==0||fence.rootEvent!==state.root||fence.phaseLoopEvent!==loop||
+			const pendingDescendants=root=>{const seen=new WeakSet();let pending=0,nodes=0,overflow=false;const walk=node=>{if(!node||typeof node!=='object'||seen.has(node))return;seen.add(node);if(++nodes>4096){overflow=true;return}if(node!==root&&node.finished!==true)pending++;for(const child of [...(Array.isArray(node.childEvents)?node.childEvents:[]),...(Array.isArray(node.next)?node.next:[])])walk(child)};walk(root);return {pending,nodes,overflow}};
+			const descendants=loop?pendingDescendants(loop):{pending:1,nodes:0,overflow:true};
+			if(!fence||fence.status!=='waiting'||fence.releaseCount!==0||fence.boundaryOrdinal!==command.boundaryOrdinal||
+				state.nativePhaseBoundaryFences?.at(-1)!==fence||fence.rootEvent!==state.root||fence.phaseLoopEvent!==loop||
 				fence.rootInstanceId!==command.rootInstanceId||fence.pendingDescendantCount!==0||fence.phaseOverTriggerComplete!==true||
-				loop?.name!=='phaseLoop'||loop.step!==2||loop.player!==core._status.firstAct||phase?.name!=='phase'||
-				phase.parent!==loop||phase.finished!==true||core._status.currentPhase!=null||
-				state.nativePhaseOverTriggerCount!==fence.phaseOverTriggerCount||fence.phaseOverTriggerCount!==1)
+				loop?.name!=='phaseLoop'||loop.step!==2||!loop.player||loop.player!==phase?.player||!command.seatIds.includes(loop.player.playerid)||phase?.name!=='phase'||
+				phase.parent!==loop||phase.finished!==true||core._status.currentPhase!=null||manager.eventStack.at(-1)!==loop||
+				descendants.overflow||descendants.pending!==0||state.nativePhaseOverTriggerCount!==fence.phaseOverTriggerCount||
+				fence.phaseOverTriggerEvent!==state.nativePhaseOverTriggerEvent||state.nativePhaseOverTriggerSeatId!==loop.player.playerid)
 				throw Error('NATIVE_ATOMIC_CAPTURE_NATIVE_FENCE_INVALID');
-			const completionLedger=state.nativeEventCompletionLedger,phaseProof=completionLedger?.completionEvidence.get(phase);
+			const completionLedger=state.nativeEventCompletionLedger,phaseProof=completionLedger?.completionEvidence.get(phase),
+				phaseOverProof=completionLedger?.completionEvidence.get(fence.phaseOverTriggerEvent);
 			if(!completionLedger||completionLedger.rootEvent!==state.root||completionLedger.rootInstanceId!==command.rootInstanceId||
-				completionLedger.completionOrdinal!==fence.nativeCompletionOrdinal||!phaseProof||
-				JSON.stringify(phaseProof)!==JSON.stringify(fence.completionEvidence)||phaseProof.completionOrdinal>completionLedger.completionOrdinal)
+				completionLedger.completionOrdinal!==fence.nativeCompletionOrdinal||!phaseProof||!phaseOverProof||
+				JSON.stringify(phaseProof)!==JSON.stringify(fence.completionEvidence)||
+				JSON.stringify(phaseOverProof)!==JSON.stringify(fence.phaseOverCompletionEvidence)||
+				phaseProof.completionOrdinal>completionLedger.completionOrdinal||phaseOverProof.completionOrdinal>=phaseProof.completionOrdinal)
 				throw Error('NATIVE_ATOMIC_CAPTURE_COMPLETION_EVIDENCE_INVALID');
 			let parent=loop,depth=0;while(parent&&parent!==state.root&&depth++<32)parent=parent.parent;
 			if(parent!==state.root||depth>32)throw Error('NATIVE_ATOMIC_CAPTURE_EVENT_STACK_INVALID');
@@ -2892,8 +2922,9 @@ async function snapshotNativeAtomicCapture(message) {
 				return {seatId,position,character:player.name1,side:player.side,alive:!player.isDead(),hp:player.hp,maxHp:player.maxHp,zhiLiao:player.zhiLiao,
 					hujiaSupported:false,nengLiang:{baoShi,shuiJing,effectiveLimit:limit}};});
 			const nativeCompletionOrdinal=fence.nativeCompletionOrdinal,completionEvidence=fence.completionEvidence;
-			const commonFence={allChildrenCompleted:true,captureLocked:true,eventName:'phaseLoop',eventStep:2,eventStackConsistent:true,
-				nativeCompletionOrdinal,completionEvidence,pendingChildCount:0,rootMatches:true,seatId:fence.seatId};
+			const commonFence={allChildrenCompleted:true,boundaryOrdinal:fence.boundaryOrdinal,captureLocked:true,eventName:'phaseLoop',eventStep:2,eventStackConsistent:true,
+				nativeCompletionOrdinal,completionEvidence,phaseOverCompletionEvidence:fence.phaseOverCompletionEvidence,
+				phaseOverTriggerCount:fence.phaseOverTriggerCount,pendingChildCount:0,rootMatches:true,seatId:fence.seatId};
 			const turnResource={schema:'xingbei_native_private_turn_resource_state_v2',roomId:command.roomId,hostSessionId:command.hostSessionId,
 				engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,
 				fence:{kind:'managed_native_quiescent_fence_v1',rootMatches:true,eventStackConsistent:true,allChildrenCompleted:true,pendingChildCount:0,

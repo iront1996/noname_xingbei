@@ -40,6 +40,9 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 	let previousDigest = null;
 	let previousProjectionDigests = null;
 	let previousCompletionProof = null;
+	let previousPhaseOverCompletionProof = null;
+	let previousFenceOrdinal = 0;
+	let previousPhaseOverTriggerCount = 0;
 	return Object.freeze({
 		commit(envelope) {
 			if (destroyed) fail("NATIVE_ATOMIC_CAPTURE_DESTROYED");
@@ -53,10 +56,12 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			}
 			const fence = envelope.fence;
 			if (!fence || Object.getPrototypeOf(fence) !== Object.prototype || Object.keys(fence).sort().join(",") !==
-				"allChildrenCompleted,captureLocked,completionEvidence,eventName,eventStackConsistent,eventStep,nativeCompletionOrdinal,pendingChildCount,rootMatches,seatId" ||
+				"allChildrenCompleted,boundaryOrdinal,captureLocked,completionEvidence,eventName,eventStackConsistent,eventStep,nativeCompletionOrdinal,pendingChildCount,phaseOverCompletionEvidence,phaseOverTriggerCount,rootMatches,seatId" ||
 				fence.allChildrenCompleted !== true || fence.captureLocked !== true || fence.eventName !== "phaseLoop" ||
 				fence.eventStep !== 2 || fence.eventStackConsistent !== true || fence.rootMatches !== true ||
 				fence.pendingChildCount !== 0 || !Number.isSafeInteger(fence.nativeCompletionOrdinal) || fence.nativeCompletionOrdinal < 1 ||
+				!Number.isSafeInteger(fence.boundaryOrdinal) || fence.boundaryOrdinal < 1 || fence.boundaryOrdinal > 8 ||
+				!Number.isSafeInteger(fence.phaseOverTriggerCount) || fence.phaseOverTriggerCount < fence.boundaryOrdinal ||
 				!seatIds.includes(fence.seatId)) fail("NATIVE_ATOMIC_CAPTURE_FENCE_INVALID");
 			const proof = fence.completionEvidence;
 			if (!proof || Object.getPrototypeOf(proof) !== Object.prototype || Object.keys(proof).sort().join(",") !==
@@ -66,12 +71,33 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 				proof.eventInstanceId === proof.parentEventInstanceId || !Number.isSafeInteger(proof.eventStep) || proof.eventStep < 0 ||
 				!Number.isSafeInteger(proof.completionOrdinal) || proof.completionOrdinal < 1 || proof.completionOrdinal > fence.nativeCompletionOrdinal ||
 				proof.seatId !== fence.seatId) fail("NATIVE_ATOMIC_CAPTURE_COMPLETION_EVIDENCE_INVALID");
+			const phaseOverProof = fence.phaseOverCompletionEvidence;
+			if (!phaseOverProof || Object.getPrototypeOf(phaseOverProof) !== Object.prototype || Object.keys(phaseOverProof).sort().join(",") !==
+				"completionOrdinal,eventInstanceId,eventName,eventStep,parentEventInstanceId,parentEventName,rootInstanceId,seatId" ||
+				phaseOverProof.rootInstanceId !== rootInstanceId || phaseOverProof.parentEventName !== "phaseLoop" ||
+				!/^event_[1-9][0-9]{0,6}$/.test(phaseOverProof.eventInstanceId || "") ||
+				!/^event_[1-9][0-9]{0,6}$/.test(phaseOverProof.parentEventInstanceId || "") ||
+				phaseOverProof.eventInstanceId === phaseOverProof.parentEventInstanceId || phaseOverProof.eventInstanceId === proof.eventInstanceId ||
+				phaseOverProof.parentEventInstanceId !== proof.parentEventInstanceId ||
+				typeof phaseOverProof.eventName !== "string" || phaseOverProof.eventName.length < 1 || phaseOverProof.eventName.length > 64 ||
+				!Number.isSafeInteger(phaseOverProof.eventStep) || phaseOverProof.eventStep < 0 ||
+				!Number.isSafeInteger(phaseOverProof.completionOrdinal) || phaseOverProof.completionOrdinal < 1 ||
+				phaseOverProof.completionOrdinal > proof.completionOrdinal || phaseOverProof.seatId !== fence.seatId) {
+				fail("NATIVE_ATOMIC_CAPTURE_PHASE_OVER_EVIDENCE_INVALID");
+			}
 			if (previousCompletionProof) {
 				if (proof.completionOrdinal < previousCompletionProof.completionOrdinal ||
 					proof.completionOrdinal === previousCompletionProof.completionOrdinal &&
 					canonicalize(proof) !== canonicalize(previousCompletionProof) ||
 					proof.completionOrdinal > previousCompletionProof.completionOrdinal &&
-					proof.eventInstanceId === previousCompletionProof.eventInstanceId) {
+					proof.eventInstanceId === previousCompletionProof.eventInstanceId ||
+					fence.boundaryOrdinal < previousFenceOrdinal || fence.boundaryOrdinal > previousFenceOrdinal + 1 ||
+					fence.boundaryOrdinal === previousFenceOrdinal &&
+					(canonicalize(phaseOverProof) !== canonicalize(previousPhaseOverCompletionProof) ||
+						fence.phaseOverTriggerCount !== previousPhaseOverTriggerCount) ||
+					fence.boundaryOrdinal === previousFenceOrdinal + 1 &&
+					(fence.seatId === previousCompletionProof.seatId || proof.completionOrdinal <= previousCompletionProof.completionOrdinal ||
+						fence.phaseOverTriggerCount <= previousPhaseOverTriggerCount)) {
 					fail("NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID");
 				}
 			}
@@ -82,7 +108,10 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			if (envelope.cardLedger.rootInstanceId !== rootInstanceId || envelope.effectState.rootInstanceId !== rootInstanceId ||
 				envelope.turnResource.fence.nativeCompletionOrdinal !== fence.nativeCompletionOrdinal ||
 				envelope.effectState.seats.length !== seatIds.length || cardRows.length < 1 ||
-				turn.canonical.nativeCompletionOrdinal !== fence.nativeCompletionOrdinal) fail("NATIVE_ATOMIC_CAPTURE_PROJECTION_MISMATCH");
+				turn.canonical.nativeCompletionOrdinal !== fence.nativeCompletionOrdinal ||
+				turn.canonical.turn.actorSeatId !== fence.seatId || turn.canonical.turn.phaseLoopSeatId !== fence.seatId) {
+				fail("NATIVE_ATOMIC_CAPTURE_PROJECTION_MISMATCH");
+			}
 			const statePreimage = canonicalize({ scope, fence,
 				cardLedger: envelope.cardLedger, effectState: { schema: envelope.effectState.schema, rootInstanceId: envelope.effectState.rootInstanceId,
 					seatIds: envelope.effectState.seatIds, seats: envelope.effectState.seats }, turnResource: turn.canonical });
@@ -98,9 +127,12 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			previousDigest = stateDigest;
 			previousProjectionDigests = projectionDigests;
 			previousCompletionProof = Object.freeze({ ...proof });
+			previousPhaseOverCompletionProof = Object.freeze({ ...phaseOverProof });
+			previousFenceOrdinal = fence.boundaryOrdinal;
+			previousPhaseOverTriggerCount = fence.phaseOverTriggerCount;
 			ordinal++;
 			return Object.freeze({ schema: "xingbei_native_private_atomic_commitment_v2", schemaVersion: 2,
-				captureOrdinal: ordinal, nativeCompletionOrdinal: fence.nativeCompletionOrdinal, rootInstanceId, engineBuildId,
+				captureOrdinal: ordinal, nativeFenceOrdinal: fence.boundaryOrdinal, nativeCompletionOrdinal: fence.nativeCompletionOrdinal, rootInstanceId, engineBuildId,
 				commitment: digest, stableWithPrevious, stableProjectionsWithPrevious, projectionCount: 3, atomicWithEffectSnapshots: true,
 				authoritySeedAuthorized: false, checkpointAvailable: false });
 		},
@@ -111,6 +143,9 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			previousDigest = null;
 			previousProjectionDigests = null;
 			previousCompletionProof = null;
+			previousPhaseOverCompletionProof = null;
+			previousFenceOrdinal = 0;
+			previousPhaseOverTriggerCount = 0;
 			ordinal = 0;
 		},
 	});

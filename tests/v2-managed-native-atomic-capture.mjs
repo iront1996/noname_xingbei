@@ -16,10 +16,12 @@ function envelope(ordinal = 1) {
 	return {
 		schema: "xingbei_native_private_atomic_capture_v2", captureOrdinal: ordinal, roomId: "room_a", hostSessionId: sessionId,
 		engineBuildId, rootInstanceId: root, seatIds: [...seats],
-		fence: { allChildrenCompleted: true, captureLocked: true, eventName: "phaseLoop", eventStep: 2,
-			eventStackConsistent: true, nativeCompletionOrdinal: 9, pendingChildCount: 0, rootMatches: true, seatId: "seat_a",
+		fence: { allChildrenCompleted: true, boundaryOrdinal: 1, captureLocked: true, eventName: "phaseLoop", eventStep: 2,
+			eventStackConsistent: true, nativeCompletionOrdinal: 9, pendingChildCount: 0, phaseOverTriggerCount: 1, rootMatches: true, seatId: "seat_a",
 			completionEvidence: { rootInstanceId: root, eventInstanceId: "event_4", parentEventInstanceId: "event_3",
-				completionOrdinal: 8, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_a", eventStep: 4 } },
+				completionOrdinal: 8, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_a", eventStep: 4 },
+			phaseOverCompletionEvidence: { rootInstanceId: root, eventInstanceId: "event_5", parentEventInstanceId: "event_3",
+				completionOrdinal: 7, eventName: "phaseOver", parentEventName: "phaseLoop", seatId: "seat_a", eventStep: 1 } },
 		cardLedger: { schema: "xingbei_native_private_card_ledger_v1", rootInstanceId: root, seatIds: [...seats], cards: [
 			{ cardId: "card_1", duYou: null, kind: "physical_dom_card_v1", mingGe: "red", name: "sha", ownerSeatId: null,
 				position: 0, xiBie: "fire", zone: "draw" },
@@ -48,6 +50,7 @@ test("atomic capture commits all three validated native projections at one ordin
 	const capture = coordinator();
 	const result = capture.commit(envelope());
 	assert.equal(result.captureOrdinal, 1);
+	assert.equal(result.nativeFenceOrdinal, 1);
 	assert.equal(result.nativeCompletionOrdinal, 9);
 	assert.equal(result.projectionCount, 3);
 	assert.equal(result.atomicWithEffectSnapshots, true);
@@ -95,15 +98,20 @@ test("atomic capture accepts a later completed phase from another seat on the sa
 	const first = capture.commit(envelope());
 	assert.equal(first.captureOrdinal, 1);
 	const later = envelope(2);
+	later.fence.boundaryOrdinal = 2;
+	later.fence.phaseOverTriggerCount = 2;
 	later.fence.seatId = "seat_b";
 	later.fence.nativeCompletionOrdinal = 12;
 	later.fence.completionEvidence = { rootInstanceId: root, eventInstanceId: "event_8", parentEventInstanceId: "event_7",
 		completionOrdinal: 11, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_b", eventStep: 4 };
+	later.fence.phaseOverCompletionEvidence = { rootInstanceId: root, eventInstanceId: "event_9", parentEventInstanceId: "event_7",
+		completionOrdinal: 10, eventName: "phaseOver", parentEventName: "phaseLoop", seatId: "seat_b", eventStep: 1 };
 	later.turnResource.fence.nativeCompletionOrdinal = 12;
 	later.turnResource.turn.actorSeatId = "seat_b";
 	later.turnResource.turn.phaseLoopSeatId = "seat_b";
 	const second = capture.commit(later);
 	assert.equal(second.captureOrdinal, 2);
+	assert.equal(second.nativeFenceOrdinal, 2);
 	assert.equal(second.nativeCompletionOrdinal, 12);
 	assert.notEqual(second.commitment, first.commitment,
 		"a subsequent distinct native phase/state capture must receive a distinct commitment");
@@ -116,12 +124,17 @@ test("atomic capture rejects completion ordinal rollback and replayed event inst
 	const forkedSameOrdinal = envelope(2);
 	forkedSameOrdinal.fence.completionEvidence.eventInstanceId = "event_6";
 	forkedSameOrdinal.fence.completionEvidence.parentEventInstanceId = "event_5";
+	forkedSameOrdinal.fence.phaseOverCompletionEvidence.eventInstanceId = "event_7";
+	forkedSameOrdinal.fence.phaseOverCompletionEvidence.parentEventInstanceId = "event_5";
 	assert.throws(() => capture.commit(forkedSameOrdinal), /NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID/);
 	const rollback = envelope(2);
 	rollback.fence.nativeCompletionOrdinal = 8;
 	rollback.fence.completionEvidence.completionOrdinal = 7;
 	rollback.fence.completionEvidence.eventInstanceId = "event_6";
 	rollback.fence.completionEvidence.parentEventInstanceId = "event_5";
+	rollback.fence.phaseOverCompletionEvidence.eventInstanceId = "event_7";
+	rollback.fence.phaseOverCompletionEvidence.parentEventInstanceId = "event_5";
+	rollback.fence.phaseOverCompletionEvidence.completionOrdinal = 6;
 	rollback.turnResource.fence.nativeCompletionOrdinal = 8;
 	assert.throws(() => capture.commit(rollback), /NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID/);
 	const replay = envelope(2);
@@ -132,4 +145,44 @@ test("atomic capture rejects completion ordinal rollback and replayed event inst
 	assert.equal(capture.commit(envelope(2)).captureOrdinal, 2,
 		"refused proof must not consume an ordinal or poison the last accepted completion tip");
 	capture.destroy();
+});
+
+test("atomic capture rejects skipped, reused-seat and non-advancing native fences", () => {
+	const cases = [
+		{ code: "NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID", mutate: later => {
+			later.fence.boundaryOrdinal = 3;
+			later.fence.phaseOverTriggerCount = 3;
+		} },
+		{ code: "NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID", mutate: later => {
+			later.fence.boundaryOrdinal = 2;
+			later.fence.phaseOverTriggerCount = 2;
+			later.fence.seatId = "seat_a";
+			later.fence.completionEvidence.seatId = "seat_a";
+			later.fence.phaseOverCompletionEvidence.seatId = "seat_a";
+			later.turnResource.turn.actorSeatId = "seat_a";
+			later.turnResource.turn.phaseLoopSeatId = "seat_a";
+		} },
+		{ code: "NATIVE_ATOMIC_CAPTURE_FENCE_INVALID", mutate: later => {
+			later.fence.boundaryOrdinal = 2;
+			later.fence.phaseOverTriggerCount = 1;
+		} },
+	];
+	for (const { code, mutate } of cases) {
+		const capture = coordinator();
+		capture.commit(envelope());
+		const later = envelope(2);
+		later.fence.seatId = "seat_b";
+		later.fence.nativeCompletionOrdinal = 12;
+		later.fence.completionEvidence = { rootInstanceId: root, eventInstanceId: "event_8", parentEventInstanceId: "event_7",
+			completionOrdinal: 11, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_b", eventStep: 4 };
+		later.fence.phaseOverCompletionEvidence = { rootInstanceId: root, eventInstanceId: "event_9", parentEventInstanceId: "event_7",
+			completionOrdinal: 10, eventName: "phaseOver", parentEventName: "phaseLoop", seatId: "seat_b", eventStep: 1 };
+		later.turnResource.fence.nativeCompletionOrdinal = 12;
+		later.turnResource.turn.actorSeatId = "seat_b";
+		later.turnResource.turn.phaseLoopSeatId = "seat_b";
+		mutate(later);
+		assert.throws(() => capture.commit(later), new RegExp(code));
+		assert.equal(capture.commit(envelope(2)).captureOrdinal, 2, "rejected fence must leave the accepted tip and capture ordinal unchanged");
+		capture.destroy();
+	}
 });

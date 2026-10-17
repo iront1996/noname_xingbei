@@ -55,13 +55,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		"a held native phase boundary requires the managed native event-completion evidence source");
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
 	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
 	let event4AcceptedProjection = null;
+	let firstAtomicCapture = null, firstAtomicRepeat = null, atomicCaptureSessionId = null, atomicCapturePid = null, atomicChromiumPid = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
 	const nativeCardLedgerCaptureContexts = [];
 	let nativeEffectStateBefore = null, nativeEffectStateAfter = null, nativeEffectStateRepeat = null, nativeEffectStateAfterPromise = null,
@@ -632,7 +633,16 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			}
 		},
 	});
-	t.after(() => manager.stop(roomId, "test_cleanup"));
+	t.after(async () => {
+		await manager.stop(roomId, "test_cleanup");
+		if (process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" && atomicCaptureSessionId) {
+			const handle = launchedHandles.get(atomicCaptureSessionId);
+			assert.ok(handle, "the captured managed host must remain registered for cleanup verification");
+			await handle.waitForCleanup();
+			assert.equal(handle.resources().length, 0, "both real Chromium fence captures must clean the host and temporary profile");
+			assert.equal(manager.inspect(roomId)?.state, "stopped");
+		}
+	});
 	assert.equal((await manager.start(roomId, setup)).ok, true);
 	if (process.env.V2_NATIVE_EFFECT_STATE_ONLY === "1") {
 		await until(() => nativeEffectStateFailures.length > 0 || nativeEffectStateRepeat?.ok && nativeResponseChoice &&
@@ -1686,9 +1696,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						const atomic = await manager.snapshotNativeAtomicCapture(roomId);
 						assert.equal(atomic.ok, true, `native atomic capture rejected: ${atomic.code}`);
 						assert.deepEqual(Object.keys(atomic.snapshot).sort(), ["atomicWithEffectSnapshots", "authoritySeedAuthorized", "captureOrdinal",
-							"checkpointAvailable", "commitment", "engineBuildId", "nativeCompletionOrdinal", "projectionCount", "rootInstanceId",
+							"checkpointAvailable", "commitment", "engineBuildId", "nativeCompletionOrdinal", "nativeFenceOrdinal", "projectionCount", "rootInstanceId",
 							"schema", "schemaVersion", "stableProjectionsWithPrevious", "stableWithPrevious"].sort());
 						assert.equal(atomic.snapshot.captureOrdinal, 1);
+						assert.equal(atomic.snapshot.nativeFenceOrdinal, 1);
 						assert.equal(atomic.snapshot.nativeCompletionOrdinal, waitingSnapshot.nativeCompletionOrdinal,
 							"the ordinal must come from completed native GameEvent.start/waitNext boundaries, not phaseOverTriggerCount");
 						assert.equal(atomic.snapshot.projectionCount, 3);
@@ -1707,6 +1718,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(atomicRepeat.snapshot.stableWithPrevious, true);
 						assert.notEqual(atomicRepeat.snapshot.commitment, atomic.snapshot.commitment,
 							"commitments bind distinct capture ordinals even when the underlying native state is stable");
+						firstAtomicCapture = atomic.snapshot;
+						firstAtomicRepeat = atomicRepeat.snapshot;
+						atomicCaptureSessionId = manager.inspect(roomId).sessionId;
+						const firstCaptureHandle = launchedHandles.get(atomicCaptureSessionId);
+						assert.ok(firstCaptureHandle && firstCaptureHandle.pid > 0);
+						atomicCapturePid = firstCaptureHandle.pid;
+						assert.equal(firstCaptureHandle.resources().length, 1);
+						atomicChromiumPid = firstCaptureHandle.resources()[0].pid;
 						t.diagnostic(`managed atomic private capture accepted at held native fence: ${JSON.stringify({ ordinal: atomic.snapshot.captureOrdinal,
 							nativeCompletionOrdinal: atomic.snapshot.nativeCompletionOrdinal, projectionCount: atomic.snapshot.projectionCount,
 							atomicWithEffectSnapshots: atomic.snapshot.atomicWithEffectSnapshots, stableRepeat: atomicRepeat.snapshot.stableWithPrevious,
@@ -1837,8 +1856,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-12), host: manager.inspect(roomId) }));
 					assert.equal(successor.snapshot.rootObjectMatches, true);
 					assert.equal(successor.snapshot.gameMeAbsent, true);
+					let nextSeatBoundary = null;
 					if (process.env.V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE === "1") {
-						const nextSeatBoundary = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&
+						nextSeatBoundary = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&
 							entry.snapshot?.eventStep === 2 && entry.snapshot?.isCompletedPhaseOverBoundary === true &&
 							entry.snapshot?.loopSeatId !== waitingSnapshot.firstActSeatId &&
 							Number.isSafeInteger(entry.snapshot?.nativeCompletionOrdinal) &&
@@ -1859,6 +1879,74 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							ordinal: waitingSnapshot.nativeCompletionOrdinal }, second: { seatId: nextSeatBoundary.snapshot.loopSeatId,
 							ordinal: nextSeatBoundary.snapshot.nativeCompletionOrdinal }, sameRoot: nextSeatBoundary.snapshot.rootObjectMatches,
 							gameMeAbsent: nextSeatBoundary.snapshot.gameMeAbsent })}`);
+					}
+					if (process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1") {
+						assert.ok(nextSeatBoundary, "the multi-turn atomic probe requires the second real native seat completion");
+						assert.ok(firstAtomicCapture && firstAtomicRepeat, "first-seat atomic capture was not accepted before native continuation");
+						const secondFence = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_boundary_fence_waiting" &&
+							entry.snapshot?.boundaryOrdinal === 2 && entry.snapshot?.seatId === nextSeatBoundary.snapshot.loopSeatId), 10000,
+							() => ({ boundaries: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_boundary_fence_waiting").map(entry => entry.snapshot),
+								phaseBoundaries: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_loop_wait_next_boundary").slice(-8).map(entry => entry.snapshot),
+								host: manager.inspect(roomId) }));
+						assert.notEqual(secondFence.snapshot.seatId, waitingSnapshot.seatId);
+						assert.equal(secondFence.snapshot.rootInstanceId, waitingSnapshot.rootInstanceId);
+						assert.equal(secondFence.snapshot.rootObjectMatches, true);
+						assert.equal(secondFence.snapshot.loopSeatId, nextSeatBoundary.snapshot.loopSeatId);
+						assert.equal(secondFence.snapshot.completedPhaseFinished, true);
+						assert.equal(secondFence.snapshot.completedPhaseParentMatches, true);
+						assert.equal(secondFence.snapshot.phaseOverTriggerComplete, true);
+						assert.ok(Number.isSafeInteger(secondFence.snapshot.phaseOverTriggerCount) &&
+							secondFence.snapshot.phaseOverTriggerCount > waitingSnapshot.phaseOverTriggerCount);
+						assert.ok(secondFence.snapshot.completedActorQuotas &&
+							Object.values(secondFence.snapshot.completedActorQuotas).every(value => Number.isSafeInteger(value)));
+						assert.equal(secondFence.snapshot.currentPhaseSeatId, null);
+						assert.equal(secondFence.snapshot.gameMeAbsent, true);
+						assert.equal(secondFence.snapshot.connectedTransports, 0);
+						assert.equal(secondFence.snapshot.completionEvidence.eventName, "phase");
+						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.parentEventInstanceId,
+							secondFence.snapshot.completionEvidence.parentEventInstanceId);
+						assert.ok(secondFence.snapshot.phaseOverCompletionEvidence.completionOrdinal <
+							secondFence.snapshot.completionEvidence.completionOrdinal);
+						const secondCaptureResult = await manager.snapshotNativeAtomicCapture(roomId);
+						assert.equal(secondCaptureResult.ok, true, `second-seat atomic capture rejected: ${secondCaptureResult.code}`);
+						assert.equal(secondCaptureResult.snapshot.captureOrdinal, 3);
+						assert.equal(secondCaptureResult.snapshot.nativeFenceOrdinal, 2);
+						assert.ok(secondCaptureResult.snapshot.nativeCompletionOrdinal > firstAtomicCapture.nativeCompletionOrdinal);
+						assert.notEqual(secondCaptureResult.snapshot.commitment, firstAtomicCapture.commitment);
+						assert.equal(secondCaptureResult.snapshot.stableWithPrevious, false,
+							"the second actor boundary is a different native state from the first actor boundary");
+						const secondCaptureRepeat = await manager.snapshotNativeAtomicCapture(roomId);
+						assert.equal(secondCaptureRepeat.ok, true, `same second-fence repeat rejected: ${secondCaptureRepeat.code}`);
+						assert.equal(secondCaptureRepeat.snapshot.captureOrdinal, 4);
+						assert.equal(secondCaptureRepeat.snapshot.nativeFenceOrdinal, 2);
+						assert.equal(secondCaptureRepeat.snapshot.nativeCompletionOrdinal, secondCaptureResult.snapshot.nativeCompletionOrdinal);
+						assert.equal(secondCaptureRepeat.snapshot.stableWithPrevious, true);
+						assert.deepEqual(secondCaptureRepeat.snapshot.stableProjectionsWithPrevious,
+							{ cardLedger: true, effectState: true, turnResource: true });
+						assert.notEqual(secondCaptureRepeat.snapshot.commitment, secondCaptureResult.snapshot.commitment,
+							"capture ordinals are independent of the stable native state commitment comparison");
+						assert.equal(manager.inspect(roomId).authorityStateRevision, 4,
+							"diagnostic second-turn native work must not authorize Event #5 or advance the authority chain");
+						assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 5);
+						assert.equal(manager.inspect(roomId).checkpointAvailable, false);
+						const liveHandle = launchedHandles.get(manager.inspect(roomId).sessionId);
+						assert.ok(liveHandle && liveHandle.pid > 0);
+						assert.equal(manager.inspect(roomId).sessionId, atomicCaptureSessionId);
+						assert.equal(liveHandle.pid, atomicCapturePid, "both fences must belong to the same supervised host process");
+						assert.equal(liveHandle.resources().length, 1);
+						assert.equal(liveHandle.resources()[0].pid, atomicChromiumPid,
+							"both native boundaries must belong to the same real Chromium process");
+						assert.equal(nativeDiagnostic.slice(nativeDiagnostic.indexOf(secondFence) + 1).some(entry =>
+							entry?.stage === "native_parent_next_action_child_start"), false,
+							"native parent must remain held throughout the second atomic capture and repeat");
+						t.diagnostic(`cross-seat native atomic captures accepted: ${JSON.stringify({ sameRoom: roomId,
+							sessionId: manager.inspect(roomId).sessionId, pid: liveHandle.pid, rootInstanceId: waitingSnapshot.rootInstanceId,
+							firstSeatId: waitingSnapshot.seatId, secondSeatId: secondFence.snapshot.seatId,
+							firstCompletionOrdinal: firstAtomicCapture.nativeCompletionOrdinal,
+							secondCompletionOrdinal: secondCaptureResult.snapshot.nativeCompletionOrdinal,
+							captureOrdinals: [firstAtomicCapture.captureOrdinal, firstAtomicRepeat.captureOrdinal,
+								secondCaptureResult.snapshot.captureOrdinal, secondCaptureRepeat.snapshot.captureOrdinal],
+							stateRevision: manager.inspect(roomId).authorityStateRevision, checkpointAvailable: false })}`);
 					}
 					t.diagnostic(`native phaseLoop waitNext boundaries: ${JSON.stringify(nativeDiagnostic.filter(entry => entry?.stage === "native_phase_loop_wait_next_boundary").map(entry => ({
 						eventStep: entry.snapshot?.eventStep, childName: entry.snapshot?.completedChildName, childFinished: entry.snapshot?.completedChildFinished,

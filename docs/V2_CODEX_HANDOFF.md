@@ -1,5 +1,13 @@
 # V2 Codex engineering handoff
 
+## Current unaccepted batch — cross-seat native atomic capture (Linux CI pending)
+
+- From remote-confirmed HEAD `e62318b9747f0091f696cc90b08684ed80b513bd`, added a test-only opt-in second `phaseOver` capture fence for a different native actor on the same managed root/session. The envelope now binds distinct `nativeFenceOrdinal`, native completion ordinal, exact completed `phase` and `phaseOver` child proofs, actor/phase projection, and a separate manager-accepted capture ordinal. Same-fence repeat observations are checked for stable projections; gaps, same-seat boundary reuse, ordinal rollback, proof reuse and non-advancing trigger evidence fail closed.
+- The real Chromium workflow retains the original first-boundary regression and adds a separate opt-in cross-seat step. The integration test requires same room/session/host PID/Chromium PID/root/build/seat registry, two different seat fences and four capture ordinals (including stable repeats), then verifies host/profile cleanup. It does not release the second fence or authorize Event #5; authority revision remains 4 and checkpoint remains unavailable.
+- Focused local Node validation passes 24/24 with zero skips. The real Chromium test cannot run in this Windows shell and is locally skipped; this is not a pass. Linux Chromium CI is pending. Recomputed managed-engine lock is `509c8ad0a2bf50ee4fb8af8f0fb938e147937718c511a63729aa554460c1b738` (209 files, 18,887,792 bytes).
+- Cloudflare Pages `xingbei-play` Branch control was re-opened after a reload and read-only verified: production `feature/auto-lobby`, production automatic deployments enabled, preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`; Save was disabled and the editor was closed with Cancel. No setting was changed. Post-push deployment verification is pending.
+- T3 remains incomplete; the manifest still records one accepted restricted capture boundary until Linux confirms the new probe. Keep all gates closed: `seedAuthorized=false`, authority revision 4, Event #5 rejected, checkpoint unavailable. Unsupported dynamic state, `hujia`, resource transition semantics and the historical ACK/cleanup, stop-state and `HOST_CHOICE_IPC_HANDLER_FAILED` risks remain open.
+
 ## Latest accepted status and coverage ledger
 
 - Latest Linux CI `39044489818` on `0fb3ddc` succeeded: 85/85 workflow steps and 259/259 TAP tests, zero failures and zero skips. The canonical-state step actually executed the new coverage-manifest test; all existing real Chromium and held-fence regression steps also succeeded.

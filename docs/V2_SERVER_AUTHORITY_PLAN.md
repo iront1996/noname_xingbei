@@ -1,5 +1,13 @@
 # V2 server-authority plan and evidence
 
+## Current unaccepted batch — cross-seat native atomic capture (Linux CI pending)
+
+- From remote-confirmed HEAD `e62318b9747f0091f696cc90b08684ed80b513bd`, the current change adds a strictly opt-in second native `phaseOver` fence for a different seat in the same managed Chromium root/session. It binds the completed `phase`/`phaseOver` event instances, root, seat, trigger count, native completion ordinal and separate capture ordinal; all three private projections share one envelope and one protected interval. The second fence remains held after capture and does not advance the authority chain.
+- Focused Node verification: 24/24 passed, zero skipped. Local real Chromium is unavailable, so the integration test is not locally accepted. A new Linux workflow step preserves the first-fence test and independently runs the multi-turn atomic capture probe; CI and post-push Cloudflare Deployment verification are pending.
+- The source lock is `509c8ad0a2bf50ee4fb8af8f0fb938e147937718c511a63729aa554460c1b738` (209 files; 18,887,792 bytes). The coverage manifest is intentionally unchanged until the real Linux probe establishes whether the second boundary passes.
+- Cloudflare Branch control was reloaded and read-only re-opened: production `feature/auto-lobby` / automatic deployments enabled; Preview Custom with Include `*` and Exclude `codex/v2-server-authority-m1`. Save was disabled; no settings were changed.
+- Full T3 remains incomplete regardless of this bounded probe. Preserve `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4, Event #5 rejected, and `checkpointAvailable=false`.
+
 ## Latest T3 status and machine-readable coverage
 
 - Latest accepted Linux CI is `39044489818` on `0fb3ddc`: 85/85 workflow steps, 259/259 tests, zero failures/skips. The new coverage-manifest test ran in Linux CI; existing serialized real Chromium cases and the restricted first-boundary atomic capture passed.
