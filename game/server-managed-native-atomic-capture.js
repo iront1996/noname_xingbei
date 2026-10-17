@@ -58,7 +58,7 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			if (!fence || Object.getPrototypeOf(fence) !== Object.prototype || Object.keys(fence).sort().join(",") !==
 				"allChildrenCompleted,boundaryOrdinal,captureLocked,completionEvidence,eventName,eventStackConsistent,eventStep,nativeCompletionOrdinal,pendingChildCount,phaseOverCompletionEvidence,phaseOverTriggerCount,rootMatches,seatId" ||
 				fence.allChildrenCompleted !== true || fence.captureLocked !== true || fence.eventName !== "phaseLoop" ||
-				fence.eventStep !== 2 || fence.eventStackConsistent !== true || fence.rootMatches !== true ||
+				fence.eventStep !== 3 || fence.eventStackConsistent !== true || fence.rootMatches !== true ||
 				fence.pendingChildCount !== 0 || !Number.isSafeInteger(fence.nativeCompletionOrdinal) || fence.nativeCompletionOrdinal < 1 ||
 				!Number.isSafeInteger(fence.boundaryOrdinal) || fence.boundaryOrdinal < 1 || fence.boundaryOrdinal > 8 ||
 				!Number.isSafeInteger(fence.phaseOverTriggerCount) || fence.phaseOverTriggerCount < fence.boundaryOrdinal ||

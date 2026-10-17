@@ -16,7 +16,7 @@ function envelope(ordinal = 1) {
 	return {
 		schema: "xingbei_native_private_atomic_capture_v2", captureOrdinal: ordinal, roomId: "room_a", hostSessionId: sessionId,
 		engineBuildId, rootInstanceId: root, seatIds: [...seats],
-		fence: { allChildrenCompleted: true, boundaryOrdinal: 1, captureLocked: true, eventName: "phaseLoop", eventStep: 2,
+		fence: { allChildrenCompleted: true, boundaryOrdinal: 1, captureLocked: true, eventName: "phaseLoop", eventStep: 3,
 			eventStackConsistent: true, nativeCompletionOrdinal: 9, pendingChildCount: 0, phaseOverTriggerCount: 1, rootMatches: true, seatId: "seat_a",
 			completionEvidence: { rootInstanceId: root, eventInstanceId: "event_4", parentEventInstanceId: "event_3",
 				completionOrdinal: 8, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_a", eventStep: 4 },
@@ -92,6 +92,14 @@ test("atomic capture requires same-root native phase completion evidence before 
 	replay.fence.completionEvidence.eventInstanceId = replay.fence.completionEvidence.parentEventInstanceId;
 	assert.throws(() => capture.commit(replay), /NATIVE_ATOMIC_CAPTURE_COMPLETION_EVIDENCE_INVALID/);
 	capture.destroy();
+});
+
+test("atomic capture rejects the phaseLoop step before native phaseOver dispatch", () => {
+	const capture = coordinator();
+	const candidate = envelope();
+	candidate.fence.eventStep = 2;
+	assert.throws(() => capture.commit(candidate), { message: "NATIVE_ATOMIC_CAPTURE_FENCE_INVALID" });
+	assert.equal(capture.commit(envelope()).captureOrdinal, 1, "rejecting the pre-trigger step must not consume the ordinal");
 });
 
 test("atomic capture distinguishes an empty native trigger dispatch from a completed trigger child", () => {

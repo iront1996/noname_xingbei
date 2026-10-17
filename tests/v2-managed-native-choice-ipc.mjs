@@ -1871,7 +1871,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					let nextSeatBoundary = null;
 					if (process.env.V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE === "1") {
 						nextSeatBoundary = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&
-							entry.snapshot?.eventStep === 2 && entry.snapshot?.isCompletedPhaseOverBoundary === true &&
+							entry.snapshot?.eventStep === 3 && entry.snapshot?.isCompletedPhaseOverBoundary === true &&
 							entry.snapshot?.loopSeatId !== waitingSnapshot.firstActSeatId &&
 							Number.isSafeInteger(entry.snapshot?.nativeCompletionOrdinal) &&
 							entry.snapshot.nativeCompletionOrdinal > waitingSnapshot.nativeCompletionOrdinal), 10000,
