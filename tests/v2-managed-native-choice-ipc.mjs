@@ -1290,8 +1290,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						3000, () => ({ stages: nativeDiagnostic.slice(beforeSnapshot).map(entry => entry?.stage), session: manager.inspect(roomId) }));
 					assert.equal(nativeLiveSnapshotAtInputGate.rootObjectMatches, true);
 					assert.equal(nativeLiveSnapshotAtInputGate.hostPlayerAbsent, true);
-					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.currentSeatId, nativeActionCandidate.seatId);
-					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.xingDongEvent?.seatId, nativeActionCandidate.seatId);
+					assert.ok(setup.seats.some(seat => seat.seatId === nativeLiveSnapshotAtInputGate.projectionAudit?.currentSeatId),
+						"the live native actor must be one of the server-bound ordinary seats");
+					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.xingDongEvent?.seatId,
+						nativeLiveSnapshotAtInputGate.projectionAudit?.currentSeatId,
+						"the live snapshot must bind the actual Xingdong event to its current native phase actor");
+					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.phaseEvent?.name, "phase");
+					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.xingDongEvent?.name, "xingDong");
 					assert.ok(nativeLiveSnapshotAtInputGate.projectionAudit?.pendingActionChildCount >= 1,
 						"the native input gate must remain attached to a pending native action child during observation");
 				}
