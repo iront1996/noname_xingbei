@@ -68,6 +68,47 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 		},
 		scope: "observed native reset and consumed values only; not general quota semantics",
 	});
+	assert.deepEqual(turn.crossSeatPhaseAndQuotaBoundary, {
+		linuxCiRunId: "39065347253",
+		workflowStep: "V2 M2 T3 cross-seat repeated native atomic capture in real Chromium",
+		sameRoomSessionHostChromiumRootBuildAndImmutableSeats: true,
+		gameMeAbsent: true,
+		connectedPlayerTransports: 0,
+		seats: [
+			{
+				seatId: "native_seat_2",
+				nativeCompletionOrdinal: 112,
+				gamePhaseNumber: 1,
+				completedPlayerPhaseNumber: 1,
+				completedQuotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0, extraXingDongCount: 0 },
+			},
+			{
+				seatId: "native_seat_3",
+				nativeCompletionOrdinal: 223,
+				gamePhaseNumber: 2,
+				completedPlayerPhaseNumber: 1,
+				completedQuotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0, extraXingDongCount: 0 },
+			},
+		],
+		secondSeatResetObservation: {
+			eventName: "xingDong",
+			eventStep: 1,
+			parentEventName: "phase",
+			observedAfterNativeStepZeroCompleted: true,
+			boundToSecondCompletedSeatPhase: true,
+			sameRootInstance: true,
+			quotas: { gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0 },
+			observationIsAtomicCapture: false,
+		},
+		acceptedAtomicCaptureOrdinals: [1, 2, 3, 4],
+		captureBoundaryOrdinals: [1, 2],
+		projectionCountPerEnvelope: 3,
+		sameFenceRepeatsStable: true,
+		authorityStateRevision: 4,
+		event5Enabled: false,
+		checkpointAvailable: false,
+		scope: "two adjacent native seat phases only; global game.phaseNumber advanced once and each seat's player.phaseNumber initialized once; the second-seat xingDong step-1 quota reset is a separate non-atomic observation, not general quota semantics",
+	});
 	assert.match(turn.unsupported[0], /arbitrary multi-turn capture/);
 	assert.match(turn.unsupported[2], /all quota reset\/decrement and round-boundary semantics/);
 	assert.equal(turn.verifiedEvidence.inputGateQuotaReset.observationIsAtomicCapture, false,

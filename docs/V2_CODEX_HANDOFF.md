@@ -1,5 +1,13 @@
 # V2 Codex engineering handoff
 
+## T3 cross-seat phase/quota evidence — narrow acceptance only
+
+- Commit `16e39151552bb6ab40ddcb2d099987e299995ba2`; Linux CI `39065347253` passed 86/86 workflow steps and 266/266 tests, zero failures and zero skips. The real Chromium cross-seat atomic-capture step (step 33) passed, along with steps 32/34 and all subsequent regressions.
+- In one managed room/session/host/Chromium/root/build with the immutable four-seat roster and `game.me === null`, native seat 2 completed at ordinal 112 with `game.phaseNumber=1` and its own `Player.phaseNumber=1`; seat 3 completed at ordinal 223 with `game.phaseNumber=2` and its own `Player.phaseNumber=1`. Neither completed phase retained action quota. There were no connected player transports.
+- Four accepted capture observations used capture ordinals 1–4 across the two completed native fence boundaries, with stable same-fence repeats and three validated projections per envelope. This is evidence for two adjacent native seat phases and two independently accepted atomic commitments, not a general multi-turn or full-schema proof.
+- Separately, the second seat's native `xingDong` step 1, parent `phase`, was observed only after its native content step 0 completed and was bound to the second completed seat/root. Its live quota values were `{gongJiOrFaShu:1, faShu:0, gongJi:0, extraXingDongCount:0}`; that observation is explicitly non-atomic and not an authority event. The manifest keeps `turn_and_action_quotas` partial and leaves arbitrary quota reset/decrement/round semantics unsupported.
+- Cloudflare preview history was read-only checked after push: no preview deployment for the experiment commit; production settings remain unchanged. PR #1 remains open/unmerged. No seed/Event #5/checkpoint is authorized; revision remains 4. Full T3 remains incomplete.
+
 ## T3 quota coverage follow-up — evidence recorded, full T3 remains incomplete
 
 - Linux CI `39063275363` on code commit `f3157a0cba4fb34f15af42c1b4f381b9c65a9624` passed 86/86 workflow steps and 266/266 tests, with zero failures/skips. The real Chromium chain observed the active ordinary player's native `xingDong` step-0 reset values at the pending input gate and verified they belonged to the actor-bound native action. The separately completed phase fence verifies the consumed counters are zero; these are distinct lifecycle observations, not one atomic before/after snapshot.

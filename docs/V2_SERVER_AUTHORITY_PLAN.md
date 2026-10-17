@@ -1,5 +1,13 @@
 # V2 server-authority plan and evidence
 
+## T3 cross-seat native phase and atomic capture acceptance (partial)
+
+Linux CI `39065347253` on commit `16e39151552bb6ab40ddcb2d099987e299995ba2` passed 86/86 workflow steps and 266/266 tests, with zero failures or skips. The required real Chromium step 33 accepted two independent native phase-fence captures in one room/session, supervised managed host, Chromium process, root, build and immutable four-seat roster. `native_seat_2` completed at native completion ordinal 112 with global `game.phaseNumber=1`; `native_seat_3` completed at ordinal 223 with global `game.phaseNumber=2`. Each seat's own native `Player.phaseNumber` was 1 at its completed phase fence. The native phases used the original root; no actor, phase or quota was manually changed, `game.me` remained null and player transports were absent.
+
+The accepted atomic envelope ordinals were `[1,2,3,4]` for the two boundary captures and their stable same-fence repeats, with all three restricted projections validated per envelope. This establishes only these two adjacent native seat phases. A separate read-only observer saw the second seat's `xingDong` step 1 under its `phase` parent after native step 0 completed, with the second seat bound to the same root and reset quota values `{gongJiOrFaShu:1, faShu:0, gongJi:0, extraXingDongCount:0}`. That live observation is not atomic and is not part of either commitment. Completed-phase quota counters were zero. The coverage manifest and regression test record both boundaries separately; turn/quota coverage remains `partial`.
+
+The workflow's full post-capture ACK-loss, stop-state, YinYang, effect-state, Card Ledger, release-lock and security regressions also passed. Cloudflare preview history was checked read-only after push and showed no experiment preview deployment; production configuration was not changed. PR #1 remains open/unmerged. Gates remain `seedAuthorized=false`, authority revision 4, Event #5 rejected, and `checkpointAvailable=false`. T3 is not complete: arbitrary turn/action shapes, quota semantics, dynamic effects/storage, `hujia`, and full schema-v2 coverage remain unsupported or partial.
+
 ## T3 quota coverage follow-up — manifest records a narrow native boundary
 
 - On code commit `f3157a0cba4fb34f15af42c1b4f381b9c65a9624`, Linux CI `39063275363` passed 86/86 workflow steps and 266/266 tests with zero failures/skips. A true managed Chromium run observed the native `xingDong` step-0 quota reset (`gongJiOrFaShu=1`, other reviewed quotas zero) at a pending ordinary-seat input gate and verified the actor binding. A separate completed phase fence observed those quota counters consumed to zero.
