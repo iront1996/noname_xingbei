@@ -1168,11 +1168,36 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				.map(entry => ({ eventName: entry?.snapshot?.eventName || null,
 					eventStep: Number.isSafeInteger(entry?.snapshot?.eventStep) ? entry.snapshot.eventStep : null,
 					parentEventName: entry?.snapshot?.parentEventName || null,
-					error: entry?.snapshot?.nativeWaitError || null }));
+					phaseLoopIdentityMatches: entry?.snapshot?.phaseLoopIdentityMatches === true,
+					phaseOverTriggerCount: entry?.snapshot?.phaseOverTriggerCount ?? null,
+					phaseOverDraftPresent: entry?.snapshot?.phaseOverDraftPresent === true,
+					phaseOverDraftRootMatches: entry?.snapshot?.phaseOverDraftRootMatches === true,
+					phaseOverDraftOwnerMatches: entry?.snapshot?.phaseOverDraftOwnerMatches === true,
+					phaseOverDraftSeatId: entry?.snapshot?.phaseOverDraftSeatId || null,
+					phaseOverDraftStep: entry?.snapshot?.phaseOverDraftStep ?? null,
+					phaseOverDraftOrdinal: entry?.snapshot?.phaseOverDraftOrdinal ?? null,
+						error: entry?.snapshot?.nativeWaitError || null }));
+			const phaseOverEvidence = nativeDiagnostic.filter(entry => ["native_phase_over_trigger_called", "phase_over_wait_next_entered",
+				"native_phase_loop_wait_next_boundary"].includes(entry?.stage)).slice(-8).map(entry => ({ stage: entry.stage,
+				eventName: entry?.snapshot?.eventName || null, eventStep: Number.isSafeInteger(entry?.snapshot?.eventStep) ? entry.snapshot.eventStep : null,
+				parentEventName: entry?.snapshot?.parentEventName || null, rootInstanceId: entry?.snapshot?.rootInstanceId || null,
+				rootObjectMatches: entry?.snapshot?.rootObjectMatches === true, phaseLoopIdentityMatches: entry?.snapshot?.phaseLoopIdentityMatches === true,
+				phaseLoopEventInstanceId: entry?.snapshot?.phaseLoopEventInstanceId || null, phaseOverTriggerCount: entry?.snapshot?.phaseOverTriggerCount ?? entry?.snapshot?.triggerCount ?? null,
+				phaseOverDraftPresent: entry?.snapshot?.phaseOverDraftPresent === true,
+				phaseOverDraftRootMatches: entry?.snapshot?.phaseOverDraftRootMatches === true,
+				phaseOverDraftOwnerMatches: entry?.snapshot?.phaseOverDraftOwnerMatches === true,
+				phaseOverDraftSeatId: entry?.snapshot?.phaseOverDraftSeatId || null,
+				phaseOverDraftStep: entry?.snapshot?.phaseOverDraftStep ?? null,
+				phaseOverDraftOrdinal: entry?.snapshot?.phaseOverDraftOrdinal ?? null,
+				triggerEventName: entry?.snapshot?.triggerEventName || null,
+				triggerEventParentMatches: entry?.snapshot?.triggerEventParentMatches === true,
+				completionOrdinal: entry?.snapshot?.completionOrdinal ?? entry?.snapshot?.nativeCompletionOrdinal ?? null,
+				phaseLoopSeatId: entry?.snapshot?.loopSeatId || null,
+				completedPhaseSeatId: entry?.snapshot?.completedPhaseSeatId || null }));
 			throw new Error(`native choice host failed before ACK resolution:${JSON.stringify({ failureCode: session.failureCode,
 				choiceStates: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state || null),
 				actionChoiceState: nativeActionChoice ? controller.inspect(roomId, nativeActionChoice.choiceId)?.state || null : null,
-				waitErrors, recentStages: nativeDiagnostic.slice(-16).map(entry => entry?.stage) })}`);
+				waitErrors, phaseOverEvidence, recentStages: nativeDiagnostic.slice(-16).map(entry => entry?.stage) })}`);
 		}
 		return opened.every(choice => controller.inspect(roomId, choice.choiceId)?.state === "resolved") &&
 			(!nativeActionChoice || session?.authorityStateRevision !== 4 || controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved");
