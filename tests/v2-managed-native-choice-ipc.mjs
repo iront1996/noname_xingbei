@@ -1295,6 +1295,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					const liveProjection = nativeLiveSnapshotAtInputGate.projectionAudit;
 					assert.ok(liveProjection, "the live native projection audit must be present");
 					const liveActorSeatId = liveProjection.xingDongEvent?.seatId;
+					t.diagnostic(`native live actor binding: ${JSON.stringify({ actor: liveActorSeatId ?? null,
+						phaseActor: liveProjection.phaseEvent?.seatId ?? null, currentActor: liveProjection.currentSeatId ?? null,
+						serverSeats: immutableServerSeatIds, projectedSeats: liveProjection.seats?.map(seat => seat.seatId) || [] })}`);
 					assert.ok(immutableServerSeatIds.includes(liveActorSeatId),
 						`the live native actor ${String(liveActorSeatId)} must be one of the immutable server-bound ordinary seats [${immutableServerSeatIds.join(",")}]`);
 					assert.equal(liveProjection.phaseEvent?.name, "phase");
