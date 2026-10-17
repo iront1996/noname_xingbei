@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const manifest = JSON.parse(await readFile(new URL("../game/xingbei-native-state-coverage-v1.json", import.meta.url), "utf8"));
+const manifest = JSON.parse(await readFile(new URL("../docs/xingbei-native-state-coverage-v1.json", import.meta.url), "utf8"));
 
 test("native state coverage manifest cannot claim a seed or complete schema while unsupported families remain", () => {
 	assert.equal(manifest.schema, "xingbei_native_state_coverage_v1");
