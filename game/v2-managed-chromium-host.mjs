@@ -2579,7 +2579,7 @@ async function runNativeStartDiagnostic(message) {
 	   return originalLoop.apply(this,args)
 	  };
 	  GameEvent.prototype.trigger=function(name,...args){if(name==='gameStart')state.gameStartCount++;const activeSkillGate=${JSON.stringify(process.env.V2_NATIVE_YINYANG_FIXTURE === "1")}?[...(state.managedNativeResponseGates?.values()||[])].find(gate=>gate.delivery?.status==='applying'&&gate.options.get(gate.delivery?.optionId)?.kind==='view_as_skill'):null;
-	   const child=originalTrigger.call(this,name,...args);if(this===state.phaseLoop&&name==='phaseOver'){
+	   const child=originalTrigger.call(this,name,...args);if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&this===state.phaseLoop&&name==='phaseOver'){
 	     state.nativePhaseOverTriggerCount=(state.nativePhaseOverTriggerCount||0)+1;state.nativePhaseOverTriggerEvent=child&&typeof child==='object'&&typeof child.start==='function'?child:null;
 	     state.nativePhaseOverTriggerSeatId=this.player?.playerid||null;
 	     const ledger=completionLedgerForRoot(),ownerEventInstanceId=registerNativeEventInstance(this,ledger),childEventInstanceId=state.nativePhaseOverTriggerEvent?registerNativeEventInstance(state.nativePhaseOverTriggerEvent,ledger):null;

@@ -2,6 +2,9 @@
 
 ## Current unaccepted batch — cross-seat native atomic capture (phaseLoop idempotency fix pending Linux CI)
 
+- CI `39054006964` exposed the remaining root cause. The `phaseOver` proof observer was unconditional, although `completionLedgerForRoot()` intentionally returns no ledger outside the opt-in completion-sequence mode. The ordinary step-27 native action probe therefore threw inside the observer before writing its draft; Noname's connected-mode event wrapper swallowed the content exception, and the later fence check reported a missing draft. The observer is now gated to explicit boundary-audit/fence runs. During actual capture probes, the completion ledger remains mandatory; normal gameplay/event tests no longer depend on capture-only instrumentation.
+- Updated source release lock: `f2bb6de75b572ab3820e86be851a5b5ebfdd8553d445dbb5199bfd108cc04e66` (209 files; 18,895,631 bytes). This code change has not yet been Linux-validated; no T3 acceptance or coverage promotion is recorded.
+
 - Linux CI `39053787581` passed through Event #4 and failed at step 27 with `NATIVE_PHASE_OVER_DISPATCH_COMPLETION_MISSING`, this time observed at step 3. Updating the observation boundary from step 2 to 3 fixed the earlier pre-trigger timing mistake but did not establish the draft at runtime. The next patch uses bounded symbolic mismatch codes to distinguish missing draft from identity/ordinal/seat/source/ledger mismatch. It does not accept or synthesize completion evidence.
 - Native source still places `event.trigger('phaseOver')` in phaseLoop content step 2. Whether the supervised wrapper's post-`waitNext` hook sees the same instance/draft after child completion is unverified in Linux; the next real Chromium run is diagnostic and downstream capture steps remain non-accepted until they execute.
 
