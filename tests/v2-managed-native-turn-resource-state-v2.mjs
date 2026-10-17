@@ -1,0 +1,47 @@
+import assert from "node:assert/strict";
+import { createRequire } from "node:module";
+import test from "node:test";
+
+const require = createRequire(import.meta.url);
+const { MANAGED_NATIVE_TURN_RESOURCE_STATE_V2_SCHEMA: SCHEMA, validateNativeTurnResourceProjectionV2 } =
+	require("../game/server-managed-native-turn-resource-state-v2.js");
+const seatIds = ["seat_a", "seat_b", "seat_c", "seat_d"];
+function snapshot() {
+	return { schema: SCHEMA, roomId: "room_a", hostSessionId: `hs_${"a".repeat(32)}`, engineBuildId: "b".repeat(64),
+		rootInstanceId: `native_root_${"c".repeat(32)}`, seatIds: [...seatIds],
+		fence: { kind: "managed_native_quiescent_fence_v1", rootMatches: true, eventStackConsistent: true,
+			allChildrenCompleted: true, pendingChildCount: 0, captureLocked: true, nativeCompletionOrdinal: 9 },
+		turn: { phase: "xingDong", actorSeatId: "seat_a", phaseLoopSeatId: "seat_a", currentPhaseSeatId: "seat_a",
+			gamePhaseNumber: 2, playerPhaseNumber: 1, quotas: { gongJiOrFaShu: 1, faShu: 0, gongJi: 0 }, extraActionQueueEmpty: true },
+		resources: { hongShiQi: 5, lanShiQi: 4, hongXingBei: 1, lanXingBei: 0, hongZhanJi: [], lanZhanJi: [] },
+		seats: seatIds.map((seatId, position) => ({ seatId, position, character: `character_${position}`, side: position < 2,
+			alive: true, hp: 4, maxHp: 4, zhiLiao: 0, hujiaSupported: false,
+			nengLiang: { baoShi: position === 0 ? 1 : 0, shuiJing: 0, effectiveLimit: 3 } })) };
+}
+
+test("versioned turn/resource projection binds native energy marks to ordered seats", () => {
+	const value = snapshot();
+	const expected = { roomId: value.roomId, hostSessionId: value.hostSessionId, engineBuildId: value.engineBuildId,
+		rootInstanceId: value.rootInstanceId, seatIds };
+	const first = validateNativeTurnResourceProjectionV2(value, expected);
+	const repeat = validateNativeTurnResourceProjectionV2(snapshot(), expected);
+	assert.equal(first.encoded, repeat.encoded);
+	assert.equal(first.canonical.schemaVersion, 2);
+	assert.deepEqual(first.canonical.seats[0].nengLiang, { baoShi: 1, shuiJing: 0, effectiveLimit: 3 });
+	assert.equal(first.authoritySeedAuthorized, false);
+	assert.equal(first.checkpointAvailable, false);
+});
+
+test("turn/resource projection rejects impossible energy totals, types and unbound marks", () => {
+	for (const alter of [
+		v => { v.seats[0].nengLiang.baoShi = -1; },
+		v => { v.seats[0].nengLiang.shuiJing = "1"; },
+		v => { v.seats[0].nengLiang.effectiveLimit = 0; },
+		v => { v.seats[0].nengLiang.unknown = 1; },
+		v => { v.seats[0].marks = { _tiLian_baoShi: 1 }; },
+	]) {
+		const value = snapshot();
+		alter(value);
+		assert.throws(() => validateNativeTurnResourceProjectionV2(value), /NATIVE_TURN_STATE_V2_/);
+	}
+});
