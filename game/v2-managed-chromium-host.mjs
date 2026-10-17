@@ -2091,12 +2091,20 @@ async function runNativeStartDiagnostic(message) {
 					if (!criticalStages.has(payload.stage)) return;
 					const snapshot = payload.snapshot;
 					const action = snapshot.nativeAction || {};
+					const waitError = snapshot.nativeWaitError || {};
 					emitNativeStartDiagnostic({ stage: payload.stage, snapshot: {
 						eventName: snapshot.eventName || null, eventStep: Number.isSafeInteger(snapshot.eventStep) ? snapshot.eventStep : null,
 						parentEventName: snapshot.parentEventName || null, rootEventName: snapshot.rootEventName || null,
 						rootObjectMatches: snapshot.rootObjectMatches === true, nativeEventId: snapshot.nativeInputGate?.nativeEventId || null,
 						seatId: action.seatId || snapshot.nativeInputGate?.seatId || null,
 						failureCode: typeof snapshot.failureCode === "string" ? snapshot.failureCode : null,
+						nativeWaitError: payload.stage === "wait_next_error" ? {
+							name: typeof waitError.name === "string" && /^[A-Za-z][A-Za-z0-9]{0,31}$/.test(waitError.name) ? waitError.name : "Error",
+							code: typeof waitError.code === "string" && /^[A-Z][A-Z0-9_]{0,80}$/.test(waitError.code) ? waitError.code : null,
+							nullBase: ["null", "undefined"].includes(waitError.nullBase) ? waitError.nullBase : null,
+							property: typeof waitError.property === "string" && /^[A-Za-z_$][A-Za-z0-9_$]{0,48}$/.test(waitError.property) ? waitError.property : null,
+							notFunction: typeof waitError.notFunction === "string" && /^[A-Za-z_$][A-Za-z0-9_$]{0,48}$/.test(waitError.notFunction) ? waitError.notFunction : null,
+						} : null,
 						hostPlayerAbsent: snapshot.hostPlayerAbsent === true,
 						nativeInputGateStatus: snapshot.nativeInputGate?.status || null,
 						nativeInputGate: snapshot.nativeInputGate ? { nativeEventId: snapshot.nativeInputGate.nativeEventId || null,
