@@ -2,6 +2,9 @@
 
 ## Current unaccepted batch — cross-seat native atomic capture (phaseLoop idempotency fix pending Linux CI)
 
+- Linux CI `39053787581` passed through Event #4 and failed at step 27 with `NATIVE_PHASE_OVER_DISPATCH_COMPLETION_MISSING`, this time observed at step 3. Updating the observation boundary from step 2 to 3 fixed the earlier pre-trigger timing mistake but did not establish the draft at runtime. The next patch uses bounded symbolic mismatch codes to distinguish missing draft from identity/ordinal/seat/source/ledger mismatch. It does not accept or synthesize completion evidence.
+- Native source still places `event.trigger('phaseOver')` in phaseLoop content step 2. Whether the supervised wrapper's post-`waitNext` hook sees the same instance/draft after child completion is unverified in Linux; the next real Chromium run is diagnostic and downstream capture steps remain non-accepted until they execute.
+
 - Follow-up Linux CI `39053467725` confirms the cached phaseLoop start promise passed its previous failure point; step 27 now fails with `NATIVE_PHASE_OVER_DISPATCH_COMPLETION_MISSING`, so dependent capture steps are skipped. The fence had tested the step-2 `waitNext()` return, which occurs before step-2 content dispatches `phaseOver`. Native `phaseLoop` content step 2 is the trigger source; after its child completes, the next `waitNext()` returns at step 3. The completed-boundary checks now use native step 3, while the phaseOver dispatch proof continues to bind `ownerEventStep=2`. This is a source-order correction, not a timeout change.
 - A Node regression rejects step 2 without consuming a capture ordinal. Focused suites: 32 pass, 0 fail, one expected Windows symlink-capability skip. Release lock is `3a1d856ed51654deb4fde174996ec14979bd32f72ea1a6873baad445473cadd8` (209 files; 18,895,199 bytes). The real Linux Chromium run is pending and must execute the first and second atomic-boundary cases before acceptance.
 
