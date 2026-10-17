@@ -1288,16 +1288,21 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"read-only live snapshot at the event-local player input gate must not reinitialize the root");
 					nativeLiveSnapshotAtInputGate = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot"),
 						3000, () => ({ stages: nativeDiagnostic.slice(beforeSnapshot).map(entry => entry?.stage), session: manager.inspect(roomId) }));
+					t.diagnostic(`native live snapshot at input gate: ${JSON.stringify(safeNativeDiagnostic(nativeLiveSnapshotAtInputGate))}`);
 					assert.equal(nativeLiveSnapshotAtInputGate.rootObjectMatches, true);
 					assert.equal(nativeLiveSnapshotAtInputGate.hostPlayerAbsent, true);
-					assert.ok(setup.seats.some(seat => seat.seatId === nativeLiveSnapshotAtInputGate.projectionAudit?.currentSeatId),
+					const liveProjection = nativeLiveSnapshotAtInputGate.projectionAudit;
+					assert.ok(liveProjection, "the live native projection audit must be present");
+					const liveActorSeatId = liveProjection.xingDongEvent?.seatId;
+					assert.ok(setup.seats.some(seat => seat.seatId === liveActorSeatId),
 						"the live native actor must be one of the server-bound ordinary seats");
-					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.xingDongEvent?.seatId,
-						nativeLiveSnapshotAtInputGate.projectionAudit?.currentSeatId,
-						"the live snapshot must bind the actual Xingdong event to its current native phase actor");
-					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.phaseEvent?.name, "phase");
-					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.xingDongEvent?.name, "xingDong");
-					assert.ok(nativeLiveSnapshotAtInputGate.projectionAudit?.pendingActionChildCount >= 1,
+					assert.equal(liveProjection.phaseEvent?.name, "phase");
+					assert.equal(liveProjection.phaseEvent?.seatId, liveActorSeatId,
+						"the active phase and Xingdong events must identify the same native seat");
+					assert.equal(liveProjection.xingDongEvent?.name, "xingDong");
+					if (liveProjection.currentSeatId != null) assert.equal(liveProjection.currentSeatId, liveActorSeatId,
+						"when Noname exposes currentPhase, it must agree with the active native events");
+					assert.ok(liveProjection.pendingActionChildCount >= 1,
 						"the native input gate must remain attached to a pending native action child during observation");
 				}
 				assert.ok(expectedAuthorityRevision >= 3, "opening-root action must start from accepted Event #3");
