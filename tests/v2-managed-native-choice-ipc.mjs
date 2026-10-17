@@ -358,6 +358,29 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(controller.submitChoice({ ...request, hostSessionId: `hs_${"b".repeat(32)}`, connectionId,
 					credential: credentialFor(message.seatId) }).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "stale host session must not commit player input");
 				if (!["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(process.env.V2_NATIVE_START_PROBE_MODE)) {
+					if (process.env.V2_NATIVE_C3_FULL_CHAIN === "1" && process.env.V2_NATIVE_MANAGED_RESPONSE === "1" &&
+						process.env.V2_NATIVE_START_PROBE_MODE === "managed_opening_root_action_event4") {
+						const beforeSnapshot = nativeDiagnostic.length;
+						assert.equal((await manager.snapshotNativeStart(roomId, process.env.V2_NATIVE_START_PROBE_MODE)).ok, true,
+							"the live read-only snapshot must be requested while the native action choice is still pending");
+						nativeLiveSnapshotAtInputGate = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot"),
+							3000, () => ({ stages: nativeDiagnostic.slice(beforeSnapshot).map(entry => entry?.stage), session: manager.inspect(roomId) }));
+						const liveProjection = nativeLiveSnapshotAtInputGate.projectionAudit;
+						const liveActorSeatId = liveProjection?.xingDongEvent?.seatId;
+						t.diagnostic(`native pending-input snapshot binding: ${JSON.stringify({ actor: liveActorSeatId ?? null,
+							phaseActor: liveProjection?.phaseEvent?.seatId ?? null, currentActor: liveProjection?.currentSeatId ?? null,
+							serverSeats: immutableServerSeatIds, eventStack: nativeLiveSnapshotAtInputGate.eventStack?.map(event => event.name) || [] })}`);
+						assert.equal(nativeLiveSnapshotAtInputGate.rootObjectMatches, true);
+						assert.equal(nativeLiveSnapshotAtInputGate.hostPlayerAbsent, true);
+						assert.ok(immutableServerSeatIds.includes(liveActorSeatId),
+							"the pending native action must be owned by a server-bound ordinary seat");
+						assert.equal(liveProjection.phaseEvent?.name, "phase");
+						assert.equal(liveProjection.phaseEvent?.seatId, liveActorSeatId);
+						assert.equal(liveProjection.xingDongEvent?.name, "xingDong");
+						assert.equal(liveProjection.currentSeatId, liveActorSeatId);
+						assert.ok(liveProjection.pendingActionChildCount >= 1,
+							"snapshot must remain inside the native input gate before the ordinary player's choice is applied");
+					}
 					const accepted = { ...request, connectionId, credential: credentialFor(message.seatId), option: nativeActionOptionId };
 					assert.equal(controller.submitChoice(accepted).ok, true);
 					assert.equal(controller.submitChoice(accepted).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "duplicate native action input must be rejected");
@@ -1284,30 +1307,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.ok(nativeActionCandidate?.options.length > 1);
 			if (["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(probeMode)) {
 				if (process.env.V2_NATIVE_C3_FULL_CHAIN === "1" && process.env.V2_NATIVE_MANAGED_RESPONSE === "1" && probeMode === "managed_opening_root_action_event4") {
-					const beforeSnapshot = nativeDiagnostic.length;
-					assert.equal((await manager.snapshotNativeStart(roomId, probeMode)).ok, true,
-						"read-only live snapshot at the event-local player input gate must not reinitialize the root");
-					nativeLiveSnapshotAtInputGate = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot"),
-						3000, () => ({ stages: nativeDiagnostic.slice(beforeSnapshot).map(entry => entry?.stage), session: manager.inspect(roomId) }));
-					t.diagnostic(`native live snapshot at input gate: ${JSON.stringify(safeNativeDiagnostic(nativeLiveSnapshotAtInputGate))}`);
-					assert.equal(nativeLiveSnapshotAtInputGate.rootObjectMatches, true);
-					assert.equal(nativeLiveSnapshotAtInputGate.hostPlayerAbsent, true);
-					const liveProjection = nativeLiveSnapshotAtInputGate.projectionAudit;
-					assert.ok(liveProjection, "the live native projection audit must be present");
-					const liveActorSeatId = liveProjection.xingDongEvent?.seatId;
-					t.diagnostic(`native live actor binding: ${JSON.stringify({ actor: liveActorSeatId ?? null,
-						phaseActor: liveProjection.phaseEvent?.seatId ?? null, currentActor: liveProjection.currentSeatId ?? null,
-						serverSeats: immutableServerSeatIds, projectedSeats: liveProjection.seats?.map(seat => seat.seatId) || [] })}`);
-					assert.ok(immutableServerSeatIds.includes(liveActorSeatId),
-						`the live native actor ${String(liveActorSeatId)} must be one of the immutable server-bound ordinary seats [${immutableServerSeatIds.join(",")}]`);
-					assert.equal(liveProjection.phaseEvent?.name, "phase");
-					assert.equal(liveProjection.phaseEvent?.seatId, liveActorSeatId,
-						"the active phase and Xingdong events must identify the same native seat");
-					assert.equal(liveProjection.xingDongEvent?.name, "xingDong");
-					if (liveProjection.currentSeatId != null) assert.equal(liveProjection.currentSeatId, liveActorSeatId,
-						"when Noname exposes currentPhase, it must agree with the active native events");
-					assert.ok(liveProjection.pendingActionChildCount >= 1,
-						"the native input gate must remain attached to a pending native action child during observation");
+					assert.ok(nativeLiveSnapshotAtInputGate,
+						"the native live snapshot must be captured before the simulated ordinary player releases its action gate");
 				}
 				assert.ok(expectedAuthorityRevision >= 3, "opening-root action must start from accepted Event #3");
 				assert.equal(snapshot.gameStartCount, 1);
