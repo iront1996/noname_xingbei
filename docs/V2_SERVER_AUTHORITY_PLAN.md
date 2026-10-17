@@ -1,5 +1,12 @@
 # V2 server-authority plan and evidence
 
+## Latest T3 evidence — narrow quota observation (partial only)
+
+- Linux CI `39063275363` on `f3157a0cba4fb34f15af42c1b4f381b9c65a9624` passed the full serialized workflow: 86/86 steps and 266/266 TAP tests, zero failures/skips. The real Chromium Event #1–#4 input-gate test confirms the pending action's native actor is the immutable server-bound ordinary seat and the active `xingDong` step 0 holds the original native reset values `{gongJiOrFaShu:1, faShu:0, gongJi:0, extraXingDongCount:0}`. The phase fence separately confirms consumed quota values after the completed action.
+- The live input-gate read is not part of an atomic capture; it proves only that specific native initialization boundary and actor binding. Cross-seat accepted atomic envelopes remain independently evidenced by CI `39061677334` (native completion ordinals 112/223 and capture ordinals 1–4). Coverage manifest records both without conflating them. Turn/action quota coverage remains `partial`, with arbitrary multi-turn shapes, nonempty `extraXingDong`, complete reset/decrement and round-boundary semantics unsupported.
+- No engine source changed in this batch; release lock unchanged. Cloudflare Pages was read-only checked after push: experiment branch preview is skipped/no deployment, production remains `feature/auto-lobby`. PR #1 remains open/unmerged.
+- This does not create a canonical seed, Event #5, or checkpoint: `seedAuthorized=false`, revision 4, Event #5 rejected, `checkpointAvailable=false`. Full T3 remains incomplete.
+
 ## Current T3 repair batch — phaseOver evidence lifecycle configuration repaired; Linux CI passed
 
 - Linux CI `39059941633` on `7adc600724f7b76f38ccc5f1b8b97eb89fd0eb9b` passed the real-Chromium cross-seat atomic capture test: two different completed seats in one root/session/build produced independent native completion ordinals 112 and 223, with capture ordinals 1–4 across each accepted envelope and its stable repeat. The dedicated test is evidence for two accepted captures, but the workflow failed later in the full-chain ACK-loss test; the milestone remains unaccepted until the full required CI is green.

@@ -33,8 +33,26 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 		completedSeatCount: 2,
 		acceptedCaptureCountIncludingStableRepeats: 4,
 		nativeCompletionOrdinals: [112, 223],
+		inputGateQuotaReset: {
+			linuxCiRunId: "39063275363",
+			workflowStep: "V2 M2 C3 authority Event 1-4 same-session and Chromium-chain audit",
+			nativeEvent: "xingDong",
+			nativeStep: 0,
+			quotas: { gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0 },
+			actorBoundToPendingAction: true,
+			observationIsAtomicCapture: false,
+		},
+		completedPhaseQuotaConsumption: {
+			linuxCiRunId: "39063275363",
+			workflowStep: "V2 M2 T3-B1 ledger plus restricted atomic capture across a real four-seat action",
+			nativeCompletionOrdinal: 112,
+			consumedQuotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0 },
+		},
 		authorityStateRevision: 4,
 		event5Enabled: false,
 	});
 	assert.match(turn.unsupported[0], /arbitrary multi-turn capture/);
+	assert.match(turn.unsupported[2], /all quota reset\/decrement and round-boundary semantics/);
+	assert.equal(turn.verifiedEvidence.inputGateQuotaReset.observationIsAtomicCapture, false,
+		"live input-gate observation must not be misrepresented as an atomic canonical snapshot");
 });

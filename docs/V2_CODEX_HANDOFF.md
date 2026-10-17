@@ -1,5 +1,13 @@
 # V2 Codex engineering handoff
 
+## Latest T3 evidence — cross-seat capture and native quota boundary (not full T3)
+
+- Remote/local isolated branch HEAD `f3157a0cba4fb34f15af42c1b4f381b9c65a9624`; Linux CI `39063275363` passed 86/86 workflow steps and 266/266 tests, zero failures and zero skips. It includes the real Chromium same-root Event #1–#4 chain, two-seat repeated atomic capture, ACK-loss/stop and state-family regressions.
+- In the real Chromium pending-action gate, the active native `xingDong` step 0 exposed quotas `{gongJiOrFaShu:1, faShu:0, gongJi:0, extraXingDongCount:0}`. The native actor matched both the active phase and the server-bound pending ordinary seat. This is a live read-only observation at an input boundary, explicitly **not** an atomic capture or authority transition.
+- Existing completed-phase evidence in the same CI verifies native quota consumption at the completed phase fence; the two-seat independent atomic captures remain the separate accepted evidence from CI `39061677334` (completion ordinals 112/223; capture ordinals 1–4). The manifest records these as distinct evidence sources and keeps the turn/quota family `partial`; arbitrary reset/decrement semantics, arbitrary turn shapes and nonempty `extraXingDong` remain unsupported.
+- Commit `f3157a0` adds the gate assertions; its full Linux CI is `39063275363`. No engine source changed, so the release lock is unchanged. Cloudflare deployment history was read-only checked after push: this branch's preview is “No deployment available” / skipped, while production remains `feature/auto-lobby`. PR #1 remains open/unmerged.
+- Gates remain `seedAuthorized=false`, authority revision 4, Event #5 rejected, and checkpoint unavailable. T3 remains incomplete; the live quota observation does not qualify the full canonical schema or authorize a seed/Event #5.
+
 ## Current T3 repair batch — phaseOver evidence lifecycle configuration repaired; Linux CI passed
 
 - Linux CI `39059941633` on `7adc600724f7b76f38ccc5f1b8b97eb89fd0eb9b` executed the required real-Chromium cross-seat atomic-capture step successfully: one room/session/supervised host/Chromium PID/root/build and immutable four-seat roster; seat 2 and seat 3 completed distinct native phases at completion ordinals 112 and 223; captures A/repeat/B/repeat were accepted in capture ordinal order 1–4, with same-fence stability and B bound to seat 3. Revision remained 4; seed unauthorized; Event #5 rejected; checkpoint unavailable. The workflow as a whole is **not green**: a subsequent full-chain ACK-loss Chromium step failed at the phaseLoop step-3 waitNext audit with `NATIVE_PHASE_OVER_DRAFT_MISSING`, after native response/action progress. This run does not grant full batch acceptance.
