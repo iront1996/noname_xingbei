@@ -65,3 +65,15 @@ test("turn/resource projection fails closed at incomplete native fences and unsu
 		assert.throws(() => validateNativeTurnResourceProjectionV2(value), /NATIVE_TURN_STATE_V2_/);
 	}
 });
+
+test("between-turn projection binds completed actor quotas separately from the rotated phase-loop actor", () => {
+	const value = snapshot();
+	value.turn = { phase: "between_turns", actorSeatId: "seat_a", phaseLoopSeatId: "seat_b", currentPhaseSeatId: null,
+		gamePhaseNumber: 2, playerPhaseNumber: 1, quotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0 }, extraActionQueueEmpty: true };
+	const projection = validateNativeTurnResourceProjectionV2(value);
+	assert.equal(projection.canonical.turn.actorSeatId, "seat_a", "quota state belongs to the completed native phase actor");
+	assert.equal(projection.canonical.turn.phaseLoopSeatId, "seat_b", "the native loop independently names its rotated next actor");
+	const invalid = structuredClone(value);
+	invalid.turn.phase = "xingDong";
+	assert.throws(() => validateNativeTurnResourceProjectionV2(invalid), /NATIVE_TURN_STATE_V2_TURN_UNSUPPORTED/);
+});

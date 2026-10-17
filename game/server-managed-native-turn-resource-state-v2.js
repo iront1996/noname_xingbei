@@ -51,7 +51,8 @@ function validateNativeTurnResourceProjectionV2(snapshot, expected = {}) {
 
 	const turn = snapshot.turn;
 	if (!exact(turn, ["phase", "actorSeatId", "phaseLoopSeatId", "currentPhaseSeatId", "gamePhaseNumber", "playerPhaseNumber", "quotas", "extraActionQueueEmpty"]) ||
-		!PHASES.has(turn.phase) || !snapshot.seatIds.includes(turn.actorSeatId) || turn.phaseLoopSeatId !== turn.actorSeatId ||
+		!PHASES.has(turn.phase) || !snapshot.seatIds.includes(turn.actorSeatId) || !snapshot.seatIds.includes(turn.phaseLoopSeatId) ||
+		(turn.phase !== "between_turns" && turn.phaseLoopSeatId !== turn.actorSeatId) ||
 		(turn.phase === "phase" || turn.phase === "xingDong" ? turn.currentPhaseSeatId !== turn.actorSeatId : turn.currentPhaseSeatId !== null) ||
 		!integer(turn.gamePhaseNumber) || !integer(turn.playerPhaseNumber) || !exact(turn.quotas, ["gongJiOrFaShu", "faShu", "gongJi"]) ||
 		Object.values(turn.quotas).some(value => !integer(value, 0, 512)) || turn.extraActionQueueEmpty !== true) fail("NATIVE_TURN_STATE_V2_TURN_UNSUPPORTED");

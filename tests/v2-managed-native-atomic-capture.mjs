@@ -35,8 +35,8 @@ function envelope(ordinal = 1) {
 			engineBuildId, rootInstanceId: root, seatIds: [...seats],
 			fence: { kind: "managed_native_quiescent_fence_v1", rootMatches: true, eventStackConsistent: true,
 				allChildrenCompleted: true, pendingChildCount: 0, captureLocked: true, nativeCompletionOrdinal: 9 },
-			turn: { phase: "between_turns", actorSeatId: "seat_b", phaseLoopSeatId: "seat_b", currentPhaseSeatId: null,
-				gamePhaseNumber: 1, playerPhaseNumber: 0, quotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0 }, extraActionQueueEmpty: true },
+			turn: { phase: "between_turns", actorSeatId: "seat_a", phaseLoopSeatId: "seat_b", currentPhaseSeatId: null,
+				gamePhaseNumber: 1, playerPhaseNumber: 1, quotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0 }, extraActionQueueEmpty: true },
 			resources: { hongShiQi: 5, lanShiQi: 5, hongXingBei: 0, lanXingBei: 0, hongZhanJi: [], lanZhanJi: [] },
 			seats: seatRows,
 		},
@@ -56,6 +56,8 @@ test("atomic capture commits all three validated native projections at one ordin
 	assert.equal(result.nativeCompletionOrdinal, 9);
 	assert.equal(result.projectionCount, 3);
 	assert.equal(result.atomicWithEffectSnapshots, true);
+	assert.deepEqual(result.nativeTurnSummary, { actorSeatId: "seat_a", phaseLoopSeatId: "seat_b", phase: "between_turns",
+		gamePhaseNumber: 1, playerPhaseNumber: 1, quotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0 } });
 	assert.equal(result.authoritySeedAuthorized, false);
 	assert.equal(result.checkpointAvailable, false);
 	assert.equal(result.stableProjectionsWithPrevious, null);
@@ -123,7 +125,7 @@ test("atomic capture distinguishes an empty native trigger dispatch from a compl
 		childParentEventInstanceId: "event_7", childCompletionOrdinal: 10 };
 	childBoundary.fence.seatId = "seat_b";
 	childBoundary.fence.nextActorSeatId = "seat_c";
-	childBoundary.turnResource.turn.actorSeatId = "seat_c";
+	childBoundary.turnResource.turn.actorSeatId = "seat_b";
 	childBoundary.turnResource.turn.phaseLoopSeatId = "seat_c";
 	childBoundary.turnResource.fence.nativeCompletionOrdinal = 11;
 	assert.equal(capture.commit(childBoundary).captureOrdinal, 2,
@@ -155,12 +157,14 @@ test("atomic capture accepts a later completed phase from another seat on the sa
 		phaseEventInstanceId: "event_8", phaseCompletionOrdinal: 11,
 		childEventInstanceId: null, childEventName: null, childParentEventInstanceId: null, childCompletionOrdinal: null };
 	later.turnResource.fence.nativeCompletionOrdinal = 12;
-	later.turnResource.turn.actorSeatId = "seat_c";
+	later.turnResource.turn.actorSeatId = "seat_b";
 	later.turnResource.turn.phaseLoopSeatId = "seat_c";
 	const second = capture.commit(later);
 	assert.equal(second.captureOrdinal, 2);
 	assert.equal(second.nativeFenceOrdinal, 2);
 	assert.equal(second.nativeCompletionOrdinal, 12);
+	assert.deepEqual(second.nativeTurnSummary, { actorSeatId: "seat_b", phaseLoopSeatId: "seat_c", phase: "between_turns",
+		gamePhaseNumber: 1, playerPhaseNumber: 1, quotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0 } });
 	assert.notEqual(second.commitment, first.commitment,
 		"a subsequent distinct native phase/state capture must receive a distinct commitment");
 	capture.destroy();
@@ -208,7 +212,6 @@ test("atomic capture binds completed phase evidence to its next live actor", () 
 	const badRotation = coordinator();
 	const wrongNext = envelope();
 	wrongNext.fence.nextActorSeatId = "seat_d";
-	wrongNext.turnResource.turn.actorSeatId = "seat_d";
 	wrongNext.turnResource.turn.phaseLoopSeatId = "seat_d";
 	assert.throws(() => badRotation.commit(wrongNext), /NATIVE_ATOMIC_CAPTURE_NEXT_ACTOR_INVALID/);
 	assert.equal(badRotation.commit(envelope()).captureOrdinal, 1, "a wrong native successor must not consume a capture ordinal");
@@ -251,7 +254,7 @@ test("atomic capture rejects skipped, reused-seat and non-advancing native fence
 				phaseEventInstanceId: "event_8", phaseCompletionOrdinal: 11,
 				childEventInstanceId: null, childEventName: null, childParentEventInstanceId: null, childCompletionOrdinal: null };
 		later.turnResource.fence.nativeCompletionOrdinal = 12;
-		later.turnResource.turn.actorSeatId = "seat_c";
+		later.turnResource.turn.actorSeatId = "seat_b";
 		later.turnResource.turn.phaseLoopSeatId = "seat_c";
 		mutate(later);
 		assert.throws(() => capture.commit(later), new RegExp(code));

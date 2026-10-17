@@ -1733,6 +1733,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(atomic.snapshot.authoritySeedAuthorized, false);
 						assert.equal(atomic.snapshot.checkpointAvailable, false);
 						assert.equal(atomic.snapshot.rootInstanceId, waitingSnapshot.rootInstanceId);
+						assert.deepEqual(atomic.snapshot.nativeTurnSummary, {
+							actorSeatId: waitingSnapshot.seatId, phaseLoopSeatId: waitingSnapshot.nextActorSeatId, phase: "between_turns",
+							gamePhaseNumber: waitingSnapshot.phaseNumber, playerPhaseNumber: waitingSnapshot.completedPhasePlayerPhaseNumber,
+							quotas: { gongJiOrFaShu: waitingSnapshot.completedActorQuotas.gongJiOrFaShu,
+								faShu: waitingSnapshot.completedActorQuotas.faShu, gongJi: waitingSnapshot.completedActorQuotas.gongJi },
+						}, "atomic turn projection must bind completed actor quotas separately from native loop successor");
 						assert.equal(manager.inspect(roomId).authorityStateRevision, 4);
 						assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 5);
 						assert.equal(manager.inspect(roomId).checkpointAvailable, false);
@@ -1956,6 +1962,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(secondCaptureResult.snapshot.captureOrdinal, 3);
 						assert.equal(secondCaptureResult.snapshot.nativeFenceOrdinal, 2);
 						assert.ok(secondCaptureResult.snapshot.nativeCompletionOrdinal > firstAtomicCapture.nativeCompletionOrdinal);
+						assert.deepEqual(secondCaptureResult.snapshot.nativeTurnSummary, {
+							actorSeatId: secondFence.snapshot.seatId, phaseLoopSeatId: secondFence.snapshot.nextActorSeatId, phase: "between_turns",
+							gamePhaseNumber: secondFence.snapshot.phaseNumber, playerPhaseNumber: secondFence.snapshot.completedPhasePlayerPhaseNumber,
+							quotas: { gongJiOrFaShu: secondFence.snapshot.completedActorQuotas.gongJiOrFaShu,
+								faShu: secondFence.snapshot.completedActorQuotas.faShu, gongJi: secondFence.snapshot.completedActorQuotas.gongJi },
+						}, "second-seat capture must bind the completed second actor and actual remaining quotas, not uninitialized successor quotas");
 						assert.notEqual(secondCaptureResult.snapshot.commitment, firstAtomicCapture.commitment);
 						assert.equal(secondCaptureResult.snapshot.stableWithPrevious, false,
 							"the second actor boundary is a different native state from the first actor boundary");

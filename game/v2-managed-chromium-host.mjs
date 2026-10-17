@@ -2482,7 +2482,9 @@ async function runNativeStartDiagnostic(message) {
 	      descendantNodeCount:fence.descendantNodeCount,pendingDescendantCount:fence.pendingDescendantCount,
 	      priorAuthority:fence.priorAuthority,roundNumber:Number.isSafeInteger(game.roundNumber)?game.roundNumber:null,
 	      phaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:null,loopSeatId:event.player?.playerid||null,
-	      completedPhaseSeatId:phaseChild.player?.playerid||null,nextActorSeatId:event.player?.playerid||null,
+	      completedPhaseSeatId:phaseChild.player?.playerid||null,
+	      completedPhasePlayerPhaseNumber:Number.isSafeInteger(phaseChild.player?.phaseNumber)?phaseChild.player.phaseNumber:null,
+	      nextActorSeatId:event.player?.playerid||null,
 	      completedActorQuotas,runtimeHujiaMethodPresent:game.players.some(player=>typeof player.changeHujia==='function'),
 	      runtimeHujiaValuePresent:game.players.some(player=>player.hujia!==undefined),
 	      runtimeHujiaPrototypeOwnerCount:game.players.reduce((sum,player)=>{let count=0,proto=Object.getPrototypeOf(player),depth=0;while(proto&&depth++<16){if(Object.hasOwn(proto,'changeHujia'))count++;proto=Object.getPrototypeOf(proto)}return sum+count},0),
@@ -3016,9 +3018,10 @@ async function snapshotNativeAtomicCapture(message) {
 			if(registryEntries.some(([id,card])=>id!==registryByCard.get(card)||!tracked.has(card)||(card.cardid&&card.cardid!==id)))throw Error('NATIVE_ATOMIC_CAPTURE_UNASSIGNED_PHYSICAL_CARD');
 			const effectSeats=seatIds.map(seatId=>{const player=allPlayers.find(item=>item.playerid===seatId);if(typeof player.hasSkill!=='function'||typeof player.countZhiShiWu!=='function')throw Error('NATIVE_ATOMIC_CAPTURE_EFFECT_SOURCE_INVALID');
 				return {seatId,skills:player.hasSkill('yinYangZhanHuan')?[{id:'yinYangZhanHuan',present:true,source:'native_hasSkill'}]:[],guiHuo:player.countZhiShiWu('guiHuo')};});
-			const actor=loop.player,quotas=actor?.storage,resources={hongShiQi:game.hongShiQi,lanShiQi:game.lanShiQi, hongXingBei:game.hongXingBei,lanXingBei:game.lanXingBei,
+			const actor=phase.player,loopActor=loop.player,quotas=actor?.storage,resources={hongShiQi:game.hongShiQi,lanShiQi:game.lanShiQi, hongXingBei:game.hongXingBei,lanXingBei:game.lanXingBei,
 				hongZhanJi:game.hongZhanJi,lanZhanJi:game.lanZhanJi};
-			if(!actor||!seatIds.includes(actor.playerid)||!Array.isArray(quotas?.extraXingDong)||quotas.extraXingDong.length!==0||
+			if(!actor||actor!==fence.seatPlayer||actor.playerid!==fence.seatId||!loopActor||loopActor.playerid!==fence.nextActorSeatId||
+				!seatIds.includes(actor.playerid)||!Array.isArray(quotas?.extraXingDong)||quotas.extraXingDong.length!==0||
 				![quotas.gongJiOrFaShu,quotas.faShu,quotas.gongJi].every(Number.isSafeInteger)||
 				![resources.hongShiQi,resources.lanShiQi,resources.hongXingBei,resources.lanXingBei].every(Number.isSafeInteger)||
 				!Array.isArray(resources.hongZhanJi)||!Array.isArray(resources.lanZhanJi)||
@@ -3035,7 +3038,7 @@ async function snapshotNativeAtomicCapture(message) {
 			const turnResource={schema:'xingbei_native_private_turn_resource_state_v2',roomId:command.roomId,hostSessionId:command.hostSessionId,
 				engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,
 				fence:{kind:'managed_native_quiescent_fence_v1',rootMatches:true,eventStackConsistent:true,allChildrenCompleted:true,pendingChildCount:0,
-					captureLocked:true,nativeCompletionOrdinal},turn:{phase:'between_turns',actorSeatId:actor.playerid,phaseLoopSeatId:actor.playerid,
+					captureLocked:true,nativeCompletionOrdinal},turn:{phase:'between_turns',actorSeatId:actor.playerid,phaseLoopSeatId:loopActor.playerid,
 					currentPhaseSeatId:null,gamePhaseNumber:game.phaseNumber,playerPhaseNumber:actor.phaseNumber,
 					quotas:{gongJiOrFaShu:quotas.gongJiOrFaShu,faShu:quotas.faShu,gongJi:quotas.gongJi},extraActionQueueEmpty:true},resources,
 				seats};

@@ -122,7 +122,7 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 				envelope.turnResource.fence.nativeCompletionOrdinal !== fence.nativeCompletionOrdinal ||
 				envelope.effectState.seats.length !== seatIds.length || cardRows.length < 1 ||
 				turn.canonical.nativeCompletionOrdinal !== fence.nativeCompletionOrdinal ||
-				turn.canonical.turn.actorSeatId !== fence.nextActorSeatId || turn.canonical.turn.phaseLoopSeatId !== fence.nextActorSeatId) {
+				turn.canonical.turn.actorSeatId !== fence.seatId || turn.canonical.turn.phaseLoopSeatId !== fence.nextActorSeatId) {
 				fail("NATIVE_ATOMIC_CAPTURE_PROJECTION_MISMATCH");
 			}
 			const aliveSeats = turn.canonical.seats;
@@ -156,6 +156,10 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			return Object.freeze({ schema: "xingbei_native_private_atomic_commitment_v2", schemaVersion: 2,
 				captureOrdinal: ordinal, nativeFenceOrdinal: fence.boundaryOrdinal, nativeCompletionOrdinal: fence.nativeCompletionOrdinal, rootInstanceId, engineBuildId,
 				commitment: digest, stableWithPrevious, stableProjectionsWithPrevious, projectionCount: 3, atomicWithEffectSnapshots: true,
+				// Bounded test-probe evidence only: no card/effect preimage is exposed.
+				nativeTurnSummary: Object.freeze({ actorSeatId: turn.canonical.turn.actorSeatId, phaseLoopSeatId: turn.canonical.turn.phaseLoopSeatId,
+					phase: turn.canonical.turn.phase, gamePhaseNumber: turn.canonical.turn.gamePhaseNumber,
+					playerPhaseNumber: turn.canonical.turn.playerPhaseNumber, quotas: Object.freeze({ ...turn.canonical.turn.quotas }) }),
 				authoritySeedAuthorized: false, checkpointAvailable: false });
 		},
 		destroy() {
