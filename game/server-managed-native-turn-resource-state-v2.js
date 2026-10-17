@@ -10,6 +10,10 @@ const MAX_SEATS = 8;
 const MAX_RESOURCE = 1000000;
 const MAX_CANONICAL_BYTES = 16384;
 const PHASES = new Set(["phaseLoop", "phase", "xingDong", "between_turns"]);
+// These are the only Xingbei achievement resource values covered by the
+// current source audit. A syntactically valid arbitrary identifier is not a
+// safe substitute for a reviewed native resource kind.
+const ZHANJI_KINDS = new Set(["baoShi", "shuiJing"]);
 
 function fail(code) { throw new TypeError(code); }
 function plain(value) { return Boolean(value && Object.getPrototypeOf(value) === Object.prototype); }
@@ -55,7 +59,7 @@ function validateNativeTurnResourceProjectionV2(snapshot, expected = {}) {
 	const resources = snapshot.resources;
 	if (!exact(resources, ["hongShiQi", "lanShiQi", "hongXingBei", "lanXingBei", "hongZhanJi", "lanZhanJi"]) ||
 		![resources.hongShiQi, resources.lanShiQi, resources.hongXingBei, resources.lanXingBei].every(value => integer(value, -MAX_RESOURCE, MAX_RESOURCE)) ||
-		![resources.hongZhanJi, resources.lanZhanJi].every(list => Array.isArray(list) && list.length <= 128 && list.every(value => typeof value === "string" && IDENTIFIER.test(value)))) {
+		![resources.hongZhanJi, resources.lanZhanJi].every(list => Array.isArray(list) && list.length <= 128 && list.every(value => ZHANJI_KINDS.has(value)))) {
 		fail("NATIVE_TURN_STATE_V2_RESOURCE_INVALID");
 	}
 	if (!Array.isArray(snapshot.seats) || snapshot.seats.length !== snapshot.seatIds.length) fail("NATIVE_TURN_STATE_V2_SEATS_INVALID");

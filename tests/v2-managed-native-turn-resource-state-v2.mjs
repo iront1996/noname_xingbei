@@ -45,3 +45,23 @@ test("turn/resource projection rejects impossible energy totals, types and unbou
 		assert.throws(() => validateNativeTurnResourceProjectionV2(value), /NATIVE_TURN_STATE_V2_/);
 	}
 });
+
+test("turn/resource projection fails closed at incomplete native fences and unsupported rule state", () => {
+	for (const alter of [
+		v => { v.fence.pendingChildCount = 1; },
+		v => { v.fence.allChildrenCompleted = false; },
+		v => { v.fence.captureLocked = false; },
+		v => { v.turn.actorSeatId = "seat_z"; },
+		v => { v.turn.phaseLoopSeatId = "seat_b"; },
+		v => { v.turn.currentPhaseSeatId = "seat_b"; },
+		v => { v.turn.extraActionQueueEmpty = false; },
+		v => { v.turn.extraXingDong = [{ xingDong: "gongJi" }]; },
+		v => { v.seats[0].hujiaSupported = true; },
+		v => { v.seats[0].hujia = 0; },
+		v => { v.resources.hongZhanJi = ["known", "unknown-value"]; },
+	]) {
+		const value = snapshot();
+		alter(value);
+		assert.throws(() => validateNativeTurnResourceProjectionV2(value), /NATIVE_TURN_STATE_V2_/);
+	}
+});
