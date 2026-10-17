@@ -89,3 +89,47 @@ test("atomic capture requires same-root native phase completion evidence before 
 	assert.throws(() => capture.commit(replay), /NATIVE_ATOMIC_CAPTURE_COMPLETION_EVIDENCE_INVALID/);
 	capture.destroy();
 });
+
+test("atomic capture accepts a later completed phase from another seat on the same root", () => {
+	const capture = coordinator();
+	const first = capture.commit(envelope());
+	assert.equal(first.captureOrdinal, 1);
+	const later = envelope(2);
+	later.fence.seatId = "seat_b";
+	later.fence.nativeCompletionOrdinal = 12;
+	later.fence.completionEvidence = { rootInstanceId: root, eventInstanceId: "event_8", parentEventInstanceId: "event_7",
+		completionOrdinal: 11, eventName: "phase", parentEventName: "phaseLoop", seatId: "seat_b", eventStep: 4 };
+	later.turnResource.fence.nativeCompletionOrdinal = 12;
+	later.turnResource.turn.actorSeatId = "seat_b";
+	later.turnResource.turn.phaseLoopSeatId = "seat_b";
+	const second = capture.commit(later);
+	assert.equal(second.captureOrdinal, 2);
+	assert.equal(second.nativeCompletionOrdinal, 12);
+	assert.notEqual(second.commitment, first.commitment,
+		"a subsequent distinct native phase/state capture must receive a distinct commitment");
+	capture.destroy();
+});
+
+test("atomic capture rejects completion ordinal rollback and replayed event instances", () => {
+	const capture = coordinator();
+	assert.equal(capture.commit(envelope()).captureOrdinal, 1);
+	const forkedSameOrdinal = envelope(2);
+	forkedSameOrdinal.fence.completionEvidence.eventInstanceId = "event_6";
+	forkedSameOrdinal.fence.completionEvidence.parentEventInstanceId = "event_5";
+	assert.throws(() => capture.commit(forkedSameOrdinal), /NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID/);
+	const rollback = envelope(2);
+	rollback.fence.nativeCompletionOrdinal = 8;
+	rollback.fence.completionEvidence.completionOrdinal = 7;
+	rollback.fence.completionEvidence.eventInstanceId = "event_6";
+	rollback.fence.completionEvidence.parentEventInstanceId = "event_5";
+	rollback.turnResource.fence.nativeCompletionOrdinal = 8;
+	assert.throws(() => capture.commit(rollback), /NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID/);
+	const replay = envelope(2);
+	replay.fence.nativeCompletionOrdinal = 10;
+	replay.fence.completionEvidence.completionOrdinal = 9;
+	replay.turnResource.fence.nativeCompletionOrdinal = 10;
+	assert.throws(() => capture.commit(replay), /NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID/);
+	assert.equal(capture.commit(envelope(2)).captureOrdinal, 2,
+		"refused proof must not consume an ordinal or poison the last accepted completion tip");
+	capture.destroy();
+});

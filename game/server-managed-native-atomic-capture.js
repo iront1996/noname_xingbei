@@ -39,6 +39,7 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 	let ordinal = 0;
 	let previousDigest = null;
 	let previousProjectionDigests = null;
+	let previousCompletionProof = null;
 	return Object.freeze({
 		commit(envelope) {
 			if (destroyed) fail("NATIVE_ATOMIC_CAPTURE_DESTROYED");
@@ -65,6 +66,15 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 				proof.eventInstanceId === proof.parentEventInstanceId || !Number.isSafeInteger(proof.eventStep) || proof.eventStep < 0 ||
 				!Number.isSafeInteger(proof.completionOrdinal) || proof.completionOrdinal < 1 || proof.completionOrdinal > fence.nativeCompletionOrdinal ||
 				proof.seatId !== fence.seatId) fail("NATIVE_ATOMIC_CAPTURE_COMPLETION_EVIDENCE_INVALID");
+			if (previousCompletionProof) {
+				if (proof.completionOrdinal < previousCompletionProof.completionOrdinal ||
+					proof.completionOrdinal === previousCompletionProof.completionOrdinal &&
+					canonicalize(proof) !== canonicalize(previousCompletionProof) ||
+					proof.completionOrdinal > previousCompletionProof.completionOrdinal &&
+					proof.eventInstanceId === previousCompletionProof.eventInstanceId) {
+					fail("NATIVE_ATOMIC_CAPTURE_COMPLETION_SEQUENCE_INVALID");
+				}
+			}
 			const expected = { roomId, hostSessionId: sessionId, engineBuildId, rootInstanceId, seatIds };
 			const cardRows = validateNativeCardLedgerSnapshot(envelope.cardLedger, seatIds);
 			const effect = validateManagedNativeEffectStateSnapshot(envelope.effectState, expected);
@@ -87,6 +97,7 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 				Object.keys(projectionDigests).map(name => [name, previousProjectionDigests[name] === projectionDigests[name]])));
 			previousDigest = stateDigest;
 			previousProjectionDigests = projectionDigests;
+			previousCompletionProof = Object.freeze({ ...proof });
 			ordinal++;
 			return Object.freeze({ schema: "xingbei_native_private_atomic_commitment_v2", schemaVersion: 2,
 				captureOrdinal: ordinal, nativeCompletionOrdinal: fence.nativeCompletionOrdinal, rootInstanceId, engineBuildId,
@@ -99,6 +110,7 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			derivedKey.fill(0);
 			previousDigest = null;
 			previousProjectionDigests = null;
+			previousCompletionProof = null;
 			ordinal = 0;
 		},
 	});
