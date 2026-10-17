@@ -2,6 +2,8 @@
 
 ## Current unaccepted batch — cross-seat native atomic capture (phaseLoop idempotency fix pending Linux CI)
 
+- Follow-up CI `39054286360` still failed because the previous opt-in correction gated phaseOver proof creation, but the post-`waitNext` proof consumer remained unconditional. The proof consumer now uses the same audit/fence opt-in gate. This keeps capture-mode proof creation and validation paired, while ordinary action probes do not require capture-only completion-ledger state. Release lock is being recomputed; no Linux acceptance yet.
+
 - Root cause from CI `39054006964`: the phase-over proof observer ran for every managed action probe, but its root-scoped completion ledger is enabled only by the explicit completion-sequence diagnostic mode. In the ordinary action-gate step 27, the ledger is intentionally absent; the observer threw before storing a dispatch draft, and the engine swallowed the content exception, later producing a misleading missing-draft error. The observer is now opt-in only when `V2_NATIVE_PHASE_BOUNDARY_AUDIT` or `V2_NATIVE_PHASE_BOUNDARY_FENCE` is enabled. The native phaseOver event itself is untouched; atomic capture runs still require the completion ledger and all proof checks.
 - Release lock recomputed to `f2bb6de75b572ab3820e86be851a5b5ebfdd8553d445dbb5199bfd108cc04e66` (209 files; 18,895,631 bytes). Local targeted suites had passed 32 tests with one Windows-only symlink EPERM skip before this final observer gate; rerun and Linux CI are pending. Multi-seat capture remains unaccepted.
 

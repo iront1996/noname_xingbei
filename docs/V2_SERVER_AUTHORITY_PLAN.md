@@ -2,6 +2,8 @@
 
 ## Current unaccepted batch — cross-seat native atomic capture (phaseLoop idempotency fix pending Linux CI)
 
+- CI `39054286360` confirmed the first observer gate was incomplete: dispatch proof creation was opt-in, but the corresponding `waitNext()` proof consumer still ran for normal action probes and failed on the intentionally absent completion ledger. Both halves are now gated by the same explicit boundary audit/fence setting. Capture-mode validation remains strict and requires the ledger. Release-lock verification and a fresh Linux Chromium run are pending.
+
 - CI `39054006964` exposed the remaining root cause. The `phaseOver` proof observer was unconditional, although `completionLedgerForRoot()` intentionally returns no ledger outside the opt-in completion-sequence mode. The ordinary step-27 native action probe therefore threw inside the observer before writing its draft; Noname's connected-mode event wrapper swallowed the content exception, and the later fence check reported a missing draft. The observer is now gated to explicit boundary-audit/fence runs. During actual capture probes, the completion ledger remains mandatory; normal gameplay/event tests no longer depend on capture-only instrumentation.
 - Updated source release lock: `f2bb6de75b572ab3820e86be851a5b5ebfdd8553d445dbb5199bfd108cc04e66` (209 files; 18,895,631 bytes). This code change has not yet been Linux-validated; no T3 acceptance or coverage promotion is recorded.
 
