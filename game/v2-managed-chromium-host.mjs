@@ -2094,6 +2094,16 @@ async function runNativeStartDiagnostic(message) {
 						eventName: snapshot.eventName || null, eventStep: Number.isSafeInteger(snapshot.eventStep) ? snapshot.eventStep : null,
 						parentEventName: snapshot.parentEventName || null, rootInstanceId: snapshot.rootInstanceId || null,
 						rootObjectMatches: snapshot.rootObjectMatches === true, phaseLoopIdentityMatches: snapshot.phaseLoopIdentityMatches === true,
+						ownerEventInstanceId: typeof snapshot.ownerEventInstanceId === "string" ? snapshot.ownerEventInstanceId : null,
+						entryStep: Number.isSafeInteger(snapshot.entryStep) ? snapshot.entryStep : null,
+						triggerOrdinal: Number.isSafeInteger(snapshot.triggerOrdinal) ? snapshot.triggerOrdinal : null,
+						draftOwnerEventInstanceId: typeof snapshot.draftOwnerEventInstanceId === "string" ? snapshot.draftOwnerEventInstanceId : null,
+						draftTriggerOrdinal: Number.isSafeInteger(snapshot.draftTriggerOrdinal) ? snapshot.draftTriggerOrdinal : null,
+						draftPresent: snapshot.draftPresent === true || snapshot.phaseOverDraftPresent === true,
+						draftRootMatches: snapshot.draftRootMatches === true || snapshot.phaseOverDraftRootMatches === true,
+						draftOwnerMatches: snapshot.draftOwnerMatches === true || snapshot.phaseOverDraftOwnerMatches === true,
+						draftOwnerStep: Number.isSafeInteger(snapshot.draftOwnerStep) ? snapshot.draftOwnerStep :
+							Number.isSafeInteger(snapshot.phaseOverDraftStep) ? snapshot.phaseOverDraftStep : null,
 						phaseOverTriggerCount: Number.isSafeInteger(snapshot.phaseOverTriggerCount) ? snapshot.phaseOverTriggerCount : 0,
 						phaseOverDraftPresent: snapshot.phaseOverDraftPresent === true,
 						phaseOverDraftRootMatches: snapshot.phaseOverDraftRootMatches === true,
@@ -2356,6 +2366,17 @@ async function runNativeStartDiagnostic(message) {
 	  };
 	  GameEvent.prototype.waitNext=function(...args){
 	   const event=this;
+	   const phaseOverWaitContext=(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")})&&event===state.phaseLoop&&[2,3].includes(event.step)?Object.freeze({
+	    event,rootInstanceId:state.rootInstanceId,ownerEventInstanceId:completionLedgerForRoot()?.eventIds.get(event)||null,
+	    entryStep:event.step,triggerOrdinal:state.nativePhaseOverTriggerCount||0,draft:state.nativePhaseOverDispatchDraft||null,
+	    completionOrdinal:completionLedgerForRoot()?.completionOrdinal??null}):null;
+	   if(phaseOverWaitContext){const draft=phaseOverWaitContext.draft;try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'phase_over_wait_next_entered',snapshot:{eventName:event.name,eventStep:phaseOverWaitContext.entryStep,
+	    rootInstanceId:phaseOverWaitContext.rootInstanceId,ownerEventInstanceId:phaseOverWaitContext.ownerEventInstanceId,phaseLoopIdentityMatches:event===state.phaseLoop,
+	    triggerOrdinal:phaseOverWaitContext.triggerOrdinal,draftPresent:Boolean(draft),draftRootMatches:draft?.rootInstanceId===phaseOverWaitContext.rootInstanceId,
+	    draftOwnerMatches:draft?.phaseLoopEvent===event,draftOwnerEventInstanceId:draft?.ownerEventInstanceId||null,draftSeatId:draft?.seatId||null,
+	    draftOwnerStep:Number.isSafeInteger(draft?.ownerEventStep)?draft.ownerEventStep:null,draftTriggerOrdinal:Number.isSafeInteger(draft?.triggerOrdinal)?draft.triggerOrdinal:null,
+	    nativeCompletionOrdinal:phaseOverWaitContext.completionOrdinal}}))}catch{}}
+	   if(phaseOverWaitContext&&!phaseOverWaitContext.draft)throw Error('NATIVE_PHASE_OVER_DRAFT_MISSING');
 	   if(event.name==='gameDraw')state.drawEntered=true;
 	   if(${JSON.stringify(process.env.V2_NATIVE_QUOTA_RESET_AUDIT === "1")}&&event.name==='xingDong'&&event.step===1){
 	    const player=event.player,ledger=completionLedgerForRoot(),eventInstanceId=ledger?.eventIds.get(event)||null;
@@ -2366,16 +2387,17 @@ async function runNativeStartDiagnostic(message) {
 	      extraXingDongCount:Array.isArray(player?.storage?.extraXingDong)?player.storage.extraXingDong.length:null},gameMeAbsent:game.me===null};
 	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_xingDong_step0_completed',snapshot}))}catch{}
 	   }
-	   if(event===state.phaseLoop&&event.step===3){const diagnostic=snapshot();try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'phase_over_wait_next_entered',snapshot:{eventName:diagnostic.eventName,eventStep:diagnostic.eventStep,parentEventName:diagnostic.parentEventName,rootInstanceId:diagnostic.rootInstanceId,rootObjectMatches:diagnostic.rootObjectMatches,phaseLoopIdentityMatches:diagnostic.phaseLoopIdentityMatches,phaseOverTriggerCount:diagnostic.phaseOverTriggerCount,phaseOverDraftPresent:diagnostic.phaseOverDraftPresent,phaseOverDraftRootMatches:diagnostic.phaseOverDraftRootMatches,phaseOverDraftOwnerMatches:diagnostic.phaseOverDraftOwnerMatches,phaseOverDraftSeatId:diagnostic.phaseOverDraftSeatId,phaseOverDraftStep:diagnostic.phaseOverDraftStep,phaseOverDraftOrdinal:diagnostic.phaseOverDraftOrdinal,hostPlayerAbsent:diagnostic.hostPlayerAbsent}}))}catch{}}
+	   if(event===state.phaseLoop&&event.step===3&&!phaseOverWaitContext){const diagnostic=snapshot();try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'phase_over_wait_next_entered',snapshot:{eventName:diagnostic.eventName,eventStep:diagnostic.eventStep,parentEventName:diagnostic.parentEventName,rootInstanceId:diagnostic.rootInstanceId,rootObjectMatches:diagnostic.rootObjectMatches,phaseLoopIdentityMatches:diagnostic.phaseLoopIdentityMatches,phaseOverTriggerCount:diagnostic.phaseOverTriggerCount,phaseOverDraftPresent:diagnostic.phaseOverDraftPresent,phaseOverDraftRootMatches:diagnostic.phaseOverDraftRootMatches,phaseOverDraftOwnerMatches:diagnostic.phaseOverDraftOwnerMatches,phaseOverDraftSeatId:diagnostic.phaseOverDraftSeatId,phaseOverDraftStep:diagnostic.phaseOverDraftStep,phaseOverDraftOrdinal:diagnostic.phaseOverDraftOrdinal,hostPlayerAbsent:diagnostic.hostPlayerAbsent}}))}catch{}}
 	   emit('wait_next_begin');
 	   return originalWaitNext.apply(this,args).then(async value=>{
 	    state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};
-	    if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&event===state.phaseLoop&&event.step===3){
-	     const draft=state.nativePhaseOverDispatchDraft,ledger=completionLedgerForRoot();
+	    if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&phaseOverWaitContext&&phaseOverWaitContext.event===event&&event.step===3){
+	     const draft=phaseOverWaitContext.draft,ledger=completionLedgerForRoot();
 	     if(!draft)throw Error('NATIVE_PHASE_OVER_DRAFT_MISSING');
 	     if(draft.phaseLoopEvent!==event)throw Error('NATIVE_PHASE_OVER_OWNER_INSTANCE_MISMATCH');
-	     if(draft.rootInstanceId!==state.rootInstanceId)throw Error('NATIVE_PHASE_OVER_ROOT_MISMATCH');
-	     if(draft.triggerOrdinal!==state.nativePhaseOverTriggerCount)throw Error('NATIVE_PHASE_OVER_ORDINAL_MISMATCH');
+	     if(draft.rootInstanceId!==phaseOverWaitContext.rootInstanceId||draft.rootInstanceId!==state.rootInstanceId)throw Error('NATIVE_PHASE_OVER_ROOT_MISMATCH');
+	     if(draft.ownerEventInstanceId!==phaseOverWaitContext.ownerEventInstanceId)throw Error('NATIVE_PHASE_OVER_OWNER_EVENT_MISMATCH');
+	     if(draft.triggerOrdinal!==phaseOverWaitContext.triggerOrdinal||draft.triggerOrdinal!==state.nativePhaseOverTriggerCount)throw Error('NATIVE_PHASE_OVER_ORDINAL_MISMATCH');
 	     if(draft.triggerName!=='phaseOver'||draft.ownerEventStep!==2)throw Error('NATIVE_PHASE_OVER_SOURCE_STEP_MISMATCH');
 	     if(!ledger||ledger.rootEvent!==state.root||ledger.rootInstanceId!==state.rootInstanceId)throw Error('NATIVE_PHASE_OVER_LEDGER_ROOT_MISMATCH');
 	     const phaseEvent=draft.phaseEvent,phaseProof=phaseEvent&&ledger.completionEvidence.get(phaseEvent);
@@ -2448,6 +2470,10 @@ async function runNativeStartDiagnostic(message) {
 	     phaseOverTriggerEventName:phaseOverChild?.name||null,
 	     phaseOverTriggerEventFinished:phaseOverChild?.finished===true,phaseOverTriggerEventParentMatches:phaseOverChild?.parent===event,
 	     eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,
+	     phaseOverWaitEntryStep:phaseOverWaitContext?.entryStep??null,
+	     phaseOverWaitOwnerEventInstanceId:phaseOverWaitContext?.ownerEventInstanceId||null,
+	     phaseOverWaitTriggerOrdinal:phaseOverWaitContext?.triggerOrdinal??null,
+	     phaseOverWaitDraftPresent:Boolean(phaseOverWaitContext?.draft),
 	     loopSeatId:event.player?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,currentPhaseSeatId:_status.currentPhase?.playerid||null,
 	     completedChildName:completedChild?.name||null,completedChildFinished:completedChild?.finished===true,completedChildParentMatches:completedChild?.parent===event,
 	     completedPhaseChildName:phaseChild?.name||null,completedPhaseChildFinished:phaseChild?.finished===true,completedPhaseChildParentMatches:phaseChild?.parent===event,

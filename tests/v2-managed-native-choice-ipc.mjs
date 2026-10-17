@@ -1214,6 +1214,44 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			event4AckDropCount, event4SubmissionCount, event4AckBarrierWaitCount, event4ControllerRetryTriggered,
 				event4AuthorityJoinCount, event4AckBarrierReleased, event4AckSendErrors, diagnostics: nativeDiagnostic.slice(-12).map(entry => entry?.stage), ackTrace: ackTrace.slice(-12) }));
 	assert.equal(completed.state, "playable_probe");
+	if (process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1") {
+		const dispatch = nativeDiagnostic.find(entry => entry?.stage === "native_phase_over_trigger_called");
+		const waitEntry = nativeDiagnostic.find(entry => entry?.stage === "phase_over_wait_next_entered" && entry?.snapshot?.eventStep === 2 &&
+			typeof entry?.snapshot?.ownerEventInstanceId === "string");
+		const proofWaitEntry = nativeDiagnostic.find(entry => entry?.stage === "phase_over_wait_next_entered" && entry?.snapshot?.eventStep === 3 &&
+			typeof entry?.snapshot?.ownerEventInstanceId === "string");
+		const completedWait = nativeDiagnostic.find(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&
+			entry?.snapshot?.eventStep === 3 && entry?.snapshot?.phaseOverWaitEntryStep === 3);
+		assert.ok(dispatch, "the native phaseOver trigger dispatch must be observed");
+		assert.ok(waitEntry, "the step-2 native phaseOver dispatch wait must capture its entry state before awaiting children");
+		assert.ok(proofWaitEntry, "the step-3 native continuation wait must capture the draft before its asynchronous completion");
+		assert.ok(completedWait, `the phaseOver wait invocation must carry its captured step context through native completion: ${JSON.stringify(
+			nativeDiagnostic.filter(entry => ["phase_over_wait_next_entered", "native_phase_over_trigger_called", "native_phase_loop_wait_next_boundary"].includes(entry?.stage))
+				.slice(-12).map(entry => ({ stage: entry.stage, rootInstanceId: entry.snapshot?.rootInstanceId || null,
+					eventStep: entry.snapshot?.eventStep ?? null, entryStep: entry.snapshot?.phaseOverWaitEntryStep ?? null,
+					ownerEventInstanceId: entry.snapshot?.ownerEventInstanceId || entry.snapshot?.phaseLoopEventInstanceId ||
+						entry.snapshot?.phaseOverWaitOwnerEventInstanceId || null, triggerOrdinal: entry.snapshot?.triggerOrdinal ??
+						entry.snapshot?.triggerCount ?? entry.snapshot?.phaseOverWaitTriggerOrdinal ?? null,
+					draftPresent: entry.snapshot?.draftPresent ?? entry.snapshot?.phaseOverWaitDraftPresent ?? false,
+					phaseOverBoundary: entry.snapshot?.isCompletedPhaseOverBoundary ?? null })))}`);
+		assert.equal(waitEntry.snapshot.phaseLoopIdentityMatches, true);
+		assert.equal(waitEntry.snapshot.draftPresent, true);
+		assert.equal(waitEntry.snapshot.draftRootMatches, true);
+		assert.equal(waitEntry.snapshot.draftOwnerMatches, true);
+		assert.equal(waitEntry.snapshot.draftOwnerStep, 2);
+		assert.equal(waitEntry.snapshot.ownerEventInstanceId, dispatch.snapshot.phaseLoopEventInstanceId);
+		assert.equal(waitEntry.snapshot.draftTriggerOrdinal, dispatch.snapshot.triggerCount);
+		assert.equal(proofWaitEntry.snapshot.phaseLoopIdentityMatches, true);
+		assert.equal(proofWaitEntry.snapshot.draftPresent, true);
+		assert.equal(proofWaitEntry.snapshot.draftRootMatches, true);
+		assert.equal(proofWaitEntry.snapshot.draftOwnerMatches, true);
+		assert.equal(proofWaitEntry.snapshot.draftOwnerEventInstanceId, dispatch.snapshot.phaseLoopEventInstanceId);
+		assert.equal(proofWaitEntry.snapshot.draftTriggerOrdinal, dispatch.snapshot.triggerCount);
+		assert.equal(completedWait.snapshot.phaseOverWaitDraftPresent, true);
+		assert.equal(completedWait.snapshot.phaseOverWaitOwnerEventInstanceId, proofWaitEntry.snapshot.ownerEventInstanceId);
+		assert.equal(completedWait.snapshot.phaseOverWaitTriggerOrdinal, proofWaitEntry.snapshot.triggerOrdinal);
+		assert.equal(completedWait.snapshot.rootInstanceId, proofWaitEntry.snapshot.rootInstanceId);
+	}
 	if (expectedAuthorityRevision >= 3) {
 		if (expectedAuthorityRevision === 3) {
 			assert.deepEqual(completed.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
