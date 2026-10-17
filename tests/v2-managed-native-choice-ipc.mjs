@@ -1897,12 +1897,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(nextSeatBoundary.snapshot.completedPhaseChildParentMatches, true);
 						assert.equal(nextSeatBoundary.snapshot.nativeCompletionEvidence?.eventName, "phase");
 						assert.equal(nextSeatBoundary.snapshot.nativeCompletionEvidence?.parentEventName, "phaseLoop");
-						assert.equal(nextSeatBoundary.snapshot.nativeCompletionEvidence?.seatId, nextSeatBoundary.snapshot.loopSeatId);
+						assert.equal(nextSeatBoundary.snapshot.completedPhaseSeatId, waitingSnapshot.nextActorSeatId,
+							"the completed phase must belong to the seat that became active after the prior native rotation");
+						assert.equal(nextSeatBoundary.snapshot.nativeCompletionEvidence?.seatId, nextSeatBoundary.snapshot.completedPhaseSeatId);
 						assert.ok(nextSeatBoundary.snapshot.nativeCompletionEvidence.completionOrdinal > waitingSnapshot.nativeCompletionOrdinal);
 						assert.equal(nextSeatBoundary.snapshot.gameMeAbsent, true);
 						assert.equal(nextSeatBoundary.snapshot.connectedTransports, 0);
 						t.diagnostic(`second-seat native phase completion sequence: ${JSON.stringify({ first: { seatId: waitingSnapshot.seatId,
-							ordinal: waitingSnapshot.nativeCompletionOrdinal }, second: { seatId: nextSeatBoundary.snapshot.loopSeatId,
+							ordinal: waitingSnapshot.nativeCompletionOrdinal }, second: { seatId: nextSeatBoundary.snapshot.completedPhaseSeatId,
 							ordinal: nextSeatBoundary.snapshot.nativeCompletionOrdinal }, sameRoot: nextSeatBoundary.snapshot.rootObjectMatches,
 							gameMeAbsent: nextSeatBoundary.snapshot.gameMeAbsent })}`);
 					}
@@ -1910,7 +1912,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.ok(nextSeatBoundary, "the multi-turn atomic probe requires the second real native seat completion");
 						assert.ok(firstAtomicCapture && firstAtomicRepeat, "first-seat atomic capture was not accepted before native continuation");
 						const secondFence = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_boundary_fence_waiting" &&
-							entry.snapshot?.boundaryOrdinal === 2 && entry.snapshot?.seatId === nextSeatBoundary.snapshot.loopSeatId), 10000,
+							entry.snapshot?.boundaryOrdinal === 2 && entry.snapshot?.seatId === nextSeatBoundary.snapshot.completedPhaseSeatId), 10000,
 							() => ({ boundaries: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_boundary_fence_waiting").map(entry => entry.snapshot),
 								phaseBoundaries: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_loop_wait_next_boundary").slice(-8).map(entry => entry.snapshot),
 								host: manager.inspect(roomId) }));
@@ -1918,6 +1920,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(secondFence.snapshot.rootInstanceId, waitingSnapshot.rootInstanceId);
 						assert.equal(secondFence.snapshot.rootObjectMatches, true);
 						assert.equal(secondFence.snapshot.loopSeatId, nextSeatBoundary.snapshot.loopSeatId);
+						assert.equal(secondFence.snapshot.completedPhaseSeatId, nextSeatBoundary.snapshot.completedPhaseSeatId);
 						assert.equal(secondFence.snapshot.completedPhaseFinished, true);
 						assert.equal(secondFence.snapshot.completedPhaseParentMatches, true);
 						assert.equal(secondFence.snapshot.phaseOverTriggerComplete, true);
@@ -1935,6 +1938,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.ownerEventStep, 2);
 						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.triggerName, "phaseOver");
 						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.seatId, secondFence.snapshot.seatId);
+						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.phaseEventInstanceId, secondFence.snapshot.completionEvidence.eventInstanceId);
+						assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.phaseCompletionOrdinal, secondFence.snapshot.completionEvidence.completionOrdinal);
 						if (secondFence.snapshot.phaseOverCompletionEvidence.childEventInstanceId === null) {
 							assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.childEventName, null);
 							assert.equal(secondFence.snapshot.phaseOverCompletionEvidence.childParentEventInstanceId, null);

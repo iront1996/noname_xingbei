@@ -2324,15 +2324,66 @@ async function runNativeStartDiagnostic(message) {
 	    return value
 	   })
 	  };
-	  GameEvent.prototype.waitNext=function(...args){const event=this;if(event.name==='gameDraw')state.drawEntered=true;emit('wait_next_begin');return originalWaitNext.apply(this,args).then(async value=>{state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&event===state.phaseLoop&&event.step===3){const draft=state.nativePhaseOverDispatchDraft,ledger=completionLedgerForRoot();if(!draft)throw Error('NATIVE_PHASE_OVER_DRAFT_MISSING');if(draft.phaseLoopEvent!==event)throw Error('NATIVE_PHASE_OVER_OWNER_INSTANCE_MISMATCH');if(draft.rootInstanceId!==state.rootInstanceId)throw Error('NATIVE_PHASE_OVER_ROOT_MISMATCH');if(draft.triggerOrdinal!==state.nativePhaseOverTriggerCount)throw Error('NATIVE_PHASE_OVER_ORDINAL_MISMATCH');if(draft.seatId!==event.player?.playerid)throw Error('NATIVE_PHASE_OVER_SEAT_MISMATCH');if(draft.triggerName!=='phaseOver'||draft.ownerEventStep!==2)throw Error('NATIVE_PHASE_OVER_SOURCE_STEP_MISMATCH');if(!ledger||ledger.rootEvent!==state.root||ledger.rootInstanceId!==state.rootInstanceId)throw Error('NATIVE_PHASE_OVER_LEDGER_ROOT_MISMATCH');let childCompletionOrdinal=null;if(draft.childEventInstanceId!==null){const child=draft.childEvent,proof=child&&ledger.completionEvidence.get(child);if(!child||child!==state.nativePhaseOverTriggerEvent||child.finished!==true||child.parent!==event||!event.childEvents?.includes(child)||!proof||proof.eventInstanceId!==draft.childEventInstanceId||proof.parentEventInstanceId!==draft.ownerEventInstanceId||proof.eventName!==draft.childEventName)throw Error('NATIVE_PHASE_OVER_CHILD_COMPLETION_MISSING');childCompletionOrdinal=proof.completionOrdinal}else if(state.nativePhaseOverTriggerEvent!==null)throw Error('NATIVE_PHASE_OVER_UNEXPECTED_CHILD');if(event._triggering&&event._triggering.finished!==true)throw Error('NATIVE_PHASE_OVER_TRIGGER_STILL_PENDING');state.nativePhaseOverDispatchOwner=event;state.nativePhaseOverDispatchEvidence=Object.freeze({kind:'native_phase_over_dispatch_v1',rootInstanceId:draft.rootInstanceId,ownerEventInstanceId:draft.ownerEventInstanceId,ownerEventName:draft.ownerEventName,ownerEventStep:draft.ownerEventStep,triggerOrdinal:draft.triggerOrdinal,triggerName:draft.triggerName,seatId:draft.seatId,childEventInstanceId:draft.childEventInstanceId,childEventName:draft.childEventName,childParentEventInstanceId:draft.childParentEventInstanceId,childCompletionOrdinal})}if(event===state.inputEvent&&state.nativeAction?.eventId===event.__v2NativeEventId&&state.nativeAction.useResultCount===1){const mapping=window.__v2ManagedNativeActionOptions.get(state.nativeAction.optionId);state.nativeAction.nativeChildWaitCompleted=true;state.nativeAction.nativeEventInstanceMatches=event===state.nativeInputResumeGate?.event;state.nativeAction.nativeEventStepAfterWait=Number.isSafeInteger(event.step)?event.step:null;state.nativeAction.cardInHandAfterNativeWait=Boolean(mapping&&event.player.getCards('h').includes(mapping.card));state.nativeAction.cardPositionAfterNativeWait=mapping?get.position(mapping.card):null;state.nativeAction.status='native_child_wait_completed';emit('native_action_child_wait_completed')}
+	  GameEvent.prototype.waitNext=function(...args){
+	   const event=this;
+	   if(event.name==='gameDraw')state.drawEntered=true;
+	   emit('wait_next_begin');
+	   return originalWaitNext.apply(this,args).then(async value=>{
+	    state.lastSuccessfulEventStep={eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null};
+	    if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&event===state.phaseLoop&&event.step===3){
+	     const draft=state.nativePhaseOverDispatchDraft,ledger=completionLedgerForRoot();
+	     if(!draft)throw Error('NATIVE_PHASE_OVER_DRAFT_MISSING');
+	     if(draft.phaseLoopEvent!==event)throw Error('NATIVE_PHASE_OVER_OWNER_INSTANCE_MISMATCH');
+	     if(draft.rootInstanceId!==state.rootInstanceId)throw Error('NATIVE_PHASE_OVER_ROOT_MISMATCH');
+	     if(draft.triggerOrdinal!==state.nativePhaseOverTriggerCount)throw Error('NATIVE_PHASE_OVER_ORDINAL_MISMATCH');
+	     if(draft.triggerName!=='phaseOver'||draft.ownerEventStep!==2)throw Error('NATIVE_PHASE_OVER_SOURCE_STEP_MISMATCH');
+	     if(!ledger||ledger.rootEvent!==state.root||ledger.rootInstanceId!==state.rootInstanceId)throw Error('NATIVE_PHASE_OVER_LEDGER_ROOT_MISMATCH');
+	     const phaseEvent=draft.phaseEvent,phaseProof=phaseEvent&&ledger.completionEvidence.get(phaseEvent);
+	     if(!phaseEvent||phaseEvent!==draft.phaseEvent||phaseEvent.name!=='phase'||phaseEvent.parent!==event||!event.childEvents?.includes(phaseEvent)||
+	      phaseEvent.finished!==true||phaseEvent.player?.playerid!==draft.seatId||ledger.eventIds.get(phaseEvent)!==draft.phaseEventInstanceId||
+	      !phaseProof||phaseProof.rootInstanceId!==state.rootInstanceId||phaseProof.eventInstanceId!==draft.phaseEventInstanceId||
+	      phaseProof.parentEventInstanceId!==draft.ownerEventInstanceId||phaseProof.eventName!=='phase'||phaseProof.seatId!==draft.seatId||
+	      phaseProof.completionOrdinal!==draft.phaseCompletionOrdinal||phaseProof.completionOrdinal>ledger.completionOrdinal)throw Error('NATIVE_PHASE_OVER_PHASE_COMPLETION_MISSING');
+	     const expectedNextActor=game.players.includes(phaseEvent.player?.next)?phaseEvent.player.next:game.findNext(phaseEvent.player?.next);
+	     if(!expectedNextActor||event.player!==expectedNextActor)throw Error('NATIVE_PHASE_OVER_NEXT_ACTOR_MISMATCH');
+	     let childCompletionOrdinal=null;
+	     if(draft.childEventInstanceId!==null){
+	      const child=draft.childEvent,proof=child&&ledger.completionEvidence.get(child);
+	      if(!child||child!==state.nativePhaseOverTriggerEvent||child.finished!==true||child.parent!==event||!event.childEvents?.includes(child)||
+	       !proof||proof.eventInstanceId!==draft.childEventInstanceId||proof.parentEventInstanceId!==draft.ownerEventInstanceId||proof.eventName!==draft.childEventName)
+	       throw Error('NATIVE_PHASE_OVER_CHILD_COMPLETION_MISSING');
+	      childCompletionOrdinal=proof.completionOrdinal;
+	     }else if(state.nativePhaseOverTriggerEvent!==null)throw Error('NATIVE_PHASE_OVER_UNEXPECTED_CHILD');
+	     if(event._triggering&&event._triggering.finished!==true)throw Error('NATIVE_PHASE_OVER_TRIGGER_STILL_PENDING');
+	     state.nativePhaseOverDispatchOwner=event;
+	     state.nativePhaseOverDispatchEvidence=Object.freeze({kind:'native_phase_over_dispatch_v1',rootInstanceId:draft.rootInstanceId,
+	      ownerEventInstanceId:draft.ownerEventInstanceId,ownerEventName:draft.ownerEventName,ownerEventStep:draft.ownerEventStep,
+	      triggerOrdinal:draft.triggerOrdinal,triggerName:draft.triggerName,seatId:draft.seatId,
+	      phaseEventInstanceId:draft.phaseEventInstanceId,phaseCompletionOrdinal:draft.phaseCompletionOrdinal,
+	      childEventInstanceId:draft.childEventInstanceId,childEventName:draft.childEventName,
+	      childParentEventInstanceId:draft.childParentEventInstanceId,childCompletionOrdinal});
+	    }
+	    if(event===state.inputEvent&&state.nativeAction?.eventId===event.__v2NativeEventId&&state.nativeAction.useResultCount===1){
+	     const mapping=window.__v2ManagedNativeActionOptions.get(state.nativeAction.optionId);
+	     state.nativeAction.nativeChildWaitCompleted=true;state.nativeAction.nativeEventInstanceMatches=event===state.nativeInputResumeGate?.event;
+	     state.nativeAction.nativeEventStepAfterWait=Number.isSafeInteger(event.step)?event.step:null;
+	     state.nativeAction.cardInHandAfterNativeWait=Boolean(mapping&&event.player.getCards('h').includes(mapping.card));
+	     state.nativeAction.cardPositionAfterNativeWait=mapping?get.position(mapping.card):null;state.nativeAction.status='native_child_wait_completed';
+	     emit('native_action_child_wait_completed');
+	    }
 	   if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1")}&&event.name==='phaseLoop'){
-	    const children=Array.isArray(event.childEvents)?event.childEvents:[],completedChild=[...children].reverse().find(child=>child?.finished===true),phaseChild=[...children].reverse().find(child=>child?.name==='phase'&&child?.finished===true&&child.parent===event&&child.player===event.player),pendingChildren=children.filter(child=>child?.finished!==true).length+(Array.isArray(event.next)?event.next.filter(child=>child&&child.finished!==true).length:0);
-	    const phaseBoundary=event.step===1&&phaseChild?.parent===event&&pendingChildren===0,
-	     phaseOverDispatch=state.nativePhaseOverDispatchEvidence||null,priorBoundary=state.nativePhaseBoundaryFence||null;
+	    const children=Array.isArray(event.childEvents)?event.childEvents:[],completedChild=[...children].reverse().find(child=>child?.finished===true),
+	     phaseOverDispatch=state.nativePhaseOverDispatchEvidence||null,priorBoundary=state.nativePhaseBoundaryFence||null,
+	     phaseLoopCompletionLedger=completionLedgerForRoot(),phaseChild=[...children].reverse().find(child=>child?.name==='phase'&&child?.finished===true&&child.parent===event&&
+	      (event.step===3&&phaseOverDispatch?phaseLoopCompletionLedger?.eventIds.get(child)===phaseOverDispatch.phaseEventInstanceId:child.player===event.player)),
+	     pendingChildren=children.filter(child=>child?.finished!==true).length+(Array.isArray(event.next)?event.next.filter(child=>child&&child.finished!==true).length:0);
+	    const phaseBoundary=event.step===1&&phaseChild?.parent===event&&pendingChildren===0;
 	    const phaseOverChild=state.nativePhaseOverTriggerEvent||null;
 	    const phaseOverChildCompletion=phaseOverChild?completionLedgerForRoot()?.completionEvidence.get(phaseOverChild)||null:null;
 	    const phaseOverTriggerComplete=Boolean(phaseOverDispatch&&phaseOverDispatch.rootInstanceId===state.rootInstanceId&&
-	     state.nativePhaseOverDispatchOwner===event&&phaseOverDispatch.seatId===event.player?.playerid&&phaseOverDispatch.triggerName==='phaseOver'&&
+	     state.nativePhaseOverDispatchOwner===event&&phaseOverDispatch.seatId===phaseChild?.player?.playerid&&phaseOverDispatch.triggerName==='phaseOver'&&
+	     phaseOverDispatch.phaseEventInstanceId===phaseLoopCompletionLedger?.eventIds.get(phaseChild)&&
+	     phaseOverDispatch.phaseCompletionOrdinal===phaseLoopCompletionLedger?.completionEvidence.get(phaseChild)?.completionOrdinal&&
 	     phaseOverDispatch.triggerOrdinal===state.nativePhaseOverTriggerCount&&
 	     (phaseOverDispatch.childEventInstanceId===null?phaseOverChild===null&&phaseOverDispatch.childCompletionOrdinal===null:
 	      phaseOverChild?.finished===true&&phaseOverChild.parent===event&&phaseOverChildCompletion?.eventInstanceId===phaseOverDispatch.childEventInstanceId&&
@@ -2340,8 +2391,8 @@ async function runNativeStartDiagnostic(message) {
 	      phaseOverDispatch.childParentEventInstanceId===phaseOverDispatch.ownerEventInstanceId)&&
 	     (phaseOverDispatch.childEventInstanceId===null||phaseOverChildCompletion?.parentEventInstanceId===phaseOverDispatch.ownerEventInstanceId));
 	    const phaseOverTriggerFresh=state.nativePhaseOverTriggerCount>(priorBoundary?.phaseOverTriggerCount||0)&&
-	     phaseOverDispatch!==priorBoundary?.phaseOverDispatchEvidence&&phaseOverDispatch?.seatId===event.player?.playerid;
-	    const phaseOverBoundary=event.step===3&&phaseChild?.parent===event&&phaseChild.player===event.player&&phaseOverTriggerFresh&&phaseOverTriggerComplete&&pendingChildren===0;
+	     phaseOverDispatch!==priorBoundary?.phaseOverDispatchEvidence&&phaseOverDispatch?.seatId===phaseChild?.player?.playerid;
+	    const phaseOverBoundary=event.step===3&&phaseChild?.parent===event&&phaseOverTriggerFresh&&phaseOverTriggerComplete&&pendingChildren===0;
 	    const completedActor=phaseChild?.player||null,completedActorQuotas={gongJiOrFaShu:Number.isSafeInteger(completedActor?.storage?.gongJiOrFaShu)?completedActor.storage.gongJiOrFaShu:null,
 	     faShu:Number.isSafeInteger(completedActor?.storage?.faShu)?completedActor.storage.faShu:null,
 	     gongJi:Number.isSafeInteger(completedActor?.storage?.gongJi)?completedActor.storage.gongJi:null,
@@ -2350,8 +2401,9 @@ async function runNativeStartDiagnostic(message) {
 	     phaseOverTriggerCount:state.nativePhaseOverTriggerCount||0,phaseOverTriggerComplete,phaseOverDispatchEvidence:phaseOverDispatch?{
 	      kind:phaseOverDispatch.kind,rootInstanceId:phaseOverDispatch.rootInstanceId,ownerEventInstanceId:phaseOverDispatch.ownerEventInstanceId,
 	      ownerEventName:phaseOverDispatch.ownerEventName,ownerEventStep:phaseOverDispatch.ownerEventStep,
-	      dispatchOrdinal:phaseOverDispatch.dispatchOrdinal,triggerName:phaseOverDispatch.triggerName,
-	      seatId:phaseOverDispatch.seatId,childEventInstanceId:phaseOverDispatch.childEventInstanceId,childEventName:phaseOverDispatch.childEventName,
+	      triggerOrdinal:phaseOverDispatch.triggerOrdinal,triggerName:phaseOverDispatch.triggerName,
+	      seatId:phaseOverDispatch.seatId,phaseEventInstanceId:phaseOverDispatch.phaseEventInstanceId,phaseCompletionOrdinal:phaseOverDispatch.phaseCompletionOrdinal,
+	      childEventInstanceId:phaseOverDispatch.childEventInstanceId,childEventName:phaseOverDispatch.childEventName,
 	      childParentEventInstanceId:phaseOverDispatch.childParentEventInstanceId,childCompletionOrdinal:phaseOverDispatch.childCompletionOrdinal}:null,
 	     phaseOverTriggerEventName:phaseOverChild?.name||null,
 	     phaseOverTriggerEventFinished:phaseOverChild?.finished===true,phaseOverTriggerEventParentMatches:phaseOverChild?.parent===event,
@@ -2359,6 +2411,7 @@ async function runNativeStartDiagnostic(message) {
 	     loopSeatId:event.player?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,currentPhaseSeatId:_status.currentPhase?.playerid||null,
 	     completedChildName:completedChild?.name||null,completedChildFinished:completedChild?.finished===true,completedChildParentMatches:completedChild?.parent===event,
 	     completedPhaseChildName:phaseChild?.name||null,completedPhaseChildFinished:phaseChild?.finished===true,completedPhaseChildParentMatches:phaseChild?.parent===event,
+	     completedPhaseSeatId:phaseChild?.player?.playerid||null,
 	     completedChildSeatId:completedChild?.player?.playerid||null,completedChildStep:Number.isSafeInteger(completedChild?.step)?completedChild.step:null,
 	     pendingChildCount:pendingChildren,childEventCount:children.length,nextCount:Array.isArray(event.next)?event.next.length:null,
 	     eventStack:manager.eventStack.map(item=>item.name||null),eventStackTop:manager.eventStack.at(-1)?.name||null,
@@ -2373,7 +2426,7 @@ async function runNativeStartDiagnostic(message) {
 	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_loop_wait_next_boundary',snapshot}))}catch{}
 	    const boundaryOrdinal=(state.nativePhaseBoundaryFences?.length||0)+1;
 	    const firstCaptureBoundary=boundaryOrdinal===1&&!priorBoundary;
-	    const secondCaptureBoundary=multiTurnCapture&&boundaryOrdinal===2&&priorBoundary?.status==='released'&&event.player!==priorBoundary.seatPlayer;
+	     const secondCaptureBoundary=multiTurnCapture&&boundaryOrdinal===2&&priorBoundary?.status==='released'&&phaseChild?.player!==priorBoundary.seatPlayer;
 	    if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&phaseOverBoundary&&
 	     (!priorBoundary||priorBoundary.status==='released')&&(firstCaptureBoundary||secondCaptureBoundary)){
 	     const actionEvent=state.inputEvent,action=state.nativeAction,authority=window.__v2ManagedGame?.authorityState;
@@ -2381,13 +2434,13 @@ async function runNativeStartDiagnostic(message) {
 	     const descendants=pendingDescendants(event),priorFence=state.nativeParentContinuationFence;
 	     const firstFenceValid=firstCaptureBoundary&&actionEvent&&action&&action.eventId===actionEvent.__v2NativeEventId&&action.useResultCount===1&&
 	      action.nativeChildWaitCompleted===true&&action.nativeUseCardChildCompleted===true&&priorFence?.status==='released'&&priorFence.releaseCount===1&&
-	      priorFence.nativeEventId===action.eventId&&event.player===_status.firstAct&&state.nativePhaseOverTriggerCount===1;
+	      priorFence.nativeEventId===action.eventId&&phaseChild?.player===_status.firstAct&&state.nativePhaseOverTriggerCount===1;
 	     const secondFenceValid=secondCaptureBoundary&&priorBoundary?.phaseOverDispatchEvidence!==phaseOverDispatch&&
-	      state.nativePhaseOverTriggerCount>priorBoundary.phaseOverTriggerCount&&event.player?.playerid!==_status.firstAct?.playerid;
+	      state.nativePhaseOverTriggerCount>priorBoundary.phaseOverTriggerCount&&phaseChild?.player?.playerid!==_status.firstAct?.playerid;
 	    if((!firstFenceValid&&!secondFenceValid)||authority?.revision!==4||
 	      firstCaptureBoundary&&window.__v2ManagedOpeningDraw?.authorityDigest!==priorFence?.releaseResolution?.afterDigest||
 	      secondCaptureBoundary&&priorBoundary?.releaseResolution?.eventSequence!==4||
-	      event!==state.phaseLoop||event.step!==3||phaseChild.player!==event.player||!phaseOverTriggerComplete||
+	      event!==state.phaseLoop||event.step!==3||!phaseChild||!phaseOverTriggerComplete||
 	      phaseOverDispatch?.ownerEventStep!==2||descendants.overflow||descendants.pending!==0||
 	      manager.rootEvent!==state.root||!state.root||game.me!==null||game.players.some(player=>player.ws)||_status.currentPhase!=null)
 	      throw Error('NATIVE_PHASE_BOUNDARY_FENCE_PRECONDITION_REJECTED');
@@ -2401,6 +2454,8 @@ async function runNativeStartDiagnostic(message) {
 	     completedPhaseEvidence.completionOrdinal>completionLedger.completionOrdinal||completedPhaseOverEvidence.rootInstanceId!==state.rootInstanceId||
 	     completedPhaseOverEvidence.kind!=='native_phase_over_dispatch_v1'||completedPhaseOverEvidence.ownerEventInstanceId!==completedPhaseEvidence.parentEventInstanceId||
 			completedPhaseOverEvidence.ownerEventName!=='phaseLoop'||completedPhaseOverEvidence.ownerEventStep!==2||completedPhaseOverEvidence.seatId!==phaseChild.player?.playerid||
+	     completedPhaseOverEvidence.phaseEventInstanceId!==completedPhaseEvidence.eventInstanceId||
+	     completedPhaseOverEvidence.phaseCompletionOrdinal!==completedPhaseEvidence.completionOrdinal||
 	     completedPhaseOverEvidence.triggerOrdinal!==state.nativePhaseOverTriggerCount||
 	     completedPhaseOverEvidence.childEventInstanceId===null&&(completedPhaseOverEvidence.childEventName!==null||completedPhaseOverEvidence.childCompletionOrdinal!==null)||
 	     completedPhaseOverEvidence.childEventInstanceId!==null&&(!phaseOverChildCompletion||
@@ -2408,9 +2463,9 @@ async function runNativeStartDiagnostic(message) {
 	      phaseOverChildCompletion.completionOrdinal!==completedPhaseOverEvidence.childCompletionOrdinal||
 	      completedPhaseOverEvidence.childEventName!==phaseOverChildCompletion.eventName))
 	     throw Error('NATIVE_EVENT_COMPLETION_EVIDENCE_MISSING');
-	    const fence={status:'waiting',releaseCount:0,nativeEventId:action?.eventId||completedPhaseEvidence.eventInstanceId,seatId:phaseChild.player?.playerid||null,
+	     const fence={status:'waiting',releaseCount:0,nativeEventId:action?.eventId||completedPhaseEvidence.eventInstanceId,seatId:phaseChild.player?.playerid||null,
 	     boundaryOrdinal,rootInstanceId:state.rootInstanceId,rootEvent:state.root,phaseLoopEvent:event,completedPhaseEvent:phaseChild,phaseOverDispatchEvidence,
-	     seatPlayer:event.player,
+	      seatPlayer:phaseChild.player,nextActorSeatId:event.player?.playerid||null,
 	     phaseLoopStep:event.step,phaseOverTriggerCount:state.nativePhaseOverTriggerCount,phaseOverTriggerComplete,
 	     nativeCompletionOrdinal:completionLedger.completionOrdinal,completionEvidence:completedPhaseEvidence,phaseOverCompletionEvidence:completedPhaseOverEvidence,
 	      priorAuthority:Object.freeze({eventSequence:4,stateRevision:4,afterDigest:firstCaptureBoundary?priorFence.releaseResolution.afterDigest:window.__v2ManagedOpeningDraw?.authorityDigest||null}),
@@ -2420,12 +2475,13 @@ async function runNativeStartDiagnostic(message) {
 	     const waiting={status:fence.status,nativeEventId:fence.nativeEventId,seatId:fence.seatId,rootInstanceId:fence.rootInstanceId,
 	      boundaryOrdinal:fence.boundaryOrdinal,phaseLoopStep:fence.phaseLoopStep,phaseOverTriggerCount:state.nativePhaseOverTriggerCount,phaseOverTriggerComplete,
 	      nativeCompletionOrdinal:fence.nativeCompletionOrdinal,completionEvidence:fence.completionEvidence,phaseOverCompletionEvidence:fence.phaseOverCompletionEvidence,
-	     phaseOverTriggerEventName:phaseOverChild?.name||null,phaseOverTriggerEventFinished:phaseOverChild?.finished===true,
+	      phaseOverTriggerEventName:phaseOverChild?.name||null,phaseOverTriggerEventFinished:phaseOverChild?.finished===true,
 	     phaseOverTriggerEventParentMatches:phaseOverChild?.parent===event,
 	      completedPhaseFinished:phaseChild.finished===true,completedPhaseParentMatches:phaseChild.parent===event,
 	      descendantNodeCount:fence.descendantNodeCount,pendingDescendantCount:fence.pendingDescendantCount,
 	      priorAuthority:fence.priorAuthority,roundNumber:Number.isSafeInteger(game.roundNumber)?game.roundNumber:null,
 	      phaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:null,loopSeatId:event.player?.playerid||null,
+	      completedPhaseSeatId:phaseChild.player?.playerid||null,nextActorSeatId:event.player?.playerid||null,
 	      completedActorQuotas,runtimeHujiaMethodPresent:game.players.some(player=>typeof player.changeHujia==='function'),
 	      runtimeHujiaValuePresent:game.players.some(player=>player.hujia!==undefined),
 	      runtimeHujiaPrototypeOwnerCount:game.players.reduce((sum,player)=>{let count=0,proto=Object.getPrototypeOf(player),depth=0;while(proto&&depth++<16){if(Object.hasOwn(proto,'changeHujia'))count++;proto=Object.getPrototypeOf(proto)}return sum+count},0),
@@ -2582,12 +2638,19 @@ async function runNativeStartDiagnostic(message) {
 	   const child=originalTrigger.call(this,name,...args);if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&this===state.phaseLoop&&name==='phaseOver'){
 	     state.nativePhaseOverTriggerCount=(state.nativePhaseOverTriggerCount||0)+1;state.nativePhaseOverTriggerEvent=child&&typeof child==='object'&&typeof child.start==='function'?child:null;
 	     state.nativePhaseOverTriggerSeatId=this.player?.playerid||null;
-	     const ledger=completionLedgerForRoot(),ownerEventInstanceId=registerNativeEventInstance(this,ledger),childEventInstanceId=state.nativePhaseOverTriggerEvent?registerNativeEventInstance(state.nativePhaseOverTriggerEvent,ledger):null;
-	     if(!ledger||!ownerEventInstanceId||this!==state.phaseLoop||this.manager!==manager||manager.rootEvent!==state.root||
+	     const ledger=completionLedgerForRoot(),ownerEventInstanceId=registerNativeEventInstance(this,ledger),
+	      phaseEvent=[...(Array.isArray(this.childEvents)?this.childEvents:[])].reverse().find(item=>item?.name==='phase'&&item.parent===this&&
+	       item.finished===true&&item.player===this.player),phaseEventInstanceId=phaseEvent?registerNativeEventInstance(phaseEvent,ledger):null,
+	      phaseCompletionProof=phaseEvent&&ledger?.completionEvidence.get(phaseEvent)||null,
+	      childEventInstanceId=state.nativePhaseOverTriggerEvent?registerNativeEventInstance(state.nativePhaseOverTriggerEvent,ledger):null;
+	     if(!ledger||!ownerEventInstanceId||this!==state.phaseLoop||this.manager!==manager||manager.rootEvent!==state.root||!phaseEvent||!phaseEventInstanceId||
+	      !phaseCompletionProof||phaseCompletionProof.eventInstanceId!==phaseEventInstanceId||phaseCompletionProof.parentEventInstanceId!==ownerEventInstanceId||
+	      phaseCompletionProof.eventName!=='phase'||phaseCompletionProof.seatId!==this.player?.playerid||
 	      state.nativePhaseOverTriggerEvent&&(state.nativePhaseOverTriggerEvent.parent!==this||!childEventInstanceId))throw Error('NATIVE_PHASE_OVER_DISPATCH_BINDING_INVALID');
 	     state.nativePhaseOverDispatchDraft=Object.freeze({rootInstanceId:state.rootInstanceId,ownerEventInstanceId,ownerEventName:this.name||null,
 	      ownerEventStep:Number.isSafeInteger(this.step)?this.step:null,triggerOrdinal:state.nativePhaseOverTriggerCount,triggerName:name,
-	      seatId:this.player?.playerid||null,childEventInstanceId,childEventName:state.nativePhaseOverTriggerEvent?.name||null,
+	      seatId:this.player?.playerid||null,phaseEvent,phaseEventInstanceId,phaseCompletionOrdinal:phaseCompletionProof.completionOrdinal,
+	      childEventInstanceId,childEventName:state.nativePhaseOverTriggerEvent?.name||null,
 	      childParentEventInstanceId:childEventInstanceId?ledger.eventIds.get(state.nativePhaseOverTriggerEvent.parent)||null:null,phaseLoopEvent:this,
 	      childEvent:state.nativePhaseOverTriggerEvent});
 	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_over_trigger_called',snapshot:{triggerCount:state.nativePhaseOverTriggerCount,
@@ -2964,7 +3027,7 @@ async function snapshotNativeAtomicCapture(message) {
 			const nativeCompletionOrdinal=fence.nativeCompletionOrdinal,completionEvidence=fence.completionEvidence;
 			const commonFence={allChildrenCompleted:true,boundaryOrdinal:fence.boundaryOrdinal,captureLocked:true,eventName:'phaseLoop',eventStep:3,eventStackConsistent:true,
 				nativeCompletionOrdinal,completionEvidence,phaseOverCompletionEvidence:fence.phaseOverCompletionEvidence,
-				phaseOverTriggerCount:fence.phaseOverTriggerCount,pendingChildCount:0,rootMatches:true,seatId:fence.seatId};
+				phaseOverTriggerCount:fence.phaseOverTriggerCount,pendingChildCount:0,rootMatches:true,seatId:fence.seatId,nextActorSeatId:fence.nextActorSeatId};
 			const turnResource={schema:'xingbei_native_private_turn_resource_state_v2',roomId:command.roomId,hostSessionId:command.hostSessionId,
 				engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,
 				fence:{kind:'managed_native_quiescent_fence_v1',rootMatches:true,eventStackConsistent:true,allChildrenCompleted:true,pendingChildCount:0,
