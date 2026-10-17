@@ -28,6 +28,7 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 		damagePath: "changeHp content computes absorbed amount from player.hujia then invokes player.changeHujia(-event.hujia)",
 		buffPath: "Player.getBuff case 3 invokes this.changeHujia()",
 		repositoryDefinitionSearch: "no changeHujia method definition or prototype assignment found in the tracked source tree; references are call sites and diagnostics only",
+		historyBoundary: "the earliest tracked player.js revision is dba1d323a530453f09fcaaec776c706eba54e1fd; that baseline also has no changeHujia definition, while content.js contains the moved-to-changeHp comment and call sites",
 		runtimeRecheckedInThisBatch: false,
 		interpretation: "source-level unresolved implementation gap; do not infer armor mutation semantics or repair without explicit native-rule authorization",
 	});
