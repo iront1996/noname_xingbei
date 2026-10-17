@@ -1,6 +1,9 @@
 # V2 Codex engineering handoff
 
-## Current unaccepted batch — cross-seat native atomic capture (Linux rerun pending)
+## Current unaccepted batch — cross-seat native atomic capture (real-Chromium regression sequencing correction pending)
+
+- Linux CI `39058040336` reports failed on PR head `4866813` (the run checked out the then-stale PR merge ref `a1ea6ae`, before GitHub refreshed it to the current merge ref). Step 32 passed. Step 33's real Chromium trace recorded the second-seat completed-phase ordinal `223` after first-seat ordinal `112`, and the two-seat capture code reached its acceptance diagnostic with capture ordinals `[1,2,3,4]`; however the overall step failed later, so the required acceptance is still not granted. The subsequent legacy live-snapshot audit requested an active `phase`/`xingDong` snapshot only after the two-turn probe had advanced to a held phaseOver boundary. The read-only snapshot therefore raced beyond its intended live-action boundary. The test now collects that same live snapshot at the still-blocked, event-local player input gate, validates the actor/root/pending-action evidence there, and reuses that evidence in the later audit. No timeout was extended and no test was skipped. A fresh CI must pass both steps 32 and 33 on the exact commit before cross-seat atomic capture is accepted.
+- Focused Windows run after this sequencing correction: 40 tests, 38 passed, 0 failed, 2 expected environment skips (symlink capability `EPERM` and opt-in managed Chromium unavailable); it is not Linux/Chromium acceptance. `4b15f19` was listed by Cloudflare Pages as “No deployment available” / skipped; verify the new commit after the next push. Production remains `feature/auto-lobby`, automatic deployments enabled; PR #1 remains open/unmerged.
 
 - The local Windows opt-in Chromium probe is unavailable and reported 1 skip; it is not counted as acceptance. Cloudflare Pages showed the `4b15f19` Preview as “No deployment available” / skipped. Production branch remains `feature/auto-lobby`, with automatic deployments enabled. PR #1 is open and unmerged.
 

@@ -60,7 +60,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
+	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeLiveSnapshotAtInputGate = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
 	let event4AcceptedProjection = null;
 	let firstAtomicCapture = null, firstAtomicRepeat = null, atomicCaptureSessionId = null, atomicCapturePid = null, atomicChromiumPid = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
@@ -1282,6 +1282,19 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			})}`);
 			assert.ok(nativeActionCandidate?.options.length > 1);
 			if (["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(probeMode)) {
+				if (process.env.V2_NATIVE_C3_FULL_CHAIN === "1" && process.env.V2_NATIVE_MANAGED_RESPONSE === "1" && probeMode === "managed_opening_root_action_event4") {
+					const beforeSnapshot = nativeDiagnostic.length;
+					assert.equal((await manager.snapshotNativeStart(roomId, probeMode)).ok, true,
+						"read-only live snapshot at the event-local player input gate must not reinitialize the root");
+					nativeLiveSnapshotAtInputGate = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot"),
+						3000, () => ({ stages: nativeDiagnostic.slice(beforeSnapshot).map(entry => entry?.stage), session: manager.inspect(roomId) }));
+					assert.equal(nativeLiveSnapshotAtInputGate.rootObjectMatches, true);
+					assert.equal(nativeLiveSnapshotAtInputGate.hostPlayerAbsent, true);
+					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.currentSeatId, nativeActionCandidate.seatId);
+					assert.equal(nativeLiveSnapshotAtInputGate.projectionAudit?.xingDongEvent?.seatId, nativeActionCandidate.seatId);
+					assert.ok(nativeLiveSnapshotAtInputGate.projectionAudit?.pendingActionChildCount >= 1,
+						"the native input gate must remain attached to a pending native action child during observation");
+				}
 				assert.ok(expectedAuthorityRevision >= 3, "opening-root action must start from accepted Event #3");
 				assert.equal(snapshot.gameStartCount, 1);
 				assert.equal(snapshot.gameDrawEntered, true);
@@ -2169,16 +2182,18 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(actionGate?.rootObjectMatches, true);
 					assert.equal(actionGate?.rootInstanceId, rootIds[0]);
 					if (process.env.V2_NATIVE_MANAGED_RESPONSE === "1") {
-						const snapshotDeadline = Date.now() + 3000;
-						let liveSnapshot = null, lastSnapshot = null;
-						while (!liveSnapshot && Date.now() < snapshotDeadline) {
-							const beforeSnapshot = nativeDiagnostic.length;
-							assert.equal((await manager.snapshotNativeStart(roomId, "managed_opening_root_action_event4")).ok, true,
-								"authenticated live snapshot must not restart/re-instrument the continuing native root");
-							const remaining = Math.max(1, snapshotDeadline - Date.now());
-							lastSnapshot = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot"),
-								Math.min(remaining, 1000), () => ({ session: manager.inspect(roomId), diagnostics: nativeDiagnostic.slice(beforeSnapshot) }));
-							if (lastSnapshot?.projectionAudit?.phaseEvent?.name === "phase" && lastSnapshot?.projectionAudit?.xingDongEvent?.name === "xingDong") liveSnapshot = lastSnapshot;
+						let liveSnapshot = nativeLiveSnapshotAtInputGate, lastSnapshot = liveSnapshot;
+						if (!liveSnapshot) {
+							const snapshotDeadline = Date.now() + 3000;
+							while (!liveSnapshot && Date.now() < snapshotDeadline) {
+								const beforeSnapshot = nativeDiagnostic.length;
+								assert.equal((await manager.snapshotNativeStart(roomId, "managed_opening_root_action_event4")).ok, true,
+									"authenticated live snapshot must not restart/re-instrument the continuing native root");
+								const remaining = Math.max(1, snapshotDeadline - Date.now());
+								lastSnapshot = await until(() => nativeDiagnostic.slice(beforeSnapshot).find(entry => entry?.stage === "native_start_live_snapshot"),
+									Math.min(remaining, 1000), () => ({ session: manager.inspect(roomId), diagnostics: nativeDiagnostic.slice(beforeSnapshot) }));
+								if (lastSnapshot?.projectionAudit?.phaseEvent?.name === "phase" && lastSnapshot?.projectionAudit?.xingDongEvent?.name === "xingDong") liveSnapshot = lastSnapshot;
+							}
 						}
 						assert.ok(liveSnapshot, `native phase snapshot was not observed at a stable phase/xingDong boundary: ${JSON.stringify(lastSnapshot)}`);
 						assert.equal(liveSnapshot.rootObjectMatches, true);
