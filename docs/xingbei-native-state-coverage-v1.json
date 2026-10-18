@@ -8,9 +8,11 @@
 	"checkpointAvailable": false,
 	"unknownStatePolicy": "fail_closed",
 	"m2RealtimeContinuityProbe": {
-		"status": "limited_fixture_verified_rebind_extension_linux_ci_pending",
+		"status": "linux_real_chromium_passed_limited_disconnect_trustee_rebind_fixture",
 		"scope": "isolated_four_seat_event4_disconnect_to_trustee_probe",
 		"evidence": [
+			"Linux CI 39121303468 for commit 2d4a2d267c71aa8e7b02d4537d0f91e3d064a004 passed 89/89 workflow steps and 270/270 tests with zero failures or skips; dedicated step 62 ran the real Chromium disconnect, trustee and credentialed rebind probe",
+			"The same run passed step 35 for the existing shengJi pre/post atomic pair regression",
 			"Linux CI 39119696019 for commit 224d0fe4b0ac4163c3ba6df92bf270dd8c6408c2 passed 87/87 workflow steps and 270/270 tests with zero failures or skips; dedicated step 62 ran the real Chromium disconnect-to-trustee probe",
 			"The same run reran the accepted shengJi pre/post atomic pair at step 35",
 			"A follow-up real Chromium extension passed 3/3 local repetitions: after trustee completion the original seat credential rebinds the ordinary seat on a replacement connection, the superseded connection is fenced, and the managed HostSession ID/PID/state remain unchanged; 63/63 focused Node regression tests passed with zero skips; Linux CI is pending for this extension",
