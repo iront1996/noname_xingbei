@@ -5,6 +5,7 @@ import test from "node:test";
 const require = createRequire(import.meta.url);
 const { SCHEMA, createSeatStateMessage, validateSeatStateMessage, acceptsReconnectCursor } =
 	require("../game/v3-seat-state-protocol.js");
+const { createVerifiedSeatStatePublisher, createSeatStateReceiver } = require("../game/v3-verified-seat-state.js");
 
 const seatIds = ["seat_a", "seat_b", "seat_c", "seat_d"];
 const base = () => ({ roomId: "room_v3_probe", seatIds, recipientSeatId: "seat_a", connectionGeneration: 2,
@@ -58,4 +59,59 @@ test("V3 pending choice replay keeps identity, legal options and bounded event v
 	input.pendingChoice.optionIds = ["option_00000000000001"];
 	input.pendingChoice.status = "resolved";
 	assert.equal(createSeatStateMessage(input).ok, false);
+});
+
+test("V3 isolated publisher refuses unauthenticated and stopped managed-host sources before building a player view", () => {
+	let viewReads = 0;
+	const publisher = createVerifiedSeatStatePublisher({
+		authenticateManagedSource: source => source.hostSessionId === `hs_${"a".repeat(32)}`,
+		isHostSessionActive: (_roomId, sessionId) => sessionId === `hs_${"a".repeat(32)}`,
+		getPublicState: () => { viewReads++; return { ...base().publicState, stateVersion: 8 }; },
+		getSeatPrivateState: (_source, seatId) => ({ seatId, handCardViewIds: [] }),
+		getSeatPendingChoice: () => null,
+	});
+	const input = { source: { roomId: "room_v3_probe", hostSessionId: `hs_${"b".repeat(32)}`,
+		rootInstanceId: `native_root_${"c".repeat(32)}`, engineBuildId: "d".repeat(64) },
+		seatIds, recipientSeatId: "seat_a", connectionGeneration: 2, stateSequence: 20, stateVersion: 8, replayFromSequence: 19 };
+	assert.equal(publisher.createForSeat(input).code, "V3_SEAT_STATE_SOURCE_UNAUTHENTICATED");
+	assert.equal(viewReads, 0, "an unauthenticated source must not even invoke player-view projection");
+	const authentic = { ...input, source: { ...input.source, hostSessionId: `hs_${"a".repeat(32)}` } };
+	assert.equal(publisher.createForSeat(authentic).ok, true);
+	assert.equal(viewReads, 1);
+});
+
+test("V3 publisher rechecks managed-host lifecycle after per-seat projection construction", () => {
+	let active = true, projectionCalls = 0;
+	const publisher = createVerifiedSeatStatePublisher({ authenticateManagedSource: () => true,
+		isHostSessionActive: () => active,
+		getPublicState: () => { projectionCalls++; active = false; return { ...base().publicState, stateVersion: 8 }; },
+		getSeatPrivateState: () => ({ seatId: "seat_a", handCardViewIds: [] }), getSeatPendingChoice: () => null });
+	const result = publisher.createForSeat({ source: { roomId: "room_v3_probe", hostSessionId: `hs_${"a".repeat(32)}`,
+		rootInstanceId: `native_root_${"c".repeat(32)}`, engineBuildId: "d".repeat(64) }, seatIds,
+		recipientSeatId: "seat_a", connectionGeneration: 2, stateSequence: 20, stateVersion: 8, replayFromSequence: 19 });
+	assert.equal(projectionCalls, 1);
+	assert.deepEqual(result, { ok: false, code: "V3_SEAT_STATE_SOURCE_UNAUTHENTICATED" });
+});
+
+test("V3 recipient stream fences duplicate/gap sequences, rebind generation and stale private replay", () => {
+	const receiver = createSeatStateReceiver({ roomId: "room_v3_probe", seatIds, seatId: "seat_a", connectionGeneration: 2, lastSequence: 18 });
+	const make = (sequence, generation, replayFromSequence) => {
+		const input = base(); input.stateSequence = sequence; input.connectionGeneration = generation;
+		input.stateVersion = sequence - 12; input.publicState.stateVersion = input.stateVersion;
+		input.replayFromSequence = replayFromSequence;
+		return createSeatStateMessage(input).message;
+	};
+	assert.equal(receiver.accept(make(19, 2, 18)).ok, true);
+	assert.equal(receiver.accept(make(19, 2, 19)).ok, false, "duplicate state sequence must reject");
+	assert.equal(receiver.accept(make(21, 2, 19)).ok, false, "a skipped state sequence must reject");
+	assert.equal(receiver.rebind({ connectionGeneration: 4, replayFromSequence: 19 }).ok, false, "connection epochs cannot skip");
+	assert.equal(receiver.rebind({ connectionGeneration: 3, replayFromSequence: 18 }).ok, false, "rebind cursor must match accepted state");
+	assert.equal(receiver.rebind({ connectionGeneration: 3, replayFromSequence: 19 }).ok, true);
+	assert.equal(receiver.accept(make(20, 2, 19)).ok, false, "superseded generation cannot replay");
+	assert.equal(receiver.accept(make(20, 3, 19)).ok, true);
+	const validOtherSequence = make(21, 3, 20);
+	const otherSeat = { ...validOtherSequence, privateState: { seatId: "seat_b", handCardViewIds: [] } };
+	assert.equal(receiver.accept(otherSeat).ok, false, "private state cannot cross seat recipients");
+	receiver.stop();
+	assert.equal(receiver.accept(make(21, 3, 20)).code, "V3_SEAT_STATE_RECEIVER_STOPPED");
 });

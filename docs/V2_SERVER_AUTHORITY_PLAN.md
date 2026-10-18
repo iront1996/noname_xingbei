@@ -1,5 +1,14 @@
 # V2 server-authority plan and evidence
 
+## Current in-progress batch: successor-seat preparation and Event #5 protocol review
+
+- Started at remote HEAD `0ad008fdbba9cda1c793a89ac29555c8a14c4268`; after root-bound native-fence validation, recomputed and verified the managed source lock against the tree. Release lock verifies as `883a7a733fbeca25efd0c958040ed0a70479e8a45412411de76c83c04123573e` (214 files). A CI contract test compares the lock/source with both current documents.
+- Added pure, side-effect-free successor-seat preparation validation and connected it to the existing real-Chromium diagnostic-only next-seat input-gate test. It checks the native `gongJiOrFaShu` candidate, same host identity, next seat's live Seat Registry generation, prior resolved choice cleanup, authenticated Chromium paused-input and exact event-stack/child-chain evidence, and fixed revision 4 / next sequence 5. It does not infer unobservable future triggers, allocate or deliver a choice, invoke trustee, run the second action, or submit authority.
+- Added a review-only Event #5 proposal schema and negative tests, plus `docs/M2_EVENT5_AUTHORITY_PROTOCOL_PROPOSAL.md`. No HostSession submission path is wired; no accepted Event #5, revision 5 or checkpoint is created. Event #5 remains rejected pending a separate authorization.
+- V3 state-sync source authentication is now repeated after recipient-scoped projection callbacks, with a race test proving no view is returned if the host stops during projection. Still protocol-only; no HALL integration/M3 claim.
+- Focused local Node suite: 16 passed; broader HostSession/controller/room/V3 suite: 60 passed; zero failures or skips. Syntax and whitespace checks passed. The exact step-41 configuration passed in local real Windows Chrome 3/3 (zero skips); real Linux CI acceptance remains pending and the dedicated step must execute without skip.
+- T3 remains unchanged and partial; no state family was promoted. Gates remain `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4, Event #5 rejected, checkpoint unavailable. PR #1 remains open/unmerged and formal V1/V2/V3/VPS/monitoring/external services remain untouched.
+
 ## Current accepted continuation: next-seat diagnostic gate and V3 sync contract
 
 - Accepted commit: `9f3fdb866c0022e59b07dc265340c0745045e85b`; Linux CI `39155416526` succeeded on the PR merge checkout: 93/93 workflow steps, 281/281 TAP tests, zero failures/skips. Step 41, the dedicated diagnostic-only next-seat native input gate test, ran successfully without skip. Cloudflare Branch Controls were reloaded/read-only verified before push: Production `feature/auto-lobby`, automatic production deployments enabled; Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`. Post-push Deployments showed `9f3fdb8` skipped / “No deployment available”; no preview deployment occurred.

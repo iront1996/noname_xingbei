@@ -2793,9 +2793,26 @@ async function runNativeStartDiagnostic(message) {
 				if (payload.stage === "native_input_wait_open" && process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" &&
 					["managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss"].includes(process.env.V2_NATIVE_START_PROBE_MODE) &&
 					payload.snapshot?.nativeInputGate?.diagnosticOnly === true) {
-					const source = payload.snapshot.nativeInputGate;
+					const source = payload.snapshot.nativeInputGate, native = payload.snapshot;
+					const safeStackDetails = Array.isArray(native.eventStackDetails) && native.eventStackDetails.length <= 8 ? native.eventStackDetails.map(detail => ({
+						eventName: typeof detail.eventName === "string" ? detail.eventName : null,
+						parentEventName: typeof detail.parentEventName === "string" ? detail.parentEventName : null,
+						seatId: typeof detail.seatId === "string" ? detail.seatId : null,
+						finished: detail.finished === true,
+						nextCount: Number.isSafeInteger(detail.nextCount) ? detail.nextCount : null,
+						nextHeadName: typeof detail.nextHeadName === "string" ? detail.nextHeadName : null,
+						nextHeadFinished: detail.nextHeadFinished === true,
+					})) : [];
 					emitNativeStartDiagnostic({ stage: payload.stage, snapshot: { eventName: "gongJiOrFaShu",
-						rootInstanceId: payload.snapshot.rootInstanceId,
+						rootInstanceId: native.rootInstanceId,
+						rootObjectMatches: native.rootObjectMatches === true,
+						paused: native.paused === true,
+						hostPlayerAbsent: native.hostPlayerAbsent === true,
+						currentEventName: typeof native.eventName === "string" ? native.eventName : null,
+						currentEventStep: Number.isSafeInteger(native.eventStep) ? native.eventStep : null,
+						currentSeatId: typeof native.pendingChoiceSeatId === "string" ? native.pendingChoiceSeatId : null,
+						eventStack: Array.isArray(native.eventStack) && native.eventStack.length <= 8 ? [...native.eventStack] : [],
+						eventStackDetails: safeStackDetails,
 						sourcePayloadBytes: Buffer.byteLength(event.params.payload, "utf8"),
 						nativeInputGate: { diagnosticOnly: true, eventName: "gongJiOrFaShu", nativeEventId: source.nativeEventId,
 							seatId: source.seatId, action: source.action === true, waiting: source.waiting === true,

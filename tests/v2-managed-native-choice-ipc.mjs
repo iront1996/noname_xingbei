@@ -10,6 +10,7 @@ const { createHostSessionManager } = require("../game/server-host-session-manage
 const { createManagedHostProcessLauncher } = require("../game/server-managed-host-launcher.js");
 const { createManagedChoiceController } = require("../game/server-managed-choice-controller.js");
 const { createManagedRoomSeatRegistry } = require("../game/server-managed-room-seat-registry.js");
+const { prepareNextSeatChoice } = require("../game/server-managed-next-seat-choice-preparation.js");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
@@ -63,7 +64,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
 	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeResourceFixtureSeatId = null, nativeJiRiFixtureSeatId = null, nativeResourceTransition = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeJiRiTargetChoice = null, nativeJiRiTargetCandidate = null, nativeJiRiTargetAckCount = 0, nativeJiRiTargetAckDropped = false, dropNativeJiRiTargetAckOnce = process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1", nativeLiveSnapshotAtInputGate = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [], disconnectedActionHostIdentity = null;
 	let event4AcceptedProjection = null;
-	let nextSeatCandidateInspection = null;
+	let nextSeatCandidateInspection = null, nextSeatCandidateMessage = null, nextSeatPreparation = null;
 	let nativeHostPidAtFirstCandidate = null, nativeChromiumPidAtFirstCandidate = null;
 	let firstAtomicCapture = null, firstAtomicRepeat = null, atomicCaptureSessionId = null, atomicCapturePid = null, atomicChromiumPid = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
@@ -222,6 +223,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(seatRegistry.authenticateSeat({ roomId, seatId: message.seatId, connectionId,
 					credential: credentialFor(message.seatId) }, { roomId, seatId: message.seatId }), true);
 				nextSeatCandidateInspection = candidate;
+				nextSeatCandidateMessage = Object.freeze({ type: message.type, roomId: message.roomId, sessionId: message.sessionId,
+					rootInstanceId: message.rootInstanceId, nativeEventId: message.nativeEventId, eventName: message.eventName,
+					seatId: message.seatId, options: Object.freeze([...message.options]),
+					optionKinds: Object.freeze({ ...message.optionKinds }) });
 				return;
 			}
 			if (type === "host_choice_diagnostic" && message?.observed?.stage === "native_targetless_deck_fixture_ready") {
@@ -2536,9 +2541,63 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.deepEqual(nextSeatActionStart.snapshot.quotas,
 							{ gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0 },
 							"the next actor's action quota must come from native xingDong initialization");
-						const compactGateTrace = nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open" &&
-							entry.snapshot?.nativeInputGate?.diagnosticOnly === true && entry.snapshot.nativeInputGate.seatId === nextInput.seatId &&
-							Number.isSafeInteger(entry.snapshot.sourcePayloadBytes));
+						assert.ok(nextSeatCandidateMessage, "the read-only preparation must use the authenticated native candidate message");
+						const activeContext = manager.inspect(roomId);
+						const priorChoice = controller.inspect(roomId, nativeActionChoice.choiceId);
+						assert.equal(priorChoice?.state, "resolved", "the previous managed choice must be fully resolved before successor preparation");
+						assert.equal(controller.pendingCount(), 0, "no previous pending choice may remain before successor preparation");
+						const currentSeatConnection = seatSockets.get(nextInput.seatId);
+						const seatRecord = seatRegistry.inspect(roomId, nextInput.seatId);
+						assert.ok(currentSeatConnection && seatRecord?.connected && !seatRecord.revoked);
+						assert.equal(seatRegistry.authenticateSeat({ roomId, seatId: nextInput.seatId,
+							connectionId: currentSeatConnection, credential: credentialFor(nextInput.seatId) },
+							{ roomId, seatId: nextInput.seatId }), true, "successor must have the current ordinary-seat credential binding");
+						const successorFenceTrace = nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open" &&
+							entry.snapshot?.nativeInputGate?.diagnosticOnly === true && entry.snapshot.nativeInputGate.seatId === nextInput.seatId);
+						assert.ok(successorFenceTrace, "successor preparation requires the authenticated Chromium's actual native waiting-fence trace");
+						const fenceSnapshot = successorFenceTrace.snapshot;
+						const prepResult = prepareNextSeatChoice({
+							candidate: { roomId, hostSessionId: nextSeatCandidateMessage.sessionId,
+								rootInstanceId: nextSeatCandidateMessage.rootInstanceId, engineBuildId: activeContext.engineBuildId,
+								seatIds: immutableServerSeatIds, nativeEventId: nextSeatCandidateMessage.nativeEventId,
+								eventName: nextSeatCandidateMessage.eventName, parentEventName: nextSeatActionStart.snapshot.parentEventName,
+								seatId: nextSeatCandidateMessage.seatId, options: [...nextSeatCandidateMessage.options],
+								optionKinds: { ...nextSeatCandidateMessage.optionKinds }, waiting: true, diagnosticOnly: true },
+							authorityTip: { revision: activeContext.authorityStateRevision,
+								nextSequence: activeContext.nextAuthorityEventSequence, lastSequence: activeContext.lastAuthorityEvent?.sequence,
+								event5Accepted: false, checkpointAvailable: activeContext.checkpointAvailable },
+							seatBinding: { roomId, seatId: nextInput.seatId, connectionId: currentSeatConnection,
+								connectionGeneration: seatRecord.epoch, connected: seatRecord.connected, current: true,
+								credentialAuthenticated: true, ordinaryPlayer: true },
+							priorChoice: { roomId, hostSessionId: priorChoice.hostSessionId, nativeEventId: priorChoice.nativeEventId,
+								seatId: priorChoice.seatId, state: priorChoice.state, deadlineActive: false, deliveryActive: false },
+							managedContext: { roomId, hostSessionId: activeContext.sessionId,
+								rootInstanceId: waitingSnapshot.rootInstanceId, engineBuildId: activeContext.engineBuildId,
+								seatIds: immutableServerSeatIds },
+							expectedNextSeatId: waitingSnapshot.nextActorSeatId, previousActorSeatId: waitingSnapshot.seatId,
+							seatIds: immutableServerSeatIds, hostProcessStable: activeContext.state === "playable_probe" && activeContext.pid === nativeHostPidAtFirstCandidate,
+							chromiumProcessStable: (nextHost => nextHost?.resources()[0]?.pid === nativeChromiumPidAtFirstCandidate)(launchedHandles.get(activeContext.sessionId)),
+							nativeFenceEvidence: { stage: "native_input_wait_open", rootInstanceId: fenceSnapshot.rootInstanceId,
+								rootObjectMatches: fenceSnapshot.rootObjectMatches,
+								paused: fenceSnapshot.paused, gameMeAbsent: fenceSnapshot.hostPlayerAbsent,
+								currentEventName: fenceSnapshot.currentEventName, currentEventStep: fenceSnapshot.currentEventStep,
+								currentSeatId: fenceSnapshot.currentSeatId, eventStack: fenceSnapshot.eventStack,
+								eventStackDetails: fenceSnapshot.eventStackDetails,
+								nativeInputGate: { diagnosticOnly: fenceSnapshot.nativeInputGate.diagnosticOnly,
+									eventName: fenceSnapshot.nativeInputGate.eventName, nativeEventId: fenceSnapshot.nativeInputGate.nativeEventId,
+									seatId: fenceSnapshot.nativeInputGate.seatId, action: fenceSnapshot.nativeInputGate.action,
+									waiting: fenceSnapshot.nativeInputGate.waiting } },
+						});
+						assert.equal(prepResult.ok, true, `successor read-only preparation failed: ${prepResult.code}; native fence=${JSON.stringify(fenceSnapshot)}`);
+						assert.equal(prepResult.preparation.connectionGeneration, seatRecord.epoch);
+						assert.equal(prepResult.preparation.nativeDeliveryAllowed, false);
+						assert.equal(prepResult.preparation.authoritySubmissionAllowed, false);
+						nextSeatPreparation = prepResult.preparation;
+						assert.equal(controller.pendingCount(), 0, "read-only preparation must not allocate a managed choice or deadline");
+						assert.equal(manager.inspect(roomId).authorityStateRevision, 4);
+						assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 5);
+						assert.equal(authoritySubmissions.some(entry => entry.proof.eventSequence === 5), false);
+						const compactGateTrace = successorFenceTrace;
 						assert.ok(compactGateTrace, "the successor's compact input-wait diagnostic must reach the authenticated host channel");
 						t.diagnostic(`successor diagnostic binding payload bytes: ${compactGateTrace.snapshot.sourcePayloadBytes}`);
 						assert.equal(manager.inspect(roomId).sessionId, nativeActionCandidate.sessionId);
@@ -2555,6 +2614,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							entry.snapshot?.nativeInputGate?.diagnosticOnly === true), true);
 						t.diagnostic(`next-seat native input boundary reached without authority submission: ${JSON.stringify({ seatId: nextInput.seatId,
 							nativeEventId: nextInput.nativeEventId, optionCount: nextInput.optionCount, rootInstanceId: nextInput.rootInstanceId,
+							preparedReadOnly: nextSeatPreparation.readOnly, connectionGeneration: nextSeatPreparation.connectionGeneration,
 							authorityRevision: manager.inspect(roomId).authorityStateRevision, nextAuthorityEventSequence: manager.inspect(roomId).nextAuthorityEventSequence,
 							gameMeAbsent: true })}`);
 					}

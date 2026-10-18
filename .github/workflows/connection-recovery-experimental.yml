@@ -59,7 +59,7 @@ jobs:
       - name: V2 M2 managed host-session lifecycle and authority boundary
         run: node --test tests/v2-host-session-manager.mjs tests/v2-managed-host-process.mjs tests/v2-managed-choice-controller.mjs
       - name: V3 isolated per-seat state-sync protocol contract
-        run: node --test tests/v3-seat-state-protocol.mjs
+        run: node --test tests/v3-seat-state-protocol.mjs tests/v2-next-seat-choice-preparation.mjs tests/v2-event5-authority-proposal.mjs tests/v2-managed-release-handoff-consistency.mjs
       - name: V2 M2 versioned Xingbei canonical authority-state contract
         run: node --test tests/v2-xingbei-authority-state-v2.mjs tests/v2-managed-native-card-ledger.mjs tests/v2-managed-native-effect-state.mjs tests/v2-managed-native-turn-state.mjs tests/v2-managed-native-turn-resource-state-v2.mjs tests/v2-managed-native-atomic-capture.mjs tests/v2-native-state-coverage-manifest.mjs
       - name: V2 M2 managed native source integrity manifest
