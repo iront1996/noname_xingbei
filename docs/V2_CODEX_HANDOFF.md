@@ -8,6 +8,7 @@
 - Focused manager/controller/authority/capture/turn/release-lock suites: 62 passed, 0 failed, 1 Windows symlink capability skip (`EPERM`). Separately, three local real-Chromium runs passed 1/1 each, zero skips.
 - Cloudflare Branch Controls were read-only verified after reload: Production `feature/auto-lobby`, automatic deployments enabled; Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`. After push, Deployments showed exact SHA `6fb9df0` as Preview with “No deployment available” / skipped; Production remained unchanged.
 - Release lock verified at `3e7c901ae2858b8f93a1bb59c92040888968cd23f313e63d54b22b21d11d800f`. This is one bounded Jiri fixture only: general `achievement_resources`, full T3, seed, Event #5, Full Playable, M3/M4 and V3 integration remain incomplete or closed.
+- Coverage manifest commit `4f8be5f448b941e662285be8aa82b53dadf28f4f` records only the named `jiRi_moBaoChongJie_baoShi_plus_one_pre_post_atomic_pair_verified_fixture_only` candidate; its contract test passed and Linux CI `39149120931` passed 91/91 workflow steps, 275/275 TAP tests, zero failures/skips. The containing `achievement_resources` family remains unsupported. Cloudflare showed `4f8be5f` as skipped / “No deployment available”; PR #1 remains open and unmerged.
 
 ### Historical failed attempts retained for traceability (superseded by the current local evidence)
 

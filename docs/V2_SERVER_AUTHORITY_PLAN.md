@@ -9,6 +9,7 @@
 - Focused local Node tests: 62 passed, 0 failed, 1 platform-capability skip (`EPERM` creating a symlink); three real local Chromium runs passed without skips. Linux CI supplies the required non-skipped cross-platform acceptance.
 - Cloudflare Branch Controls were verified read-only after reload and reopening the editor: Production `feature/auto-lobby` (automatic deployments enabled), Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`; no setting changed. Post-push Deployments showed `6fb9df0` as skipped / “No deployment available”; no preview was deployed.
 - Current source release-lock build ID: `3e7c901ae2858b8f93a1bb59c92040888968cd23f313e63d54b22b21d11d800f` (recompute after any managed source edit).
+- Coverage manifest commit `4f8be5f448b941e662285be8aa82b53dadf28f4f` promotes only the named `jiRi_moBaoChongJie_baoShi_plus_one_pre_post_atomic_pair_verified_fixture_only` candidate. Its contract test passed; Linux CI `39149120931` passed 91/91 workflow steps and 275/275 TAP tests with zero failures/skips. General `achievement_resources` remains unsupported. Cloudflare showed `4f8be5f` as skipped / “No deployment available”; no preview deployment occurred.
 
 ### Historical failed attempts and diagnostic progression (retained; superseded by local proof above)
 
