@@ -8,7 +8,28 @@ import path from "node:path";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const { createHostSessionManager } = require("../game/server-host-session-manager.js");
+const { createHostSessionManager, validateNativeEventLineage } = require("../game/server-host-session-manager.js");
+
+test("native Event #4 lineage accepts nested skill descendants only with a complete bounded parent chain", () => {
+	const path = [
+		{ eventInstanceId: "event_31", eventName: "chooseToDiscard", parentEventInstanceId: "event_32" },
+		{ eventInstanceId: "event_32", eventName: "jiRi_moBaoChongJie", parentEventInstanceId: "event_8" },
+	];
+	assert.equal(validateNativeEventLineage(path, "event_31", "event_8"), true);
+	assert.equal(validateNativeEventLineage([], "event_8", "event_8"), true, "a true direct child is represented without invented intermediate nodes");
+	assert.equal(validateNativeEventLineage(path, "event_32", "event_8"), false, "the first node must be the native event's actual parent");
+	assert.equal(validateNativeEventLineage([{ ...path[0], parentEventInstanceId: "event_9" }], "event_31", "event_8"), false,
+		"the chain must terminate at the bound useSkill instance");
+	assert.equal(validateNativeEventLineage([{ ...path[0], unexpected: true }], "event_31", "event_8"), false,
+		"extra fields are not accepted in the proof path");
+	assert.equal(validateNativeEventLineage([
+		{ eventInstanceId: "event_31", eventName: "skill", parentEventInstanceId: "event_32" },
+		{ eventInstanceId: "event_32", eventName: "skill", parentEventInstanceId: "event_31" },
+	], "event_31", "event_8"), false, "cycles and duplicate event identities fail closed");
+	assert.equal(validateNativeEventLineage(Array.from({ length: 25 }, (_, index) => ({
+		eventInstanceId: `event_${index + 1}`, eventName: "skill", parentEventInstanceId: `event_${index + 2}`,
+	})), "event_1", "event_26"), false, "ancestry traversal has a hard node bound");
+});
 const gameSetup = Object.freeze({
 	mode: "xingBei",
 	config: Object.freeze({ playerCount: 4 }),

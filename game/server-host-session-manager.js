@@ -37,6 +37,24 @@ function canonicalize(value) {
 	throw new TypeError("HOST_GAME_SETUP_INVALID");
 }
 
+function validateNativeEventLineage(path, childParentId, ancestorEventId) {
+	const validId = value => /^event_[1-9][0-9]{0,6}$/.test(value || "");
+	if (!validId(childParentId) || !validId(ancestorEventId) || !Array.isArray(path) || path.length > 24) return false;
+	if (path.length === 0) return childParentId === ancestorEventId;
+	const ids = new Set();
+	for (let index = 0; index < path.length; index++) {
+		const node = path[index];
+		if (!node || Object.getPrototypeOf(node) !== Object.prototype ||
+			Object.keys(node).sort().join(",") !== "eventInstanceId,eventName,parentEventInstanceId" ||
+			!validId(node.eventInstanceId) || !validId(node.parentEventInstanceId) ||
+			typeof node.eventName !== "string" || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(node.eventName) ||
+			ids.has(node.eventInstanceId) || node.eventInstanceId === ancestorEventId ||
+			(index === 0 ? node.eventInstanceId !== childParentId : path[index - 1].parentEventInstanceId !== node.eventInstanceId)) return false;
+		ids.add(node.eventInstanceId);
+	}
+	return path.at(-1).parentEventInstanceId === ancestorEventId;
+}
+
 function prepareGameSetup(value) {
 	if (!value || Object.getPrototypeOf(value) !== Object.prototype || value.mode !== "xingBei" ||
 		!Array.isArray(value.seats) || value.seats.length < 2 || value.seats.length > 8 ||
@@ -805,7 +823,7 @@ function createHostSessionManager({
 			const reject = reason => { record.authorityFailureReason = reason; return false; };
 			const context = record.xingbeiAuthorityContext;
 			const before = context?.openingSummary;
-			const eventKeys = "achievementAfterList,achievementBeforeList,actionCompletionOrdinal,actionEventInstanceId,baoShiAfter,baoShiBefore,changeZhanJiChildCompleted,changeZhanJiCompletionOrdinal,changeZhanJiEventId,changeZhanJiParentEventId,connectedTransports,gameMeNull,nativeChildWaitCompleted,nativeCompletionOrdinal,nativeEventCompleted,nativeEventId,nativeEventInstanceMatches,nativeEventName,nativeEventStep,name,nativeUseSkillChildCompleted,optionId,rootInstanceId,seatId,skillId,targetChoiceNativeEventId,targetDiscardCardMoved,targetDiscardChildCompleted,targetDiscardCompletionOrdinal,targetDiscardEventId,targetDiscardParentEventId,targetSeatId,useResultCount,useSkillChildCompletionOrdinal,useSkillChildEventId,useSkillParentEventId";
+			const eventKeys = "achievementAfterList,achievementBeforeList,actionCompletionOrdinal,actionEventInstanceId,actionParentEventInstanceId,baoShiAfter,baoShiBefore,changeZhanJiChildCompleted,changeZhanJiCompletionOrdinal,changeZhanJiEventId,changeZhanJiLineage,changeZhanJiParentEventId,connectedTransports,gameMeNull,name,nativeChildWaitCompleted,nativeCompletionOrdinal,nativeEventCompleted,nativeEventId,nativeEventInstanceMatches,nativeEventName,nativeEventStep,nativeUseSkillChildCompleted,optionId,parentFenceEventInstanceId,parentFenceParentEventInstanceId,parentFenceParentEventName,parentFenceParentNextCount,parentFenceReleaseCount,parentFenceStatus,rootInstanceId,seatId,skillId,targetChoiceNativeEventId,targetDiscardCardMoved,targetDiscardChildCompleted,targetDiscardCompletionOrdinal,targetDiscardEventId,targetDiscardLineage,targetDiscardParentEventId,targetSeatId,useResultCount,useSkillChildCompletionOrdinal,useSkillChildEventId,useSkillParentEventId";
 			const actionCandidate = record.nativeJiRiActionCandidate;
 			const targetCandidate = record.nativeJiRiTargetCandidate;
 			const preAction = record.privatePreActionCaptureCandidate;
@@ -819,6 +837,7 @@ function createHostSessionManager({
 				event.nativeEventName !== "gongJiOrFaShu" || !/^native_event_[a-f0-9]{32}$/.test(event.nativeEventId || "") ||
 				!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(event.rootInstanceId || "") ||
 				!/^event_[1-9][0-9]{0,6}$/.test(event.actionEventInstanceId || "") ||
+				!/^event_[1-9][0-9]{0,6}$/.test(event.actionParentEventInstanceId || "") ||
 				!/^event_[1-9][0-9]{0,6}$/.test(event.useSkillChildEventId || "") ||
 				!/^event_[1-9][0-9]{0,6}$/.test(event.changeZhanJiEventId || "") ||
 				!/^event_[1-9][0-9]{0,6}$/.test(event.targetDiscardEventId || "") ||
@@ -826,6 +845,12 @@ function createHostSessionManager({
 				!/^event_[1-9][0-9]{0,6}$/.test(event.useSkillParentEventId || "") ||
 				!/^event_[1-9][0-9]{0,6}$/.test(event.changeZhanJiParentEventId || "") ||
 				!/^event_[1-9][0-9]{0,6}$/.test(event.targetDiscardParentEventId || "")) return reject("NATIVE_SKILL_ACTION_EVENT_IDENTITY");
+			if (!validateNativeEventLineage(event.changeZhanJiLineage, event.changeZhanJiParentEventId, event.useSkillChildEventId) ||
+				!validateNativeEventLineage(event.targetDiscardLineage, event.targetDiscardParentEventId, event.useSkillChildEventId) ||
+				event.parentFenceStatus !== "waiting" || event.parentFenceReleaseCount !== 0 ||
+				event.parentFenceEventInstanceId !== event.actionEventInstanceId ||
+				event.parentFenceParentEventInstanceId !== event.actionParentEventInstanceId ||
+				event.parentFenceParentEventName !== "xingDong" || event.parentFenceParentNextCount !== 0) return reject("NATIVE_SKILL_ACTION_NATIVE_LINEAGE");
 			if (context.rootInstanceId && event.rootInstanceId !== context.rootInstanceId) return reject("NATIVE_SKILL_ACTION_ROOT_IDENTITY");
 			if (!record.seatIds.includes(event.seatId) || event.seatId !== before.firstActSeatId ||
 				!record.seatIds.includes(event.targetSeatId) || event.targetSeatId === event.seatId ||
@@ -853,8 +878,9 @@ function createHostSessionManager({
 									(targetDelivery.resolutionKind !== "trustee" || targetDelivery.optionId === targetCandidate.trusteeOption) &&
 									(actionDelivery.resolutionKind !== "trustee" || actionDelivery.optionId === actionCandidate.trusteeOption) &&
 					event.useSkillParentEventId === event.actionEventInstanceId &&
-					event.changeZhanJiParentEventId === event.useSkillChildEventId &&
-					event.targetDiscardParentEventId === event.useSkillChildEventId &&
+					event.actionParentEventInstanceId !== event.actionEventInstanceId &&
+					validateNativeEventLineage(event.changeZhanJiLineage, event.changeZhanJiParentEventId, event.useSkillChildEventId) &&
+					validateNativeEventLineage(event.targetDiscardLineage, event.targetDiscardParentEventId, event.useSkillChildEventId) &&
 					event.changeZhanJiCompletionOrdinal < event.useSkillChildCompletionOrdinal &&
 					event.targetDiscardCompletionOrdinal < event.useSkillChildCompletionOrdinal &&
 					event.useSkillChildCompletionOrdinal < event.actionCompletionOrdinal &&
@@ -1571,4 +1597,4 @@ function createHostSessionManager({
 	});
 }
 
-module.exports = { createHostSessionManager };
+module.exports = { createHostSessionManager, validateNativeEventLineage };

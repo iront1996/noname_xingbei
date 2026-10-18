@@ -1914,13 +1914,18 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	  target=[...(s?.nativeSkillTargetGates?.values()||[])].find(item=>item.actionEventId===a?.eventId),
 	  targetOption=target?.delivery?.optionId?window.__v2ManagedJiRiTargetOptions?.get(target.delivery.optionId):null,
 	  useSkill=s?.nativeUseSkillChildEvent,actionEvent=s?.inputEvent,actor=m?.event?.player,discardEvent=target?.event,
-	  zhanJi=[...(useSkill?.childEvents||[])].find(event=>event?.name==='changeZhanJi'&&event.finished===true),
+	  zhanJi=s?.nativeChangeZhanJiEvent,
 	  actionProof=ledger?.completionEvidence.get(actionEvent),useSkillProof=ledger?.completionEvidence.get(useSkill),
-	  zhanJiProof=zhanJi?ledger?.completionEvidence.get(zhanJi):null,discardProof=discardEvent?ledger?.completionEvidence.get(discardEvent):null;
+	  zhanJiProof=zhanJi?ledger?.completionEvidence.get(zhanJi):null,discardProof=discardEvent?ledger?.completionEvidence.get(discardEvent):null,
+	  parentFence=s?.nativeParentContinuationFence;
 	 const targetCard=targetOption?.card,achievementList=actor?.side===true?game?.hongZhanJi:game?.lanZhanJi,
 	  achievementBeforeList=s?.jiRiZhanJiBaseline?.orderedList,
 	  afterCount=Array.isArray(achievementList)?achievementList.filter(value=>value==='baoShi').length:null;
 	 const state=window.__v2ManagedUnifiedRoot;
+	 const lineage=(event,ancestor)=>{const result=[],seen=new Set();let current=event?.parent;while(current&&current!==ancestor&&result.length<24&&!seen.has(current)){
+	  seen.add(current);result.push({eventName:typeof current.name==='string'?current.name:null,eventInstanceId:ledger?.eventIds.get(current)||null,
+	   parentEventInstanceId:current.parent&&ledger?.eventIds.get(current.parent)||null});current=current.parent}
+	  if(current!==ancestor||!ancestor)return null;return result};
 	 const completionDiagnostics=()=>{const describe=(event,proof)=>event?{eventName:typeof event.name==='string'?event.name:null,
 	  eventInstanceId:ledger?.eventIds.get(event)||null,parentEventName:typeof event.parent?.name==='string'?event.parent.name:null,
 	  parentEventInstanceId:event.parent&&ledger?.eventIds.get(event.parent)||null,finished:event.finished===true,
@@ -1930,7 +1935,13 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	  proofEventInstanceMatches:proof?.eventInstanceId===(ledger?.eventIds.get(event)||null),
 	  proofParentMatches:proof?.parentEventInstanceId===(event.parent&&ledger?.eventIds.get(event.parent)||null),
 	  proofOrdinal:Number.isSafeInteger(proof?.completionOrdinal)?proof.completionOrdinal:null}:null;
-	  return {useSkill:describe(useSkill,useSkillProof),zhanJi:describe(zhanJi,zhanJiProof),targetDiscard:describe(discardEvent,discardProof),
+	   return {useSkill:describe(useSkill,useSkillProof),zhanJi:describe(zhanJi,zhanJiProof),targetDiscard:describe(discardEvent,discardProof),
+	    zhanJiLineage:lineage(zhanJi,useSkill),targetDiscardLineage:lineage(discardEvent,useSkill),
+	    parentFence:parentFence?{status:parentFence.status||null,releaseCount:parentFence.releaseCount??null,nativeEventId:parentFence.nativeEventId||null,
+	     actionEventMatches:parentFence.actionEvent===actionEvent,parentEventName:parentFence.parentEventName||null,rootMatches:parentFence.rootEvent===state?.root,
+	     completedChildName:parentFence.completedChildName||null,completedChildFinished:parentFence.completedChildFinished===true,
+	     completedChildParentMatches:parentFence.completedChildParentMatches===true,parentNextCount:parentFence.parentNextCount??null,
+	     managerStackTopMatches:manager?.eventStack.at(-1)===parentFence.parentEvent}:null,
 	   eventStack:(manager?.eventStack||[]).slice(-8).map(event=>({eventName:typeof event?.name==='string'?event.name:null,
 	    eventInstanceId:ledger?.eventIds.get(event)||null,parentEventName:typeof event?.parent?.name==='string'?event.parent.name:null,
 	    finished:event?.finished===true,step:Number.isSafeInteger(event?.step)?event.step:null})),
@@ -1944,10 +1955,12 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	  skillEventBinding:Boolean(m&&m.kind==='native_skill'&&m.skillId==='jiRi_moBaoChongJie'&&useSkill&&useSkill.finished===true&&useSkill.name==='useSkill'&&
 	   useSkill.skill==='jiRi_moBaoChongJie'&&useSkill.player===actor),
 	  zhanJiChild:Boolean(zhanJi&&zhanJiProof?.eventName==='changeZhanJi'&&zhanJiProof.rootInstanceId===state?.rootInstanceId&&
-	   zhanJiProof.parentEventInstanceId===useSkillProof?.eventInstanceId),
+	   zhanJiProof.eventInstanceId===ledger?.eventIds.get(zhanJi)&&zhanJiProof.parentEventInstanceId===ledger?.eventIds.get(zhanJi.parent)&&
+	   zhanJi.parent?.manager===manager&&lineage(zhanJi,useSkill)!==null),
 	  targetDiscard:Boolean(target&&target.status==='applied'&&target.delivery?.status==='applied'&&discardEvent&&discardEvent.finished===true&&
 	   discardProof?.eventName==='chooseToDiscard'&&discardProof.rootInstanceId===state?.rootInstanceId&&
-	   discardProof.parentEventInstanceId===useSkillProof?.eventInstanceId&&targetCard&&discardEvent.result?.bool===true&&
+	   discardProof.eventInstanceId===ledger?.eventIds.get(discardEvent)&&discardProof.parentEventInstanceId===ledger?.eventIds.get(discardEvent.parent)&&
+	   discardEvent.parent?.manager===manager&&lineage(discardEvent,useSkill)!==null&&targetCard&&discardEvent.result?.bool===true&&
 	   discardEvent.result.cards?.length===1&&discardEvent.result.cards[0]===targetCard&&!discardEvent.player.getCards('h').includes(targetCard)&&core.get.position(targetCard)==='d'),
 	  materialConsumed:Boolean(m?.material&&!actor?.getCards('h').includes(m.material)),
 	  actionEventProof:Boolean(actionProof&&actionProof.eventName==='gongJiOrFaShu'&&actionProof.rootInstanceId===state?.rootInstanceId&&
@@ -1956,18 +1969,23 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	   achievementBeforeList.every(value=>value==='baoShi'||value==='shuiJing')&&achievementList.every(value=>value==='baoShi'||value==='shuiJing')&&
 	   JSON.stringify(achievementList)===JSON.stringify([...achievementBeforeList,'baoShi'])&&Number.isSafeInteger(afterCount)&&afterCount===a?.nativeChangeZhanJiAfter),
 	  serverRoot:Boolean(game?.me===null&&!game?.players?.some(p=>p.ws)&&manager?.rootEvent===state?.root),
-	  actionParentFinished:Boolean(actionEvent?.finished===true&&manager?.eventStack.at(-1)===state?.phaseLoop&&
-	   !manager?.eventStack.some(event=>event===useSkill||event===discardEvent||event===zhanJi))};
+	  actionParentFenceWaiting:Boolean(actionEvent?.finished===true&&actionEvent.parent?.name==='xingDong'&&actionEvent.parent?.player?.playerid===gate.seatId&&
+	   parentFence?.status==='waiting'&&parentFence.releaseCount===0&&parentFence.nativeEventId===gate.nativeEventId&&parentFence.actionEvent===actionEvent&&
+	   parentFence.parentEvent===actionEvent.parent&&parentFence.rootEvent===state?.root&&parentFence.rootInstanceId===state?.rootInstanceId&&
+	   parentFence.completedChildName==='gongJiOrFaShu'&&parentFence.completedChildFinished===true&&parentFence.completedChildParentMatches===true&&
+	   parentFence.parentNextCount===0&&manager?.eventStack.at(-1)===actionEvent.parent&&manager?.rootEvent===state?.root)};
 	 if(!a||a.eventId!==${JSON.stringify(gate.nativeEventId)}||a.seatId!==${JSON.stringify(gate.seatId)}||a.optionId!==${JSON.stringify(record.option)}||
 	  a.actionKind!=='native_skill'||a.skillId!=='jiRi_moBaoChongJie'||a.useResultCount!==1||a.nativeChildWaitCompleted!==true||
 	  a.nativeEventInstanceMatches!==true||a.nativeUseSkillChildCompleted!==true||a.nativeTargetChoiceCompleted!==true||
 	  a.nativeChangeZhanJiCompleted!==true||a.nativeChangeZhanJiAfter!==a.nativeChangeZhanJiBefore+1||
 	  !m||m.kind!=='native_skill'||m.skillId!=='jiRi_moBaoChongJie'||!useSkill||useSkill.finished!==true||useSkill.name!=='useSkill'||
 	  useSkill.skill!=='jiRi_moBaoChongJie'||useSkill.player!==actor||!zhanJi||zhanJiProof?.eventName!=='changeZhanJi'||
-	  zhanJiProof.rootInstanceId!==state?.rootInstanceId||zhanJiProof.parentEventInstanceId!==useSkillProof?.eventInstanceId||
+	  zhanJiProof.rootInstanceId!==state?.rootInstanceId||zhanJiProof.eventInstanceId!==ledger?.eventIds.get(zhanJi)||
+	  zhanJiProof.parentEventInstanceId!==ledger?.eventIds.get(zhanJi.parent)||lineage(zhanJi,useSkill)===null||
 	  !target||target.status!=='applied'||target.delivery?.status!=='applied'||!discardEvent||discardEvent.finished!==true||
 	  discardProof?.eventName!=='chooseToDiscard'||discardProof.rootInstanceId!==state?.rootInstanceId||
-	  discardProof.parentEventInstanceId!==useSkillProof?.eventInstanceId||!targetCard||discardEvent.result?.bool!==true||
+	  discardProof.eventInstanceId!==ledger?.eventIds.get(discardEvent)||discardProof.parentEventInstanceId!==ledger?.eventIds.get(discardEvent.parent)||
+	  discardEvent.parent?.manager!==manager||lineage(discardEvent,useSkill)===null||!targetCard||discardEvent.result?.bool!==true||
 	  discardEvent.result.cards?.length!==1||discardEvent.result.cards[0]!==targetCard||discardEvent.player.getCards('h').includes(targetCard)||
 	  core.get.position(targetCard)!=='d'||!m.material||actor.getCards('h').includes(m.material)||
 	  !actionProof||actionProof.eventName!=='gongJiOrFaShu'||actionProof.rootInstanceId!==state?.rootInstanceId||
@@ -1976,7 +1994,11 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	  achievementBeforeList.some(value=>value!=='baoShi'&&value!=='shuiJing')||achievementList.some(value=>value!=='baoShi'&&value!=='shuiJing')||
 	  JSON.stringify(achievementList)!==JSON.stringify([...achievementBeforeList,'baoShi'])||!Number.isSafeInteger(afterCount)||
 	  afterCount!==a.nativeChangeZhanJiAfter||game?.me!==null||game?.players?.some(p=>p.ws)||manager?.rootEvent!==state?.root||
-	  actionEvent?.finished!==true||manager.eventStack.at(-1)!==state?.phaseLoop||manager.eventStack.some(event=>event===useSkill||event===discardEvent||event===zhanJi))
+	  actionEvent?.finished!==true||actionEvent.parent?.name!=='xingDong'||actionEvent.parent?.player?.playerid!==gate.seatId||
+	  parentFence?.status!=='waiting'||parentFence.releaseCount!==0||parentFence.nativeEventId!==gate.nativeEventId||parentFence.actionEvent!==actionEvent||
+	  parentFence.parentEvent!==actionEvent.parent||parentFence.rootEvent!==state?.root||parentFence.rootInstanceId!==state?.rootInstanceId||
+	  parentFence.completedChildName!=='gongJiOrFaShu'||parentFence.completedChildFinished!==true||parentFence.completedChildParentMatches!==true||
+	  parentFence.parentNextCount!==0||manager.eventStack.at(-1)!==actionEvent.parent||manager.rootEvent!==state?.root)
 	  return {ok:false,code:'JIRIMO_NATIVE_ACTION_COMPLETION_EVIDENCE_INVALID',failedChecks:Object.entries(checks).filter(([,ok])=>!ok).map(([name])=>name),
 	   proofDiagnostics:completionDiagnostics()};
 	 const hands=game.players.map(p=>({seatId:p.playerid,handCount:p.countCards('h'),hand:p.getCards('h').map(card=>({name:card.name||null,suit:card.suit||null,number:card.number||null,nature:card.nature||null}))}));
@@ -1984,9 +2006,13 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	  nativeEventStep:a.nativeEventStepAfterWait,nativeEventInstanceMatches:a.nativeEventInstanceMatches===true,nativeChildWaitCompleted:a.nativeChildWaitCompleted===true,
 	  useResultCount:a.useResultCount,gameMeNull:game.me===null,connectedTransports:game.players.filter(p=>p.ws).length,
 	  firstActSeatId:core._status.firstAct?.playerid||null,actionEventInstanceId:ledger.eventIds.get(actionEvent)||null,
+	  actionParentEventInstanceId:actionProof?.parentEventInstanceId||null,
 	  useSkillChildEventId:ledger.eventIds.get(useSkill)||null,useSkillParentEventId:useSkillProof?.parentEventInstanceId||null,
 	  changeZhanJiEventId:ledger.eventIds.get(zhanJi)||null,changeZhanJiParentEventId:zhanJiProof?.parentEventInstanceId||null,
-	  targetDiscardEventId:ledger.eventIds.get(discardEvent)||null,targetDiscardParentEventId:discardProof?.parentEventInstanceId||null,
+	  changeZhanJiLineage:lineage(zhanJi,useSkill),targetDiscardEventId:ledger.eventIds.get(discardEvent)||null,targetDiscardParentEventId:discardProof?.parentEventInstanceId||null,
+	  targetDiscardLineage:lineage(discardEvent,useSkill),parentFenceStatus:parentFence.status,parentFenceReleaseCount:parentFence.releaseCount,
+	  parentFenceEventInstanceId:ledger.eventIds.get(parentFence.actionEvent)||null,parentFenceParentEventInstanceId:ledger.eventIds.get(parentFence.parentEvent),
+	  parentFenceParentEventName:parentFence.parentEventName,parentFenceParentNextCount:parentFence.parentNextCount,
 	  targetChoiceNativeEventId:target?.nativeEventId||null,
 	  useSkillChildCompletionOrdinal:useSkillProof?.completionOrdinal,changeZhanJiCompletionOrdinal:zhanJiProof?.completionOrdinal,
 	  targetDiscardCompletionOrdinal:discardProof?.completionOrdinal,actionCompletionOrdinal:actionProof?.completionOrdinal,
@@ -2005,7 +2031,7 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 		if (!query.exceptionDetails && observed?.code === "JIRIMO_NATIVE_ACTION_COMPLETION_EVIDENCE_INVALID" &&
 			Array.isArray(observed.failedChecks) && observed.failedChecks.length <= 12 &&
 			observed.failedChecks.every(value => ["actionBinding", "actionCompleted", "skillEventBinding", "zhanJiChild", "targetDiscard",
-				"materialConsumed", "actionEventProof", "achievementList", "serverRoot", "actionParentFinished"].includes(value))) {
+	  "materialConsumed", "actionEventProof", "achievementList", "serverRoot", "actionParentFenceWaiting"].includes(value))) {
 			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
 				observed: { kind: "native_start_diagnostic", stage: "native_jiri_authority_proof_rejected",
 					failureCode: observed.code, failedChecks: [...observed.failedChecks], proofDiagnostics: observed.proofDiagnostics } });
@@ -2035,7 +2061,12 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 			nativeEventId: gate.nativeEventId, nativeEventCompleted: true, rootInstanceId: observed.rootInstanceId,
 			seatId: gate.seatId, targetSeatId: observed.targetSeatId, skillId: "jiRi_moBaoChongJie", optionId: record.option,
 			actionEventInstanceId: observed.actionEventInstanceId, useSkillParentEventId: observed.useSkillParentEventId,
+			actionParentEventInstanceId: observed.actionParentEventInstanceId,
 			changeZhanJiParentEventId: observed.changeZhanJiParentEventId, targetDiscardParentEventId: observed.targetDiscardParentEventId,
+			changeZhanJiLineage: observed.changeZhanJiLineage, targetDiscardLineage: observed.targetDiscardLineage,
+			parentFenceStatus: observed.parentFenceStatus, parentFenceReleaseCount: observed.parentFenceReleaseCount,
+			parentFenceEventInstanceId: observed.parentFenceEventInstanceId, parentFenceParentEventInstanceId: observed.parentFenceParentEventInstanceId,
+			parentFenceParentEventName: observed.parentFenceParentEventName, parentFenceParentNextCount: observed.parentFenceParentNextCount,
 			targetChoiceNativeEventId: observed.targetChoiceNativeEventId,
 			achievementBeforeList: observed.achievementBeforeList, achievementAfterList: observed.achievementAfterList,
 			nativeEventStep: observed.nativeEventStep, useResultCount: observed.useResultCount,
@@ -3331,7 +3362,20 @@ async function runNativeStartDiagnostic(message) {
 	     state.jiRiZhanJiBaseline?.seatId!==action.seatId||state.jiRiZhanJiBaseline?.side!==actor?.side||
 	     state.jiRiZhanJiBaseline?.rootInstanceId!==state.rootInstanceId||!Number.isSafeInteger(before)||after!==before+1)
 	     throw Error('JIRIMO_CHANGE_ZHANJI_COMPLETION_INVALID');
-	    action.nativeChangeZhanJiCompleted=true;action.nativeChangeZhanJiEventName=event.name;action.nativeChangeZhanJiOrdinal=(state.nativeEventCompletionLedger?.completionOrdinal||0);
+	    const completionLedger=state.nativeEventCompletionLedger,completionProof=completionLedger?.completionEvidence.get(event),lineage=[];
+	    for(let current=event.parent,count=0;current&&current!==state.nativeUseSkillChildEvent&&count<24;current=current.parent,count++){
+	     const eventInstanceId=completionLedger?.eventIds.get(current),parentEventInstanceId=current.parent&&completionLedger?.eventIds.get(current.parent);
+	     if(!eventInstanceId||!parentEventInstanceId)throw Error('JIRIMO_CHANGE_ZHANJI_LINEAGE_INCOMPLETE');
+	     lineage.push(Object.freeze({eventInstanceId,eventName:typeof current.name==='string'?current.name:null,parentEventInstanceId}));
+	    }
+	    const useSkillEventId=completionLedger?.eventIds.get(state.nativeUseSkillChildEvent);
+	    if(!completionProof||completionProof.eventName!=='changeZhanJi'||completionProof.rootInstanceId!==state.rootInstanceId||
+	     completionProof.eventInstanceId!==completionLedger?.eventIds.get(event)||completionProof.parentEventInstanceId!==completionLedger?.eventIds.get(event.parent)||
+	     !useSkillEventId||lineage.length>=24||event.parent!==state.nativeUseSkillChildEvent&&!lineage.length||
+	     (lineage.length?lineage.at(-1).parentEventInstanceId:completionProof.parentEventInstanceId)!==useSkillEventId)
+	     throw Error('JIRIMO_CHANGE_ZHANJI_COMPLETION_PROOF_INVALID');
+	    state.nativeChangeZhanJiEvent=event;action.nativeChangeZhanJiProof=completionProof;action.nativeChangeZhanJiLineage=Object.freeze(lineage);
+	    action.nativeChangeZhanJiCompleted=true;action.nativeChangeZhanJiEventName=event.name;action.nativeChangeZhanJiOrdinal=completionProof.completionOrdinal;
 	    action.nativeChangeZhanJiBefore=before;action.nativeChangeZhanJiAfter=after;
 	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_jiri_change_zhanji_completed',snapshot:{eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,
 	     parentEventName:event.parent?.name||null,seatId:action.seatId,actorSide:actor.side,achievement:'baoShi',beforeCount:before,afterCount:after,
