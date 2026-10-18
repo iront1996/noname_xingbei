@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { createRequire } from "node:module";
 import test from "node:test";
 
@@ -59,6 +60,9 @@ test("pre-action capture validates an input-waiting fence without claiming nativ
 	assert.equal(result.checkpointAvailable, false);
 	assert.equal(result.eventInstanceId, "event_5");
 	assert.equal(result.captureOrdinal, 1);
+	assert.deepEqual(result.achievementResourceBinding.hong, { count: 0, baoShiCount: 0, shuiJingCount: 0,
+		digest: crypto.createHash("sha256").update("[]").digest("hex") });
+	assert.deepEqual(result.achievementResourceBinding.lan, result.achievementResourceBinding.hong);
 	assert.equal(result.roomId, "room_a");
 	assert.equal(result.hostSessionId, sessionId);
 	coordinator.destroy();

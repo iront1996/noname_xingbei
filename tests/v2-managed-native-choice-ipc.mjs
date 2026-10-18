@@ -56,7 +56,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		"a held native phase boundary requires the managed native event-completion evidence source");
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -1723,14 +1723,26 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(nativeJiRiTargetCandidate?.actionEventId, nativeActionCandidate.nativeEventId);
 				assert.equal(nativeJiRiTargetCandidate?.sourceSeatId, nativeJiRiFixtureSeatId);
 				assert.ok(nativeJiRiTargetChoice);
-				await until(() => controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved" &&
-					controller.inspect(roomId, nativeJiRiTargetChoice.choiceId)?.state === "resolved", 12000,
-					() => ({ action: controller.inspect(roomId, nativeActionChoice.choiceId)?.state,
-						target: controller.inspect(roomId, nativeJiRiTargetChoice.choiceId)?.state, nativeActionAckCount,
-						nativeJiRiTargetAckCount, diagnostics: nativeDiagnostic.slice(-10).map(entry => entry?.stage) }));
+				if (process.env.V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR === "1") {
+					// In pair mode the main controller ACK is deliberately withheld until
+					// Event #4 is accepted; wait for the nested discard ACK first so this
+					// test does not deadlock on the authority gate it is validating.
+					await until(() => controller.inspect(roomId, nativeJiRiTargetChoice.choiceId)?.state === "resolved", 12000,
+						() => ({ action: controller.inspect(roomId, nativeActionChoice.choiceId)?.state,
+							target: controller.inspect(roomId, nativeJiRiTargetChoice.choiceId)?.state, nativeActionAckCount,
+							nativeJiRiTargetAckCount, diagnostics: nativeDiagnostic.slice(-10).map(entry => entry?.stage) }));
+				} else {
+					await until(() => controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved" &&
+						controller.inspect(roomId, nativeJiRiTargetChoice.choiceId)?.state === "resolved", 12000,
+						() => ({ action: controller.inspect(roomId, nativeActionChoice.choiceId)?.state,
+							target: controller.inspect(roomId, nativeJiRiTargetChoice.choiceId)?.state, nativeActionAckCount,
+							nativeJiRiTargetAckCount, diagnostics: nativeDiagnostic.slice(-10).map(entry => entry?.stage) }));
+				}
 				assert.ok(nativeJiRiTargetAckCount >= 2, "lost nested-choice ACK must retry the same immutable physical discard delivery");
 				assert.equal(nativeJiRiTargetAckDropped, true, "the nested-choice retry assertion requires an actually dropped first ACK");
-				assert.ok(nativeActionAckCount >= 2, "lost main-choice ACK must retry the same immutable native skill delivery");
+				if (process.env.V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR !== "1") {
+					assert.ok(nativeActionAckCount >= 2, "lost main-choice ACK must retry the same immutable native skill delivery");
+				}
 				const resourceProof = nativeDiagnostic.find(entry => entry?.stage === "native_jiri_change_zhanji_completed")?.snapshot;
 				assert.ok(resourceProof, "a completed native changeZhanJi child must be observed");
 				assert.equal(resourceProof.rootObjectMatches, true);
@@ -1744,6 +1756,89 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(targetTrace.sourceSeatId, nativeJiRiFixtureSeatId);
 				assert.ok(targetTrace.optionCount > 0 && targetTrace.optionCount <= 32);
 				assert.equal(nativeActionAckCount, 2, "the exactly-once native skill should receive only its original and retry ACK");
+				if (process.env.V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR === "1") {
+					const accepted = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_skill_action_event_4_accepted"), 10000,
+						() => ({ session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-18).map(entry => entry?.stage), authoritySubmissions }));
+					const boundary = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_boundary_fence_waiting"), 10000,
+						() => ({ session: manager.inspect(roomId), phaseBoundaries: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_boundary_fence_waiting").map(entry => entry.snapshot) }));
+					const acceptedSession = manager.inspect(roomId);
+					assert.equal(accepted.eventSequence, 4);
+					assert.equal(accepted.stateRevision, 4);
+					assert.equal(accepted.hostPlayerAbsent, true);
+					assert.equal(accepted.connectedTransports, 0);
+					assert.equal(accepted.useSkillChildCompleted, true);
+					assert.equal(accepted.changeZhanJiChildCompleted, true);
+					assert.equal(accepted.targetDiscardChildCompleted, true);
+					assert.equal(accepted.achievement.countAfter, accepted.achievement.countBefore + 1);
+					assert.equal(acceptedSession.authorityStateRevision, 4);
+					assert.equal(acceptedSession.nextAuthorityEventSequence, 5);
+					assert.equal(acceptedSession.lastAuthorityEvent?.sequence, 4);
+					assert.equal(acceptedSession.lastAuthorityEvent?.name, "jiRi_moBaoChongJie");
+					assert.equal(acceptedSession.checkpointAvailable, false);
+					assert.equal(boundary.snapshot.rootInstanceId, nativePreActionCapture.snapshot.rootInstanceId);
+					assert.equal(boundary.snapshot.rootObjectMatches, true);
+					assert.equal(boundary.snapshot.gameMeAbsent, true);
+					assert.equal(boundary.snapshot.eventName, "phaseLoop");
+					assert.equal(boundary.snapshot.eventStep, 3);
+					assert.equal(boundary.snapshot.pendingDescendantCount, 0);
+					assert.equal(boundary.snapshot.priorAuthority?.eventSequence, 4);
+					assert.equal(boundary.snapshot.priorAuthority?.stateRevision, 4);
+					assert.equal(boundary.snapshot.priorAuthority?.afterDigest, accepted.afterDigest);
+					assert.equal(accepted.afterDigest, acceptedSession.authorityStateDigest);
+					await until(() => controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved", 12000,
+						() => ({ action: controller.inspect(roomId, nativeActionChoice.choiceId)?.state,
+							nativeActionAckCount, session: manager.inspect(roomId), diagnostics: nativeDiagnostic.slice(-10).map(entry => entry?.stage) }));
+					assert.ok(nativeActionAckCount >= 2, "lost main-choice ACK must retry after the authorized Event #4 commit");
+					const post = await manager.snapshotNativeAtomicCapture(roomId);
+					assert.equal(post.ok, true, `post-phaseOver Jiri atomic commitment rejected: ${post.code}`);
+					assert.equal(post.snapshot.schema, "xingbei_native_private_atomic_commitment_v2");
+					assert.equal(post.snapshot.projectionCount, 3);
+					assert.equal(post.snapshot.atomicWithEffectSnapshots, true);
+					assert.equal(post.snapshot.authoritySeedAuthorized, false);
+					assert.equal(post.snapshot.checkpointAvailable, false);
+					assert.equal(post.snapshot.nativeCompletionOrdinal > nativePreActionCapture.snapshot.nativeCompletionOrdinal, true,
+						"post-action phaseOver evidence must follow the pre-action waiting fence in the same native completion ledger");
+					assert.equal(post.snapshot.rootInstanceId, nativePreActionCapture.snapshot.rootInstanceId);
+					assert.equal(post.snapshot.engineBuildId, nativePreActionCapture.snapshot.engineBuildId);
+					assert.equal(post.snapshot.captureOrdinal, 1);
+					const sideKey = accepted.achievement.side === true ? "hong" : "lan";
+					const oppositeKey = sideKey === "hong" ? "lan" : "hong";
+				const resourceBefore = nativePreActionCapture.snapshot.achievementResourceBinding[sideKey];
+				const resourceAfter = post.snapshot.achievementResourceSummary[sideKey];
+					assert.equal(resourceBefore.digest, accepted.achievement.beforeListDigest);
+					assert.equal(resourceAfter.digest, accepted.achievement.afterListDigest);
+				assert.equal(resourceAfter.count, resourceBefore.count + 1);
+				assert.equal(resourceAfter.baoShiCount, resourceBefore.baoShiCount + 1);
+				assert.equal(resourceAfter.shuiJingCount, resourceBefore.shuiJingCount);
+				assert.deepEqual(post.snapshot.achievementResourceSummary[oppositeKey], nativePreActionCapture.snapshot.achievementResourceBinding[oppositeKey]);
+				const repeat = await manager.snapshotNativeAtomicCapture(roomId);
+				assert.equal(repeat.ok, true, `stable post-phaseOver Jiri commitment repeat rejected: ${repeat.code}`);
+				assert.equal(repeat.snapshot.captureOrdinal, 2);
+				assert.equal(repeat.snapshot.nativeCompletionOrdinal, post.snapshot.nativeCompletionOrdinal);
+				assert.equal(repeat.snapshot.stableWithPrevious, true);
+				assert.deepEqual(repeat.snapshot.stableProjectionsWithPrevious, { cardLedger: true, effectState: true, turnResource: true });
+				assert.deepEqual(repeat.snapshot.achievementResourceSummary, post.snapshot.achievementResourceSummary);
+				assert.notEqual(repeat.snapshot.commitment, post.snapshot.commitment);
+				assert.equal(manager.inspect(roomId).authorityStateRevision, 4, "the isolated fixture must not open Event #5");
+				assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 5);
+				assert.equal(manager.inspect(roomId).checkpointAvailable, false);
+				assert.equal(authoritySubmissions.filter(entry => entry.proof?.eventSequence > 4).length, 0);
+				const handle = launchedHandles.get(acceptedSession.sessionId);
+				assert.ok(handle && handle.pid > 0);
+				const pid = handle.pid;
+				assert.equal((await manager.stop(roomId, "jirimo_atomic_pair_complete")).ok, true);
+				assert.equal(manager.inspect(roomId).state, "stopped");
+				assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId), null);
+				assert.equal(controller.inspect(roomId, nativeJiRiTargetChoice.choiceId), null);
+				await handle.waitForCleanup();
+				assert.equal(handle.resources().length, 0, "paired native skill captures must clean Chromium and its profile");
+					t.diagnostic(`jiRi native Event #4 and post-phaseOver commitment pair: ${JSON.stringify({ pid, rootInstanceId: post.snapshot.rootInstanceId,
+						seatId: nativeActionCandidate.seatId, targetSeatId: accepted.targetSeatId, preCompletionOrdinal: nativePreActionCapture.snapshot.nativeCompletionOrdinal,
+					postCompletionOrdinal: post.snapshot.nativeCompletionOrdinal, captureOrdinals: [post.snapshot.captureOrdinal, repeat.snapshot.captureOrdinal],
+					baoShiCount: resourceAfter.baoShiCount, authorityRevision: acceptedSession.authorityStateRevision,
+					checkpointAvailable: post.snapshot.checkpointAvailable })}`);
+				return;
+				}
 				assert.equal(manager.inspect(roomId)?.authorityStateRevision, 3,
 					"this isolated native-skill diagnostic must not fabricate or authorize Event #4/#5");
 				assert.equal(manager.inspect(roomId)?.nextAuthorityEventSequence, 4);
@@ -2174,7 +2269,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					if (process.env.V2_NATIVE_ATOMIC_CAPTURE_PROBE === "1") {
 						const atomic = await manager.snapshotNativeAtomicCapture(roomId);
 						assert.equal(atomic.ok, true, `native atomic capture rejected: ${atomic.code}`);
-						assert.deepEqual(Object.keys(atomic.snapshot).sort(), ["atomicWithEffectSnapshots", "authoritySeedAuthorized", "captureOrdinal",
+						assert.deepEqual(Object.keys(atomic.snapshot).sort(), ["achievementResourceSummary", "atomicWithEffectSnapshots", "authoritySeedAuthorized", "captureOrdinal",
 							"checkpointAvailable", "commitment", "engineBuildId", "nativeCompletionOrdinal", "nativeFenceOrdinal", "nativeTurnSummary", "projectionCount", "rootInstanceId",
 							"schema", "schemaVersion", "stableProjectionsWithPrevious", "stableWithPrevious"].sort());
 						assert.equal(atomic.snapshot.captureOrdinal, 1);

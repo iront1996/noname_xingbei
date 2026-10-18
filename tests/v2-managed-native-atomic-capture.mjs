@@ -59,6 +59,9 @@ test("atomic capture commits all three validated native projections at one ordin
 	assert.deepEqual(result.nativeTurnSummary, { actorSeatId: "seat_a", phaseLoopSeatId: "seat_b", phase: "between_turns",
 		gamePhaseNumber: 1, playerPhaseNumber: 1, quotas: { gongJiOrFaShu: 0, faShu: 0, gongJi: 0 } });
 	assert.equal(result.authoritySeedAuthorized, false);
+	assert.deepEqual(result.achievementResourceSummary.hong, { count: 0, baoShiCount: 0, shuiJingCount: 0,
+		digest: "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945" });
+	assert.deepEqual(result.achievementResourceSummary.lan, result.achievementResourceSummary.hong);
 	assert.equal(result.checkpointAvailable, false);
 	assert.equal(result.stableProjectionsWithPrevious, null);
 	capture.destroy();

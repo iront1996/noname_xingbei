@@ -153,6 +153,10 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 			previousPhaseOverTriggerCount = fence.phaseOverTriggerCount;
 			previousNextActorSeatId = fence.nextActorSeatId;
 			ordinal++;
+			const achievementSummary = list => Object.freeze({ count: list.length,
+				baoShiCount: list.filter(value => value === "baoShi").length,
+				shuiJingCount: list.filter(value => value === "shuiJing").length,
+				digest: crypto.createHash("sha256").update(canonicalize(list), "utf8").digest("hex") });
 			return Object.freeze({ schema: "xingbei_native_private_atomic_commitment_v2", schemaVersion: 2,
 				captureOrdinal: ordinal, nativeFenceOrdinal: fence.boundaryOrdinal, nativeCompletionOrdinal: fence.nativeCompletionOrdinal, rootInstanceId, engineBuildId,
 				commitment: digest, stableWithPrevious, stableProjectionsWithPrevious, projectionCount: 3, atomicWithEffectSnapshots: true,
@@ -160,6 +164,8 @@ function createManagedNativeAtomicCapture({ roomId, sessionId, engineBuildId, ro
 				nativeTurnSummary: Object.freeze({ actorSeatId: turn.canonical.turn.actorSeatId, phaseLoopSeatId: turn.canonical.turn.phaseLoopSeatId,
 					phase: turn.canonical.turn.phase, gamePhaseNumber: turn.canonical.turn.gamePhaseNumber,
 					playerPhaseNumber: turn.canonical.turn.playerPhaseNumber, quotas: Object.freeze({ ...turn.canonical.turn.quotas }) }),
+				achievementResourceSummary: Object.freeze({ hong: achievementSummary(turn.canonical.resources.hongZhanJi),
+					lan: achievementSummary(turn.canonical.resources.lanZhanJi) }),
 				authoritySeedAuthorized: false, checkpointAvailable: false });
 		},
 		destroy() {

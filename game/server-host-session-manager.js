@@ -367,6 +367,16 @@ function createHostSessionManager({
 			acceptedNativeCardActionNativeEventId: null,
 			acceptedNativeCardActionRootInstanceId: null,
 			acceptedNativeCardActionSeatId: null,
+			acceptedNativeActionProofDigest: null,
+			acceptedNativeActionKind: null,
+			acceptedNativeActionName: null,
+			acceptedNativeActionNativeEventId: null,
+			acceptedNativeActionRootInstanceId: null,
+			acceptedNativeActionSeatId: null,
+			nativeJiRiActionCandidate: null,
+			nativeJiRiTargetCandidate: null,
+			nativeJiRiActionDelivery: null,
+			nativeJiRiTargetDelivery: null,
 			nativePhaseBoundaryReleaseSent: false,
 			authorityDigestChain: [],
 			endNotified: false,
@@ -399,7 +409,7 @@ function createHostSessionManager({
 				else if (message?.type === "host_game_ready") markGameReady(message);
 				else if (message?.type === "host_authority_event") {
 					const committed = commitAuthorityEvent(message);
-					if (["xingbei_side_assignment_v1", "xingbei_character_selection_v1", "xingbei_opening_draw_v1", "xingbei_native_card_action_v1"].includes(message.proof?.event?.kind)) {
+					if (["xingbei_side_assignment_v1", "xingbei_character_selection_v1", "xingbei_opening_draw_v1", "xingbei_native_card_action_v1", "xingbei_native_skill_action_v1"].includes(message.proof?.event?.kind)) {
 						if (!committed.ok) {
 							fail(record, committed.code);
 							Promise.resolve(record.handle?.stop("authority_event_rejected")).catch(() => {});
@@ -578,7 +588,9 @@ function createHostSessionManager({
 						record.privatePreActionCaptureRequests.delete(message.requestId);
 						clearTimeout(pending.timer);
 						record.privatePreActionCaptureCandidate = Object.freeze({ ...candidate, choiceId: pending.choiceId,
-							captureOrdinal: result.captureOrdinal, stateDigest: result.stateDigest, commitment: result.commitment });
+							captureOrdinal: result.captureOrdinal, eventInstanceId: result.eventInstanceId,
+							nativeCompletionOrdinal: result.nativeCompletionOrdinal, stateDigest: result.stateDigest, commitment: result.commitment,
+							achievementResourceBinding: result.achievementResourceBinding });
 						const accepted = Object.freeze({ ok: true, snapshot: Object.freeze({ ...result }) });
 						queueMicrotask(() => pending.resolve(record.state === "playable_probe" && record.privatePreActionCapture
 							? accepted : failure("NATIVE_PREACTION_CAPTURE_SESSION_ENDED")));
@@ -618,6 +630,7 @@ function createHostSessionManager({
 								new Set(message.options).size === message.options.length && message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)) &&
 								message.optionKinds && Object.getPrototypeOf(message.optionKinds) === Object.prototype &&
 								Object.keys(message.optionKinds).sort().join(",") === [...message.options].sort().join(",") &&
+								message.options.includes(message.trusteeOption) &&
 								Object.values(message.optionKinds).every(kind => kind === "native_skill" || kind === "gongJi" || kind === "faShu");
 							const skillOptions = message.options.filter(option => message.optionKinds[option] === "native_skill");
 							if (record.state !== "playable_probe" || record.authorityStateRevision !== 3 || message.eventName !== "gongJiOrFaShu" ||
@@ -633,7 +646,9 @@ function createHostSessionManager({
 							}
 							record.nativeJiRiActionCandidate = Object.freeze({ nativeEventId: message.nativeEventId, seatId: message.seatId,
 								rootInstanceId: message.rootInstanceId, eventSequence: message.eventSequence,
-							targetSeatIds: Object.freeze(skillOptions.map(option => message.optionTargetSeatIds[option])) });
+								trusteeOption: message.trusteeOption,
+								skillOptions: Object.freeze(Object.fromEntries(skillOptions.map(option => [option, message.optionTargetSeatIds[option]]))),
+								targetSeatIds: Object.freeze(skillOptions.map(option => message.optionTargetSeatIds[option])) });
 						}
 						if (message.type === "host_native_skill_target_candidates") {
 							const source = record.nativeJiRiActionCandidate;
@@ -664,8 +679,8 @@ function createHostSessionManager({
 								return;
 							}
 							record.nativeJiRiTargetCandidate = Object.freeze({ nativeEventId: message.nativeEventId, actionEventId: message.actionEventId,
-								seatId: message.seatId, sourceSeatId: message.sourceSeatId, rootInstanceId: message.rootInstanceId,
-								options: Object.freeze([...message.options]) });
+							seatId: message.seatId, sourceSeatId: message.sourceSeatId, rootInstanceId: message.rootInstanceId,
+							options: Object.freeze([...message.options]), trusteeOption: message.trusteeOption });
 						}
 						if (message.type === "host_native_action_candidates" && process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1") {
 							const validOptions = Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 64 &&
@@ -786,6 +801,115 @@ function createHostSessionManager({
 					({ seatId, position, character, side, handCount, handCommitment })) };
 			return crypto.createHash("sha256").update(canonicalize(canonicalAfter)).digest("hex") === proof?.afterDigest;
 		}
+		if (event?.kind === "xingbei_native_skill_action_v1" && event.name === "jiRi_moBaoChongJie") {
+			const reject = reason => { record.authorityFailureReason = reason; return false; };
+			const context = record.xingbeiAuthorityContext;
+			const before = context?.openingSummary;
+			const eventKeys = "achievementAfterList,achievementBeforeList,actionCompletionOrdinal,actionEventInstanceId,baoShiAfter,baoShiBefore,changeZhanJiChildCompleted,changeZhanJiCompletionOrdinal,changeZhanJiEventId,changeZhanJiParentEventId,connectedTransports,gameMeNull,nativeChildWaitCompleted,nativeCompletionOrdinal,nativeEventCompleted,nativeEventId,nativeEventInstanceMatches,nativeEventName,nativeEventStep,name,nativeUseSkillChildCompleted,optionId,rootInstanceId,seatId,skillId,targetChoiceNativeEventId,targetDiscardCardMoved,targetDiscardChildCompleted,targetDiscardCompletionOrdinal,targetDiscardEventId,targetDiscardParentEventId,targetSeatId,useResultCount,useSkillChildCompletionOrdinal,useSkillChildEventId,useSkillParentEventId";
+			const actionCandidate = record.nativeJiRiActionCandidate;
+			const targetCandidate = record.nativeJiRiTargetCandidate;
+			const preAction = record.privatePreActionCaptureCandidate;
+			const actionDelivery = record.nativeJiRiActionDelivery;
+			const targetDelivery = record.nativeJiRiTargetDelivery;
+			if (record.state !== "playable_probe" || record.authorityStateRevision !== 3 || record.nextAuthorityEventSequence !== 4 ||
+				record.lastAuthorityEvent?.sequence !== 3 || record.lastAuthorityEvent?.name !== "gameDraw" || !context?.openingDrawCommitted || !before ||
+				!actionCandidate || !targetCandidate || !preAction || !actionDelivery || !targetDelivery)
+				return reject("NATIVE_SKILL_ACTION_PHASE");
+			if (!event || Object.keys(event).sort().join(",") !== eventKeys || event.nativeEventCompleted !== true ||
+				event.nativeEventName !== "gongJiOrFaShu" || !/^native_event_[a-f0-9]{32}$/.test(event.nativeEventId || "") ||
+				!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(event.rootInstanceId || "") ||
+				!/^event_[1-9][0-9]{0,6}$/.test(event.actionEventInstanceId || "") ||
+				!/^event_[1-9][0-9]{0,6}$/.test(event.useSkillChildEventId || "") ||
+				!/^event_[1-9][0-9]{0,6}$/.test(event.changeZhanJiEventId || "") ||
+				!/^event_[1-9][0-9]{0,6}$/.test(event.targetDiscardEventId || "") ||
+				!/^native_event_[a-f0-9]{32}$/.test(event.targetChoiceNativeEventId || "") ||
+				!/^event_[1-9][0-9]{0,6}$/.test(event.useSkillParentEventId || "") ||
+				!/^event_[1-9][0-9]{0,6}$/.test(event.changeZhanJiParentEventId || "") ||
+				!/^event_[1-9][0-9]{0,6}$/.test(event.targetDiscardParentEventId || "")) return reject("NATIVE_SKILL_ACTION_EVENT_IDENTITY");
+			if (context.rootInstanceId && event.rootInstanceId !== context.rootInstanceId) return reject("NATIVE_SKILL_ACTION_ROOT_IDENTITY");
+			if (!record.seatIds.includes(event.seatId) || event.seatId !== before.firstActSeatId ||
+				!record.seatIds.includes(event.targetSeatId) || event.targetSeatId === event.seatId ||
+				event.skillId !== "jiRi_moBaoChongJie" || !/^native_option_[a-f0-9]{32}$/.test(event.optionId || "") ||
+				event.useResultCount !== 1 || event.nativeUseSkillChildCompleted !== true || event.changeZhanJiChildCompleted !== true ||
+				event.targetDiscardChildCompleted !== true || event.targetDiscardCardMoved !== true ||
+				event.nativeChildWaitCompleted !== true || event.nativeEventInstanceMatches !== true || event.gameMeNull !== true ||
+				event.connectedTransports !== 0 || !Number.isSafeInteger(event.nativeEventStep) || event.nativeEventStep < 5 ||
+				![event.useSkillChildCompletionOrdinal, event.changeZhanJiCompletionOrdinal, event.targetDiscardCompletionOrdinal,
+					event.actionCompletionOrdinal, event.nativeCompletionOrdinal].every(Number.isSafeInteger) ||
+				!(event.actionEventInstanceId === preAction.eventInstanceId && event.nativeEventId === actionCandidate.nativeEventId &&
+					event.seatId === actionCandidate.seatId && event.rootInstanceId === actionCandidate.rootInstanceId &&
+					actionCandidate.eventSequence === 4 && Object.hasOwn(actionCandidate.skillOptions, event.optionId) &&
+					actionCandidate.skillOptions[event.optionId] === event.targetSeatId && preAction.nativeEventId === event.nativeEventId &&
+					preAction.captureOrdinal === 1 && event.actionCompletionOrdinal > preAction.nativeCompletionOrdinal &&
+					preAction.choiceId === actionDelivery.choiceId &&
+					actionDelivery.nativeEventId === event.nativeEventId && actionDelivery.seatId === event.seatId &&
+					actionDelivery.optionId === event.optionId && actionDelivery.targetSeatId === event.targetSeatId &&
+					["player", "trustee"].includes(actionDelivery.resolutionKind) &&
+					targetCandidate.actionEventId === event.nativeEventId && targetCandidate.nativeEventId === event.targetChoiceNativeEventId &&
+					targetCandidate.seatId === event.targetSeatId && targetCandidate.sourceSeatId === event.seatId &&
+					targetCandidate.rootInstanceId === event.rootInstanceId && targetCandidate.options.includes(targetDelivery.optionId) &&
+								targetDelivery.nativeEventId === targetCandidate.nativeEventId && targetDelivery.seatId === targetCandidate.seatId &&
+									["player", "trustee"].includes(targetDelivery.resolutionKind) &&
+									(targetDelivery.resolutionKind !== "trustee" || targetDelivery.optionId === targetCandidate.trusteeOption) &&
+									(actionDelivery.resolutionKind !== "trustee" || actionDelivery.optionId === actionCandidate.trusteeOption) &&
+					event.useSkillParentEventId === event.actionEventInstanceId &&
+					event.changeZhanJiParentEventId === event.useSkillChildEventId &&
+					event.targetDiscardParentEventId === event.useSkillChildEventId &&
+					event.changeZhanJiCompletionOrdinal < event.useSkillChildCompletionOrdinal &&
+					event.targetDiscardCompletionOrdinal < event.useSkillChildCompletionOrdinal &&
+					event.useSkillChildCompletionOrdinal < event.actionCompletionOrdinal &&
+					event.targetDiscardCompletionOrdinal < event.actionCompletionOrdinal &&
+					event.changeZhanJiCompletionOrdinal < event.actionCompletionOrdinal &&
+					event.actionCompletionOrdinal <= event.nativeCompletionOrdinal)) return reject("NATIVE_SKILL_ACTION_COMPLETION_EVIDENCE");
+			if (!proof.beforeSummary || Object.getPrototypeOf(proof.beforeSummary) !== Object.prototype) return reject("NATIVE_SKILL_ACTION_BEFORE_BINDING");
+			try { if (canonicalize(proof.beforeSummary) !== canonicalize(before)) return reject("NATIVE_SKILL_ACTION_BEFORE_BINDING"); }
+			catch (_) { return reject("NATIVE_SKILL_ACTION_BEFORE_BINDING"); }
+			if (crypto.createHash("sha256").update(canonicalize(before)).digest("hex") !== proof.beforeDigest) return reject("NATIVE_SKILL_ACTION_BEFORE_DIGEST");
+			const after = proof.afterSummary;
+			if (!after || Object.keys(after).sort().join(",") !== "action,firstActSeatId,revision,seats" || after.revision !== 4 ||
+				after.firstActSeatId !== before.firstActSeatId || !Array.isArray(after.seats) || after.seats.length !== record.seatIds.length ||
+				!after.action || Object.keys(after.action).sort().join(",") !== "achievement,kind,materialConsumed,nativeEventId,nativeEventName,optionId,seatId,skillId,targetDiscard" ||
+				after.action.kind !== "native_skill" || after.action.nativeEventId !== event.nativeEventId ||
+				after.action.nativeEventName !== "gongJiOrFaShu" || after.action.seatId !== event.seatId ||
+				after.action.optionId !== event.optionId || after.action.skillId !== "jiRi_moBaoChongJie" ||
+				after.action.materialConsumed !== true || !after.action.achievement ||
+				Object.keys(after.action.achievement).sort().join(",") !== "afterListDigest,beforeListDigest,countAfter,countBefore,kind,side" ||
+					after.action.achievement.kind !== "baoShi" || typeof after.action.achievement.side !== "boolean" ||
+					after.action.achievement.side !== before.seats.find(seat => seat.seatId === event.seatId)?.side ||
+				!Number.isSafeInteger(after.action.achievement.countBefore) || after.action.achievement.countBefore < 0 ||
+				after.action.achievement.countAfter !== after.action.achievement.countBefore + 1 ||
+				!DIGEST.test(after.action.achievement.beforeListDigest || "") || !DIGEST.test(after.action.achievement.afterListDigest || "") ||
+				!after.action.targetDiscard || Object.keys(after.action.targetDiscard).sort().join(",") !== "cardMovedToDiscard,eventId,seatId" ||
+				after.action.targetDiscard.eventId !== event.targetDiscardEventId || after.action.targetDiscard.seatId !== event.targetSeatId ||
+				after.action.targetDiscard.cardMovedToDiscard !== true) return reject("NATIVE_SKILL_ACTION_AFTER_SUMMARY");
+			const allowedAchievements = new Set(["baoShi", "shuiJing"]);
+			const beforeList = event.achievementBeforeList;
+			const afterList = event.achievementAfterList;
+			const priorAchievement = after.action.achievement.side === true ? preAction.achievementResourceBinding?.hong : preAction.achievementResourceBinding?.lan;
+			const listDigest = list => crypto.createHash("sha256").update(canonicalize(list)).digest("hex");
+			if (!Array.isArray(beforeList) || !Array.isArray(afterList) || beforeList.length >= 128 || afterList.length !== beforeList.length + 1 ||
+				beforeList.some(value => !allowedAchievements.has(value)) || afterList.some(value => !allowedAchievements.has(value)) ||
+				canonicalize(afterList) !== canonicalize([...beforeList, "baoShi"]) || !priorAchievement ||
+				event.baoShiBefore !== after.action.achievement.countBefore || event.baoShiAfter !== after.action.achievement.countAfter ||
+				listDigest(beforeList) !== priorAchievement.digest || listDigest(beforeList) !== after.action.achievement.beforeListDigest ||
+				listDigest(afterList) !== after.action.achievement.afterListDigest ||
+				beforeList.filter(value => value === "baoShi").length !== after.action.achievement.countBefore ||
+				afterList.filter(value => value === "baoShi").length !== after.action.achievement.countAfter) return reject("NATIVE_SKILL_ACTION_ACHIEVEMENT_TRANSITION");
+			const beforeSeats = before.seats;
+			const seatsValid = after.seats.every((seat, index) => {
+				const prior = beforeSeats[index];
+				if (!seat || Object.keys(seat).sort().join(",") !== "character,handCommitment,handCount,position,seatId,side" ||
+					seat.seatId !== record.seatIds[index] || seat.seatId !== prior.seatId || seat.position !== prior.position ||
+					seat.character !== prior.character || seat.side !== prior.side || !Number.isSafeInteger(seat.handCount) ||
+					seat.handCount < 0 || seat.handCount > 32 || !DIGEST.test(seat.handCommitment || "")) return false;
+				const expectedConsumption = seat.seatId === event.seatId || seat.seatId === event.targetSeatId;
+				return expectedConsumption ? seat.handCount === prior.handCount - 1 && seat.handCommitment !== prior.handCommitment :
+					seat.handCount === prior.handCount && seat.handCommitment === prior.handCommitment;
+			});
+			if (!seatsValid) return reject("NATIVE_SKILL_ACTION_SEAT_TRANSITION");
+			if (crypto.createHash("sha256").update(canonicalize(after)).digest("hex") !== proof.afterDigest) return reject("NATIVE_SKILL_ACTION_AFTER_DIGEST");
+			return true;
+		}
 		if (event?.kind === "xingbei_native_card_action_v1" && event.name === "gongJiOrFaShu") {
 			const reject = reason => { record.authorityFailureReason = reason; return false; };
 			const context = record.xingbeiAuthorityContext;
@@ -893,12 +1017,12 @@ function createHostSessionManager({
 		const record = sessions.get(message?.roomId);
 		const proof = message?.proof;
 		if (message?.type === "host_authority_event" && authenticate(record, message) &&
-			proof?.event?.kind === "xingbei_native_card_action_v1" && proof.eventSequence === 4 &&
+			["xingbei_native_card_action_v1", "xingbei_native_skill_action_v1"].includes(proof?.event?.kind) && proof.eventSequence === 4 &&
 			record.state === "playable_probe" && record.authorityStateRevision === 4 && record.nextAuthorityEventSequence === 5 &&
-			record.lastAuthorityEvent?.sequence === 4 && record.acceptedNativeCardActionProofDigest) {
+			record.lastAuthorityEvent?.sequence === 4 && record.acceptedNativeActionProofDigest) {
 			try {
 				const proofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
-				if (proofDigest === record.acceptedNativeCardActionProofDigest && proof.afterDigest === record.authorityStateDigest) {
+				if (proofDigest === record.acceptedNativeActionProofDigest && proof.afterDigest === record.authorityStateDigest) {
 					return Object.freeze({ ok: true, idempotent: true, session: publicView(record) });
 				}
 			} catch (_) { return failure("HOST_AUTHORITY_EVENT_REJECTED"); }
@@ -922,11 +1046,19 @@ function createHostSessionManager({
 		if (record.authorityDigestChain.length > 8) record.authorityDigestChain.shift();
 		record.nextAuthorityEventSequence++;
 		record.lastAuthorityEvent = Object.freeze({ sequence: proof.eventSequence, name: proof.event.name });
-		if (proof.event.kind === "xingbei_native_card_action_v1") {
-			record.acceptedNativeCardActionProofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
-			record.acceptedNativeCardActionNativeEventId = proof.event.nativeEventId;
-			record.acceptedNativeCardActionRootInstanceId = proof.event.rootInstanceId;
-			record.acceptedNativeCardActionSeatId = proof.event.seatId;
+		if (["xingbei_native_card_action_v1", "xingbei_native_skill_action_v1"].includes(proof.event.kind)) {
+			record.acceptedNativeActionProofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
+			record.acceptedNativeActionKind = proof.event.kind;
+			record.acceptedNativeActionName = proof.event.name;
+			record.acceptedNativeActionNativeEventId = proof.event.nativeEventId;
+			record.acceptedNativeActionRootInstanceId = proof.event.rootInstanceId;
+			record.acceptedNativeActionSeatId = proof.event.seatId;
+			if (proof.event.kind === "xingbei_native_card_action_v1") {
+				record.acceptedNativeCardActionProofDigest = record.acceptedNativeActionProofDigest;
+				record.acceptedNativeCardActionNativeEventId = proof.event.nativeEventId;
+				record.acceptedNativeCardActionRootInstanceId = proof.event.rootInstanceId;
+				record.acceptedNativeCardActionSeatId = proof.event.seatId;
+			}
 		}
 		if (proof.event.kind === "xingbei_side_assignment_v1") {
 			record.xingbeiAuthorityContext = { firstActSeatId: proof.event.firstActSeatId, sides: proof.event.sides.map(side => ({ ...side })),
@@ -1060,9 +1192,34 @@ function createHostSessionManager({
 			typeof delivery.deliveryId !== "string" || typeof delivery.nativeEventId !== "string" || typeof delivery.seatId !== "string" ||
 			!delivery.resolution || Object.getPrototypeOf(delivery.resolution) !== Object.prototype ||
 			!["player", "trustee"].includes(delivery.resolution.kind) || typeof delivery.resolution.option !== "string") return failure("HOST_CHOICE_DELIVERY_REJECTED");
+		const option = delivery.resolution.option;
+		const actionCandidate = record.nativeJiRiActionCandidate;
+		const isJiRiAction = Boolean(actionCandidate && record.privatePreActionCaptureCandidate?.captureOrdinal === 1 &&
+			delivery.nativeEventId === actionCandidate.nativeEventId && delivery.seatId === actionCandidate.seatId &&
+			delivery.choiceId === record.privatePreActionCaptureCandidate.choiceId && Object.hasOwn(actionCandidate.skillOptions || {}, option));
+		const targetCandidate = record.nativeJiRiTargetCandidate;
+		const isJiRiTarget = Boolean(targetCandidate && delivery.nativeEventId === targetCandidate.nativeEventId &&
+			delivery.seatId === targetCandidate.seatId && targetCandidate.options.includes(option));
+		const sameDelivery = (existing, candidate) => !existing ||
+			(existing.choiceId === delivery.choiceId && existing.deliveryId === delivery.deliveryId &&
+				existing.nativeEventId === delivery.nativeEventId && existing.seatId === delivery.seatId &&
+				existing.optionId === option && existing.resolutionKind === delivery.resolution.kind &&
+				(!candidate.targetSeatId || existing.targetSeatId === candidate.targetSeatId));
+		if ((isJiRiAction && !sameDelivery(record.nativeJiRiActionDelivery, { targetSeatId: actionCandidate.skillOptions[option] })) ||
+			(isJiRiTarget && !sameDelivery(record.nativeJiRiTargetDelivery, {}))) return failure("NATIVE_JIRIMO_DELIVERY_CONFLICT");
 		try {
 			await record.handle.sendHostCommand(Object.freeze({ ...delivery, type: "host_choice_delivery", kind: "managed_host", protocol: PROTOCOL,
 				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret }));
+			if (isJiRiAction && !record.nativeJiRiActionDelivery) {
+				record.nativeJiRiActionDelivery = Object.freeze({ choiceId: delivery.choiceId, deliveryId: delivery.deliveryId,
+					nativeEventId: delivery.nativeEventId, seatId: delivery.seatId, optionId: option,
+					targetSeatId: actionCandidate.skillOptions[option], resolutionKind: delivery.resolution.kind });
+			}
+			if (isJiRiTarget && !record.nativeJiRiTargetDelivery) {
+				record.nativeJiRiTargetDelivery = Object.freeze({ choiceId: delivery.choiceId, deliveryId: delivery.deliveryId,
+					nativeEventId: delivery.nativeEventId, seatId: delivery.seatId, optionId: option,
+					resolutionKind: delivery.resolution.kind });
+			}
 			return Object.freeze({ ok: true });
 		} catch (_) { return failure("HOST_CHOICE_DELIVERY_REJECTED"); }
 	}
@@ -1219,7 +1376,7 @@ function createHostSessionManager({
 		if (process.env.V2_NATIVE_ATOMIC_CAPTURE_PROBE !== "1" || process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" ||
 			process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" || process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" ||
 			!record || record.state !== "playable_probe" || record.authorityStateRevision !== 4 ||
-			record.lastAuthorityEvent?.sequence !== 4 || record.lastAuthorityEvent?.name !== "gongJiOrFaShu" ||
+			record.lastAuthorityEvent?.sequence !== 4 || !["gongJiOrFaShu", "jiRi_moBaoChongJie"].includes(record.lastAuthorityEvent?.name) ||
 			(boundaryOrdinal === 1 && record.nativePhaseBoundaryReleaseSent) ||
 			(boundaryOrdinal === 2 && (process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE !== "1" ||
 				record.privateAtomicCaptureCount < 2 || !record.privateAtomicCaptureFenceProofs?.has(1) || record.privateAtomicCaptureCount >= 4)) ||
@@ -1341,8 +1498,8 @@ function createHostSessionManager({
 		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
 			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand ||
 			record.authorityStateRevision !== 4 || record.nextAuthorityEventSequence !== 5 ||
-			record.lastAuthorityEvent?.sequence !== 4 || record.lastAuthorityEvent?.name !== "gongJiOrFaShu" ||
-			!record.acceptedNativeCardActionProofDigest || !DIGEST.test(record.authorityStateDigest || "") ||
+			record.lastAuthorityEvent?.sequence !== 4 || !["gongJiOrFaShu", "jiRi_moBaoChongJie"].includes(record.lastAuthorityEvent?.name) ||
+			!record.acceptedNativeActionProofDigest || !DIGEST.test(record.authorityStateDigest || "") ||
 			record.nativePhaseBoundaryReleaseSent || !input || Object.getPrototypeOf(input) !== Object.prototype ||
 			record.privateAtomicCaptureRequests.size !== 0 ||
 			(process.env.V2_NATIVE_ATOMIC_CAPTURE_PROBE === "1" && record.privateAtomicCaptureCount < 1) ||
@@ -1351,9 +1508,9 @@ function createHostSessionManager({
 			!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(input.rootInstanceId || "") || !record.seatIds.includes(input.seatId)) {
 			return failure("NATIVE_PHASE_BOUNDARY_RELEASE_REJECTED");
 		}
-		if (input.nativeEventId !== record.acceptedNativeCardActionNativeEventId ||
-			input.rootInstanceId !== record.acceptedNativeCardActionRootInstanceId ||
-			input.seatId !== record.acceptedNativeCardActionSeatId) return failure("NATIVE_PHASE_BOUNDARY_RELEASE_REJECTED");
+		if (input.nativeEventId !== record.acceptedNativeActionNativeEventId ||
+			input.rootInstanceId !== record.acceptedNativeActionRootInstanceId ||
+			input.seatId !== record.acceptedNativeActionSeatId) return failure("NATIVE_PHASE_BOUNDARY_RELEASE_REJECTED");
 		record.nativePhaseBoundaryReleaseSent = true;
 		try {
 			await record.handle.sendHostCommand({ type: "host_native_phase_boundary_release", kind: "managed_host", protocol: PROTOCOL,

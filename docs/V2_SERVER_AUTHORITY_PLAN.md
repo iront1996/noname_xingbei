@@ -1,5 +1,13 @@
 # V2 server-authority plan and evidence
 
+## Current batch: `jiRi_moBaoChongJie` A/B atomic commitment and authorized Event #4 (Linux CI pending)
+
+- The Jiri fixture now joins the already accepted native pre-action commitment A to a post-action `phaseOver` atomic commitment B in the same room, host session, Chromium root, build and immutable four-seat topology. A records the input-waiting native event instance/completion ordinal and a private digest/count binding for the ordered team achievement lists.
+- The existing Event #4 authorization path is extended by a dedicated `xingbei_native_skill_action_v1` validator for this exact `jiRi_moBaoChongJie` fixture. It checks the native candidate, immutable managed deliveries, parent/child event identities and completion ordering, target physical-card movement, and exactly one ordered `baoShi` append against A's private list digest. Event #4 remains sequence 4 / revision 3→4; the parent resumes and player ACK is emitted only after authenticated acceptance.
+- The opt-in paired Chromium test waits for nested target ACK, then Event #4 acceptance, then the delayed main-choice ACK retry (avoiding an ACK-gate test deadlock). It captures B at the validated phase fence and repeats that fence to verify stable three-projection state. This does not open Event #5, seed, checkpoint or broad `achievement_resources` support.
+- Local focused Node/syntax validation passed; Windows has no Chromium executable, so real Chromium and Linux verification are pending. The workflow now contains a dedicated non-skippable Linux Chromium step. Do not mark the fixture accepted or promote the manifest until that exact Linux step passes. The current release lock verifies as build `9299aa9c210fc747799b0036486422ce756268038a233ffd11c90ba6b4b4d349` (210 managed source files).
+- Cloudflare Preview exclusion was reloaded and rechecked read-only immediately before push: Production `feature/auto-lobby`, automatic production deploys enabled, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`; editor Save was disabled. No Pages setting changed.
+
 ## Current milestone: native `jiRi_moBaoChongJie` managed choice and `changeZhanJi` child (bounded fixture accepted)
 
 - Starting remote HEAD `6a3c20d8dba1e4837820f03dd7d74c3d9764de63` was fetched and confirmed unchanged. Commit `7ae7f922f9d4c2aaa68ead7e983692b5ec497c9e` passed exact-SHA Linux CI `39135821505`: 86/86 workflow steps and 271/271 TAP tests, zero failures and zero skips. Dedicated step 36 ran this real-Chromium fixture; existing steps 32–35 also passed.

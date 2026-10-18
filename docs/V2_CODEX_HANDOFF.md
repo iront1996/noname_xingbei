@@ -1,5 +1,14 @@
 # V2 Codex engineering handoff
 
+## Current batch: `jiRi_moBaoChongJie` Event #4 and paired post-`phaseOver` commitment (Linux CI pending)
+
+- The isolated fixture now retains the accepted native pre-action commitment A, including its root-bound native input-event instance/completion ordinal and a private digest/count binding for both ordered team achievement lists.
+- The real native `jiRi_moBaoChongJie` path has a dedicated Event #4 validator. It binds the actual managed skill candidate, immutable main/nested deliveries, `useSkill`/`changeZhanJi`/`chooseToDiscard` native event instances and completion order, the exact ordered `baoShi` append, and the existing revision 3→4 / sequence 4 authority transition. The parent is released only after the authenticated authority ACK; the player choice ACK follows that acceptance.
+- Opt-in `V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR=1` continues the same native root after Event #4 acceptance and requests a post-`phaseOver` three-projection atomic commitment B. The test compares A/B root/session/build/seats, ordinals, list digests and resource counts, then repeats B at the same fence and checks stable projections. This is one bounded `jiRi_moBaoChongJie` fixture only; `achievement_resources` remains unsupported generally, and Event #5 remains closed.
+- Latest focused integrity/manager/projection run passed 62 tests with 0 failures; 1 symlink-permission test was platform-skipped because Windows denied symlink creation. Syntax and manifest JSON checks passed. The real Chromium test is not runnable on this Windows host because no local Chromium executable is installed; the new dedicated Linux workflow step is required and has not yet run. Do not claim the A/B pair accepted until that step passes on Linux CI.
+- Release lock currently verifies as build `9299aa9c210fc747799b0036486422ce756268038a233ffd11c90ba6b4b4d349` (210 source files). Cloudflare `xingbei-play` Branch control was reloaded and re-opened read-only: Production `feature/auto-lobby`, production automatic deployments enabled, Preview `Custom branches`, Include `*`, Exclude `codex/v2-server-authority-m1`; Save was disabled and no setting was changed.
+- Safety gates remain `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4, Event #5 rejected, `checkpointAvailable=false`. PR #1 remains open/unmerged; no formal service or deployment was touched.
+
 ## Current continuation: native `jiRi_moBaoChongJie` managed choice and `changeZhanJi` child (bounded fixture accepted)
 
 - Starting remote branch tip was `6a3c20d8dba1e4837820f03dd7d74c3d9764de63`; implementation and test commit `7ae7f922f9d4c2aaa68ead7e983692b5ec497c9e` is on the isolated branch. Exact-SHA Linux CI `39135821505` completed successfully: 86/86 workflow steps and 271/271 TAP tests passed, 0 failed, 0 skipped.

@@ -85,6 +85,16 @@ function createManagedNativePreActionCapture({ roomId, sessionId, engineBuildId,
 			const turn = validateNativeTurnResourceProjectionV2(envelope.turnResource,
 				{ roomId, hostSessionId: sessionId, engineBuildId, rootInstanceId, seatIds });
 			const turnData = turn.canonical.turn;
+			const achievementResourceBinding = Object.freeze({
+				hong: Object.freeze({ count: turn.canonical.resources.hongZhanJi.length,
+					baoShiCount: turn.canonical.resources.hongZhanJi.filter(value => value === "baoShi").length,
+					shuiJingCount: turn.canonical.resources.hongZhanJi.filter(value => value === "shuiJing").length,
+					digest: crypto.createHash("sha256").update(canonicalize(turn.canonical.resources.hongZhanJi), "utf8").digest("hex") }),
+				lan: Object.freeze({ count: turn.canonical.resources.lanZhanJi.length,
+					baoShiCount: turn.canonical.resources.lanZhanJi.filter(value => value === "baoShi").length,
+					shuiJingCount: turn.canonical.resources.lanZhanJi.filter(value => value === "shuiJing").length,
+					digest: crypto.createHash("sha256").update(canonicalize(turn.canonical.resources.lanZhanJi), "utf8").digest("hex") }),
+			});
 			if (envelope.turnResource.fence.kind !== "managed_native_input_waiting_fence_v1" ||
 				cardRows.length < 1 || envelope.cardLedger.rootInstanceId !== rootInstanceId ||
 				envelope.effectState.rootInstanceId !== rootInstanceId ||
@@ -103,7 +113,7 @@ function createManagedNativePreActionCapture({ roomId, sessionId, engineBuildId,
 				roomId, hostSessionId: sessionId,
 				captureOrdinal: 1, nativeCompletionOrdinal: fence.nativeCompletionOrdinal, nativeEventId: fence.nativeEventId,
 				eventInstanceId: fence.eventInstanceId, choiceId: fence.choiceId, seatId: fence.seatId,
-				rootInstanceId, engineBuildId, stateDigest, commitment, projectionCount: 3,
+				rootInstanceId, engineBuildId, stateDigest, commitment, projectionCount: 3, achievementResourceBinding,
 				boundaryKind: "native_input_waiting_quiescent", authoritySeedAuthorized: false, checkpointAvailable: false });
 		},
 		destroy() {
