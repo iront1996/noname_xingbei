@@ -1,5 +1,12 @@
 # V2 Codex engineering handoff
 
+## T3 `shengJi` legal native post-transition probe — passed, scope remains limited
+
+- Code/assertion commit `c35a63fd2bacb211d6c8cdce708e472dcb7a81c1` passed Linux CI `39104008901`: 86 workflow steps, 267/267 TAP tests, zero failures and zero skips. Real Chromium step 34 executed the four-seat isolated fixture.
+- Evidence: the unmodified native character pool allowed `shengQiangQiShi`; a native legal `gongJi` hit reached the defender's managed optional decline (`bool=false`, with no response `useCard` child); the original `shengJi` trigger completed its same-root `changeZhiLiao` child and the observed `zhiLiao` delta was +1; a later three-projection atomic capture followed the child. `game.me` remained absent and no authority Event #5 was created.
+- The fix only distinguished this fixture's legal decline from ordinary card-response assertions. Default response and trustee checks are preserved. Coverage manifest now records `native_post_transition_path_verified_atomic_pair_pending`; healing itself remains unsupported because no completed safe pre-transition atomic commitment is paired with the post capture, and overflow/general healing semantics are not covered.
+- Release lock remained valid (no managed-engine source was modified). After push, Cloudflare Deployments showed Preview `c35a63f` as “No deployment available”/skipped; Production remained on `feature/auto-lobby`. PR #1 remains open/unmerged; all seed/Event #5/checkpoint gates remain closed.
+
 ## T3 `shengJi` fixture — native decline assertion corrected; Linux rerun pending
 
 - Linux CI `39103700415` reached the real managed Chromium response path and failed at the shared assertion that expected `selectedKind="card"`. This fixture deliberately submits the native optional `decline` from the defender so the original `gongJiMingZhong → shengJi → changeZhiLiao(1)` path can occur; the observed `decline` was the expected native result, not a host or rules failure.

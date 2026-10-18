@@ -1,5 +1,11 @@
 # V2 server-authority plan and evidence
 
+## T3 native `shengJi` post-transition evidence — passed, atomic resource transition still pending
+
+- Commit `c35a63fd2bacb211d6c8cdce708e472dcb7a81c1` passed Linux CI `39104008901` (86 workflow steps, 267/267 TAP tests, zero failures/skips). Its real Chromium step confirmed the legal native candidate, native `gongJi`, managed native decline, original `shengJi` trigger, completed `changeZhiLiao` child, and actual +1 `zhiLiao` delta; a later atomic capture was ordered after that child.
+- This is an isolated legal-path and post-state proof, not a before/after atomic commitment pair, complete overflow test, or general healing-resource contract. The coverage manifest remains incomplete and explicitly labels the native path verified but atomic pairing pending; healing remains unsupported.
+- No rules, managed-engine sources, authority events, seed or checkpoint were changed. Cloudflare showed the pushed preview as skipped/no deployment; the production branch remains unchanged.
+
 ## T3 `shengJi` fixture — native decline assertion corrected; Linux rerun pending
 
 - CI `39103700415` reached the real managed Chromium optional-response path, then failed because a shared test assertion expected a physical card. The opt-in `shengJi` fixture intentionally selects the original native `decline` option to reach the `gongJiMingZhong → shengJi` trigger; its result is `bool=false` and must not create a response `useCard` child.
