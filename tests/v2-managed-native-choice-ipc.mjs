@@ -1333,6 +1333,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		const characterAuthorityEvent = authoritySubmissions.find(entry => entry.proof?.eventSequence === 2)?.proof?.event;
 		assert.ok(characterAuthorityEvent?.characters?.some(entry => entry.seatId === nativeYinYangFixtureSeatId && entry.character === "yinYangShi"),
 			"the real native Event #2 result must assign the fixture's native-generated choice to the target seat");
+	} else if (process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1") {
+		const resourceChoice = opened.find(choice => choice.seatId === nativeResourceFixtureSeatId);
+		const selected = controller.inspect(roomId, resourceChoice?.choiceId);
+		assert.equal(selected?.resolution?.option, "shengQiangQiShi",
+			"the managed player selection must preserve the native shengJi fixture candidate");
+		const characterAuthorityEvent = authoritySubmissions.find(entry => entry.proof?.eventSequence === 2)?.proof?.event;
+		assert.ok(characterAuthorityEvent?.characters?.some(entry => entry.seatId === nativeResourceFixtureSeatId && entry.character === "shengQiangQiShi"),
+			"the native Event #2 result must initialize the first actor with the selected fixture role");
 	} else {
 		assert.equal(controller.inspect(roomId, a.choiceId).resolution.option, a.options[1]);
 		assert.equal(controller.inspect(roomId, b.choiceId).resolution.kind, "trustee");
