@@ -98,8 +98,8 @@
 				"skill": "shengJi",
 				"nativeSource": "character/shiZhouNian.js shengQiangQiShi; forced gongJiMingZhong trigger invokes Player.changeZhiLiao(1)",
 				"requiredNativePath": "native legal character candidate -> native gongJi hit -> native optional response decline -> shengJi trigger -> completed changeZhiLiao child and triggers -> phaseOver atomic capture",
-				"status": "native_pre_post_atomic_pair_local_chromium_verified_linux_ci_pending",
-				"evidence": "A real managed Chromium shengJi fixture captures one atomic three-projection commitment while the original gongJiOrFaShu event is paused at a controller-managed input wait, then follows the same native action lineage through gongJiMingZhong -> shengJi -> completed changeZhiLiao(+1) child and captures a second atomic commitment at the completed phaseOver fence. Both captures bind the same room/session/build/root/four seats; the two commitments are separate intervals, not one interval. The input-waiting event itself is not claimed complete, and the healing delta is attributed only through the native child proof.",
+				"status": "native_pre_post_atomic_pair_verified_fixture_only",
+				"evidence": "Linux CI 39107954312 step 35 ran the real managed Chromium shengJi fixture without skip. It captures one atomic three-projection commitment while the original gongJiOrFaShu event is paused at a controller-managed input wait, then follows the same native action lineage through gongJiMingZhong -> shengJi -> completed changeZhiLiao(+1) child and captures a second atomic commitment at the completed phaseOver fence. Both captures bind the same room/session/build/root/four seats; the two commitments are separate intervals, not one interval. The input-waiting event itself is not claimed complete, and the healing delta is attributed only through the native child proof.",
 				"blocker": "This proves only the isolated shengJi +1 fixture, not general healing, clamp/overflow behavior, alternate sources/roles/seats/rounds, or all downstream triggers. Keep healing_resource unsupported until those semantics and transitions have their own bounded native evidence."
 			}
 		],

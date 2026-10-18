@@ -40,7 +40,7 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 	assert.deepEqual(resourceAudit.nativePathCandidates.map(candidate => [candidate.resource, candidate.skill, candidate.status]), [
 		["achievement_resources", "jiRi_moBaoChongJie", "candidate_not_runtime_verified"],
 		["achievement_resources", "_gongJiXingShi", "source_definition_only"],
-		["healing_resource", "shengJi", "native_pre_post_atomic_pair_local_chromium_verified_linux_ci_pending"],
+		["healing_resource", "shengJi", "native_pre_post_atomic_pair_verified_fixture_only"],
 	]);
 	assert.ok(resourceAudit.nativePathCandidates.every(candidate => candidate.nativeSource && candidate.requiredNativePath && candidate.blocker),
 		"source candidates must retain an explicit unverified state and a blocker");
