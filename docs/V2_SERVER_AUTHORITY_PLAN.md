@@ -1,10 +1,10 @@
 # V2 server-authority plan and evidence
 
-## T3 `shengJi` real-Chromium probe — failed bootstrap and correction pending
+## T3 `shengJi` real-Chromium probe — native candidate reached; fixture test-path collision pending
 
 - The first dedicated Linux run, `39102999286` on `e2ea44355104006f7f9a294f2b04cb0ea44b980d`, executed the test (not skipped) but failed before managed-host startup with `SHENGJI_NATIVE_CHARACTER_POOL_UNAVAILABLE`.
-- Root cause: the fixture installation checked `_status.firstAct` before the native root ran. In the original Xingbei topology, `chooseCharacterOLDuoXuanYi` invokes `initSideAndPosition()` at step 0 and calls `get.charactersOL()` only at step 1. The local fix defers role/actor validation to that native pool request while retaining the unmodified native pool requirement. No native rule or Player state is changed.
-- Focused local Node suites after the fix: 21 pass, 0 fail, 1 Windows symlink-capability skip; real Chromium is unavailable locally. Release lock recomputed as `53ece7931eed238865ebefad9aab5df1dcab874940010974c409fd33f09bfadc` (209 files, 18,919,350 bytes). Linux Chromium validation remains pending; the probe is not accepted and healing is still unsupported.
+- The bootstrap correction allowed the Linux real-Chromium fixture to reach managed-choice submission, so the original native pool/candidate setup progressed. CI `39103274665` then failed at test line 856: the fixture's initial loop had submitted all four immutable choices, followed by a default-path rebind assertion that tried to resubmit seat C. The reconnect assertion remains enabled for the ordinary/default case; the fixture now avoids that incompatible duplicate and has separate reconnect regression coverage elsewhere in the serialized suite.
+- Focused local Node suites: 21 pass, 0 fail, 1 Windows symlink-capability skip; real Chromium is unavailable locally. Release lock remains `53ece7931eed238865ebefad9aab5df1dcab874940010974c409fd33f09bfadc` (209 files, 18,919,350 bytes). The corrected fixture/test path has not yet passed Linux Chromium; healing is still unsupported.
 
 ## T3 native healing resource probe (Linux Chromium pending)
 

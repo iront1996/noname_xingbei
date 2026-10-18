@@ -850,7 +850,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				credential: credentialFor(choice.seatId), option }).ok, true, `native fixture choice rejected for ${choice.seatId}`);
 		}
 	} else assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: a.hostSessionId, nativeEventId: a.nativeEventId, seatId: a.seatId, eventSequence: 2, choiceId: a.choiceId, connectionId: `conn_${a.seatId}`, credential: credentialFor(a.seatId), option: a.options[1] }).ok, true);
-	if (process.env.V2_NATIVE_YINYANG_FIXTURE !== "1") {
+	// Fixture paths submit every seat's immutable native candidate above; keep
+	// the default-path rebind/replay assertions from submitting seat C twice.
+	if (process.env.V2_NATIVE_YINYANG_FIXTURE !== "1" && process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE !== "1") {
 	assert.equal(bindSeat(c.seatId, `new_${c.seatId}`).ok, true);
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: c.hostSessionId, nativeEventId: c.nativeEventId, seatId: c.seatId, eventSequence: 2, choiceId: c.choiceId, connectionId: `conn_${c.seatId}`, credential: credentialFor(c.seatId), option: c.options[0] }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: c.hostSessionId, nativeEventId: c.nativeEventId, seatId: c.seatId, eventSequence: 2, choiceId: c.choiceId, connectionId: `new_${c.seatId}`, credential: credentialFor(c.seatId), option: c.options[0] }).ok, true);
