@@ -863,13 +863,17 @@ async function runManagedUnifiedRoot() {
 	 lib.configOL.chooseSide=false;lib.configOL.choose_mode='多选1';lib.configOL.choose_number='2';
 	 lib.configOL.team_sequence='near';lib.configOL.phaseswap=false;
 	 const yinyangFixture=${process.env.V2_NATIVE_YINYANG_FIXTURE === "1"};
+	 const shengJiResourceFixture=${process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1"};
+	 if(yinyangFixture&&shengJiResourceFixture)throw Error('NATIVE_RESOURCE_FIXTURE_CONFLICT');
 	 const state={status:'starting',instrumented:false,rootPromiseState:'pending',failureCode:null,
 	  waitForPlayerCalls:0,randomMapOLCalls:0,prepareArenaCalls:0,chooseCharacterCalls:0,sideAssignmentCalls:0,
 	  dialogBroadcasts:0,trusteeTimerCaptured:false,selectionEventCount:0,sideEventCount:0,gameStartCount:0,
 	  drawCreated:false,drawCompleted:false,phaseLoopCreated:false,phaseLoopStartRequested:false,
 	  phaseLoopStarted:false,phaseLoopPaused:false,phaseLoopReleased:false,phaseLoopGate:null,phaseLoopStartPromise:null,
 	  event1Ready:false,event1Released:false,event2Ready:false,event2Released:false,event3Ready:false,
-	  yinyangFixtureEnabled:yinyangFixture,yinyangFixtureSeatId:null,yinyangCandidatePool:null,yinyangFixtureCandidateObserved:false};
+	  yinyangFixtureEnabled:yinyangFixture,yinyangFixtureSeatId:null,yinyangCandidatePool:null,yinyangFixtureCandidateObserved:false,
+	  shengJiResourceFixtureEnabled:shengJiResourceFixture,shengJiResourceFixtureSeatId:null,shengJiCandidatePool:null,shengJiFixtureCandidateObserved:false,
+	  shengJiResourceTransition:null};
 	 let releaseEvent1,releaseEvent2,releasePhaseLoop;
 	 state.event1Gate=new Promise(resolve=>{releaseEvent1=resolve});state.releaseEvent1=()=>{if(state.event1Released)throw Error('UNIFIED_EVENT1_RELEASE_DUPLICATE');state.event1Released=true;releaseEvent1()};
 	 state.event2Gate=new Promise(resolve=>{releaseEvent2=resolve});state.releaseEvent2=()=>{if(state.event2Released)throw Error('UNIFIED_EVENT2_RELEASE_DUPLICATE');state.event2Released=true;releaseEvent2()};
@@ -922,6 +926,35 @@ async function runManagedUnifiedRoot() {
 	   return randomRemove.apply(this,args);
 	  };
 	 }
+	 if(shengJiResourceFixture){
+	  if(!lib.character.shengQiangQiShi||typeof get.charactersOL!=='function'||typeof get.characterGets!=='function'||!_status.firstAct)
+	   throw Error('SHENGJI_NATIVE_CHARACTER_POOL_UNAVAILABLE');
+	  get.charactersOL=function(...args){
+	   if(args.length)return originalCharactersOL.apply(this,args);
+	   if(state.shengJiCandidatePool)return state.shengJiCandidatePool.slice();
+	   const native=originalCharactersOL.call(this);
+	   if(!native.includes('shengQiangQiShi'))throw Error('SHENGJI_CHARACTER_NOT_IN_NATIVE_LEGAL_POOL');
+	   const actor=_status.firstAct,targetIndex=game.players.indexOf(actor),pool=Array(8).fill(null);
+	   if(targetIndex<0)throw Error('SHENGJI_FIXTURE_ACTOR_NOT_SEATED');
+	   pool[targetIndex*2]='shengQiangQiShi';
+	   const forbidden=(lib.config.forbidlist||[]).concat(lib.config.customforbid||[]),conflicts=(candidate,selected)=>forbidden.some(pair=>Array.isArray(pair)&&pair.length>=2&&
+	    ((pair[0]===candidate&&selected.includes(pair[1]))||(pair[1]===candidate&&selected.includes(pair[0]))));
+	   const used=new Set(['shengQiangQiShi']);
+	   for(let index=0;index<pool.length;index++)if(pool[index]===null){const candidate=native.find(name=>!used.has(name)&&!conflicts(name,[...used]));
+	    if(!candidate)throw Error('SHENGJI_FIXTURE_NATIVE_POOL_TOO_SMALL');pool[index]=candidate;used.add(candidate)}
+	   state.shengJiResourceFixtureSeatId=actor.playerid;state.shengJiCandidatePool=pool;return pool.slice();
+	  };
+	  get.characterGets=function(list,...args){const result=originalCharacterGets.call(this,list,...args);
+	   if(state.shengJiCandidatePool&&Array.isArray(list)&&list.length===8&&list.includes('shengQiangQiShi')){
+	    const index=game.players.findIndex(player=>player.playerid===state.shengJiResourceFixtureSeatId);
+	    if(result.length!==8||result.indexOf('shengQiangQiShi')!==index*2)throw Error('SHENGJI_FIXTURE_POOL_FILTERED_OR_REORDERED');
+	    state.shengJiFilteredCandidatePool=result;state.shengJiFixtureCandidateObserved=true;
+	   }return result;
+	  };
+	  const randomRemove=originalRandomRemove;
+	  Array.prototype.randomRemove=function(...args){if(this===state.shengJiFilteredCandidatePool&&args.length===0)return this.splice(0,1)[0];
+	   return randomRemove.apply(this,args)};
+	 }
 	 game.waitForPlayer=function(callback){state.waitForPlayerCalls++;if(state.waitForPlayerCalls!==1||!_status.connectMode||
 	  game.me!==null||game.players.length!==container.setup.seats.length||game.players.some((player,index)=>player.ws||
 	   player.playerid!==container.setup.seats[index].seatId))throw Error('UNIFIED_WAIT_FOR_PLAYER_ADAPTER_REJECTED');
@@ -944,6 +977,10 @@ async function runManagedUnifiedRoot() {
 	    if(yinyangFixture){const seatOptions=args[1][state.yinyangFixtureSeatId]||[];
 	     if(!state.yinyangFixtureCandidateObserved||!seatOptions.includes('yinYangShi')||Object.values(args[1]).flat().filter(name=>name==='yinYangShi').length!==1)
 	      throw Error('YINYANG_NATIVE_CANDIDATE_NOT_GENERATED');state.yinyangNativeCandidateGenerated=true;
+	    }
+	    if(shengJiResourceFixture){const seatOptions=args[1][state.shengJiResourceFixtureSeatId]||[];
+	     if(!state.shengJiFixtureCandidateObserved||!seatOptions.includes('shengQiangQiShi')||Object.values(args[1]).flat().filter(name=>name==='shengQiangQiShi').length!==1)
+	      throw Error('SHENGJI_NATIVE_CANDIDATE_NOT_GENERATED');state.shengJiNativeCandidateGenerated=true;
 	    }
 	    get.charactersOL=originalCharactersOL;get.characterGets=originalCharacterGets;Array.prototype.randomRemove=originalRandomRemove;return;}
 	  return originalBroadcastAll.call(this,callback,...args)};
@@ -1038,7 +1075,11 @@ async function runManagedUnifiedRoot() {
 		  prepareArenaCalls:s.prepareArenaCalls,waitForPlayerCalls:s.waitForPlayerCalls,randomMapOLCalls:s.randomMapOLCalls,
 	  dialogBroadcasts:s.dialogBroadcasts,trusteeTimerCaptured:s.trusteeTimerCaptured,yinyangFixtureEnabled:s.yinyangFixtureEnabled,
 	  yinyangFixtureSeatId:s.yinyangFixtureSeatId,yinyangNativeCandidateGenerated:s.yinyangNativeCandidateGenerated===true,
-	  yinyangNativeCandidateOptions:s.yinyangFixtureEnabled?(s.nativeCandidates?.[s.yinyangFixtureSeatId]||[]):[]}:null})()`, returnByValue: true }, 1500);
+		  firstActSeatId:_status.firstAct?.playerid||null,
+		  yinyangNativeCandidateOptions:s.yinyangFixtureEnabled?(s.nativeCandidates?.[s.yinyangFixtureSeatId]||[]):[],
+		  shengJiResourceFixtureEnabled:s.shengJiResourceFixtureEnabled,shengJiResourceFixtureSeatId:s.shengJiResourceFixtureSeatId,
+		  shengJiNativeCandidateGenerated:s.shengJiNativeCandidateGenerated===true,
+		  shengJiNativeCandidateOptions:s.shengJiResourceFixtureEnabled?(s.nativeCandidates?.[s.shengJiResourceFixtureSeatId]||[]):[]}:null})()`, returnByValue: true }, 1500);
 		if (result.exceptionDetails || !result.result?.value) throw new Error("UNIFIED_ROOT_STATE_UNAVAILABLE");
 		return result.result.value;
 	};
@@ -1098,7 +1139,10 @@ async function runManagedUnifiedRoot() {
 	choiceDiagnosticTimer = setTimeout(() => emitManagedChoiceDiagnostic(), 5000);
 	process.send?.({ ...identity, type: "host_choice_candidates", nativeEventId, eventSequence: 2, choices: choiceReady.choices, deadlineMs: 3000,
 		...(choiceReady.yinyangFixtureEnabled ? { yinyangFixture: { seatId: choiceReady.yinyangFixtureSeatId,
-			nativeCandidateGenerated: choiceReady.yinyangNativeCandidateGenerated === true } } : {}) });
+			nativeCandidateGenerated: choiceReady.yinyangNativeCandidateGenerated === true } } : {}),
+		...(choiceReady.shengJiResourceFixtureEnabled ? { firstActSeatId: choiceReady.firstActSeatId,
+			resourceFixture: { seatId: choiceReady.shengJiResourceFixtureSeatId,
+				nativeCandidateGenerated: choiceReady.shengJiNativeCandidateGenerated === true } } : {}) });
 	const completed = await new Promise((resolve, reject) => { interactiveChoice.resolve = resolve; interactiveChoice.reject = reject; });
 	const event2 = await waitFor(state => state.event2Ready, "UNIFIED_EVENT2_GATE_TIMEOUT");
 	if (event2.rootEventName !== "game" || !event2.rootMatches || event2.eventStack.join(">") !== "game" ||
@@ -2213,6 +2257,23 @@ async function runNativeStartDiagnostic(message) {
 	    parentEventName:typeof parent.name==='string'?parent.name:null,seatId:typeof event.player?.playerid==='string'?event.player.playerid:null,
 	    eventStep:Number.isSafeInteger(event.step)?event.step:null});ledger.completed.add(event);ledger.completionEvidence.set(event,evidence);ledger.recent.push(evidence);
 	   if(ledger.recent.length>128)ledger.recent.shift();return evidence};
+	 if(${process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1"}){
+	  const originalChangeZhiLiao=Player.prototype.changeZhiLiao;
+	  if(typeof originalChangeZhiLiao!=='function'||typeof lib.skill.shengJi?.content!=='function')throw Error('SHENGJI_NATIVE_RESOURCE_SOURCE_UNAVAILABLE');
+	  Player.prototype.changeZhiLiao=function(...args){
+	   const lineage=[],seen=new Set();for(let current=_status.event;current&&lineage.length<32&&!seen.has(current);current=current.parent){seen.add(current);lineage.push(current)}
+	   const skillEvent=lineage.find(item=>item?.name==='shengJi'||item?.skill==='shengJi');
+	   if(!skillEvent)return originalChangeZhiLiao.apply(this,args);
+	   if(state.shengJiResourceTransition)throw Error('SHENGJI_RESOURCE_TRANSITION_DUPLICATE');
+	   const before=this.zhiLiao,invokingEvent=_status.event,child=originalChangeZhiLiao.apply(this,args);
+	   if(!child||child.name!=='changeZhiLiao'||child.parent!==invokingEvent||child.player!==this||child.num!==1||!Number.isSafeInteger(before))
+	    throw Error('SHENGJI_NATIVE_CHANGE_CHILD_CONTRACT_REJECTED');
+	   const ledger=completionLedgerForRoot();state.shengJiResourceTransition={skillEvent,invokingEvent,child,player:this,before,seatId:this.playerid,
+	    rootInstanceId:state.rootInstanceId,skillEventInstanceId:registerNativeEventInstance(skillEvent,ledger),
+	    invokingEventInstanceId:registerNativeEventInstance(invokingEvent,ledger),childEventInstanceId:registerNativeEventInstance(child,ledger)};
+	   return child;
+	  };
+	 }
 	 const ring=state.ring||(state.ring=[]);let emittedMilestones=0,emittedSteps=0,lastEventStepToken='';
 	 const emit=stage=>{state.traceCount++;const snap=snapshot();ring.push({stage,snapshot:snap});if(ring.length>128)ring.shift();const token=[snap.eventName,snap.eventStep].join(':');const milestone=new Set(['root_event_created','root_start_dispatched','wait_for_player_called','random_map_ol_called','prepare_arena_called','choose_character_called','game_start_trigger','game_draw_called','phase_loop_called','phase_called','native_input_gate','native_input_gate_waiting','native_input_wait_open','native_input_resume_accepted','native_input_resume_rejected','native_input_cancelled','native_input_cancel_rejected','native_input_gate_expired','native_useResult_entered','native_useResult_dispatched','native_useResult_exception','native_useCard_child_exception','native_action_child_wait_completed','root_promise_fulfilled','root_promise_rejected','wait_next_error']).has(stage);const criticalFailure=['native_input_gate_expired','native_input_resume_rejected','native_input_cancel_rejected','native_useResult_exception','native_useCard_child_exception','root_promise_rejected','wait_next_error'].includes(stage);const criticalProgress=stage==='native_useResult_entered';const changedStep=token!==lastEventStepToken;lastEventStepToken=token;if(milestone){if(!criticalFailure&&!criticalProgress&&emittedMilestones++>=64)return}else if(changedStep){if(emittedSteps++>=64)return}else return;const payload={kind:'native_start_trace_v1',stage,snapshot:snap};try{window.__v2NativeStartTrace(JSON.stringify(payload))}catch{}};
 	 if(!state.instrumented){
@@ -2311,7 +2372,25 @@ async function runNativeStartDiagnostic(message) {
 	   }prepareManagedNativeResponseGate(event);recordNativeResponse(event,'started')}
 	   registerNativeEventInstance(event,completionLedger);
 	   return originalStart.apply(this,args).then(value=>{
-	    recordNativeEventCompletion(event,completionLedger);
+	    const completionEvidence=recordNativeEventCompletion(event,completionLedger);
+	    const resource=state.shengJiResourceTransition;
+	    if(resource?.child===event){
+	     const after=resource.player?.zhiLiao;
+	     const effectChain=[resource.invokingEvent];for(let parent=resource.invokingEvent?.parent,count=0;parent&&count<16;parent=parent.parent,count++)effectChain.push(parent);
+	     if(!completionEvidence||event.finished!==true||event.parent!==resource.invokingEvent||event.player!==resource.player||event.num!==1||
+	      completionEvidence.rootInstanceId!==state.rootInstanceId||completionEvidence.eventName!=='changeZhiLiao'||
+	      completionEvidence.parentEventInstanceId!==resource.invokingEventInstanceId||!Number.isSafeInteger(after)||after!==resource.before+1||
+	      !effectChain.includes(resource.skillEvent))
+	      throw Error('SHENGJI_NATIVE_RESOURCE_COMPLETION_PROOF_REJECTED');
+	     state.shengJiResourceTransitionProof=Object.freeze({rootInstanceId:state.rootInstanceId,seatId:resource.seatId,skillName:resource.skillEvent.name||null,
+	      skillIdentityMatches:resource.skillEvent.name==='shengJi'||resource.skillEvent.skill==='shengJi',invokingEventName:resource.invokingEvent.name||null,
+	      invokingEventInstanceId:resource.invokingEventInstanceId,childEventName:event.name,childEventInstanceId:completionEvidence.eventInstanceId,
+	      childParentEventInstanceId:completionEvidence.parentEventInstanceId,childCompletionOrdinal:completionEvidence.completionOrdinal,
+	      before:resource.before,after,delta:after-resource.before,childFinished:event.finished===true});
+	     if(!state.shengJiResourceTransitionProof.skillIdentityMatches||state.shengJiResourceTransitionProof.delta!==1)
+	      throw Error('SHENGJI_NATIVE_RESOURCE_SEMANTICS_REJECTED');
+	     try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_shengji_zhiLiao_child_completed',snapshot:state.shengJiResourceTransitionProof}))}catch{}
+	    }
 	    if(responseChildOwner){responseChildOwner.useCardChildrenCompleted++;const selected=responseChildOwner.options.get(responseChildOwner.delivery?.optionId);if(selected?.kind==='view_as_skill')responseChildOwner.nativeSkillEffectProof={childName:event.name,skillId:event.skill||null,cardName:event.card?.name||null,xiBie:get.xiBie(event.card),materialIsSource:Array.isArray(event.cards)&&event.cards.length===1&&event.cards[0]===selected.material,materialStillInHand:event.player?.getCards('h').includes(selected.material)===true,guiHuoBefore:responseChildOwner.yinYangBaseline.guiHuo,guiHuoAfter:event.player?.countZhiShiWu('guiHuo')??null,targetCount:Array.isArray(event.targets)?event.targets.length:null,targetSeatId:event.targets?.[0]?.playerid||null,gameMeAbsent:game.me===null}}
 	    if(responseChildOwner?.options.get(responseChildOwner.delivery?.optionId)?.kind==='view_as_skill'){
 	     const proof=responseChildOwner.nativeSkillEffectProof,queue=[{event,depth:0}],seen=new Set(),tree=[];

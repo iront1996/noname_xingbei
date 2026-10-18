@@ -82,6 +82,14 @@
 				"requiredNativePath": "legal native attack hit -> actual skill ownership/activation -> completed changeZhanJi child and overflow triggers -> phase fence",
 				"status": "source_definition_only",
 				"blocker": "tracked-source search finds the definition but no character or mode attachment reference; do not attach or invoke it as a test shortcut"
+			},
+			{
+				"resource": "healing_resource",
+				"skill": "shengJi",
+				"nativeSource": "character/shiZhouNian.js shengQiangQiShi; forced gongJiMingZhong trigger invokes Player.changeZhiLiao(1)",
+				"requiredNativePath": "native legal character candidate -> native gongJi hit -> native optional response decline -> shengJi trigger -> completed changeZhiLiao child and triggers -> phaseOver atomic capture",
+				"status": "isolated_real_chromium_fixture_pending",
+				"blocker": "the opt-in fixture has not yet passed Linux Chromium; even after that it will prove a post-transition capture only, not a pre/post atomic commitment pair, full overflow behavior, or general healing-resource support"
 			}
 		],
 		"authorityEvent5Created": false,
