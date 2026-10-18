@@ -6,8 +6,16 @@
 - Added pure, side-effect-free successor-seat preparation validation and connected it to the existing real-Chromium diagnostic-only next-seat input-gate test. It checks the native `gongJiOrFaShu` candidate, same host identity, next seat's live Seat Registry generation, prior resolved choice cleanup, authenticated Chromium paused-input and exact event-stack/child-chain evidence, and fixed revision 4 / next sequence 5. It does not infer unobservable future triggers, allocate or deliver a choice, invoke trustee, run the second action, or submit authority.
 - Added a review-only Event #5 proposal schema and negative tests, plus `docs/M2_EVENT5_AUTHORITY_PROTOCOL_PROPOSAL.md`. No HostSession submission path is wired; no accepted Event #5, revision 5 or checkpoint is created. Event #5 remains rejected pending a separate authorization.
 - V3 state-sync source authentication is now repeated after recipient-scoped projection callbacks, with a race test proving no view is returned if the host stops during projection. Still protocol-only; no HALL integration/M3 claim.
-- Focused local Node suite: 16 passed; broader HostSession/controller/room/V3 suite: 60 passed; zero failures or skips. Syntax and whitespace checks passed. The exact step-41 configuration passed in local real Windows Chrome 3/3 (zero skips); real Linux CI acceptance remains pending and the dedicated step must execute without skip.
+- Focused local Node suite: 16 passed; broader HostSession/controller/room/V3 suite: 60 passed; zero failures or skips. Syntax and whitespace checks passed. The exact step-41 configuration passed in local real Windows Chrome 3/3 (zero skips).
 - T3 remains unchanged and partial; no state family was promoted. Gates remain `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4, Event #5 rejected, checkpoint unavailable. PR #1 remains open/unmerged and formal V1/V2/V3/VPS/monitoring/external services remain untouched.
+
+## Accepted batch: successor-seat read-only preparation and Event #5 protocol review
+
+- Commit `d11af15f30df83238c68408a7c69322833a93f5a`; Linux CI `39160288002`: 93/93 workflow steps, 293 TAP passed, 0 failed, 0 skipped. Dedicated step 41 executed in Linux Chromium without skip.
+- Step 41 reached the next ordinary seat's native `gongJiOrFaShu` waiting gate in the same managed room/session/PID/root/build and four-seat roster after Event #4 and phaseOver. The pure preparation validated the live Seat Registry connection generation and resolved prior choice; it allocated no choice/deadline/delivery, did not execute the next action, and did not submit Event #5. Authority remains revision 4 / next sequence 5; `game.me === null`.
+- Event #5 remains a review-only protocol proposal, unconnected to HostSession submission. The V3 per-seat synchronization contract is isolated and not wired to HALL; M3 is not claimed. No new T3 coverage was promoted.
+- Cloudflare `xingbei-play` Branch Controls were read-only verified before push (Production `feature/auto-lobby`, automatic deployments enabled, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`). After push, Deployments showed `d11af15` skipped / “No deployment available”; no preview deployment occurred.
+- Gates remain `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4, Event #5 rejected, `checkpointAvailable=false`. PR #1 remains open/unmerged; formal V1/V2/V3, VPS, monitoring and external services remain untouched.
 
 ## Current accepted continuation: next-seat diagnostic gate and V3 sync contract
 
