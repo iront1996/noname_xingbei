@@ -12,6 +12,7 @@ const { createManagedChoiceController } = require("../game/server-managed-choice
 const { createManagedRoomSeatRegistry } = require("../game/server-managed-room-seat-registry.js");
 const { prepareNextSeatChoice } = require("../game/server-managed-next-seat-choice-preparation.js");
 const { assessEvent5Evidence } = require("../game/server-managed-authority-event5-provenance.js");
+const { validateSeatStateMessage } = require("../game/v3-seat-state-protocol.js");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
@@ -58,7 +59,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		"a held native phase boundary requires the managed native event-completion evidence source");
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_V3_SEAT_STATE_PROJECTION_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
@@ -138,6 +139,16 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				credential: credentialFor(seatId) }, { roomId: candidateRoom, seatId });
 			return Object.freeze({ roomId: candidateRoom, seatId, connected: seat.connected, current: seat.connected && !seat.revoked,
 				credentialAuthenticated, ordinaryPlayer: true, connectionGeneration: seat.epoch });
+		},
+		authorizeSeatStateRequest: ({ roomId: candidateRoom, recipientSeatId, request }) => {
+			if (!seatRegistry || candidateRoom !== roomId || !request || Object.getPrototypeOf(request) !== Object.prototype ||
+				Object.keys(request).sort().join(",") !== "connectionId,credential" || request.connectionId !== seatSockets.get(recipientSeatId) ||
+				!seatRegistry.authenticateSeat({ roomId: candidateRoom, seatId: recipientSeatId, connectionId: request.connectionId,
+					credential: request.credential }, { roomId: candidateRoom, seatId: recipientSeatId })) return null;
+			const seat = seatRegistry.inspect(candidateRoom, recipientSeatId);
+			return seat ? Object.freeze({ roomId: candidateRoom, seatId: recipientSeatId, connected: seat.connected,
+				current: seat.connected && !seat.revoked, credentialAuthenticated: true, ordinaryPlayer: true,
+				connectionGeneration: seat.epoch }) : null;
 		},
 		launch: async bootstrap => {
 			const handle = await createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 })(bootstrap);
@@ -2638,6 +2649,55 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(successorRepeat.snapshot.stableWithPrevious, true);
 					assert.notEqual(successorRepeat.snapshot.commitment, successorCapture.snapshot.commitment,
 						"ordinal-scoped commitments must not be replay-identical even when the captured state is stable");
+					if (process.env.V2_V3_SEAT_STATE_PROJECTION_PROBE === "1") {
+						const views = new Map();
+						for (const seatId of immutableServerSeatIds) {
+							const connectionId = seatSockets.get(seatId);
+							assert.ok(connectionId, `seat ${seatId} must have a current registry connection`);
+							const view = manager.createV3SeatStateForRequest(roomId, { recipientSeatId: seatId,
+								request: { connectionId, credential: credentialFor(seatId) } });
+							assert.equal(view.ok, true, `authenticated seat projection failed for ${seatId}: ${view.code}`);
+							assert.equal(validateSeatStateMessage(view.message, { roomId, seatId, connectionGeneration: seatRegistry.inspect(roomId, seatId).epoch,
+								seatIds: immutableServerSeatIds }).ok, true);
+							assert.equal(view.message.pendingChoice, null, "diagnostic input gate is not a fabricated managed choice");
+							assert.equal(view.message.publicState.activeSeatId, nextInput.seatId);
+							assert.equal(view.message.publicState.phase, "xingDong");
+							assert.equal(view.message.stateSequence, 1);
+							assert.deepEqual(view.message.publicState.players.map(player => player.seatId), immutableServerSeatIds);
+							const encoded = JSON.stringify(view.message);
+							for (const secret of [sessionSecret, ...seatCredentials.values()]) assert.equal(encoded.includes(secret), false);
+							assert.equal(encoded.includes("hostSessionId"), false);
+							assert.equal(encoded.includes("stateDigest"), false);
+							assert.equal(encoded.includes('"cardId"'), false);
+							assert.equal(encoded.includes('"name":"gongJi"'), false);
+							views.set(seatId, view.message);
+						}
+						for (const [seatId, view] of views) {
+							assert.equal(view.privateState.seatId, seatId);
+							for (const [otherSeatId, other] of views) if (otherSeatId !== seatId) {
+								assert.notDeepEqual(view.privateState.handCardViewIds, other.privateState.handCardViewIds,
+									"recipient private projection must not reuse another seat's opaque card view IDs");
+							}
+						}
+					const seatAConnection = seatSockets.get(immutableServerSeatIds[0]);
+					assert.equal(manager.createV3SeatStateForRequest(roomId, { recipientSeatId: immutableServerSeatIds[1],
+						request: { connectionId: seatAConnection, credential: credentialFor(immutableServerSeatIds[0]) } }).code,
+						"V3_SEAT_STATE_RECIPIENT_REJECTED", "a different ordinary seat cannot request another seat's private view");
+					assert.equal(manager.createV3SeatStateForRequest(roomId, { recipientSeatId: immutableServerSeatIds[0],
+						request: { connectionId: seatAConnection, credential: "0".repeat(64) } }).code,
+						"V3_SEAT_STATE_RECIPIENT_REJECTED", "invalid seat credentials cannot receive a private view");
+					const oldGeneration = seatRegistry.inspect(roomId, immutableServerSeatIds[0]).epoch;
+					assert.equal(bindSeat(immutableServerSeatIds[0], "projection_rebind_seat_a").ok, true);
+					assert.equal(seatRegistry.inspect(roomId, immutableServerSeatIds[0]).epoch, oldGeneration + 1);
+					assert.equal(manager.createV3SeatStateForRequest(roomId, { recipientSeatId: immutableServerSeatIds[0],
+						request: { connectionId: seatAConnection, credential: credentialFor(immutableServerSeatIds[0]) } }).code,
+						"V3_SEAT_STATE_RECIPIENT_REJECTED", "old connection generation cannot read a newer seat view");
+					const reboundView = manager.createV3SeatStateForRequest(roomId, { recipientSeatId: immutableServerSeatIds[0],
+						request: { connectionId: "projection_rebind_seat_a", credential: credentialFor(immutableServerSeatIds[0]) } });
+					assert.equal(reboundView.ok, true);
+					assert.equal(reboundView.message.connectionGeneration, oldGeneration + 1);
+					assert.equal(reboundView.message.stateSequence, 2);
+					}
 					const event5Review = manager.inspectEvent5ReviewEvidence(roomId);
 					assert.ok(event5Review, "review evidence must be derived from accepted Event #4, phase fence, native gate, and current seat binding");
 					const provenance = assessEvent5Evidence({ proposalOnly: true, submissionEnabled: false,
@@ -2649,6 +2709,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						"phaseOver provenance must come from the validated atomic native fence, not candidate booleans");
 					assert.equal(provenance.classifications.inputGate.status, "manager_scoped_review_candidate");
 					assert.equal(provenance.classifications.seatBinding.value.connectionGeneration, seatRecord.epoch);
+					assert.equal(provenance.digestDomains.crossDomainEquality.status, "unavailable");
+					assert.equal(provenance.digestDomains.bridgeFromEvent4ToSuccessor.status, "unavailable");
 					assert.equal(provenance.classifications.nativeSettlement.status, "unavailable");
 					assert.equal(provenance.classifications.postStateFence.status, "unavailable");
 					assert.equal(provenance.proposalClaims.completed, "caller_claim_unverified");

@@ -70,6 +70,7 @@ function fixture(options = {}) {
 		gameReadyTimeoutMs: options.gameReadyTimeoutMs || 1000,
 		onAuthoritativeResult: result => results.push(result),
 		onSessionEnd: options.onSessionEnd || (() => {}),
+		onManagedChoiceMessage: options.onManagedChoiceMessage || (() => {}),
 	});
 	return { launches, manager, results };
 }
@@ -329,6 +330,42 @@ test("hostSession terminal lifecycle notifies exact room/session once for cleanu
 	assert.equal(ended.length, 2);
 	assert.deepEqual(ended[1], { roomId: "lifecycle_a", sessionId: second.sessionId, state: "stopped", code: null });
 	await f.manager.stop("lifecycle_b");
+});
+
+test("late choice ACK handler rejection cannot turn an intentional stop into host failure", async () => {
+	let rejectChoiceMessage;
+	let releaseStop;
+	let stopEntered = false;
+	const f = fixture({
+		onManagedChoiceMessage: () => new Promise((_, reject) => { rejectChoiceMessage = reject; }),
+		launch: async bootstrap => {
+			const handle = new EventEmitter();
+			handle.pid = 9199;
+			handle.stop = async () => {
+				stopEntered = true;
+				await new Promise(resolve => { releaseStop = resolve; });
+				handle.emit("exit", 0, null);
+			};
+			f.launches.push({ bootstrap, handle });
+			return handle;
+		},
+	});
+	const roomId = "late_choice_ack_stop_race";
+	assert.equal((await f.manager.start(roomId, gameSetup)).ok, true);
+	const { bootstrap, handle } = f.launches[0];
+	const stopPromise = f.manager.stop(roomId, "intentional_stop_before_late_ack");
+	assert.equal(stopEntered, true);
+	assert.equal(f.manager.inspect(roomId).state, "stopping");
+	handle.emit("message", hostMessage(bootstrap, "host_choice_ack", { choiceId: "choice_late_ack" }));
+	assert.equal(typeof rejectChoiceMessage, "function");
+	rejectChoiceMessage(new Error("choice was already cleared by the stop lifecycle"));
+	await Promise.resolve();
+	assert.equal(f.manager.inspect(roomId).state, "stopping", "late ACK delivery failure cannot overwrite the terminal stop state");
+	releaseStop();
+	const stopped = await stopPromise;
+	assert.equal(stopped.ok, true);
+	assert.equal(stopped.session.state, "stopped");
+	assert.equal(f.manager.inspect(roomId).failureCode, null);
 });
 
 test("host stop fences an in-flight private effect snapshot before child exit", async t => {

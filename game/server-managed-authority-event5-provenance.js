@@ -9,7 +9,7 @@ function observed(source, value) { return Object.freeze({ status: "manager_scope
 
 function assessEvent5Evidence(proposal, managerObservation) {
 	const proposalValid = Boolean(proposal && proposal.proposalOnly === true && proposal.submissionEnabled === false);
-	const observationKeys = "authorityRevision,authoritySubmissionAllowed,checkpointAvailable,choiceAllocated,connectionAuthenticated,connectionGeneration,engineBuildId,event5Accepted,hostSessionId,nativeCompletionOrdinal,nextAuthorityEventSequence,nextInputWaiting,nextSeatId,nativeDeliveryAllowed,optionKinds,ordinaryPlayer,phaseBoundaryReleased,phaseOverCompleted,phaseOverCompletionOrdinal,preActionCaptureOrdinal,predecessorDigest,priorSeatId,roomId,rootInstanceId,reviewOnly,schema,seatIds,seedAuthorized,successorNativeEventId,submissionEnabled";
+	const observationKeys = "authorityRevision,authoritySubmissionAllowed,checkpointAvailable,choiceAllocated,connectionAuthenticated,connectionGeneration,engineBuildId,event5Accepted,hostSessionId,nativeCompletionOrdinal,nextAuthorityEventSequence,nextInputWaiting,nextSeatId,nativeDeliveryAllowed,optionKinds,ordinaryPlayer,phaseBoundaryReleased,phaseOverCompleted,phaseOverCompletionOrdinal,preActionCaptureOrdinal,predecessorDigest,predecessorDigestDomain,priorSeatId,roomId,rootInstanceId,reviewOnly,schema,seatIds,seedAuthorized,successorCaptureSchema,successorNativeEventId,submissionEnabled";
 	const managerValid = Boolean(managerObservation && Object.getPrototypeOf(managerObservation) === Object.prototype &&
 		Object.keys(managerObservation).sort().join(",") === observationKeys.split(",").sort().join(",") &&
 		managerObservation.schema === "managed_event5_review_observation_v1" && managerObservation.reviewOnly === true &&
@@ -26,6 +26,8 @@ function assessEvent5Evidence(proposal, managerObservation) {
 		Number.isSafeInteger(managerObservation.preActionCaptureOrdinal) && managerObservation.preActionCaptureOrdinal > 0 &&
 		Number.isSafeInteger(managerObservation.nativeCompletionOrdinal) && Number.isSafeInteger(managerObservation.phaseOverCompletionOrdinal) &&
 		managerObservation.phaseOverCompletionOrdinal > 0 && managerObservation.nativeCompletionOrdinal > managerObservation.phaseOverCompletionOrdinal &&
+		managerObservation.predecessorDigestDomain === "xingbei_authority_state_v2" &&
+		managerObservation.successorCaptureSchema === "xingbei_native_private_successor_preaction_commitment_v1" &&
 		managerObservation.preActionCaptureOrdinal === 1 && managerObservation.phaseBoundaryReleased === true && managerObservation.phaseOverCompleted === true &&
 		managerObservation.nextInputWaiting === true && managerObservation.choiceAllocated === false &&
 		managerObservation.authoritySubmissionAllowed === false && managerObservation.nativeDeliveryAllowed === false &&
@@ -48,20 +50,28 @@ function assessEvent5Evidence(proposal, managerObservation) {
 		choice: unavailable("second_seat_action_not_authorized_or_executed"),
 		delivery: unavailable("no_second_seat_choice_or_delivery_allocated"),
 		nativeSettlement: unavailable("second_seat_native_action_not_executed"),
-		postStateFence: unavailable("no_post_action_capture_or_event5_authority"),
+		postStateFence: unavailable("second_seat_action_not_executed_no_private_post_state_transition"),
 	};
+	const digestDomains = Object.freeze({
+		authorityPredecessor: managerValid ? observed("host_session_manager_accepted_event4", "xingbei_authority_state_v2") : unavailable("accepted_authority_digest_domain_missing"),
+		privateSuccessorCapture: managerValid ? observed("host_session_manager_accepted_successor_capture", managerObservation.successorCaptureSchema) : unavailable("private_capture_domain_missing"),
+		v3SeatState: unavailable("per_recipient_projection_is_separate_monotonic_stream_not_authority_digest"),
+		nativeCompletionOrdinal: managerValid ? observed("managed_native_event_completion_ledger", "native_event_completion_ordinal_v1") : unavailable("native_completion_domain_missing"),
+		crossDomainEquality: unavailable("digest_domains_are_not_semantically_interchangeable"),
+		bridgeFromEvent4ToSuccessor: unavailable("post_event4_phaseover_rotation_transition_not_in_authority_chain"),
+	});
 	const proposalClaims = Object.freeze({
 		completed: proposal?.phaseOver?.completed === true ? "caller_claim_unverified" : "absent_or_false",
 		rotationVerified: proposal?.actorRotation?.rotationVerified === true ? "caller_claim_unverified" : "absent_or_false",
 		authenticated: proposal?.seatBinding?.authenticated === true ? "caller_claim_unverified" : "absent_or_false",
 		knownStateOnly: proposal?.postStateFence?.knownStateOnly === true ? "caller_claim_unverified" : "absent_or_false",
-		digest: typeof proposal?.postStateFence?.afterDigest === "string" ? "caller_claim_unverified" : "absent_or_false",
+		digest: typeof proposal?.postStateFence?.afterPrivateStateDigest === "string" ? "caller_claim_unverified" : "absent_or_false",
 		completionOrdinal: Number.isSafeInteger(proposal?.postStateFence?.completionOrdinal) ? "caller_claim_unverified" : "absent_or_false",
 	});
 	return Object.freeze({ schema: "xingbei_event5_evidence_provenance_review_v1", reviewOnly: true, proposalStructurallyValid: proposalValid,
 		event5Accepted: false, submissionEnabled: false, authorityRevision: 4, nextAuthorityEventSequence: 5,
 		seedAuthorized: false, checkpointAvailable: false, reviewObservationShapeValid: managerValid,
-		classifications: Object.freeze(classifications), proposalClaims });
+		classifications: Object.freeze(classifications), digestDomains, proposalClaims });
 }
 
 module.exports = { assessEvent5Evidence };

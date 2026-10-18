@@ -26,8 +26,9 @@ function validateEvent5Proposal(value) {
 		value.proposalOnly !== true || value.submissionEnabled !== false || !ROOM.test(value.roomId || "") ||
 		!SESSION.test(value.hostSessionId || "") || !DIGEST.test(value.engineBuildId || "") || !ROOT.test(value.rootInstanceId || "") ||
 		!idList(value.seatIds, SEAT, 4, 4)) return reject("EVENT5_PROPOSAL_ENVELOPE_REJECTED");
-	if (!exact(value.predecessor, "eventSequence,revision,digest".split(",")) || value.predecessor.eventSequence !== 4 ||
-		value.predecessor.revision !== 4 || !DIGEST.test(value.predecessor.digest || "")) return reject("EVENT5_PROPOSAL_PREDECESSOR_REJECTED");
+	if (!exact(value.predecessor, "digest,digestDomain,eventSequence,revision".split(",")) || value.predecessor.eventSequence !== 4 ||
+		value.predecessor.revision !== 4 || value.predecessor.digestDomain !== "xingbei_authority_state_v2" ||
+		!DIGEST.test(value.predecessor.digest || "")) return reject("EVENT5_PROPOSAL_PREDECESSOR_REJECTED");
 	if (!exact(value.phaseOver, "nativeEventId,completionOrdinal,parentEventId,completed".split(",")) ||
 		!EVENT.test(value.phaseOver.nativeEventId || "") || !Number.isSafeInteger(value.phaseOver.completionOrdinal) ||
 		value.phaseOver.completionOrdinal < 1 || !EVENT.test(value.phaseOver.parentEventId || "") || value.phaseOver.completed !== true) {
@@ -68,11 +69,13 @@ function validateEvent5Proposal(value) {
 			!EVENT.test(child.parentEventId || "") || !Number.isSafeInteger(child.completionOrdinal) || child.completionOrdinal < 1 || child.completed !== true)) {
 		return reject("EVENT5_PROPOSAL_NATIVE_SETTLEMENT_REJECTED");
 	}
-	if (!exact(value.postStateFence, "nativeEventId,completionOrdinal,atomicCaptureId,beforeDigest,afterDigest,knownStateOnly".split(",")) ||
+	if (!exact(value.postStateFence, "nativeEventId,completionOrdinal,atomicCaptureId,authorityPredecessorDigest,privateStateDigestDomain,beforePrivateStateDigest,afterPrivateStateDigest,knownStateOnly".split(",")) ||
 		!EVENT.test(value.postStateFence.nativeEventId || "") || !Number.isSafeInteger(value.postStateFence.completionOrdinal) ||
 		value.postStateFence.completionOrdinal <= value.phaseOver.completionOrdinal || !OPAQUE.test(value.postStateFence.atomicCaptureId || "") ||
-		!DIGEST.test(value.postStateFence.beforeDigest || "") || !DIGEST.test(value.postStateFence.afterDigest || "") ||
-		value.postStateFence.beforeDigest !== value.predecessor.digest || value.postStateFence.knownStateOnly !== true ||
+		value.postStateFence.authorityPredecessorDigest !== value.predecessor.digest ||
+		value.postStateFence.privateStateDigestDomain !== "xingbei_native_private_action_transition_v1" ||
+		!DIGEST.test(value.postStateFence.beforePrivateStateDigest || "") || !DIGEST.test(value.postStateFence.afterPrivateStateDigest || "") ||
+		value.postStateFence.knownStateOnly !== true ||
 		!exact(value.privateStatePolicy, "noCrossSeatPrivateDisclosure,unknownStateFailsClosed".split(",") ) ||
 		value.privateStatePolicy.noCrossSeatPrivateDisclosure !== true || value.privateStatePolicy.unknownStateFailsClosed !== true ||
 		!exact(value.unknownStatePolicy, "unsupportedSkillsRejected,unfinishedChildrenRejected,unsupportedDynamicStateRejected".split(",")) ||

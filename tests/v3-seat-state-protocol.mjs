@@ -10,8 +10,9 @@ const { createVerifiedSeatStatePublisher, createSeatStateReceiver } = require(".
 const seatIds = ["seat_a", "seat_b", "seat_c", "seat_d"];
 const base = () => ({ roomId: "room_v3_probe", seatIds, recipientSeatId: "seat_a", connectionGeneration: 2,
 	stateSequence: 19, stateVersion: 7, replayFromSequence: 18,
-	publicState: { stateVersion: 7, activeSeatId: "seat_b", players: seatIds.map((seatId, index) => ({
-		seatId, characterId: `character_${index}`, side: index < 2, handCount: 4 })) },
+	publicState: { stateVersion: 7, activeSeatId: "seat_b", phase: "xingDong", players: seatIds.map((seatId, index) => ({
+		seatId, characterId: `character_${index}`, side: index < 2, handCount: 4 })), resources: { hongShiQi: 3, lanShiQi: 3,
+		hongXingBei: 2, lanXingBei: 2, hongBaoShiCount: 0, hongShuiJingCount: 0, lanBaoShiCount: 0, lanShuiJingCount: 0 } },
 	privateState: { seatId: "seat_a", handCardViewIds: ["cardview_00000000000001"] },
 	pendingChoice: { choiceId: "choice_00000000000001", eventSequence: 4, seatId: "seat_a",
 		optionIds: ["option_00000000000001", "option_00000000000002"], deadlineAt: 1900000000000, status: "delivery_pending" } });

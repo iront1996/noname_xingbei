@@ -2,7 +2,7 @@
 
 // V3 integration preparation only. This module defines a transport envelope;
 // it does not extract native state, authenticate sockets, or publish messages.
-const SCHEMA = "xingbei_v3_seat_state_v1";
+const SCHEMA = "xingbei_v3_seat_state_v2";
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const OPAQUE = /^[A-Za-z0-9_-]{16,96}$/;
 const MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
@@ -16,9 +16,13 @@ function safeOpaqueList(value, max = 64) {
 	return Array.isArray(value) && value.length <= max && new Set(value).size === value.length && value.every(item => OPAQUE.test(item));
 }
 function validPublicState(value, seatIds) {
-	if (!exact(value, ["activeSeatId", "players", "stateVersion"]) || !seatIds.includes(value.activeSeatId) ||
+	if (!exact(value, ["activeSeatId", "phase", "players", "resources", "stateVersion"]) || !seatIds.includes(value.activeSeatId) ||
+		!["phaseLoop", "phase", "xingDong", "between_turns"].includes(value.phase) ||
 		!Number.isSafeInteger(value.stateVersion) || value.stateVersion < 0 || !Array.isArray(value.players) ||
-		value.players.length !== seatIds.length) return false;
+		value.players.length !== seatIds.length || !exact(value.resources, ["hongShiQi", "lanShiQi", "hongXingBei", "lanXingBei", "hongBaoShiCount", "hongShuiJingCount", "lanBaoShiCount", "lanShuiJingCount"]) ||
+		![value.resources.hongShiQi, value.resources.lanShiQi].every(n => Number.isSafeInteger(n) && n >= -1000000 && n <= 1000000) ||
+		![value.resources.hongXingBei, value.resources.lanXingBei, value.resources.hongBaoShiCount, value.resources.hongShuiJingCount,
+			value.resources.lanBaoShiCount, value.resources.lanShuiJingCount].every(n => Number.isSafeInteger(n) && n >= 0 && n <= 1000000)) return false;
 	const seen = new Set();
 	for (const player of value.players) {
 		if (!exact(player, ["characterId", "handCount", "seatId", "side"]) || !seatIds.includes(player.seatId) || seen.has(player.seatId) ||
@@ -54,7 +58,8 @@ function createSeatStateMessage(input) {
 	return Object.freeze({ ok: true, message: Object.freeze({ schema: SCHEMA, roomId: input.roomId,
 		recipientSeatId: input.recipientSeatId, connectionGeneration: input.connectionGeneration,
 		stateSequence: input.stateSequence, stateVersion: input.stateVersion, replayFromSequence: input.replayFromSequence,
-		publicState: Object.freeze({ ...input.publicState, players: Object.freeze(input.publicState.players.map(player => Object.freeze({ ...player }))) }),
+		publicState: Object.freeze({ ...input.publicState, resources: Object.freeze({ ...input.publicState.resources }),
+			players: Object.freeze(input.publicState.players.map(player => Object.freeze({ ...player }))) }),
 		privateState: Object.freeze({ seatId: input.recipientSeatId, handCardViewIds: Object.freeze([...input.privateState.handCardViewIds]) }),
 		pendingChoice: input.pendingChoice === null ? null : Object.freeze({ ...input.pendingChoice,
 			optionIds: Object.freeze([...input.pendingChoice.optionIds]) }) }) });

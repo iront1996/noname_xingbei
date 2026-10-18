@@ -7,6 +7,7 @@ const { createManagedNativeEffectStateCommitment } = require("./server-managed-n
 const { createManagedNativeAtomicCapture } = require("./server-managed-native-atomic-capture.js");
 const { createManagedNativePreActionCapture } = require("./server-managed-native-preaction-capture.js");
 const { createManagedSuccessorPreActionCapture } = require("./server-managed-successor-preaction-capture.js");
+const { createManagedV3SeatStateProjection } = require("./server-managed-v3-seat-state-projection.js");
 
 const PROTOCOL = 1;
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -95,6 +96,7 @@ function createHostSessionManager({
 	isManagedChoicePending = () => false,
 	hasPendingManagedChoices = () => false,
 	getCurrentSeatBinding = () => null,
+	authorizeSeatStateRequest = () => null,
 	onSessionEnd = () => {},
 } = {}) {
 	if (typeof launch !== "function" || typeof engineSourceRoot !== "string" || !path.isAbsolute(engineSourceRoot) ||
@@ -104,7 +106,7 @@ function createHostSessionManager({
 		!Number.isSafeInteger(gameReadyTimeoutMs) || gameReadyTimeoutMs < 100 || gameReadyTimeoutMs > 60000 ||
 		typeof onAuthoritativeResult !== "function" || typeof onManagedChoiceMessage !== "function" ||
 		typeof isManagedChoicePending !== "function" || typeof hasPendingManagedChoices !== "function" ||
-		typeof getCurrentSeatBinding !== "function" || typeof onSessionEnd !== "function") {
+		typeof getCurrentSeatBinding !== "function" || typeof authorizeSeatStateRequest !== "function" || typeof onSessionEnd !== "function") {
 		throw new TypeError("HOST_SESSION_CONFIG_INVALID");
 	}
 
@@ -202,6 +204,10 @@ function createHostSessionManager({
 		record.successorPreActionCapture = null;
 		record.successorPreActionCaptureRequestCount = 0;
 		record.successorPreActionCaptureResult = null;
+		record.successorPreActionCaptureEnvelope = null;
+		record.v3SeatStateProjection?.destroy();
+		record.v3SeatStateProjection = null;
+		record.v3SeatStateSequences?.clear();
 		record.nativeNextSeatCandidate = null;
 	}
 
@@ -385,6 +391,9 @@ function createHostSessionManager({
 			successorPreActionCaptureRequestCount: 0,
 			successorPreActionCapture: null,
 			successorPreActionCaptureResult: null,
+			successorPreActionCaptureEnvelope: null,
+			v3SeatStateProjection: null,
+			v3SeatStateSequences: new Map(),
 			nativeNextSeatCandidate: null,
 			nextResultSequence: 1,
 			failureCode: null,
@@ -675,6 +684,7 @@ function createHostSessionManager({
 						record.successorPreActionCaptureRequests.delete(message.requestId);
 						clearTimeout(pending.timer);
 						record.successorPreActionCaptureResult = Object.freeze({ ...result });
+						record.successorPreActionCaptureEnvelope = structuredClone(message.envelope);
 						queueMicrotask(() => pending.resolve(record.state === "playable_probe" ? Object.freeze({ ok: true, snapshot: result }) :
 							failure("SUCCESSOR_PREACTION_SESSION_ENDED")));
 					} catch (_) {
@@ -838,7 +848,10 @@ function createHostSessionManager({
 						// A trusted-host IPC consumer is part of the authority path.  Do not
 						// silently lose a candidate/ACK and leave the native event paused forever.
 						Promise.resolve(onManagedChoiceMessage(Object.freeze({ type: message.type, roomId: record.roomId, sessionId: record.sessionId, message }))).catch(() => {
-							if (!ACTIVE_STATES.has(record.state)) return;
+							// A stop request is a terminal fence. Late choice ACKs may race with
+							// controller cleanup; they cannot convert an intentional stop into a
+							// host failure after authority and private state are already fenced.
+							if (!ACTIVE_STATES.has(record.state) || record.state === "stopping") return;
 							fail(record, "HOST_CHOICE_IPC_HANDLER_FAILED");
 							Promise.resolve(record.handle?.stop("choice_ipc_handler_failed")).catch(() => {});
 						});
@@ -1684,6 +1697,51 @@ function createHostSessionManager({
 		});
 	}
 
+	function createV3SeatStateForRequest(roomId, input) {
+		const record = sessions.get(roomId);
+		const exact = (value, keys) => Boolean(value && Object.getPrototypeOf(value) === Object.prototype &&
+			Object.keys(value).sort().join(",") === [...keys].sort().join(","));
+		if (!record || record.state !== "playable_probe" || record.authorityStateRevision !== 4 || record.nextAuthorityEventSequence !== 5 ||
+			record.lastAuthorityEvent?.sequence !== 4 || !exact(input, ["recipientSeatId", "request"]) ||
+			!SEAT_ID.test(input.recipientSeatId || "") || !record.seatIds.includes(input.recipientSeatId) ||
+			!input.request || Object.getPrototypeOf(input.request) !== Object.prototype || !record.successorPreActionCaptureResult ||
+			!record.successorPreActionCaptureEnvelope || hasPendingManagedChoices(roomId, record.sessionId) !== false) return failure("V3_SEAT_STATE_NOT_AVAILABLE");
+		let authorized = null, binding = null;
+		try {
+			authorized = authorizeSeatStateRequest({ roomId, recipientSeatId: input.recipientSeatId, request: input.request });
+			binding = getCurrentSeatBinding(roomId, input.recipientSeatId);
+		} catch (_) { return failure("V3_SEAT_STATE_RECIPIENT_REJECTED"); }
+		const validBinding = value => value && Object.getPrototypeOf(value) === Object.prototype && value.roomId === roomId &&
+			value.seatId === input.recipientSeatId && value.connected === true && value.current === true &&
+			value.credentialAuthenticated === true && value.ordinaryPlayer === true && Number.isSafeInteger(value.connectionGeneration) &&
+			value.connectionGeneration > 0;
+		if (!validBinding(authorized) || !validBinding(binding) || authorized.connectionGeneration !== binding.connectionGeneration) {
+			return failure("V3_SEAT_STATE_RECIPIENT_REJECTED");
+		}
+		if (!record.v3SeatStateProjection) {
+			const key = randomBytes(32);
+			if (!Buffer.isBuffer(key) || key.length !== 32) return failure("V3_SEAT_STATE_KEY_UNAVAILABLE");
+			try { record.v3SeatStateProjection = createManagedV3SeatStateProjection({ key }); }
+			catch (_) { key.fill(0); return failure("V3_SEAT_STATE_PROJECTION_UNAVAILABLE"); }
+			key.fill(0);
+		}
+		const nextSequence = (record.v3SeatStateSequences.get(input.recipientSeatId) || 0) + 1;
+		const projected = record.v3SeatStateProjection.project({ envelope: record.successorPreActionCaptureEnvelope,
+			capture: record.successorPreActionCaptureResult, roomId, hostSessionId: record.sessionId, engineBuildId: record.engineBuildId,
+			rootInstanceId: record.xingbeiAuthorityContext?.rootInstanceId, seatIds: record.seatIds,
+			recipientSeatId: input.recipientSeatId, connectionGeneration: binding.connectionGeneration, stateSequence: nextSequence });
+		let activeBinding = null, active = sessions.get(roomId), reauthorized = null;
+		try {
+			activeBinding = getCurrentSeatBinding(roomId, input.recipientSeatId);
+			reauthorized = authorizeSeatStateRequest({ roomId, recipientSeatId: input.recipientSeatId, request: input.request });
+		} catch (_) {}
+		if (!projected.ok || active !== record || record.state !== "playable_probe" || !validBinding(activeBinding) ||
+			!validBinding(reauthorized) || activeBinding.connectionGeneration !== binding.connectionGeneration ||
+			reauthorized.connectionGeneration !== binding.connectionGeneration) return failure(projected.code || "V3_SEAT_STATE_SOURCE_STALE");
+		record.v3SeatStateSequences.set(input.recipientSeatId, nextSequence);
+		return Object.freeze({ ok: true, message: projected.message });
+	}
+
 	// Read-only review evidence assembled from already accepted manager state.
 	// This is deliberately not consumed by validateAuthorityEvent/commitAuthorityEvent.
 	function inspectEvent5ReviewEvidence(roomId) {
@@ -1709,9 +1767,11 @@ function createHostSessionManager({
 			seedAuthorized: false, checkpointAvailable: false, roomId: record.roomId, hostSessionId: record.sessionId,
 			engineBuildId: record.engineBuildId, rootInstanceId: record.xingbeiAuthorityContext.rootInstanceId,
 			seatIds: Object.freeze([...record.seatIds]), predecessorDigest: record.authorityStateDigest,
+			predecessorDigestDomain: "xingbei_authority_state_v2",
 			phaseBoundaryReleased: true, phaseOverCompleted: true, phaseOverCompletionOrdinal: phaseOverProof.phaseOver.phaseCompletionOrdinal,
 			priorSeatId: record.acceptedNativeActionSeatId, nextSeatId: candidate.seatId,
-			successorNativeEventId: candidate.nativeEventId, nativeCompletionOrdinal: successorCapture.nativeCompletionOrdinal,
+			successorNativeEventId: candidate.nativeEventId, successorCaptureSchema: successorCapture.schema,
+			nativeCompletionOrdinal: successorCapture.nativeCompletionOrdinal,
 			preActionCaptureOrdinal: priorCapture.captureOrdinal, nextInputWaiting: true, choiceAllocated: false,
 			nativeDeliveryAllowed: false, authoritySubmissionAllowed: false,
 			connectionGeneration: binding.connectionGeneration, connectionAuthenticated: true, ordinaryPlayer: true,
@@ -1790,6 +1850,7 @@ function createHostSessionManager({
 		snapshotNativeAtomicCapture,
 		snapshotNativePreActionCapture,
 		snapshotSuccessorPreActionCapture,
+		createV3SeatStateForRequest,
 		inspectEvent5ReviewEvidence,
 		releaseNativePhaseBoundary,
 		resumeNativeInput,
