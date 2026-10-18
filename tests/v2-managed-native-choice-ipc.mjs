@@ -382,7 +382,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(controller.inspect(roomId, openedChoice.choice.choiceId)?.state, "pending",
 							"player transport loss must preserve the pending native choice for its deadline policy");
 						disconnectedActionHostIdentity = { sessionId: priorSession?.sessionId, pid: priorSession?.pid,
-							state: priorSession?.state, seatId: message.seatId, choiceId: openedChoice.choice.choiceId };
+							state: priorSession?.state, seatId: message.seatId, choiceId: openedChoice.choice.choiceId,
+							priorConnectionId };
 						assert.ok(disconnectedActionHostIdentity.sessionId && disconnectedActionHostIdentity.pid,
 							"managed host identity must be present before the isolated player disconnect");
 					}
@@ -2323,10 +2324,34 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				assert.equal(hostAfterTrustee?.authorityStateRevision, 4,
 					"the isolated probe may finish the already-authorized Event #4 only; it must not open Event #5");
 				assert.equal(hostAfterTrustee?.nextAuthorityEventSequence, 5);
-				t.diagnostic(`ordinary seat disconnect resolved by native trustee without host lifecycle change: ${JSON.stringify({
+				const reconnectedConnectionId = `reconnected_${disconnectedActionHostIdentity.seatId}`;
+				const rebound = seatRegistry.bindConnection({ roomId, seatId: disconnectedActionHostIdentity.seatId,
+					credential: credentialFor(disconnectedActionHostIdentity.seatId),
+					socket: { kind: "player", roomId, seatId: disconnectedActionHostIdentity.seatId,
+						connectionId: reconnectedConnectionId } });
+				assert.ok(rebound, "the ordinary player must reclaim the same seat using its seat credential after trustee completion");
+				assert.equal(controller.bindSeatConnection(rebound).ok, true,
+					"the restored player connection must be bound through the trusted Seat Registry path");
+				const resolvedChoice = controller.inspect(roomId, disconnectedActionHostIdentity.choiceId);
+				assert.equal(seatRegistry.authenticateSeat({ roomId, seatId: disconnectedActionHostIdentity.seatId,
+					connectionId: disconnectedActionHostIdentity.priorConnectionId,
+					credential: credentialFor(disconnectedActionHostIdentity.seatId) }, resolvedChoice), false,
+				"the superseded socket must remain fenced after the valid seat rebind");
+				assert.equal(seatRegistry.authenticateSeat({ roomId, seatId: disconnectedActionHostIdentity.seatId,
+					connectionId: reconnectedConnectionId,
+					credential: credentialFor(disconnectedActionHostIdentity.seatId) }, resolvedChoice), true,
+				"the replacement socket must authenticate to the same ordinary seat");
+				assert.equal(seatRegistry.inspect(roomId, disconnectedActionHostIdentity.seatId)?.connected, true);
+				const hostAfterRebind = manager.inspect(roomId);
+				assert.equal(hostAfterRebind?.sessionId, disconnectedActionHostIdentity.sessionId);
+				assert.equal(hostAfterRebind?.pid, disconnectedActionHostIdentity.pid);
+				assert.equal(hostAfterRebind?.state, disconnectedActionHostIdentity.state);
+				t.diagnostic(`ordinary seat disconnect, trustee resolution, and credentialed rebind preserved managed host: ${JSON.stringify({
 					seatId: disconnectedActionHostIdentity.seatId, choiceId: disconnectedActionHostIdentity.choiceId,
 					hostSessionUnchanged: true, hostPidUnchanged: true, hostStateUnchanged: true,
-					seatRemainedOffline: true, authorityStateRevision: hostAfterTrustee.authorityStateRevision,
+					seatOfflineThroughTrustee: true, seatReconnectedWithOriginalCredential: true,
+					oldConnectionFenced: true, hostUnchangedAfterRebind: true,
+					authorityStateRevision: hostAfterTrustee.authorityStateRevision,
 					nextAuthorityEventSequence: hostAfterTrustee.nextAuthorityEventSequence })}`);
 			}
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.option,
