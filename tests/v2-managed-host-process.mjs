@@ -146,7 +146,7 @@ test("managed child accepts only scoped atomic capture commands with a valid bou
 
 test("managed child accepts only the isolated native pre-action capture command", async t => {
 	const envKeys = ["V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_START_DIAGNOSTICS",
-		"V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_TEST_BLOCK_EXTERNAL_NETWORK"];
+		"V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_TEST_BLOCK_EXTERNAL_NETWORK"];
 	const prior = Object.fromEntries(envKeys.map(key => [key, process.env[key]]));
 	for (const key of envKeys) process.env[key] = "1";
 	t.after(() => { for (const key of envKeys) prior[key] === undefined ? delete process.env[key] : process.env[key] = prior[key]; });
@@ -167,8 +167,8 @@ test("managed child accepts only the isolated native pre-action capture command"
 			seatIds: gameSetup.seats.map(seat => seat.seatId) };
 		await handle.sendHostCommand(command);
 		await until(() => observed.some(message => message?.type === "host_command_observed" && message.command === command.type));
-		await assert.rejects(handle.sendHostCommand({ ...command, roomId: "other_room" }), /HOST_COMMAND_REJECTED/);
-		await assert.rejects(handle.sendHostCommand({ ...command, unreviewed: true }), /HOST_COMMAND_REJECTED/);
+		await assert.rejects(handle.sendHostCommand({ ...command, roomId: "other_room" }), /HOST_PREACTION_CAPTURE_COMMAND_REJECTED/);
+		await assert.rejects(handle.sendHostCommand({ ...command, unreviewed: true }), /HOST_PREACTION_CAPTURE_COMMAND_REJECTED/);
 		assert.equal(observed.filter(message => message?.type === "host_command_observed" && message.command === command.type).length, 1);
 	} finally {
 		await handle.stop("test_complete");

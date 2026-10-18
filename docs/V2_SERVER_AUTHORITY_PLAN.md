@@ -1,5 +1,14 @@
 # V2 server-authority plan and evidence
 
+## Current local milestone: native `jiRi_moBaoChongJie` managed choice (Linux acceptance pending)
+
+- Starting remote HEAD `6a3c20d8dba1e4837820f03dd7d74c3d9764de63` was fetched and confirmed unchanged; current local edits remain uncommitted. The Linux workflow now has a dedicated serialized real-Chromium step for this explicitly opt-in fixture.
+- Three consecutive local Windows Chrome runs passed the four-seat native path: original character selection chose `jieRiMoDao` from native candidates; the native `gongJiOrFaShu` event emitted the legal skill option and a legal enemy target with a native-dealt physical spell; ordinary-seat managed choice selected the opaque option; native `useSkill` completed once; the native `changeZhanJi` child completed with `baoShi` count +1; target `chooseToDiscard` produced legal physical `faShu` candidates and completed its native discard. Deliberate initial ACK loss for both the action and nested target choice retried the same deliveries without duplicate native application.
+- A separate local run also accepted pre-action private atomic commitment A at the real paused input gate. It is a distinct interval from any future post-action commitment. No post-`phaseOver` commitment B is available, and the full A-to-B causal resource-transition requirement is therefore still incomplete.
+- This test-only native probe submits no authority Event #4 proof and creates no Event #5. Its observed revision remains 3 / next sequence 4; the already accepted authority chain remains at revision 4. Do not promote `achievement_resources` or general `changeZhanJi`: the manifest marks only this skill fixture as locally verified with Linux pending, while the resource family remains unsupported.
+- Local result: `tests/v2-managed-native-choice-ipc.mjs` passed 1/1, zero failures/skips with the opt-in native fixture and pre-action capture enabled. Exact-SHA Linux CI and the expanded failure/negative matrix remain pending. Cloudflare's persisted preview exclusion was verified read-only after reload; no deployment setting was changed. Push remains pending until local checks and workflow wiring are validated.
+- Gates remain `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4, Event #5 rejected, and checkpoint unavailable. This is neither full T3 nor Full Playable, and does not complete HALL, M3, M4, or V3 integration.
+
 ## M2 live continuity probe: ordinary-seat disconnect, trustee and same-seat rebind (Linux CI accepted)
 
 - Added an opt-in mode to the existing true managed-Chromium four-seat Event #4 test. During a real native `gongJiOrFaShu` choice, the acting ordinary seat is disconnected through the Seat Registry and is not rebound before its deadline. The pending controller choice remains intact and the existing trustee policy completes it.

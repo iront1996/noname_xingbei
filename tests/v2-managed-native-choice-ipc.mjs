@@ -56,12 +56,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		"a held native phase boundary requires the managed native event-completion evidence source");
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeResourceFixtureSeatId = null, nativeResourceTransition = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeLiveSnapshotAtInputGate = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [], disconnectedActionHostIdentity = null;
+	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeResourceFixtureSeatId = null, nativeJiRiFixtureSeatId = null, nativeResourceTransition = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeJiRiTargetChoice = null, nativeJiRiTargetCandidate = null, nativeJiRiTargetAckCount = 0, nativeJiRiTargetAckDropped = false, dropNativeJiRiTargetAckOnce = process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1", nativeLiveSnapshotAtInputGate = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [], disconnectedActionHostIdentity = null;
 	let event4AcceptedProjection = null;
 	let firstAtomicCapture = null, firstAtomicRepeat = null, atomicCaptureSessionId = null, atomicCapturePid = null, atomicChromiumPid = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
@@ -76,7 +76,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
 	const launchedHandles = new Map();
 	const disconnectActionToTrustee = process.env.V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE === "1";
-	const useSeatRegistry = disconnectActionToTrustee || process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
+	const useSeatRegistry = disconnectActionToTrustee || process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
 		process.env.V2_NATIVE_RESPONSE_REBIND === "1";
 	const seatRegistry = useSeatRegistry ? createManagedRoomSeatRegistry() : null;
 	const seatCredentials = new Map(), seatSockets = new Map();
@@ -205,13 +205,22 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		browserReadyTimeoutMs: 20000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000,
 		onSessionEnd: event => { sessionEnds.push({ roomId: event.roomId, sessionId: event.sessionId, state: event.state, code: event.code });
 			controller.cleanupHostSession(event.roomId, event.sessionId); },
-		onManagedChoiceMessage: async ({ type, message }) => {
+			onManagedChoiceMessage: async ({ type, message }) => {
 			try {
 			if (type === "host_choice_diagnostic" && message?.observed?.stage === "native_targetless_deck_fixture_ready") {
 				targetlessDeckFixtureProof = message.observed;
-				assert.equal(targetlessDeckFixtureProof.kind, "native_card_pile_order_fixture_v1");
-				assert.equal(targetlessDeckFixtureProof.selectedNativeEntries, 4);
-				assert.deepEqual(targetlessDeckFixtureProof.openingHandSlots, [0, 4, 8, 12]);
+				if (process.env.V2_NATIVE_JIRIMO_FIXTURE === "1") {
+					assert.equal(targetlessDeckFixtureProof.kind, "native_jirimo_spell_hand_fixture_v1");
+					assert.equal(targetlessDeckFixtureProof.allSeatsReceiveNativeSpell, true);
+					assert.equal(targetlessDeckFixtureProof.fixtureOnly, true);
+					assert.equal(targetlessDeckFixtureProof.formalRandomnessUnchanged, true);
+					assert.equal(targetlessDeckFixtureProof.selectedNativeEntries, 16);
+					assert.deepEqual(targetlessDeckFixtureProof.openingHandSlots, Array.from({ length: 16 }, (_, index) => index));
+				} else assert.equal(targetlessDeckFixtureProof.kind, "native_card_pile_order_fixture_v1");
+				if (process.env.V2_NATIVE_JIRIMO_FIXTURE !== "1") {
+					assert.equal(targetlessDeckFixtureProof.selectedNativeEntries, 4);
+					assert.deepEqual(targetlessDeckFixtureProof.openingHandSlots, [0, 4, 8, 12]);
+				}
 				assert.equal(targetlessDeckFixtureProof.nativeCardCreation, true);
 				assert.equal(targetlessDeckFixtureProof.nativeGameDraw, true);
 			}
@@ -261,6 +270,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(nativeResourceFixtureSeatId, message.firstActSeatId,
 						"resource fixture character must be assigned to the native first actor");
 				}
+				if (process.env.V2_NATIVE_JIRIMO_FIXTURE === "1") {
+					nativeJiRiFixtureSeatId = message.jiRiFixture?.seatId || null;
+					assert.equal(message.jiRiFixture?.nativeCandidateGenerated, true);
+					assert.ok(message.choices.some(choice => choice.seatId === nativeJiRiFixtureSeatId && choice.options.includes("jieRiMoDao")),
+						"jieRiMoDao must be selected from the original native chooseCharacterOL candidate map");
+					assert.equal(nativeJiRiFixtureSeatId, message.firstActSeatId);
+				}
 				for (const candidate of message.choices) {
 					const openedChoice = controller.openChoice({ protocol: 1, roomId, hostSessionId: message.sessionId, nativeEventId: message.nativeEventId,
 						seatId: candidate.seatId, eventSequence: message.eventSequence, options: candidate.options, trusteeOption: candidate.options[0],
@@ -287,7 +303,18 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(nativeCardLedgerBefore.snapshotOrdinal, 1);
 					assert.equal(nativeCardLedgerBefore.virtualCardsIncluded, false);
 				}
-				if (process.env.V2_NATIVE_ACTION_KIND) {
+				if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe") {
+					assert.equal(process.env.V2_NATIVE_JIRIMO_FIXTURE, "1");
+					assert.ok(message.skillCandidateCount >= 1, "the exact fixture skill should produce a bounded native candidate for a legal enemy target");
+					assert.equal(message.optionKinds && Object.values(message.optionKinds).filter(kind => kind === "native_skill").length, message.skillCandidateCount);
+					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === "native_skill");
+					assert.ok(nativeActionOptionId, "native legal skill option was not routed to the controller");
+					assert.ok(message.optionTargetSeatIds?.[nativeActionOptionId]);
+					assert.equal(message.optionNativeTargetSpellEligible?.[nativeActionOptionId], true,
+						"the selected target must actually hold a native-dealt spell accepted by the skill's discard branch");
+					assert.notEqual(message.optionTargetSeatIds[nativeActionOptionId], message.seatId,
+						"the native skill target must be a different ordinary seat");
+				} else if (process.env.V2_NATIVE_ACTION_KIND) {
 					assert.ok(["gongJi", "faShu"].includes(process.env.V2_NATIVE_ACTION_KIND),
 						"native action kind must be an allowlisted Xingbei card category");
 					nativeActionOptionId = message.options.find(option => message.optionKinds[option] === process.env.V2_NATIVE_ACTION_KIND);
@@ -346,7 +373,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					seatId: message.seatId, eventSequence: message.eventSequence, options: message.options, trusteeOption: message.trusteeOption,
 					deadlineAt: Date.now() + 5000, hostProof: message.secret }).code, "MANAGED_CHOICE_NATIVE_EVENT_EXISTS");
 				if (process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1") {
-					assert.equal(process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE, "1");
+					assert.ok(process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" ||
+						(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1"),
+					"pre-action capture must run only under a verified native resource fixture");
 					nativePreActionCapture = await manager.snapshotNativePreActionCapture(roomId, { nativeEventId: message.nativeEventId,
 						choiceId: openedChoice.choice.choiceId, seatId: message.seatId });
 					assert.equal(nativePreActionCapture.ok, true, `pre-action atomic capture rejected: ${nativePreActionCapture.code}`);
@@ -450,6 +479,53 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(controller.submitChoice(accepted).ok, true);
 					assert.equal(controller.submitChoice(accepted).code, "MANAGED_CHOICE_SUBMIT_REJECTED", "duplicate native action input must be rejected");
 				}
+			} else if (type === "host_native_skill_target_candidates") {
+				assert.equal(process.env.V2_NATIVE_JIRIMO_ACTION_PROBE, "1");
+				assert.equal(process.env.V2_NATIVE_JIRIMO_FIXTURE, "1");
+				assert.equal(message.eventName, "chooseToDiscard");
+				assert.equal(message.eventSequence, 4);
+				assert.equal(message.actionEventId, nativeActionCandidate?.nativeEventId);
+				assert.equal(message.rootInstanceId, nativeActionCandidate?.rootInstanceId);
+				assert.equal(message.sourceSeatId, nativeJiRiFixtureSeatId);
+				assert.ok(setup.seats.some(seat => seat.seatId === message.seatId));
+				assert.notEqual(message.seatId, message.sourceSeatId);
+				assert.ok(nativeActionCandidate.optionTargetSeatIds?.[nativeActionOptionId] === message.seatId,
+					"native skill target choice must be bound to the original candidate's enemy target");
+				assert.ok(Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 32);
+				assert.ok(message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)));
+				assert.deepEqual(Object.keys(message.optionKinds).sort(), [...message.options].sort());
+				assert.ok(Object.values(message.optionKinds).every(kind => kind === "physical_faShu_discard"));
+				nativeJiRiTargetCandidate = message;
+				const connectionId = seatSockets.get(message.seatId);
+				assert.ok(connectionId, "target's ordinary seat must already be bound through the Seat Registry");
+				const openedTarget = controller.openChoice({ protocol: 1, roomId, hostSessionId: message.sessionId,
+					nativeEventId: message.nativeEventId, seatId: message.seatId, eventSequence: message.eventSequence,
+					options: message.options, trusteeOption: message.trusteeOption, deadlineAt: Date.now() + message.deadlineMs,
+					hostProof: message.secret });
+				assert.equal(openedTarget.ok, true, `native target discard choice rejected: ${openedTarget.code}`);
+				nativeJiRiTargetChoice = openedTarget.choice;
+				opened.push(openedTarget.choice);
+				assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: message.sessionId,
+					nativeEventId: message.nativeEventId, seatId: message.seatId, eventSequence: message.eventSequence,
+					choiceId: openedTarget.choice.choiceId, connectionId, credential: "administrator_credential", option: message.options[0] }).code,
+					"MANAGED_CHOICE_SUBMIT_REJECTED", "manager credentials cannot submit a player's nested discard");
+				assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: message.sessionId,
+					nativeEventId: message.nativeEventId, seatId: message.sourceSeatId, eventSequence: message.eventSequence,
+					choiceId: openedTarget.choice.choiceId, connectionId: seatSockets.get(message.sourceSeatId),
+					credential: credentialFor(message.sourceSeatId), option: message.options[0] }).code,
+					"MANAGED_CHOICE_SUBMIT_REJECTED", "the skill owner cannot submit the target seat's discard");
+				assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: message.sessionId,
+					nativeEventId: message.nativeEventId, seatId: message.seatId, eventSequence: message.eventSequence,
+					choiceId: openedTarget.choice.choiceId, connectionId, credential: credentialFor(message.seatId), option: "forged_native_option" }).code,
+					"MANAGED_CHOICE_SUBMIT_REJECTED", "unregistered physical discard options must be rejected");
+				const submitted = controller.submitChoice({ protocol: 1, roomId, hostSessionId: message.sessionId,
+					nativeEventId: message.nativeEventId, seatId: message.seatId, eventSequence: message.eventSequence,
+					choiceId: openedTarget.choice.choiceId, connectionId, credential: credentialFor(message.seatId), option: message.options[0] });
+				assert.equal(submitted.ok, true, `target ordinary seat could not select a native legal discard: ${submitted.code}`);
+				assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: message.sessionId,
+					nativeEventId: message.nativeEventId, seatId: message.seatId, eventSequence: message.eventSequence,
+					choiceId: openedTarget.choice.choiceId, connectionId, credential: credentialFor(message.seatId), option: message.options[0] }).code,
+					"MANAGED_CHOICE_SUBMIT_REJECTED", "the native target discard must settle once");
 			} else if (type === "host_native_response_candidates") {
 				assert.equal(process.env.V2_NATIVE_MANAGED_RESPONSE, "1");
 				sessionSecret = message.secret;
@@ -582,6 +658,17 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			} else if (type === "host_choice_ack") {
 				ackCount++;
 				if (nativeActionChoice?.choiceId === message.choiceId) nativeActionAckCount++;
+				if (nativeJiRiTargetChoice?.choiceId === message.choiceId) {
+					nativeJiRiTargetAckCount++;
+					assert.equal(message.nativeApplied, true, "nested discard ACK must follow native chooseToDiscard completion");
+					assert.equal(message.nativeResponseEventCompleted, true);
+					assert.equal(message.nativeEventId, nativeJiRiTargetCandidate?.nativeEventId);
+					if (dropNativeJiRiTargetAckOnce) {
+						dropNativeJiRiTargetAckOnce = false;
+						nativeJiRiTargetAckDropped = true;
+						return;
+					}
+				}
 				const isNativeResponseAck = nativeResponseChoices.some(entry => entry.choice.choiceId === message.choiceId);
 				const nativeResponseEntry = nativeResponseChoices.find(entry => entry.choice.choiceId === message.choiceId) || null;
 				const isYinYangResponseAck = nativeResponseEntry?.candidate?.optionKinds?.[nativeResponseEntry.option] === "view_as_skill";
@@ -837,9 +924,34 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal(engineReadyProof.testMatchRecordPostBlocked, 1,
 			"the real Xingbei match-record method must be intercepted before any external request leaves Chromium");
 	}
+	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe" &&
+		process.env.V2_NATIVE_C3_UNIFIED_ROOT === "1") {
+		await until(() => opened.length === 4 || manager.inspect(roomId)?.authorityStateRevision >= 1,
+			15000, () => ({ session: manager.inspect(roomId), openedCount: opened.length,
+				handlerFailures: managedChoiceHandlerFailures.slice(-4), diagnostics: nativeDiagnostic.slice(-8).map(entry => entry?.stage) }));
+		if (opened.length !== 4) {
+			const before = nativeDiagnostic.length;
+			const snapshotRequest = await manager.snapshotNativeStart(roomId, "managed_native_skill_candidate_probe");
+			assert.equal(snapshotRequest.ok, true,
+				`the read-only unified-root snapshot command was rejected: ${snapshotRequest.code || "unknown"}; state=${JSON.stringify(manager.inspect(roomId))}; ` +
+				`diagnostics=${JSON.stringify(nativeDiagnostic.slice(-8))}; handlerFailures=${JSON.stringify(managedChoiceHandlerFailures.slice(-4))}`);
+			await until(() => nativeDiagnostic.slice(before).some(entry => entry?.stage === "native_jirimo_root_snapshot"),
+				3000, () => ({ session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-8).map(entry => entry?.stage),
+					diagnostics: nativeDiagnostic.slice(-8), sessionEnds: sessionEnds.slice(-3) }));
+			await until(() => nativeDiagnostic.some(entry => entry?.stage === "native_jirimo_event1_gate_released"),
+				3000, () => ({ session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-8).map(entry => entry?.stage) }));
+			const afterReleaseSnapshot = nativeDiagnostic.filter(entry => entry?.stage === "native_jirimo_root_snapshot").length;
+			const afterReleaseRequest = await manager.snapshotNativeStart(roomId, "managed_native_skill_candidate_probe");
+			assert.equal(afterReleaseRequest.ok, true,
+				`the post-Event-#1 read-only unified-root snapshot was rejected: ${afterReleaseRequest.code || "unknown"}; state=${JSON.stringify(manager.inspect(roomId))}; `+
+				`diagnostics=${JSON.stringify(nativeDiagnostic.slice(-10))}; handlerFailures=${JSON.stringify(managedChoiceHandlerFailures.slice(-6))}`);
+			await until(() => nativeDiagnostic.filter(entry => entry?.stage === "native_jirimo_root_snapshot").length > afterReleaseSnapshot,
+				3000, () => ({ session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-8).map(entry => entry?.stage) }));
+		}
+	}
 	await until(() => {
 		const current = manager.inspect(roomId);
-		if (current?.state === "failed") throw new Error(`native choice host failed: ${current.failureCode}:${JSON.stringify({ nativeDiagnostic: nativeDiagnostic.slice(-18), authoritySubmissions: authoritySubmissions.map(entry => ({ sequence: entry.proof?.eventSequence, kind: entry.proof?.event?.kind })), opened: opened.map(choice => choice.choiceId) })}`);
+		if (current?.state === "failed") throw new Error(`native choice host failed: ${current.failureCode}:${JSON.stringify({ nativeDiagnostic: nativeDiagnostic.slice(-18), handlerFailures: managedChoiceHandlerFailures.slice(-4), authoritySubmissions: authoritySubmissions.map(entry => ({ sequence: entry.proof?.eventSequence, kind: entry.proof?.event?.kind })), opened: opened.map(choice => choice.choiceId) })}`);
 		if (current && ["stopped", "stopping"].includes(current.state)) throw new Error(`native choice host stopped before opening choices:${JSON.stringify({
 			state: current.state, code: sessionEnds.at(-1)?.code || null, failureCode: current.failureCode,
 			authoritySubmissions: authoritySubmissions.map(entry => ({ sequence: entry.proof?.eventSequence, kind: entry.proof?.event?.kind })),
@@ -849,7 +961,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			hostResources: launchedHandles.get(current.sessionId)?.resources().length ?? null,
 		})}`);
 		return opened.length === 4;
-	}, 15000);
+	}, 15000, () => ({ session: manager.inspect(roomId), openedCount: opened.length,
+		characterCandidateCount: candidatesSeen?.length || 0, nativeDiagnostic: nativeDiagnostic.slice(-12),
+		handlerFailures: managedChoiceHandlerFailures.slice(-4) }));
 	assert.ok(candidatesSeen.every(choice => choice.options.length >= 2));
 	const [a, b, c, d] = opened;
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") {
@@ -879,6 +993,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				seatId: choice.seatId, eventSequence: 2, choiceId: choice.choiceId, connectionId: `conn_${choice.seatId}`,
 				credential: credentialFor(choice.seatId), option }).ok, true, `native shengJi fixture character choice rejected for ${choice.seatId}`);
 		}
+	} else if (process.env.V2_NATIVE_JIRIMO_FIXTURE === "1") {
+		for (const choice of opened) {
+			const option = choice.seatId === nativeJiRiFixtureSeatId ? "jieRiMoDao" : choice.options[0];
+			assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: choice.hostSessionId, nativeEventId: choice.nativeEventId,
+				seatId: choice.seatId, eventSequence: 2, choiceId: choice.choiceId, connectionId: `conn_${choice.seatId}`,
+				credential: credentialFor(choice.seatId), option }).ok, true, `native jieRiMoDao fixture character choice rejected for ${choice.seatId}`);
+		}
 	} else if (process.env.V2_NATIVE_YINYANG_FIXTURE === "1") {
 		for (const choice of opened) {
 			const option = choice.options.includes("yinYangShi") && choice.seatId === nativeYinYangFixtureSeatId ? "yinYangShi" : choice.options[0];
@@ -889,7 +1010,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	} else assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: a.hostSessionId, nativeEventId: a.nativeEventId, seatId: a.seatId, eventSequence: 2, choiceId: a.choiceId, connectionId: `conn_${a.seatId}`, credential: credentialFor(a.seatId), option: a.options[1] }).ok, true);
 	// Fixture paths submit every seat's immutable native candidate above; keep
 	// the default-path rebind/replay assertions from submitting seat C twice.
-	if (process.env.V2_NATIVE_YINYANG_FIXTURE !== "1" && process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE !== "1") {
+	if (process.env.V2_NATIVE_YINYANG_FIXTURE !== "1" && process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE !== "1" && process.env.V2_NATIVE_JIRIMO_FIXTURE !== "1") {
 	assert.equal(bindSeat(c.seatId, `new_${c.seatId}`).ok, true);
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: c.hostSessionId, nativeEventId: c.nativeEventId, seatId: c.seatId, eventSequence: 2, choiceId: c.choiceId, connectionId: `conn_${c.seatId}`, credential: credentialFor(c.seatId), option: c.options[0] }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 	assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: c.hostSessionId, nativeEventId: c.nativeEventId, seatId: c.seatId, eventSequence: 2, choiceId: c.choiceId, connectionId: `new_${c.seatId}`, credential: credentialFor(c.seatId), option: c.options[0] }).ok, true);
@@ -1274,7 +1395,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			throw new Error(`native choice host failed before ACK resolution:${JSON.stringify({ failureCode: session.failureCode,
 				choiceStates: opened.map(choice => controller.inspect(roomId, choice.choiceId)?.state || null),
 				actionChoiceState: nativeActionChoice ? controller.inspect(roomId, nativeActionChoice.choiceId)?.state || null : null,
-				waitErrors, phaseOverEvidence, recentStages: nativeDiagnostic.slice(-16).map(entry => entry?.stage) })}`);
+				waitErrors, phaseOverEvidence, preActionRejection: nativeDiagnostic.find(entry => entry?.stage === "native_preaction_command_rejected") || null,
+				recentStages: nativeDiagnostic.slice(-16).map(entry => entry?.stage) })}`);
 		}
 		return opened.every(choice => controller.inspect(roomId, choice.choiceId)?.state === "resolved") &&
 			(!nativeActionChoice || session?.authorityStateRevision !== 4 || controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved");
@@ -1378,13 +1500,21 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		const characterAuthorityEvent = authoritySubmissions.find(entry => entry.proof?.eventSequence === 2)?.proof?.event;
 		assert.ok(characterAuthorityEvent?.characters?.some(entry => entry.seatId === nativeResourceFixtureSeatId && entry.character === "shengQiangQiShi"),
 			"the native Event #2 result must initialize the first actor with the selected fixture role");
+	} else if (process.env.V2_NATIVE_JIRIMO_FIXTURE === "1") {
+		const fixtureChoice = opened.find(choice => choice.seatId === nativeJiRiFixtureSeatId);
+		const selected = controller.inspect(roomId, fixtureChoice?.choiceId);
+		assert.equal(selected?.resolution?.option, "jieRiMoDao",
+			"the managed player selection must preserve the native jieRiMoDao fixture candidate");
+		const characterAuthorityEvent = authoritySubmissions.find(entry => entry.proof?.eventSequence === 2)?.proof?.event;
+		assert.ok(characterAuthorityEvent?.characters?.some(entry => entry.seatId === nativeJiRiFixtureSeatId && entry.character === "jieRiMoDao"),
+			"the native Event #2 result must initialize the first actor with the selected fixture role");
 	} else {
 		assert.equal(controller.inspect(roomId, a.choiceId).resolution.option, a.options[1]);
 		assert.equal(controller.inspect(roomId, b.choiceId).resolution.kind, "trustee");
 		assert.equal(controller.inspect(roomId, d.choiceId).state, "resolved");
 	}
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS === "1") {
-		const probeMode = ["managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? process.env.V2_NATIVE_START_PROBE_MODE : "native_start";
+		const probeMode = ["managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "managed_native_skill_candidate_probe"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? process.env.V2_NATIVE_START_PROBE_MODE : "native_start";
 		assert.equal((await manager.diagnoseNativeStart(roomId, "controlled_block")).ok, true);
 		const controlled = await until(() => nativeDiagnostic.find(entry => entry?.stage === "controlled_block_outcome"), 5000,
 			() => ({ stages: nativeDiagnostic.map(entry => entry?.stage) }));
@@ -1454,7 +1584,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.equal(snapshot.hostPlayerAbsent, true);
 			assert.equal(snapshot.seats.length, 4);
 			assert.deepEqual(snapshot.seats.map(seat => seat.handCount), [4, 4, 4, 4]);
-		} else if (["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(probeMode)) {
+		} else if (["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "managed_native_skill_candidate_probe"].includes(probeMode)) {
 			assert.equal(outcome.classification, "native_promise_pending_cdp_responsive");
 			assert.equal(snapshot.nativeInputGate?.eventName, "gongJiOrFaShu");
 			assert.equal(snapshot.nativeInputGate?.parentEventName, "xingDong");
@@ -1465,7 +1595,54 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				openedChoiceCount: opened.length, diagnosticStages: nativeDiagnostic.map(entry => entry?.stage),
 				latestDiagnostic: nativeDiagnostic.filter(entry => entry?.snapshot).at(-1)?.snapshot || null,
 			})}`);
-			assert.ok(nativeActionCandidate?.options.length > 1);
+			if (process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") {
+				assert.ok(nativeActionCandidate?.options.length > 0);
+				assert.ok(nativeActionCandidate?.skillCandidateCount > 0);
+			} else assert.ok(nativeActionCandidate?.options.length > 1);
+			if (probeMode === "managed_native_skill_candidate_probe") {
+				assert.equal(process.env.V2_NATIVE_JIRIMO_FIXTURE, "1");
+				assert.equal(manager.inspect(roomId)?.authorityStateRevision, 3,
+					"candidate-only probe must remain after authorized Event #3 and must not fabricate Event #4/#5");
+				assert.equal(nativeActionCandidate.seatId, nativeJiRiFixtureSeatId);
+				assert.equal(nativeActionCandidate.optionKinds[nativeActionOptionId], "native_skill");
+				assert.ok(nativeActionCandidate.skillCandidateCount >= 1);
+				assert.equal(nativeActionChoice.options.includes(nativeActionOptionId), true);
+				if (process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") {
+					assert.ok(["pending", "delivery_pending", "applying"].includes(controller.inspect(roomId, nativeActionChoice.choiceId)?.state));
+				} else assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId)?.state, "pending");
+				const nativeGateTrace = nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open" &&
+					entry?.snapshot?.nativeInputGate?.nativeEventId === nativeActionCandidate.nativeEventId);
+				assert.ok(nativeGateTrace, "skill option must come from a real native input waiting boundary");
+				assert.equal(nativeGateTrace.snapshot.nativeInputGate.nativeSkillCandidateCount, nativeActionCandidate.skillCandidateCount);
+				assert.equal(nativeGateTrace.snapshot.nativeInputGate.gameMeAbsent, true);
+				if (process.env.V2_NATIVE_JIRIMO_ACTION_PROBE !== "1") assert.equal(nativeActionAckCount, 0, "a candidate probe must not claim native application");
+				const request = { protocol: 1, roomId, hostSessionId: nativeActionChoice.hostSessionId,
+					nativeEventId: nativeActionChoice.nativeEventId, seatId: nativeActionChoice.seatId,
+					eventSequence: nativeActionChoice.eventSequence, choiceId: nativeActionChoice.choiceId,
+					connectionId: `action_${nativeActionChoice.seatId}`, credential: credentialFor(nativeActionChoice.seatId), option: nativeActionOptionId };
+				assert.equal(controller.submitChoice({ ...request, credential: "administrator_credential" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+				const otherSeat = setup.seats.find(seat => seat.seatId !== request.seatId).seatId;
+				assert.equal(controller.submitChoice({ ...request, seatId: otherSeat, credential: credentialFor(otherSeat) }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+				assert.equal(controller.submitChoice({ ...request, option: "forged_skill_option" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+				if (process.env.V2_NATIVE_JIRIMO_ACTION_PROBE !== "1") assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId)?.state, "pending",
+					"rejected player/admin submissions must leave the immutable native choice untouched");
+				if (process.env.V2_NATIVE_JIRIMO_ACTION_PROBE !== "1") {
+					assert.equal((await manager.stop(roomId, "jirimo_native_candidate_probe_complete")).ok, true);
+					const stopped = manager.inspect(roomId);
+					assert.equal(stopped?.state, "stopped");
+					assert.equal(stopped?.authorityStateRevision, 3);
+					assert.equal(stopped?.nextAuthorityEventSequence, 4);
+					assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId), null, "stop must clean the pending skill choice");
+					assert.equal(nativeActionAckCount, 0);
+					assert.equal(authoritySubmissions.some(entry => entry.proof?.eventSequence >= 4), false);
+					assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_action_event_completed"), false,
+						"candidate generation must not be mistaken for a resolved native skill operation");
+					const handle = launchedHandles.get(stopped.sessionId);
+					await until(() => handle.resources().length === 0, 10000, () => ({ resources: handle.resources() }));
+					await handle.waitForCleanup();
+					return;
+				}
+			}
 			if (["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe"].includes(probeMode)) {
 				if (process.env.V2_NATIVE_C3_FULL_CHAIN === "1" && process.env.V2_NATIVE_MANAGED_RESPONSE === "1" && probeMode === "managed_opening_root_action_event4") {
 					assert.ok(nativeLiveSnapshotAtInputGate,
@@ -1499,7 +1676,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			let applied;
 			try {
 				applied = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_action_event_completed"), 15000,
-					() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), choice: nativeActionChoice && controller.inspect(roomId, nativeActionChoice.choiceId), latest: nativeDiagnostic.filter(entry => entry?.snapshot).at(-1)?.snapshot || null }));
+					() => ({ stages: nativeDiagnostic.map(entry => ({ stage: entry?.stage, failureCode: entry?.failureCode || null,
+						snapshot: entry?.stage === "native_jiri_target_choice_rejected" ? entry.snapshot : null })),
+						choice: nativeActionChoice && controller.inspect(roomId, nativeActionChoice.choiceId), latest: nativeDiagnostic.filter(entry => entry?.snapshot).at(-1)?.snapshot || null }));
 			} catch (error) {
 				// Ask the live supervised host for a fresh bounded snapshot before the
 				// test cleanup stops Chromium. The root Promise may remain pending while
@@ -1517,8 +1696,68 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					nativeEventId: candidate.nativeEventId, seatId: candidate.seatId, optionCount: candidate.options?.length || 0,
 					state: controller.inspect(roomId, choice.choiceId)?.state || null,
 					deliveryAttempts: controller.inspect(roomId, choice.choiceId)?.deliveryAttempts || 0 }));
-				error.message += `; diagnostic request=${JSON.stringify(requested)}; session=${JSON.stringify(sessionBeforeDiagnostic)}; deliveryFailures=${JSON.stringify(deliveryFailures)}; sessionEnds=${JSON.stringify(sessionEnds)}; nativeResponseChoices=${JSON.stringify(responseState)}; responseAckCount=${nativeResponseAckCount}; recentNativeMilestones=${JSON.stringify(safeNativeDiagnostic(nativeDiagnostic.slice(-10).map(entry => ({ stage: entry?.stage, snapshot: entry?.snapshot || null })) ))}; live native snapshot=${JSON.stringify(safeNativeDiagnostic(latest?.snapshot || null))}`;
+				error.message += `; diagnostic request=${JSON.stringify(requested)}; session=${JSON.stringify(sessionBeforeDiagnostic)}; deliveryFailures=${JSON.stringify(deliveryFailures)}; sessionEnds=${JSON.stringify(sessionEnds)}; nativeResponseChoices=${JSON.stringify(responseState)}; responseAckCount=${nativeResponseAckCount}; nativeSkillLifecycle=${JSON.stringify(safeNativeDiagnostic(nativeDiagnostic.filter(entry=>/^native_jiri_(event_(created|starting)|target_)/.test(entry?.stage||'')).map(entry=>({stage:entry.stage,failureCode:entry.failureCode||null,
+						actionGateStatus:entry.actionGateStatus||null,actionEventMatches:entry.actionEventMatches===true,sourceSeatMatches:entry.sourceSeatMatches===true,
+						eventNameValid:entry.eventNameValid===true,skillEventValid:entry.skillEventValid===true,gameMeAbsent:entry.gameMeAbsent===true,
+						optionCount:Number.isSafeInteger(entry.optionCount)?entry.optionCount:null,optionIdsValid:typeof entry.optionIdsValid==='boolean'?entry.optionIdsValid:null,
+						optionKindsValid:typeof entry.optionKindsValid==='boolean'?entry.optionKindsValid:null,rootInstanceMatches:typeof entry.rootInstanceMatches==='boolean'?entry.rootInstanceMatches:null,snapshot:entry.snapshot}))))}; recentNativeMilestones=${JSON.stringify(safeNativeDiagnostic(nativeDiagnostic.slice(-10).map(entry => ({ stage: entry?.stage, snapshot: entry?.snapshot || null })) ))}; live native snapshot=${JSON.stringify(safeNativeDiagnostic(latest?.snapshot || null))}`;
 				throw error;
+			}
+			if (probeMode === "managed_native_skill_candidate_probe" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") {
+				const action = applied.snapshot?.nativeAction;
+				assert.equal(action?.actionKind, "native_skill");
+				assert.equal(action?.skillId, "jiRi_moBaoChongJie");
+				assert.equal(action?.useResultCount, 1);
+				assert.equal(action?.useResultChildName, "useSkill");
+				assert.equal(action?.nativeChildWaitCompleted, true);
+				assert.equal(action?.nativeEventInstanceMatches, true);
+				assert.equal(action?.nativeUseSkillChildCompleted, true);
+				assert.equal(action?.nativeTargetChoiceCompleted, true);
+				assert.equal(action?.nativeChangeZhanJiCompleted, true);
+				assert.equal(action?.baoShiAfter, action?.baoShiBefore + 1,
+					"the original native contentBefore must complete exactly one non-overflow baoShi change");
+				assert.equal(applied.snapshot?.eventName, "gongJiOrFaShu");
+				assert.equal(applied.snapshot?.eventFinished, true);
+				assert.equal(applied.snapshot?.hostPlayerAbsent, true);
+				assert.equal(nativeActionCandidate.seatId, nativeJiRiFixtureSeatId);
+				assert.equal(nativeJiRiTargetCandidate?.actionEventId, nativeActionCandidate.nativeEventId);
+				assert.equal(nativeJiRiTargetCandidate?.sourceSeatId, nativeJiRiFixtureSeatId);
+				assert.ok(nativeJiRiTargetChoice);
+				await until(() => controller.inspect(roomId, nativeActionChoice.choiceId)?.state === "resolved" &&
+					controller.inspect(roomId, nativeJiRiTargetChoice.choiceId)?.state === "resolved", 12000,
+					() => ({ action: controller.inspect(roomId, nativeActionChoice.choiceId)?.state,
+						target: controller.inspect(roomId, nativeJiRiTargetChoice.choiceId)?.state, nativeActionAckCount,
+						nativeJiRiTargetAckCount, diagnostics: nativeDiagnostic.slice(-10).map(entry => entry?.stage) }));
+				assert.ok(nativeJiRiTargetAckCount >= 2, "lost nested-choice ACK must retry the same immutable physical discard delivery");
+				assert.equal(nativeJiRiTargetAckDropped, true, "the nested-choice retry assertion requires an actually dropped first ACK");
+				assert.ok(nativeActionAckCount >= 2, "lost main-choice ACK must retry the same immutable native skill delivery");
+				const resourceProof = nativeDiagnostic.find(entry => entry?.stage === "native_jiri_change_zhanji_completed")?.snapshot;
+				assert.ok(resourceProof, "a completed native changeZhanJi child must be observed");
+				assert.equal(resourceProof.rootObjectMatches, true);
+				assert.equal(resourceProof.seatId, nativeJiRiFixtureSeatId);
+				assert.equal(resourceProof.achievement, "baoShi");
+				assert.equal(resourceProof.afterCount, resourceProof.beforeCount + 1);
+				const targetTrace = nativeDiagnostic.find(entry => entry?.stage === "native_jiri_target_choice_candidates")?.snapshot;
+				assert.ok(targetTrace, "nested native chooseToDiscard must have supplied real legal faShu options");
+				assert.equal(targetTrace.eventName, "chooseToDiscard");
+				assert.equal(targetTrace.seatId, nativeJiRiTargetCandidate.seatId);
+				assert.equal(targetTrace.sourceSeatId, nativeJiRiFixtureSeatId);
+				assert.ok(targetTrace.optionCount > 0 && targetTrace.optionCount <= 32);
+				assert.equal(nativeActionAckCount, 2, "the exactly-once native skill should receive only its original and retry ACK");
+				assert.equal(manager.inspect(roomId)?.authorityStateRevision, 3,
+					"this isolated native-skill diagnostic must not fabricate or authorize Event #4/#5");
+				assert.equal(manager.inspect(roomId)?.nextAuthorityEventSequence, 4);
+				assert.equal(authoritySubmissions.some(entry => entry.proof?.eventSequence >= 4), false);
+				const skillDeliveryIds = nativeDiagnostic.filter(entry => entry?.stage === "native_action_event_completed").map(entry => entry.snapshot?.nativeAction?.useResultCount);
+				assert.deepEqual(skillDeliveryIds, [1], "a duplicate immutable delivery must not re-run native useResult/useSkill");
+				assert.equal((await manager.stop(roomId, "jirimo_native_action_probe_complete")).ok, true);
+				assert.equal(manager.inspect(roomId)?.state, "stopped");
+				assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId), null);
+				assert.equal(controller.inspect(roomId, nativeJiRiTargetChoice.choiceId), null);
+				const stoppedHandle = launchedHandles.get(manager.inspect(roomId).sessionId);
+				await until(() => stoppedHandle.resources().length === 0, 10000, () => ({ resources: stoppedHandle.resources() }));
+				await stoppedHandle.waitForCleanup();
+				return;
 			}
 			assert.equal(applied.snapshot?.nativeAction?.useResultCount, 1);
 			assert.equal(applied.snapshot?.nativeAction?.useResultChildName, "useCard");

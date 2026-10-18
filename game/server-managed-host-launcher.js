@@ -106,7 +106,7 @@ function createManagedHostProcessLauncher({
 			const diagnosticCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				command?.type === "host_native_start_diagnostic" && ["native_start", "managed_start", "managed_input_gate", "managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "controlled_block", "managed_random_failure_probe"].includes(command.mode);
 			const nativeSnapshotCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
-				command?.type === "host_native_start_snapshot" && ["managed_opening_root_action_event4"].includes(command.mode);
+				command?.type === "host_native_start_snapshot" && ["managed_opening_root_action_event4", "managed_native_skill_candidate_probe"].includes(command.mode);
 			const nativeCardLedgerCommand = process.env.V2_NATIVE_CARD_LEDGER_PROBE === "1" &&
 				process.env.V2_NATIVE_START_DIAGNOSTICS === "1" && process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1" &&
 				command?.type === "host_native_card_ledger_snapshot" && command.kind === "managed_host" &&
@@ -149,8 +149,10 @@ function createManagedHostProcessLauncher({
 				command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
 				Object.keys(command).sort().join(",") === "boundaryOrdinal,captureOrdinal,engineBuildId,kind,protocol,requestId,roomId,rootInstanceId,seatIds,secret,sessionId,type";
 			const nativePreActionCaptureCommand = process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1" &&
-				process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" && process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
-				process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
+				(process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" ||
+					(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1")) &&
+				process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
+				process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
 				command?.type === "host_native_pre_action_capture" && command.kind === "managed_host" &&
 				command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
 				command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret &&
@@ -186,7 +188,8 @@ function createManagedHostProcessLauncher({
 						[1, 2, 3, 4].includes(command.eventSequence) && command.stateRevision === command.eventSequence &&
 						/^[a-f0-9]{64}$/.test(command.afterDigest)) ||
 					["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||
-				Object.getPrototypeOf(command) !== Object.prototype) throw new Error("HOST_COMMAND_REJECTED");
+				Object.getPrototypeOf(command) !== Object.prototype) throw new Error(command?.type === "host_native_pre_action_capture"
+				? "HOST_PREACTION_CAPTURE_COMMAND_REJECTED" : "HOST_COMMAND_REJECTED");
 			await new Promise((resolve, reject) => child.send(command, error => error ? reject(error) : resolve()));
 		};
 		handle.stop = async reason => {

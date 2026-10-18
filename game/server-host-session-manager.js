@@ -611,13 +611,70 @@ function createHostSessionManager({
 					}
 				}
 					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
-					else if (["host_choice_candidates", "host_choice_delivery_started", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates", "host_native_response_candidates"].includes(message?.type) && authenticate(record, message)) {
+					else if (["host_choice_candidates", "host_choice_delivery_started", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates", "host_native_response_candidates", "host_native_skill_target_candidates"].includes(message?.type) && authenticate(record, message)) {
+						if (message.type === "host_native_action_candidates" && process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe" &&
+							process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1" && process.env.V2_NATIVE_JIRIMO_FIXTURE === "1") {
+							const validOptions = Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 64 &&
+								new Set(message.options).size === message.options.length && message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)) &&
+								message.optionKinds && Object.getPrototypeOf(message.optionKinds) === Object.prototype &&
+								Object.keys(message.optionKinds).sort().join(",") === [...message.options].sort().join(",") &&
+								Object.values(message.optionKinds).every(kind => kind === "native_skill" || kind === "gongJi" || kind === "faShu");
+							const skillOptions = message.options.filter(option => message.optionKinds[option] === "native_skill");
+							if (record.state !== "playable_probe" || record.authorityStateRevision !== 3 || message.eventName !== "gongJiOrFaShu" ||
+								message.eventSequence !== 4 || !/^native_[A-Za-z0-9_-]{16,96}$/.test(message.nativeEventId || "") ||
+								message.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId || !record.seatIds.includes(message.seatId) ||
+								!validOptions || skillOptions.length < 1 || message.skillCandidateCount !== skillOptions.length ||
+								Object.keys(message.optionTargetSeatIds || {}).sort().join(",") !== [...message.options].sort().join(",") ||
+								!skillOptions.every(option => message.optionTargetSeatIds[option] !== message.seatId && record.seatIds.includes(message.optionTargetSeatIds[option]) &&
+									message.optionNativeTargetSpellEligible?.[option] === true)) {
+								fail(record, "NATIVE_JIRIMO_ACTION_CANDIDATE_REJECTED");
+								Promise.resolve(record.handle?.stop("native_jirimo_action_candidate_rejected")).catch(() => {});
+								return;
+							}
+							record.nativeJiRiActionCandidate = Object.freeze({ nativeEventId: message.nativeEventId, seatId: message.seatId,
+								rootInstanceId: message.rootInstanceId, eventSequence: message.eventSequence,
+							targetSeatIds: Object.freeze(skillOptions.map(option => message.optionTargetSeatIds[option])) });
+						}
+						if (message.type === "host_native_skill_target_candidates") {
+							const source = record.nativeJiRiActionCandidate;
+							const validOptions = Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 32 &&
+								new Set(message.options).size === message.options.length && message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)) &&
+								message.optionKinds && Object.getPrototypeOf(message.optionKinds) === Object.prototype &&
+								Object.keys(message.optionKinds).sort().join(",") === [...message.options].sort().join(",") &&
+								Object.values(message.optionKinds).every(kind => kind === "physical_faShu_discard") &&
+								message.options.includes(message.trusteeOption);
+							const allowedKeys = ["kind", "type", "protocol", "secret", "roomId", "sessionId", "eventName", "eventSequence", "nativeEventId",
+								"actionEventId", "seatId", "sourceSeatId", "rootInstanceId", "options", "optionKinds", "trusteeOption", "deadlineMs"];
+							if (process.env.V2_NATIVE_START_PROBE_MODE !== "managed_native_skill_candidate_probe" || process.env.V2_NATIVE_JIRIMO_ACTION_PROBE !== "1" ||
+								process.env.V2_NATIVE_JIRIMO_FIXTURE !== "1" ||
+								Object.keys(message).some(key => !allowedKeys.includes(key)) ||
+								record.state !== "playable_probe" || record.authorityStateRevision !== 3 || message.eventName !== "chooseToDiscard" ||
+								message.eventSequence !== 4 || !source || message.actionEventId !== source.nativeEventId ||
+								message.nativeEventId === source.nativeEventId || !/^native_event_[a-f0-9]{32}$/.test(message.nativeEventId || "") ||
+								message.rootInstanceId !== source.rootInstanceId || message.sourceSeatId !== source.seatId ||
+								!record.seatIds.includes(message.seatId) || message.seatId === source.seatId || !source.targetSeatIds.includes(message.seatId) ||
+								!validOptions || !Number.isSafeInteger(message.deadlineMs) || message.deadlineMs < 100 || message.deadlineMs > 300000) {
+								fail(record, "NATIVE_JIRIMO_TARGET_CANDIDATE_REJECTED");
+								Promise.resolve(record.handle?.stop("native_jirimo_target_candidate_rejected")).catch(() => {});
+								return;
+							}
+							if (record.nativeJiRiTargetCandidate) {
+								fail(record, "NATIVE_JIRIMO_TARGET_CANDIDATE_DUPLICATE");
+								Promise.resolve(record.handle?.stop("native_jirimo_target_candidate_duplicate")).catch(() => {});
+								return;
+							}
+							record.nativeJiRiTargetCandidate = Object.freeze({ nativeEventId: message.nativeEventId, actionEventId: message.actionEventId,
+								seatId: message.seatId, sourceSeatId: message.sourceSeatId, rootInstanceId: message.rootInstanceId,
+								options: Object.freeze([...message.options]) });
+						}
 						if (message.type === "host_native_action_candidates" && process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1") {
 							const validOptions = Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 64 &&
 								new Set(message.options).size === message.options.length && message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)) &&
 								message.optionKinds && Object.getPrototypeOf(message.optionKinds) === Object.prototype &&
 								Object.keys(message.optionKinds).sort().join(",") === [...message.options].sort().join(",") &&
-								Object.values(message.optionKinds).every(kind => kind === "gongJi" || kind === "faShu");
+								Object.values(message.optionKinds).every(kind => kind === "gongJi" || kind === "faShu" ||
+									(kind === "native_skill" && process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" &&
+									process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1"));
 							if (record.privatePreActionCaptureCandidate !== null || record.state !== "playable_probe" || record.authorityStateRevision !== 3 ||
 								message.eventName !== "gongJiOrFaShu" || message.eventSequence !== 4 || !/^native_[A-Za-z0-9_-]{16,96}$/.test(message.nativeEventId || "") ||
 								!record.seatIds.includes(message.seatId) || message.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId ||
@@ -1025,7 +1082,8 @@ function createHostSessionManager({
 
 	async function snapshotNativeStart(roomId, mode = "managed_opening_root_action_event4") {
 		const record = sessions.get(roomId);
-		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || mode !== "managed_opening_root_action_event4" ||
+		if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" ||
+			!(["managed_opening_root_action_event4", "managed_native_skill_candidate_probe"].includes(mode)) ||
 			!record || record.state !== "playable_probe" || !record.handle?.sendHostCommand) return failure("HOST_NATIVE_SNAPSHOT_REJECTED");
 		try {
 			await record.handle.sendHostCommand({ type: "host_native_start_snapshot", mode, kind: "managed_host", protocol: PROTOCOL,
@@ -1217,8 +1275,10 @@ function createHostSessionManager({
 		const record = sessions.get(roomId);
 		const allowed = "choiceId,nativeEventId,seatId";
 		const candidate = record?.privatePreActionCaptureCandidate;
-		if (process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE !== "1" || process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE !== "1" ||
-			process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
+		const supportedFixture = process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" ||
+			(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1");
+		if (process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE !== "1" || !supportedFixture ||
+			process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE !== "1" ||
 			process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" || !record || record.state !== "playable_probe" ||
 			record.authorityStateRevision !== 3 || record.lastAuthorityEvent?.sequence !== 3 || record.lastAuthorityEvent?.name !== "gameDraw" ||
 			!record.handle?.sendHostCommand || record.seatIds?.length !== 4 || !record.xingbeiAuthorityContext?.rootInstanceId ||
@@ -1259,12 +1319,14 @@ function createHostSessionManager({
 				roomId: record.roomId, sessionId: record.sessionId, secret: record.secret, requestId,
 				engineBuildId: record.engineBuildId, rootInstanceId: record.xingbeiAuthorityContext.rootInstanceId,
 				seatIds: record.seatIds, nativeEventId: input.nativeEventId, choiceId: input.choiceId, seatId: input.seatId }))
-				.catch(() => {
+				.catch(error => {
 					const pending = record.privatePreActionCaptureRequests.get(requestId);
 					if (!pending) return;
 					record.privatePreActionCaptureRequests.delete(requestId);
 					clearTimeout(pending.timer);
-					pending.resolve(failure("NATIVE_PREACTION_CAPTURE_REQUEST_REJECTED"));
+					const code = error?.message === "HOST_PREACTION_CAPTURE_COMMAND_REJECTED"
+						? "NATIVE_PREACTION_CAPTURE_COMMAND_NOT_ALLOWED" : "NATIVE_PREACTION_CAPTURE_REQUEST_REJECTED";
+					pending.resolve(failure(code));
 					if (ACTIVE_STATES.has(record.state)) {
 						fail(record, "NATIVE_PREACTION_CAPTURE_REQUEST_REJECTED");
 						Promise.resolve(record.handle?.stop("native_preaction_capture_request_failed")).catch(() => {});
