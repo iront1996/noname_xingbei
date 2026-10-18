@@ -150,7 +150,8 @@ function createManagedHostProcessLauncher({
 				Object.keys(command).sort().join(",") === "boundaryOrdinal,captureOrdinal,engineBuildId,kind,protocol,requestId,roomId,rootInstanceId,seatIds,secret,sessionId,type";
 			const nativePreActionCaptureCommand = process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1" &&
 				(process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" ||
-					(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1")) &&
+					(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") ||
+					process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1") &&
 				process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
 				command?.type === "host_native_pre_action_capture" && command.kind === "managed_host" &&
@@ -165,6 +166,27 @@ function createManagedHostProcessLauncher({
 				Array.isArray(command.seatIds) && command.seatIds.length === bootstrap.gameSetup.seats.length &&
 				command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
 				Object.keys(command).sort().join(",") === "choiceId,engineBuildId,kind,nativeEventId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type";
+			const nativeSuccessorPreActionCaptureCommand = process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1" &&
+				process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" && process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
+				process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
+				command?.type === "host_native_successor_preaction_capture" && command.kind === "managed_host" &&
+				command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId && command.sessionId === bootstrap.sessionId &&
+				command.secret === bootstrap.secret && /^successor_[a-f0-9]{32}$/.test(command.requestId || "") &&
+				Number.isSafeInteger(command.captureOrdinal) && command.captureOrdinal >= 1 && command.captureOrdinal <= 2 &&
+				/^native_[A-Za-z0-9_-]{16,96}$/.test(command.previousNativeEventId || "") &&
+				/^native_event_[a-f0-9]{32}$/.test(command.nativeEventId || "") && command.nativeEventId !== command.previousNativeEventId &&
+				bootstrap.gameSetup.seats.some(seat => seat.seatId === command.previousSeatId) &&
+				bootstrap.gameSetup.seats.some(seat => seat.seatId === command.seatId) && command.previousSeatId !== command.seatId &&
+				Array.isArray(command.candidateOptionIds) && command.candidateOptionIds.length > 0 && command.candidateOptionIds.length <= 64 &&
+				new Set(command.candidateOptionIds).size === command.candidateOptionIds.length && command.candidateOptionIds.every(option => /^native_option_[a-f0-9]{32}$/.test(option)) &&
+				command.candidateOptionKinds && Object.getPrototypeOf(command.candidateOptionKinds) === Object.prototype &&
+				Object.keys(command.candidateOptionKinds).sort().join(",") === [...command.candidateOptionIds].sort().join(",") &&
+				Object.values(command.candidateOptionKinds).every(kind => kind === "gongJi" || kind === "faShu") &&
+				command.engineBuildId === bootstrap.engineSourceManifest?.buildId &&
+				/^native_root_[A-Za-z0-9_-]{16,96}$/.test(command.rootInstanceId || "") &&
+				Array.isArray(command.seatIds) && command.seatIds.length === bootstrap.gameSetup.seats.length &&
+				command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
+				Object.keys(command).sort().join(",") === "candidateOptionIds,candidateOptionKinds,captureOrdinal,engineBuildId,kind,nativeEventId,previousNativeEventId,previousSeatId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type";
 			const nativePhaseBoundaryReleaseCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1" && command?.type === "host_native_phase_boundary_release" &&
 				command.kind === "managed_host" && command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
@@ -180,7 +202,7 @@ function createManagedHostProcessLauncher({
 				typeof command.nativeEventId === "string" && typeof command.seatId === "string" &&
 				Object.keys(command).every(key => ["type", "nativeEventId", "seatId"].includes(key));
 			if (exited || !child.connected || !command ||
-				!(diagnosticCommand || nativeSnapshotCommand || nativeCardLedgerCommand || nativeEffectStateCommand || nativeAtomicCaptureCommand || nativePreActionCaptureCommand || nativePhaseBoundaryReleaseCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
+				!(diagnosticCommand || nativeSnapshotCommand || nativeCardLedgerCommand || nativeEffectStateCommand || nativeAtomicCaptureCommand || nativePreActionCaptureCommand || nativeSuccessorPreActionCaptureCommand || nativePhaseBoundaryReleaseCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
 					(command?.type === "host_authority_event_ack" && command.kind === "managed_host" &&
 						command.accepted === true &&
 						command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&

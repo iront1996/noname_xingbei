@@ -11,6 +11,7 @@ const { createManagedHostProcessLauncher } = require("../game/server-managed-hos
 const { createManagedChoiceController } = require("../game/server-managed-choice-controller.js");
 const { createManagedRoomSeatRegistry } = require("../game/server-managed-room-seat-registry.js");
 const { prepareNextSeatChoice } = require("../game/server-managed-next-seat-choice-preparation.js");
+const { assessEvent5Evidence } = require("../game/server-managed-authority-event5-provenance.js");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
@@ -127,6 +128,16 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			return Boolean(choice && choice.state === "pending" && choice.deliveryId === null && choice.roomId === input.roomId &&
 				choice.hostSessionId === input.hostSessionId && choice.nativeEventId === input.nativeEventId &&
 				choice.seatId === input.seatId && choice.eventSequence === input.eventSequence);
+		},
+		hasPendingManagedChoices: () => controller?.pendingCount() > 0,
+		getCurrentSeatBinding: (candidateRoom, seatId) => {
+			if (!seatRegistry || candidateRoom !== roomId) return null;
+			const connectionId = seatSockets.get(seatId), seat = seatRegistry.inspect(candidateRoom, seatId);
+			if (!connectionId || !seat) return null;
+			const credentialAuthenticated = seatRegistry.authenticateSeat({ roomId: candidateRoom, seatId, connectionId,
+				credential: credentialFor(seatId) }, { roomId: candidateRoom, seatId });
+			return Object.freeze({ roomId: candidateRoom, seatId, connected: seat.connected, current: seat.connected && !seat.revoked,
+				credentialAuthenticated, ordinaryPlayer: true, connectionGeneration: seat.epoch });
 		},
 		launch: async bootstrap => {
 			const handle = await createManagedHostProcessLauncher({ script, stopTimeoutMs: 3000 })(bootstrap);
@@ -398,7 +409,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					deadlineAt: Date.now() + 5000, hostProof: message.secret }).code, "MANAGED_CHOICE_NATIVE_EVENT_EXISTS");
 				if (process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1") {
 					assert.ok(process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" ||
-						(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1"),
+						(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") ||
+						process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1",
 					"pre-action capture must run only under a verified native resource fixture");
 					nativePreActionCapture = await manager.snapshotNativePreActionCapture(roomId, { nativeEventId: message.nativeEventId,
 						choiceId: openedChoice.choice.choiceId, seatId: message.seatId });
@@ -2592,8 +2604,58 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(prepResult.preparation.connectionGeneration, seatRecord.epoch);
 						assert.equal(prepResult.preparation.nativeDeliveryAllowed, false);
 						assert.equal(prepResult.preparation.authoritySubmissionAllowed, false);
-						nextSeatPreparation = prepResult.preparation;
-						assert.equal(controller.pendingCount(), 0, "read-only preparation must not allocate a managed choice or deadline");
+					nextSeatPreparation = prepResult.preparation;
+					assert.ok(nativePreActionCapture?.ok, "the first actor must have an independently accepted pre-action capture for successor binding");
+					const successorCapture = await manager.snapshotSuccessorPreActionCapture(roomId);
+					assert.equal(successorCapture.ok, true, `successor pre-action capture rejected: ${successorCapture.code}`);
+					assert.equal(successorCapture.snapshot.schema, "xingbei_native_private_successor_preaction_commitment_v1");
+					assert.equal(successorCapture.snapshot.roomId, roomId);
+					assert.equal(successorCapture.snapshot.hostSessionId, activeContext.sessionId);
+					assert.equal(successorCapture.snapshot.rootInstanceId, waitingSnapshot.rootInstanceId);
+					assert.equal(successorCapture.snapshot.engineBuildId, activeContext.engineBuildId);
+					assert.deepEqual(successorCapture.snapshot.seatIds, immutableServerSeatIds);
+					assert.equal(successorCapture.snapshot.seatId, nextInput.seatId);
+					assert.equal(successorCapture.snapshot.connectionGeneration, seatRecord.epoch);
+					assert.equal(successorCapture.snapshot.previousSeatId, waitingSnapshot.seatId);
+					assert.notEqual(successorCapture.snapshot.nativeEventId, nativePreActionCapture.snapshot.nativeEventId);
+					assert.notEqual(successorCapture.snapshot.eventInstanceId, nativePreActionCapture.snapshot.eventInstanceId);
+					assert.ok(successorCapture.snapshot.nativeCompletionOrdinal > nativePreActionCapture.snapshot.nativeCompletionOrdinal);
+					assert.ok(successorCapture.snapshot.candidateOptionCount > 0);
+					assert.equal(successorCapture.snapshot.choiceAllocated, false);
+					assert.equal(successorCapture.snapshot.nativeDeliveryAllowed, false);
+					assert.equal(successorCapture.snapshot.authoritySubmissionAllowed, false);
+					assert.equal(successorCapture.snapshot.authorityRevision, 4);
+					assert.equal(successorCapture.snapshot.nextAuthorityEventSequence, 5);
+					assert.equal(successorCapture.snapshot.checkpointAvailable, false);
+					assert.notEqual(successorCapture.snapshot.stateDigest, nativePreActionCapture.snapshot.stateDigest,
+						"the successor capture must reflect a different native actor/event context, not reuse the first actor preimage");
+					const successorRepeat = await manager.snapshotSuccessorPreActionCapture(roomId);
+					assert.equal(successorRepeat.ok, true, `stable successor gate reread rejected: ${successorRepeat.code}`);
+					assert.equal(successorRepeat.snapshot.captureOrdinal, 2);
+					assert.equal(successorRepeat.snapshot.nativeEventId, successorCapture.snapshot.nativeEventId);
+					assert.equal(successorRepeat.snapshot.nativeCompletionOrdinal, successorCapture.snapshot.nativeCompletionOrdinal);
+					assert.equal(successorRepeat.snapshot.stateDigest, successorCapture.snapshot.stateDigest);
+					assert.equal(successorRepeat.snapshot.stableWithPrevious, true);
+					assert.notEqual(successorRepeat.snapshot.commitment, successorCapture.snapshot.commitment,
+						"ordinal-scoped commitments must not be replay-identical even when the captured state is stable");
+					const event5Review = manager.inspectEvent5ReviewEvidence(roomId);
+					assert.ok(event5Review, "review evidence must be derived from accepted Event #4, phase fence, native gate, and current seat binding");
+					const provenance = assessEvent5Evidence({ proposalOnly: true, submissionEnabled: false,
+						phaseOver: { completed: true }, actorRotation: { rotationVerified: true },
+						seatBinding: { authenticated: true }, postStateFence: { knownStateOnly: true, afterDigest: "f".repeat(64), completionOrdinal: 999 } }, event5Review);
+					assert.equal(provenance.reviewObservationShapeValid, true);
+					assert.equal(provenance.classifications.predecessor.status, "manager_scoped_review_candidate");
+					assert.equal(provenance.classifications.phaseOver.status, "manager_scoped_review_candidate",
+						"phaseOver provenance must come from the validated atomic native fence, not candidate booleans");
+					assert.equal(provenance.classifications.inputGate.status, "manager_scoped_review_candidate");
+					assert.equal(provenance.classifications.seatBinding.value.connectionGeneration, seatRecord.epoch);
+					assert.equal(provenance.classifications.nativeSettlement.status, "unavailable");
+					assert.equal(provenance.classifications.postStateFence.status, "unavailable");
+					assert.equal(provenance.proposalClaims.completed, "caller_claim_unverified");
+					assert.equal(provenance.proposalClaims.digest, "caller_claim_unverified");
+					assert.equal(provenance.event5Accepted, false);
+					assert.equal(provenance.authorityRevision, 4);
+					assert.equal(controller.pendingCount(), 0, "read-only preparation must not allocate a managed choice or deadline");
 						assert.equal(manager.inspect(roomId).authorityStateRevision, 4);
 						assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 5);
 						assert.equal(authoritySubmissions.some(entry => entry.proof.eventSequence === 5), false);
@@ -2615,6 +2677,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						t.diagnostic(`next-seat native input boundary reached without authority submission: ${JSON.stringify({ seatId: nextInput.seatId,
 							nativeEventId: nextInput.nativeEventId, optionCount: nextInput.optionCount, rootInstanceId: nextInput.rootInstanceId,
 							preparedReadOnly: nextSeatPreparation.readOnly, connectionGeneration: nextSeatPreparation.connectionGeneration,
+							preActionCaptureOrdinal: successorCapture.snapshot.captureOrdinal, repeatedCaptureStable: successorRepeat.snapshot.stableWithPrevious,
 							authorityRevision: manager.inspect(roomId).authorityStateRevision, nextAuthorityEventSequence: manager.inspect(roomId).nextAuthorityEventSequence,
 							gameMeAbsent: true })}`);
 					}

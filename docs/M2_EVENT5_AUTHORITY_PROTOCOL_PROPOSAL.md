@@ -2,6 +2,8 @@
 
 Status: draft only. This document and `game/server-managed-authority-event5-proposal.js` are not connected to HostSession submission, do not raise the revision limit, and cannot accept or create Event #5. The accepted authority tip stays at sequence 4 / revision 4; next sequence is 5; `seedAuthorized=false`; `checkpointAvailable=false`.
 
+Evidence provenance is tracked separately in [`M2_EVENT5_EVIDENCE_PROVENANCE.md`](M2_EVENT5_EVIDENCE_PROVENANCE.md). All booleans, digests and ordinals supplied by a proposal caller are claims until matched to current manager-owned records and authenticated managed-host evidence. The review-only assessor does not authorize or submit events.
+
 ## Proposed event envelope
 
 Schema: `xingbei_native_action_event5_proposal_v1`.

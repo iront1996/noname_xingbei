@@ -406,7 +406,8 @@ async function boot(message) {
 	managedEngineBuildId = integrity.buildId;
 	if (process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1") {
 		const supportedFixture = process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" ||
-			(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1");
+			(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") ||
+			process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1";
 		if (!supportedFixture || process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" ||
 			process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE !== "1" || process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" ||
 			message.gameSetup?.mode !== "xingBei" || message.gameSetup?.seats?.length !== 4) {
@@ -4139,21 +4140,30 @@ async function snapshotNativeAtomicCapture(message) {
 	}
 }
 
-async function snapshotNativePreActionCapture(message) {
-	const keys = "choiceId,engineBuildId,kind,nativeEventId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type";
+async function snapshotNativePreActionCapture(message, successor = false) {
+	const keys = successor
+		? "candidateOptionIds,candidateOptionKinds,captureOrdinal,engineBuildId,kind,nativeEventId,previousNativeEventId,previousSeatId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type"
+		: "choiceId,engineBuildId,kind,nativeEventId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type";
 	const supportedFixture = process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" ||
-		(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1");
+		(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") ||
+		process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1";
 	const commandRejectReasons = [
 		process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1" ? null : "probe_disabled",
-		supportedFixture ? null : "fixture_not_supported",
+		(supportedFixture || process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1") ? null : "fixture_not_supported",
 		process.env.V2_NATIVE_START_DIAGNOSTICS === "1" ? null : "diagnostics_disabled",
 		process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE === "1" ? null : "completion_ledger_disabled",
 		process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" ? null : "network_guard_disabled",
 		validHostCommand(message) ? null : "host_identity_mismatch",
-		message.type === "host_native_pre_action_capture" ? null : "type_mismatch",
+		message.type === (successor ? "host_native_successor_preaction_capture" : "host_native_pre_action_capture") ? null : "type_mismatch",
 		Object.keys(message).sort().join(",") === keys ? null : "schema_mismatch",
-		/^preaction_[a-f0-9]{32}$/.test(message.requestId || "") ? null : "request_id_invalid",
-		/^choice_[a-f0-9]{32}$/.test(message.choiceId || "") ? null : "choice_id_invalid",
+		(successor ? /^successor_[a-f0-9]{32}$/ : /^preaction_[a-f0-9]{32}$/).test(message.requestId || "") ? null : "request_id_invalid",
+		(successor ? (message.previousNativeEventId !== message.nativeEventId && /^native_[A-Za-z0-9_-]{16,96}$/.test(message.previousNativeEventId || "") &&
+			Number.isSafeInteger(message.captureOrdinal) && message.captureOrdinal >= 1 && message.captureOrdinal <= 2 &&
+			/^[A-Za-z0-9_-]{1,64}$/.test(message.previousSeatId || "") && Array.isArray(message.candidateOptionIds) &&
+			message.candidateOptionIds.length > 0 && message.candidateOptionIds.length <= 64 && new Set(message.candidateOptionIds).size === message.candidateOptionIds.length &&
+			message.candidateOptionIds.every(option => /^native_option_[a-f0-9]{32}$/.test(option)) && message.candidateOptionKinds &&
+			Object.getPrototypeOf(message.candidateOptionKinds) === Object.prototype && Object.keys(message.candidateOptionKinds).sort().join(",") === [...message.candidateOptionIds].sort().join(",") &&
+			Object.values(message.candidateOptionKinds).every(kind => kind === "gongJi" || kind === "faShu")) : /^choice_[a-f0-9]{32}$/.test(message.choiceId || "")) ? null : "choice_or_candidate_invalid",
 		/^native_[A-Za-z0-9_-]{16,96}$/.test(message.nativeEventId || "") ? null : "native_event_id_invalid",
 		managedEngineBuildId && message.engineBuildId === managedEngineBuildId ? null : "build_mismatch",
 		/^native_root_[A-Za-z0-9_-]{16,96}$/.test(message.rootInstanceId || "") ? null : "root_id_invalid",
@@ -4170,9 +4180,12 @@ async function snapshotNativePreActionCapture(message) {
 					message.seatIds.every(id => managedSeatIds.includes(id)) } });
 		throw new Error("NATIVE_PREACTION_CAPTURE_COMMAND_REJECTED");
 	}
-	const command = { roomId: message.roomId, hostSessionId: message.sessionId, engineBuildId: message.engineBuildId,
+	const command = { successor, roomId: message.roomId, hostSessionId: message.sessionId, engineBuildId: message.engineBuildId,
 		rootInstanceId: message.rootInstanceId, seatIds: message.seatIds, nativeEventId: message.nativeEventId,
-		choiceId: message.choiceId, seatId: message.seatId };
+		choiceId: successor ? null : message.choiceId, seatId: message.seatId,
+		previousNativeEventId: successor ? message.previousNativeEventId : null, previousSeatId: successor ? message.previousSeatId : null,
+				candidateOptionIds: successor ? message.candidateOptionIds : null, candidateOptionKinds: successor ? message.candidateOptionKinds : null,
+			captureOrdinal: successor ? message.captureOrdinal : 1 };
 	try {
 		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{
 			const command=${JSON.stringify(command)},state=window.__v2NativeStartDiagnosticState,managed=window.__v2ManagedEngine,
@@ -4182,11 +4195,17 @@ async function snapshotNativePreActionCapture(message) {
 				state.rootInstanceId!==command.rootInstanceId||!Array.isArray(game.players)||game.players.length!==4||game.players.some(player=>player.ws)||
 				new Set(game.players.map(player=>player.playerid)).size!==4||command.seatIds.some(id=>!game.players.some(player=>player.playerid===id)))
 				throw Error('NATIVE_PREACTION_CAPTURE_ROOT_OR_SEATS_INVALID');
-			if(!gate||gate.status!=='waiting'||gate.controllerManaged!==true||gate.nativeEventId!==command.nativeEventId||gate.seatId!==command.seatId||
+			const gateKindValid=command.successor?gate?.diagnosticOnly===true&&state.nativeInputGate?.diagnosticOnly===true:
+				gate?.controllerManaged===true&&state.nativeInputGate?.diagnosticOnly!==true;
+			if(!gate||gate.status!=='waiting'||!gateKindValid||gate.nativeEventId!==command.nativeEventId||gate.seatId!==command.seatId||
 				!event||event!==state.inputEvent||event.__v2NativeEventId!==command.nativeEventId||event.name!=='gongJiOrFaShu'||event.player?.playerid!==command.seatId||
 				state.nativeInputGate?.waiting!==true||state.nativeInputGate?.nativeEventId!==command.nativeEventId||state.nativeInputGate?.seatId!==command.seatId||
 				status.paused!==true||manager.eventStack.at(-1)!==event||event.result!==undefined&&event.result!=='ai'||
-				state.nativeAction?.eventId===command.nativeEventId||state.nativeInputGate.useResultCount!==0)
+				state.nativeAction?.eventId===command.nativeEventId||state.nativeInputGate.useResultCount!==0||
+				(command.successor&&(command.previousNativeEventId===command.nativeEventId||command.previousSeatId===command.seatId||
+				!Array.isArray(command.candidateOptionIds)||!Array.isArray(state.nativeInputGate.candidates)||
+				JSON.stringify(state.nativeInputGate.candidates.map(item=>item.optionId))!==JSON.stringify(command.candidateOptionIds)||
+				JSON.stringify(Object.fromEntries(state.nativeInputGate.candidates.map(item=>[item.optionId,item.cardType])))!==JSON.stringify(command.candidateOptionKinds))))
 				throw Error('NATIVE_PREACTION_CAPTURE_INPUT_GATE_INVALID');
 			const names=['game','phaseLoop','phase','xingDong','gongJiOrFaShu'],chain=[];let current=event;
 			while(current&&chain.length<6){chain.push(current);current=current.parent;}
@@ -4235,12 +4254,18 @@ async function snapshotNativePreActionCapture(message) {
 				if(typeof player.name1!=='string'||typeof player.side!=='boolean'||!Number.isSafeInteger(player.hp)||!Number.isSafeInteger(player.maxHp)||!Number.isSafeInteger(player.zhiLiao)||
 					typeof player.isDead!=='function'||!Number.isSafeInteger(limit)||!Number.isSafeInteger(baoShi)||!Number.isSafeInteger(shuiJing))throw Error('NATIVE_PREACTION_CAPTURE_PLAYER_SOURCE_UNSUPPORTED');
 				return {seatId,position,character:player.name1,side:player.side,alive:!player.isDead(),hp:player.hp,maxHp:player.maxHp,zhiLiao:player.zhiLiao,hujiaSupported:false,nengLiang:{baoShi,shuiJing,effectiveLimit:limit}}});
-			return {schema:'xingbei_native_private_pre_action_capture_v1',captureOrdinal:1,roomId:command.roomId,hostSessionId:command.hostSessionId,
-				engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,fence:{captureLockKind:'single_turn_native_task_v1',
-				choiceId:command.choiceId,controllerStatus:'pending',deliveryCount:0,eventInstanceId:ids[4],eventName:event.name,eventStep:event.step,
+			const fence=command.successor?{captureLockKind:'successor_native_gate_v1',candidateOptionIds:[...command.candidateOptionIds],
+				candidateOptionKinds:{...command.candidateOptionKinds},choiceAllocated:false,controllerStatus:'not_allocated',deliveryCount:0,
+				eventInstanceId:ids[4],eventName:event.name,eventStep:event.step,eventStackConsistent:true,gamePaused:true,inputWaiting:true,
+				nativeCompletionOrdinal:ledger.completionOrdinal,nativeEventId:command.nativeEventId,parentChain,pendingInputCount:1,
+				previousNativeEventId:command.previousNativeEventId,previousSeatId:command.previousSeatId,rootEventInstanceId:ids[0],rootMatches:true,
+				runnableDescendantCount:0,seatId:command.seatId,useCardChildCount:0,useResultCount:0}:
+				{captureLockKind:'single_turn_native_task_v1',choiceId:command.choiceId,controllerStatus:'pending',deliveryCount:0,eventInstanceId:ids[4],eventName:event.name,eventStep:event.step,
 				eventStackConsistent:true,gamePaused:true,inputWaiting:true,nativeCompletionOrdinal:ledger.completionOrdinal,nativeEventId:command.nativeEventId,
 				parentChain,pendingInputCount:1,rootEventInstanceId:ids[0],rootMatches:true,runnableDescendantCount:0,resultPresent:false,seatId:command.seatId,
-				useCardChildCount:0,useResultCount:0},cardLedger:{schema:'xingbei_native_private_card_ledger_v1',rootInstanceId:command.rootInstanceId,seatIds,cards},
+				useCardChildCount:0,useResultCount:0};
+			return {schema:command.successor?'xingbei_native_private_successor_preaction_capture_v1':'xingbei_native_private_pre_action_capture_v1',captureOrdinal:command.captureOrdinal,roomId:command.roomId,hostSessionId:command.hostSessionId,
+				engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,fence:{...fence},cardLedger:{schema:'xingbei_native_private_card_ledger_v1',rootInstanceId:command.rootInstanceId,seatIds,cards},
 				effectState:{schema:'xingbei_native_private_effect_state_v1',rootInstanceId:command.rootInstanceId,seatIds,seats:effectSeats},
 				turnResource:{schema:'xingbei_native_private_turn_resource_state_v2',roomId:command.roomId,hostSessionId:command.hostSessionId,
 					engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,fence:{kind:'managed_native_input_waiting_fence_v1',
@@ -4253,12 +4278,13 @@ async function snapshotNativePreActionCapture(message) {
 			const code = detail.match(/\b(NATIVE_PREACTION_CAPTURE_[A-Z0-9_]{1,80})\b/)?.[1];
 			throw new Error(code || "NATIVE_PREACTION_CAPTURE_NATIVE_EXTRACTION_REJECTED");
 		}
-		if (!envelope || envelope.schema !== "xingbei_native_private_pre_action_capture_v1" || envelope.captureOrdinal !== 1)
+		if (!envelope || envelope.schema !== (successor ? "xingbei_native_private_successor_preaction_capture_v1" : "xingbei_native_private_pre_action_capture_v1") || envelope.captureOrdinal !== command.captureOrdinal)
 			throw new Error("NATIVE_PREACTION_CAPTURE_NATIVE_EXTRACTION_INVALID");
-		process.send?.({ ...identity, type: "host_private_pre_action_capture", requestId: message.requestId, envelope });
+		process.send?.({ ...identity, type: successor ? "host_private_successor_preaction_capture" : "host_private_pre_action_capture", requestId: message.requestId, envelope });
 	} catch (error) {
-		const code = /^NATIVE_PREACTION_CAPTURE_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "NATIVE_PREACTION_CAPTURE_NATIVE_EXTRACTION_FAILED";
-		process.send?.({ ...identity, type: "host_private_pre_action_capture_failed", requestId: message.requestId, code });
+		const prefix = successor ? "SUCCESSOR_PREACTION" : "NATIVE_PREACTION_CAPTURE";
+		const code = new RegExp(`^${prefix}_[A-Z0-9_]{1,80}$`).test(error?.message || "") ? error.message : `${prefix}_NATIVE_EXTRACTION_FAILED`;
+		process.send?.({ ...identity, type: successor ? "host_private_successor_preaction_capture_failed" : "host_private_pre_action_capture_failed", requestId: message.requestId, code });
 	}
 }
 
@@ -4527,6 +4553,14 @@ process.on("message", message => {
 		choiceCommandChain = choiceCommandChain.then(() => snapshotNativePreActionCapture(message)).catch(error => {
 			const code = /^NATIVE_PREACTION_CAPTURE_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "NATIVE_PREACTION_CAPTURE_CAPTURE_FAILED";
 			process.send?.({ ...identity, type: "host_private_pre_action_capture_failed", requestId: message?.requestId, code });
+		});
+		return;
+	}
+	if (message?.type === "host_native_successor_preaction_capture" && process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1" &&
+		process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1") {
+		choiceCommandChain = choiceCommandChain.then(() => snapshotNativePreActionCapture(message, true)).catch(error => {
+			const code = /^SUCCESSOR_PREACTION_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "SUCCESSOR_PREACTION_CAPTURE_FAILED";
+			process.send?.({ ...identity, type: "host_private_successor_preaction_capture_failed", requestId: message?.requestId, code });
 		});
 		return;
 	}

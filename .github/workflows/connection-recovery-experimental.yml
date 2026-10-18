@@ -59,7 +59,7 @@ jobs:
       - name: V2 M2 managed host-session lifecycle and authority boundary
         run: node --test tests/v2-host-session-manager.mjs tests/v2-managed-host-process.mjs tests/v2-managed-choice-controller.mjs
       - name: V3 isolated per-seat state-sync protocol contract
-        run: node --test tests/v3-seat-state-protocol.mjs tests/v2-next-seat-choice-preparation.mjs tests/v2-event5-authority-proposal.mjs tests/v2-managed-release-handoff-consistency.mjs
+        run: node --test tests/v3-seat-state-protocol.mjs tests/v2-next-seat-choice-preparation.mjs tests/v2-event5-authority-proposal.mjs tests/v2-event5-authority-provenance.mjs tests/v2-managed-successor-preaction-capture.mjs tests/v2-managed-release-handoff-consistency.mjs
       - name: V2 M2 versioned Xingbei canonical authority-state contract
         run: node --test tests/v2-xingbei-authority-state-v2.mjs tests/v2-managed-native-card-ledger.mjs tests/v2-managed-native-effect-state.mjs tests/v2-managed-native-turn-state.mjs tests/v2-managed-native-turn-resource-state-v2.mjs tests/v2-managed-native-atomic-capture.mjs tests/v2-native-state-coverage-manifest.mjs
       - name: V2 M2 managed native source integrity manifest
@@ -231,7 +231,7 @@ jobs:
           done
           test -n "$browser"
           export V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1
-          env V2_CHROMIUM="$browser" V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE=1 V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4_ack_loss V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+          env V2_CHROMIUM="$browser" V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE=1 V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4_ack_loss V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
       - name: V2 M2 stopping a held native phase boundary fails closed and cleans the host
         shell: bash
         run: |

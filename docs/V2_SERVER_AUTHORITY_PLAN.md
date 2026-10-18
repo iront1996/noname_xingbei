@@ -1,5 +1,13 @@
 # V2 server-authority plan and evidence
 
+## Current in-progress batch: second-seat pre-action atomic capture and Event #5 evidence provenance (Linux CI pending)
+
+- From HEAD `3ecb14571fbad4dd3448df0325fa422fe3cf019c`, the opt-in real Chromium cross-player test now takes a distinct successor-seat private atomic capture after the first player's accepted Event #4 and manager-held validated phaseOver fence. Same room/session/PID/root/build/four immutable seats are retained; the successor native event and actor differ, the live Seat Registry connection generation is checked, and the three restricted projections agree on successor actor/phase/quota. Repeated capture at that same gate is stable. No second choice/action/delivery/trustee or Event #5 submission occurs.
+- The real local Windows Chrome test passed 1/1 with zero skips. Focused protocol/provenance Node tests passed 21/21 with zero skips. Broader HostSession/controller/capture/engine-integrity regressions passed 74, failed 0, skipped 1 (Windows symlink capability unavailable). Linux CI is pending; local tests are not represented as Linux Chromium acceptance.
+- A review-only provenance matrix separates manager-accepted Event #4, the manager-held validated phaseOver atomic proof, authenticated native actor rotation/input wait and live seat binding from caller claims and unavailable second-seat action/delivery/settlement/post-state. The assessor only reports shape validity (`reviewObservationShapeValid`) and is not wired to the authority handler.
+- Cloudflare `xingbei-play` was read-only verified after closing the editor and reloading: Production `feature/auto-lobby`, automatic production deployments enabled, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`. No configuration was changed. Release lock verifies as `29d029d6c6d5f6538ad1fb1c126540ed2ffc241d0b5353a384fca3a4445f7aff` across 216 managed-source files.
+- Gates remain `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4 / next event sequence 5, Event #5 rejected, `checkpointAvailable=false`. No Event #5 was constructed or submitted; no second-seat action was executed. HALL/M3/M4 and formal services remain out of scope.
+
 ## Current in-progress batch: successor-seat preparation and Event #5 protocol review
 
 - Started at remote HEAD `0ad008fdbba9cda1c793a89ac29555c8a14c4268`; after root-bound native-fence validation, recomputed and verified the managed source lock against the tree. Release lock verifies as `883a7a733fbeca25efd0c958040ed0a70479e8a45412411de76c83c04123573e` (214 files). A CI contract test compares the lock/source with both current documents.
