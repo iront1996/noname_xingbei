@@ -1,5 +1,11 @@
 # V2 server-authority plan and evidence
 
+## T3 `shengJi` fixture — native decline assertion corrected; Linux rerun pending
+
+- CI `39103700415` reached the real managed Chromium optional-response path, then failed because a shared test assertion expected a physical card. The opt-in `shengJi` fixture intentionally selects the original native `decline` option to reach the `gongJiMingZhong → shengJi` trigger; its result is `bool=false` and must not create a response `useCard` child.
+- Added fixture-specific assertions for that native decline while retaining the default card-response assertions and the later same-root completed `changeZhiLiao` child/delta checks. No engine rules or host behavior were changed.
+- Local test syntax and focused Node contracts pass (15/15, zero skips); Linux Chromium rerun remains required. Healing stays unsupported; this probe does not establish a pre/post atomic commitment pair or general healing coverage. Global authority gates remain closed.
+
 ## T3 `shengJi` real-Chromium probe — native candidate reached; fixture test-path collision pending
 
 - The first dedicated Linux run, `39102999286` on `e2ea44355104006f7f9a294f2b04cb0ea44b980d`, executed the test (not skipped) but failed before managed-host startup with `SHENGJI_NATIVE_CHARACTER_POOL_UNAVAILABLE`.

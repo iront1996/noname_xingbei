@@ -1622,6 +1622,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(nativeApplied.snapshot?.bool, false, "deadline trustee must return the native optional-decline result");
 					assert.equal(nativeApplied.snapshot?.useCardChildrenStarted, 0, "trustee decline must not create a useCard child");
 					assert.equal(nativeApplied.snapshot?.useCardChildrenCompleted, 0);
+				} else if (process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1") {
+					assert.equal(nativeApplied.snapshot?.selectedKind, "decline",
+						"the shengJi fixture must use the defender's managed native optional-decline choice to reach the original shengJi trigger");
+					assert.equal(nativeApplied.snapshot?.bool, false,
+						"the managed response must preserve chooseToUse's native decline result");
+					assert.equal(nativeApplied.snapshot?.useCardChildrenStarted, 0,
+						"native decline must not manufacture a response useCard child");
+					assert.equal(nativeApplied.snapshot?.useCardChildrenCompleted, 0);
 				} else if (process.env.V2_NATIVE_MANAGED_YINYANG === "1") {
 					assert.equal(nativeApplied.snapshot?.selectedKind, "view_as_skill");
 					assert.equal(nativeApplied.snapshot?.skillId, "yinYangZhanHuan");

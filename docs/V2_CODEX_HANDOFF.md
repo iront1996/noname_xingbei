@@ -1,5 +1,11 @@
 # V2 Codex engineering handoff
 
+## T3 `shengJi` fixture — native decline assertion corrected; Linux rerun pending
+
+- Linux CI `39103700415` reached the real managed Chromium response path and failed at the shared assertion that expected `selectedKind="card"`. This fixture deliberately submits the native optional `decline` from the defender so the original `gongJiMingZhong → shengJi → changeZhiLiao(1)` path can occur; the observed `decline` was the expected native result, not a host or rules failure.
+- Added a fixture-specific check for `selectedKind="decline"`, `bool=false`, and zero response `useCard` children. The ordinary physical-card response assertion remains unchanged. The later checks still require the original `changeZhiLiao` child to finish under the same root/seat and show the native `zhiLiao` delta of +1 before a later atomic capture.
+- Local syntax and focused contract tests pass (15/15, zero skips). This Windows workspace has no verified Linux Chromium run for the changed assertion; full Linux CI is pending. `shengJi` remains unsupported until that run passes, and even then the fixture only establishes the legal post-transition path—not a pre/post atomic commitment pair or general healing semantics. All authority gates remain closed.
+
 ## T3 native healing probe — fixture lifecycle corrected; latest Linux attempt exposed a test-path collision
 
 - Commit `e2ea44355104006f7f9a294f2b04cb0ea44b980d` added an opt-in real Chromium probe for the original `shengJi` → `changeZhiLiao(1)` path. Linux CI `39102999286` failed at the dedicated Chromium step before opening a host session: `SHENGJI_NATIVE_CHARACTER_POOL_UNAVAILABLE`.
