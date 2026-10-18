@@ -823,7 +823,7 @@ function createHostSessionManager({
 			const reject = reason => { record.authorityFailureReason = reason; return false; };
 			const context = record.xingbeiAuthorityContext;
 			const before = context?.openingSummary;
-			const eventKeys = "achievementAfterList,achievementBeforeList,actionCompletionOrdinal,actionEventInstanceId,actionParentEventInstanceId,baoShiAfter,baoShiBefore,changeZhanJiChildCompleted,changeZhanJiCompletionOrdinal,changeZhanJiEventId,changeZhanJiLineage,changeZhanJiParentEventId,connectedTransports,gameMeNull,name,nativeChildWaitCompleted,nativeCompletionOrdinal,nativeEventCompleted,nativeEventId,nativeEventInstanceMatches,nativeEventName,nativeEventStep,nativeUseSkillChildCompleted,optionId,parentFenceEventInstanceId,parentFenceParentEventInstanceId,parentFenceParentEventName,parentFenceParentNextCount,parentFenceReleaseCount,parentFenceStatus,rootInstanceId,seatId,skillId,targetChoiceNativeEventId,targetDiscardCardMoved,targetDiscardChildCompleted,targetDiscardCompletionOrdinal,targetDiscardEventId,targetDiscardLineage,targetDiscardParentEventId,targetSeatId,useResultCount,useSkillChildCompletionOrdinal,useSkillChildEventId,useSkillParentEventId";
+			const eventKeys = "achievementAfterList,achievementBeforeList,actionCompletionOrdinal,actionEventInstanceId,actionParentEventInstanceId,baoShiAfter,baoShiBefore,changeZhanJiChildCompleted,changeZhanJiCompletionOrdinal,changeZhanJiEventId,changeZhanJiLineage,changeZhanJiParentEventId,connectedTransports,gameMeNull,kind,name,nativeChildWaitCompleted,nativeCompletionOrdinal,nativeEventCompleted,nativeEventId,nativeEventInstanceMatches,nativeEventName,nativeEventStep,nativeUseSkillChildCompleted,optionId,parentFenceEventInstanceId,parentFenceParentEventInstanceId,parentFenceParentEventName,parentFenceParentNextCount,parentFenceReleaseCount,parentFenceStatus,rootInstanceId,seatId,skillId,targetChoiceNativeEventId,targetDiscardCardMoved,targetDiscardChildCompleted,targetDiscardCompletionOrdinal,targetDiscardEventId,targetDiscardLineage,targetDiscardParentEventId,targetSeatId,useResultCount,useSkillChildCompletionOrdinal,useSkillChildEventId,useSkillParentEventId";
 			const actionCandidate = record.nativeJiRiActionCandidate;
 			const targetCandidate = record.nativeJiRiTargetCandidate;
 			const preAction = record.privatePreActionCaptureCandidate;
@@ -833,18 +833,16 @@ function createHostSessionManager({
 				record.lastAuthorityEvent?.sequence !== 3 || record.lastAuthorityEvent?.name !== "gameDraw" || !context?.openingDrawCommitted || !before ||
 				!actionCandidate || !targetCandidate || !preAction || !actionDelivery || !targetDelivery)
 				return reject("NATIVE_SKILL_ACTION_PHASE");
-			if (!event || Object.keys(event).sort().join(",") !== eventKeys || event.nativeEventCompleted !== true ||
-				event.nativeEventName !== "gongJiOrFaShu" || !/^native_event_[a-f0-9]{32}$/.test(event.nativeEventId || "") ||
-				!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(event.rootInstanceId || "") ||
-				!/^event_[1-9][0-9]{0,6}$/.test(event.actionEventInstanceId || "") ||
-				!/^event_[1-9][0-9]{0,6}$/.test(event.actionParentEventInstanceId || "") ||
-				!/^event_[1-9][0-9]{0,6}$/.test(event.useSkillChildEventId || "") ||
-				!/^event_[1-9][0-9]{0,6}$/.test(event.changeZhanJiEventId || "") ||
-				!/^event_[1-9][0-9]{0,6}$/.test(event.targetDiscardEventId || "") ||
-				!/^native_event_[a-f0-9]{32}$/.test(event.targetChoiceNativeEventId || "") ||
-				!/^event_[1-9][0-9]{0,6}$/.test(event.useSkillParentEventId || "") ||
-				!/^event_[1-9][0-9]{0,6}$/.test(event.changeZhanJiParentEventId || "") ||
-				!/^event_[1-9][0-9]{0,6}$/.test(event.targetDiscardParentEventId || "")) return reject("NATIVE_SKILL_ACTION_EVENT_IDENTITY");
+			if (!event || Object.keys(event).sort().join(",") !== eventKeys) return reject("NATIVE_SKILL_ACTION_EVENT_SCHEMA");
+			if (event.nativeEventCompleted !== true || event.nativeEventName !== "gongJiOrFaShu" ||
+				!/^native_event_[a-f0-9]{32}$/.test(event.nativeEventId || "") ||
+				!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(event.rootInstanceId || "")) return reject("NATIVE_SKILL_ACTION_EVENT_IDENTITY");
+			if (![event.actionEventInstanceId, event.actionParentEventInstanceId, event.useSkillChildEventId,
+				event.changeZhanJiEventId, event.targetDiscardEventId, event.useSkillParentEventId,
+				event.changeZhanJiParentEventId, event.targetDiscardParentEventId].every(value => /^event_[1-9][0-9]{0,6}$/.test(value || "")))
+				return reject("NATIVE_SKILL_ACTION_EVENT_INSTANCE_IDENTITY");
+			if (typeof event.targetChoiceNativeEventId !== "string") return reject("NATIVE_SKILL_ACTION_TARGET_EVENT_ID_MISSING");
+			if (!/^native_event_[a-f0-9]{32}$/.test(event.targetChoiceNativeEventId)) return reject("NATIVE_SKILL_ACTION_TARGET_EVENT_ID_FORMAT");
 			if (!validateNativeEventLineage(event.changeZhanJiLineage, event.changeZhanJiParentEventId, event.useSkillChildEventId) ||
 				!validateNativeEventLineage(event.targetDiscardLineage, event.targetDiscardParentEventId, event.useSkillChildEventId) ||
 				event.parentFenceStatus !== "waiting" || event.parentFenceReleaseCount !== 0 ||

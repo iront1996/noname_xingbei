@@ -1489,7 +1489,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			assert.deepEqual(completed.lastAuthorityEvent, { sequence: 3, name: "gameDraw" });
 			assert.equal(completed.nextAuthorityEventSequence, 4);
 		} else {
-			assert.deepEqual(completed.lastAuthorityEvent, { sequence: 4, name: "gongJiOrFaShu" });
+			assert.deepEqual(completed.lastAuthorityEvent, { sequence: 4, name: process.env.V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR === "1" ? "jiRi_moBaoChongJie" : "gongJiOrFaShu" });
 			assert.equal(completed.nextAuthorityEventSequence, 5);
 		}
 		assert.match(completed.authorityStateDigest, /^[a-f0-9]{64}$/);
@@ -1628,13 +1628,17 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			} else assert.ok(nativeActionCandidate?.options.length > 1);
 			if (probeMode === "managed_native_skill_candidate_probe") {
 				assert.equal(process.env.V2_NATIVE_JIRIMO_FIXTURE, "1");
-				assert.equal(manager.inspect(roomId)?.authorityStateRevision, 3,
-					"candidate-only probe must remain after authorized Event #3 and must not fabricate Event #4/#5");
+				assert.equal(manager.inspect(roomId)?.authorityStateRevision, process.env.V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR === "1" ? 4 : 3,
+					"candidate-only mode stays at Event #3; the explicit atomic-pair mode may submit only its validated Event #4");
 				assert.equal(nativeActionCandidate.seatId, nativeJiRiFixtureSeatId);
 				assert.equal(nativeActionCandidate.optionKinds[nativeActionOptionId], "native_skill");
 				assert.ok(nativeActionCandidate.skillCandidateCount >= 1);
 				assert.equal(nativeActionChoice.options.includes(nativeActionOptionId), true);
-				if (process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") {
+				if (process.env.V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR === "1") {
+					assert.equal(manager.inspect(roomId)?.authorityStateRevision, 4, "the paired skill probe must wait for accepted Event #4");
+					assert.ok([null, "resolved"].includes(controller.inspect(roomId, nativeActionChoice.choiceId)?.state || null),
+						"the controller choice must be settled after the native action and authority acknowledgement");
+				} else if (process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") {
 					assert.ok(["pending", "delivery_pending", "applying"].includes(controller.inspect(roomId, nativeActionChoice.choiceId)?.state));
 				} else assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId)?.state, "pending");
 				const nativeGateTrace = nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open" &&
