@@ -5,6 +5,7 @@
 - Commit `c35a63fd2bacb211d6c8cdce708e472dcb7a81c1` passed Linux CI `39104008901` (86 workflow steps, 267/267 TAP tests, zero failures/skips). Its real Chromium step confirmed the legal native candidate, native `gongJi`, managed native decline, original `shengJi` trigger, completed `changeZhiLiao` child, and actual +1 `zhiLiao` delta; a later atomic capture was ordered after that child.
 - This is an isolated legal-path and post-state proof, not a before/after atomic commitment pair, complete overflow test, or general healing-resource contract. The coverage manifest remains incomplete and explicitly labels the native path verified but atomic pairing pending; healing remains unsupported.
 - No rules, managed-engine sources, authority events, seed or checkpoint were changed. Cloudflare showed the pushed preview as skipped/no deployment; the production branch remains unchanged.
+- The result and machine-readable status passed exact-SHA Linux CI `39104625997` on `25c1e0a4d5c28364f22573b378413fb54faef59e`: 86 workflow steps, 267/267 tests, zero failures/skips. This does not prove a pre-transition atomic commitment; the next T3 task is to establish a safe native input boundary for that paired capture.
 
 ## T3 `shengJi` fixture — native decline assertion corrected; Linux rerun pending
 
