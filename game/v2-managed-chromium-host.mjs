@@ -1921,6 +1921,27 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	  achievementBeforeList=s?.jiRiZhanJiBaseline?.orderedList,
 	  afterCount=Array.isArray(achievementList)?achievementList.filter(value=>value==='baoShi').length:null;
 	 const state=window.__v2ManagedUnifiedRoot;
+	 const checks={actionBinding:Boolean(a&&a.eventId===${JSON.stringify(gate.nativeEventId)}&&a.seatId===${JSON.stringify(gate.seatId)}&&a.optionId===${JSON.stringify(record.option)}),
+	  actionCompleted:Boolean(a?.actionKind==='native_skill'&&a.skillId==='jiRi_moBaoChongJie'&&a.useResultCount===1&&a.nativeChildWaitCompleted===true&&
+	   a.nativeEventInstanceMatches===true&&a.nativeUseSkillChildCompleted===true&&a.nativeTargetChoiceCompleted===true&&a.nativeChangeZhanJiCompleted===true&&
+	   a.nativeChangeZhanJiAfter===a.nativeChangeZhanJiBefore+1),
+	  skillEventBinding:Boolean(m&&m.kind==='native_skill'&&m.skillId==='jiRi_moBaoChongJie'&&useSkill&&useSkill.finished===true&&useSkill.name==='useSkill'&&
+	   useSkill.skill==='jiRi_moBaoChongJie'&&useSkill.player===actor),
+	  zhanJiChild:Boolean(zhanJi&&zhanJiProof?.eventName==='changeZhanJi'&&zhanJiProof.rootInstanceId===state?.rootInstanceId&&
+	   zhanJiProof.parentEventInstanceId===useSkillProof?.eventInstanceId),
+	  targetDiscard:Boolean(target&&target.status==='applied'&&target.delivery?.status==='applied'&&discardEvent&&discardEvent.finished===true&&
+	   discardProof?.eventName==='chooseToDiscard'&&discardProof.rootInstanceId===state?.rootInstanceId&&
+	   discardProof.parentEventInstanceId===useSkillProof?.eventInstanceId&&targetCard&&discardEvent.result?.bool===true&&
+	   discardEvent.result.cards?.length===1&&discardEvent.result.cards[0]===targetCard&&!discardEvent.player.getCards('h').includes(targetCard)&&core.get.position(targetCard)==='d'),
+	  materialConsumed:Boolean(m?.material&&!actor?.getCards('h').includes(m.material)),
+	  actionEventProof:Boolean(actionProof&&actionProof.eventName==='gongJiOrFaShu'&&actionProof.rootInstanceId===state?.rootInstanceId&&
+	   actionProof.parentEventInstanceId===ledger?.eventIds.get(actionEvent.parent)),
+	  achievementList:Boolean(Array.isArray(achievementBeforeList)&&Array.isArray(achievementList)&&achievementBeforeList.length<128&&achievementList.length<=128&&
+	   achievementBeforeList.every(value=>value==='baoShi'||value==='shuiJing')&&achievementList.every(value=>value==='baoShi'||value==='shuiJing')&&
+	   JSON.stringify(achievementList)===JSON.stringify([...achievementBeforeList,'baoShi'])&&Number.isSafeInteger(afterCount)&&afterCount===a?.nativeChangeZhanJiAfter),
+	  serverRoot:Boolean(game?.me===null&&!game?.players?.some(p=>p.ws)&&manager?.rootEvent===state?.root),
+	  actionParentFinished:Boolean(actionEvent?.finished===true&&manager?.eventStack.at(-1)===state?.phaseLoop&&
+	   !manager?.eventStack.some(event=>event===useSkill||event===discardEvent||event===zhanJi))};
 	 if(!a||a.eventId!==${JSON.stringify(gate.nativeEventId)}||a.seatId!==${JSON.stringify(gate.seatId)}||a.optionId!==${JSON.stringify(record.option)}||
 	  a.actionKind!=='native_skill'||a.skillId!=='jiRi_moBaoChongJie'||a.useResultCount!==1||a.nativeChildWaitCompleted!==true||
 	  a.nativeEventInstanceMatches!==true||a.nativeUseSkillChildCompleted!==true||a.nativeTargetChoiceCompleted!==true||
@@ -1940,7 +1961,7 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	  JSON.stringify(achievementList)!==JSON.stringify([...achievementBeforeList,'baoShi'])||!Number.isSafeInteger(afterCount)||
 	  afterCount!==a.nativeChangeZhanJiAfter||game?.me!==null||game?.players?.some(p=>p.ws)||manager?.rootEvent!==state?.root||
 	  actionEvent?.finished!==true||manager.eventStack.at(-1)!==state?.phaseLoop||manager.eventStack.some(event=>event===useSkill||event===discardEvent||event===zhanJi))
-	  return {ok:false,code:'JIRIMO_NATIVE_ACTION_COMPLETION_EVIDENCE_INVALID'};
+	  return {ok:false,code:'JIRIMO_NATIVE_ACTION_COMPLETION_EVIDENCE_INVALID',failedChecks:Object.entries(checks).filter(([,ok])=>!ok).map(([name])=>name)};
 	 const hands=game.players.map(p=>({seatId:p.playerid,handCount:p.countCards('h'),hand:p.getCards('h').map(card=>({name:card.name||null,suit:card.suit||null,number:card.number||null,nature:card.nature||null}))}));
 	 return {ok:true,nativeEventId:a.eventId,rootInstanceId:state.rootInstanceId,seatId:a.seatId,targetSeatId:target.seatId,optionId:a.optionId,
 	  nativeEventStep:a.nativeEventStepAfterWait,nativeEventInstanceMatches:a.nativeEventInstanceMatches===true,nativeChildWaitCompleted:a.nativeChildWaitCompleted===true,
@@ -1964,6 +1985,14 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 		observed.baoShiAfter !== observed.baoShiBefore + 1 || observed.targetDiscardSeatId !== observed.targetSeatId ||
 		![observed.useSkillChildCompletionOrdinal, observed.changeZhanJiCompletionOrdinal, observed.targetDiscardCompletionOrdinal,
 			observed.actionCompletionOrdinal, observed.nativeCompletionOrdinal].every(Number.isSafeInteger)) {
+		if (!query.exceptionDetails && observed?.code === "JIRIMO_NATIVE_ACTION_COMPLETION_EVIDENCE_INVALID" &&
+			Array.isArray(observed.failedChecks) && observed.failedChecks.length <= 12 &&
+			observed.failedChecks.every(value => ["actionBinding", "actionCompleted", "skillEventBinding", "zhanJiChild", "targetDiscard",
+				"materialConsumed", "actionEventProof", "achievementList", "serverRoot", "actionParentFinished"].includes(value))) {
+			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
+				observed: { kind: "native_start_diagnostic", stage: "native_jiri_authority_proof_rejected",
+					failureCode: observed.code, failedChecks: [...observed.failedChecks] } });
+		}
 		throw new Error(observed?.code || "NATIVE_SKILL_AUTHORITY_PROOF_REJECTED");
 	}
 	if (interactiveChoice.nativeRootInstanceId && (observed.rootInstanceId !== interactiveChoice.nativeRootInstanceId || observed.rootInstanceId !== managerRootId())) {
