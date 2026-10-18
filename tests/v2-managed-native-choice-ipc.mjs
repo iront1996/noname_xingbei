@@ -1407,6 +1407,32 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				event4AuthorityJoinCount, event4AckBarrierReleased, event4AckSendErrors, diagnostics: nativeDiagnostic.slice(-12).map(entry => entry?.stage), ackTrace: ackTrace.slice(-12) }));
 	assert.equal(completed.state, "playable_probe");
 	if (process.env.V2_NATIVE_PHASE_BOUNDARY_AUDIT === "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1") {
+		// The Jiri Event #4 path deliberately holds the native parent until the
+		// authority manager accepts revision 4, then releases it and resumes the
+		// engine. The manager's revision can therefore become visible before the
+		// native root reaches the phaseOver boundary. Synchronize on the completed
+		// native boundary, not on authority-revision visibility or a fixed delay.
+		if (process.env.V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR === "1" &&
+			!nativeDiagnostic.some(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&
+				entry?.snapshot?.isCompletedPhaseOverBoundary === true)) {
+			await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&
+				entry?.snapshot?.isCompletedPhaseOverBoundary === true), 5000,
+				() => ({ session: (() => { const current = manager.inspect(roomId); return current && {
+					state: current.state, failureCode: current.failureCode, authorityStateRevision: current.authorityStateRevision,
+					nextAuthorityEventSequence: current.nextAuthorityEventSequence, checkpointAvailable: current.checkpointAvailable,
+				}; })(), stages: nativeDiagnostic.slice(-16).map(entry => entry?.stage || null),
+					phaseEvidence: safeNativeDiagnostic(nativeDiagnostic.filter(entry => ["native_phase_over_trigger_called",
+						"phase_over_wait_next_entered", "native_phase_loop_wait_next_boundary", "native_phase_boundary_fence_waiting"].includes(entry?.stage))
+						.slice(-8).map(entry => ({ stage: entry.stage, snapshot: entry.snapshot && {
+							eventName: entry.snapshot.eventName || null, eventStep: entry.snapshot.eventStep ?? null,
+							rootInstanceId: entry.snapshot.rootInstanceId || null, rootObjectMatches: entry.snapshot.rootObjectMatches === true,
+							phaseLoopIdentityMatches: entry.snapshot.phaseLoopIdentityMatches === true,
+							phaseOverTriggerCount: entry.snapshot.phaseOverTriggerCount ?? entry.snapshot.triggerCount ?? null,
+							draftPresent: entry.snapshot.draftPresent ?? entry.snapshot.phaseOverDraftPresent ?? false,
+							completionOrdinal: entry.snapshot.completionOrdinal ?? entry.snapshot.nativeCompletionOrdinal ?? null,
+							gameMeAbsent: entry.snapshot.gameMeAbsent === true,
+						} || null }))) }));
+		}
 		const dispatch = nativeDiagnostic.find(entry => entry?.stage === "native_phase_over_trigger_called");
 		const waitEntry = nativeDiagnostic.find(entry => entry?.stage === "phase_over_wait_next_entered" && entry?.snapshot?.eventStep === 2 &&
 			typeof entry?.snapshot?.ownerEventInstanceId === "string");
