@@ -56,12 +56,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		"a held native phase boundary requires the managed native event-completion evidence source");
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
-	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeResourceFixtureSeatId = null, nativeResourceTransition = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeLiveSnapshotAtInputGate = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [];
+	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeResourceFixtureSeatId = null, nativeResourceTransition = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeLiveSnapshotAtInputGate = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [], disconnectedActionHostIdentity = null;
 	let event4AcceptedProjection = null;
 	let firstAtomicCapture = null, firstAtomicRepeat = null, atomicCaptureSessionId = null, atomicCapturePid = null, atomicChromiumPid = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
@@ -75,7 +75,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	let releaseEvent4AckBarrier;
 	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
 	const launchedHandles = new Map();
-	const useSeatRegistry = process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
+	const disconnectActionToTrustee = process.env.V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE === "1";
+	const useSeatRegistry = disconnectActionToTrustee || process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
 		process.env.V2_NATIVE_RESPONSE_REBIND === "1";
 	const seatRegistry = useSeatRegistry ? createManagedRoomSeatRegistry() : null;
 	const seatCredentials = new Map(), seatSockets = new Map();
@@ -375,20 +376,32 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.ok(priorConnectionId);
 					assert.equal(seatRegistry.disconnect({ roomId, seatId: message.seatId, connectionId: priorConnectionId }), true,
 						"ordinary player disconnect must release only its seat binding");
+					if (disconnectActionToTrustee) {
+						assert.equal(seatRegistry.inspect(roomId, message.seatId)?.connected, false,
+							"the ordinary actor must remain disconnected while its native choice is pending");
+						assert.equal(controller.inspect(roomId, openedChoice.choice.choiceId)?.state, "pending",
+							"player transport loss must preserve the pending native choice for its deadline policy");
+						disconnectedActionHostIdentity = { sessionId: priorSession?.sessionId, pid: priorSession?.pid,
+							state: priorSession?.state, seatId: message.seatId, choiceId: openedChoice.choice.choiceId };
+						assert.ok(disconnectedActionHostIdentity.sessionId && disconnectedActionHostIdentity.pid,
+							"managed host identity must be present before the isolated player disconnect");
+					}
 					assert.equal(seatRegistry.bindConnection({ roomId, seatId: message.seatId, credential: credentialFor(message.seatId),
 						socket: { kind: "room_administrator", roomId, seatId: message.seatId, connectionId: "admin_action_socket" } }), null,
 					"administrator socket must not take a player seat");
 					assert.equal(seatRegistry.bindConnection({ roomId, seatId: message.seatId, credential: "f".repeat(64),
 						socket: { kind: "player", roomId, seatId: message.seatId, connectionId: "forged_action_socket" } }), null,
 					"forged credential must not bind a player seat");
-					const rebound = seatRegistry.bindConnection({ roomId, seatId: message.seatId, credential: credentialFor(message.seatId),
-						socket: { kind: "player", roomId, seatId: message.seatId, connectionId } });
-					assert.ok(rebound, "valid credential must reclaim the disconnected seat");
-					seatSockets.set(message.seatId, connectionId);
-					assert.equal(controller.bindSeatConnection(rebound).ok, true);
-					assert.equal(manager.inspect(roomId)?.sessionId, priorSession?.sessionId, "player rebind must not replace the host session");
-					assert.equal(manager.inspect(roomId)?.pid, priorSession?.pid, "player rebind must not restart the managed host");
-					assert.equal(manager.inspect(roomId)?.state, priorSession?.state, "player disconnect/rebind must leave host state active");
+					if (!disconnectActionToTrustee) {
+						const rebound = seatRegistry.bindConnection({ roomId, seatId: message.seatId, credential: credentialFor(message.seatId),
+							socket: { kind: "player", roomId, seatId: message.seatId, connectionId } });
+						assert.ok(rebound, "valid credential must reclaim the disconnected seat");
+						seatSockets.set(message.seatId, connectionId);
+						assert.equal(controller.bindSeatConnection(rebound).ok, true);
+						assert.equal(manager.inspect(roomId)?.sessionId, priorSession?.sessionId, "player rebind must not replace the host session");
+						assert.equal(manager.inspect(roomId)?.pid, priorSession?.pid, "player rebind must not restart the managed host");
+						assert.equal(manager.inspect(roomId)?.state, priorSession?.state, "player disconnect/rebind must leave host state active");
+					}
 				} else assert.equal(bindSeat(message.seatId, connectionId).ok, true);
 				assert.equal(controller.submitChoice(request).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 				assert.equal(controller.submitChoice({ ...request, hostSessionId: `hs_${"b".repeat(32)}`, connectionId,
@@ -2295,6 +2308,27 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			}
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.kind,
 				["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(probeMode) ? "trustee" : "player");
+			if (disconnectActionToTrustee) {
+				assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.kind, "trustee",
+					"a disconnected ordinary seat must resolve only through its server deadline/trustee policy");
+				assert.equal(seatRegistry.inspect(roomId, disconnectedActionHostIdentity?.seatId)?.connected, false,
+					"the player seat must remain offline through trustee resolution");
+				const hostAfterTrustee = manager.inspect(roomId);
+				assert.equal(hostAfterTrustee?.sessionId, disconnectedActionHostIdentity?.sessionId,
+					"ordinary player disconnect must not replace the managed host session");
+				assert.equal(hostAfterTrustee?.pid, disconnectedActionHostIdentity?.pid,
+					"ordinary player disconnect must not restart the managed Chromium process");
+				assert.equal(hostAfterTrustee?.state, disconnectedActionHostIdentity?.state,
+					"ordinary player disconnect must leave the managed host state unchanged");
+				assert.equal(hostAfterTrustee?.authorityStateRevision, 4,
+					"the isolated probe may finish the already-authorized Event #4 only; it must not open Event #5");
+				assert.equal(hostAfterTrustee?.nextAuthorityEventSequence, 5);
+				t.diagnostic(`ordinary seat disconnect resolved by native trustee without host lifecycle change: ${JSON.stringify({
+					seatId: disconnectedActionHostIdentity.seatId, choiceId: disconnectedActionHostIdentity.choiceId,
+					hostSessionUnchanged: true, hostPidUnchanged: true, hostStateUnchanged: true,
+					seatRemainedOffline: true, authorityStateRevision: hostAfterTrustee.authorityStateRevision,
+					nextAuthorityEventSequence: hostAfterTrustee.nextAuthorityEventSequence })}`);
+			}
 			assert.equal(controller.inspect(roomId, nativeActionChoice.choiceId).resolution.option,
 				["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(probeMode) ? nativeActionCandidate.trusteeOption : nativeActionOptionId);
 			if (process.env.V2_NATIVE_ACTION_KIND) {

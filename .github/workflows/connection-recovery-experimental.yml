@@ -421,6 +421,15 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4_trustee V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE=1 V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 ordinary actor disconnect preserves host and resolves by trustee
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4_trustee V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE=1 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE=1 V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
       - name: V2 M2 native useResult failure cannot commit Event 4
         shell: bash
         run: |

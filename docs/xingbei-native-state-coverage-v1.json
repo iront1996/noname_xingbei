@@ -7,6 +7,22 @@
 	"event5Enabled": false,
 	"checkpointAvailable": false,
 	"unknownStatePolicy": "fail_closed",
+	"m2RealtimeContinuityProbe": {
+		"status": "local_real_chromium_passed_linux_ci_pending",
+		"scope": "isolated_four_seat_event4_disconnect_to_trustee_probe",
+		"evidence": [
+			"A normal player seat is disconnected while its native action choice remains pending",
+			"the seat stays offline through the existing server deadline/trustee resolution",
+			"the same managed HostSession ID, PID, and state remain active across player transport loss",
+			"administrator sockets and forged seat credentials cannot bind that player seat",
+			"the probe stops at authority revision 4 / next event sequence 5; it does not submit Event #5"
+		],
+		"limitations": [
+			"one native action seat is exercised; this is not four-seat multi-turn gameplay continuity",
+			"the process is kept live; no managed-host crash recovery is proven",
+			"this does not complete formal HALL routing or M3"
+		]
+	},
 	"stageScopeSeparation": {
 		"m2LiveAuthority": {
 			"status": "in_progress_independent_of_full_checkpoint_serialization",

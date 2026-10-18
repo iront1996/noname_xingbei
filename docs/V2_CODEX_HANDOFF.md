@@ -1,5 +1,15 @@
 # V2 Codex engineering handoff
 
+## Current continuation: M2 live player-disconnect continuity probe (Linux CI pending)
+
+- Based on branch HEAD `640879e523988821c51574b07a8c066a1b033a80`, added a separate opt-in real-Chromium test mode that disconnects the ordinary seat while its native `gongJiOrFaShu` action choice is pending and leaves it offline until the existing server trustee deadline resolves the choice.
+- The test uses the existing four-seat Seat Registry, managed-choice controller, supervised Chromium and native Event #4 route. It asserts the choice remains pending immediately after transport loss, the seat remains disconnected through trustee resolution, administrator/forged credentials cannot bind it, and HostSession ID/PID/state remain unchanged.
+- Local Windows Chrome run passed 3/3 consecutive executions with zero skips. This is not Linux CI evidence yet. The new workflow step is queued only in the local diff; no push has occurred in this batch.
+- Authority remains revision 4 / next sequence 5; only already-authorized Event #4 is exercised. No Event #5, seed, checkpoint, HALL routing, complete four-seat multi-turn continuity, M3, or host-crash recovery is claimed.
+- The existing `shengJi` pre/post atomic pair is retained and not rerun as new work. T3 pre-action capture remains restricted to its reviewed `gongJiOrFaShu` waiting topology; no generalized input fence or new resource-family support is claimed.
+- Read-only Cloudflare verification after closing the prior edit dialog and reloading `xingbei-play` confirmed Production `feature/auto-lobby`, automatic production deployments enabled, Preview `Custom branches`, Include `*`, Exclude `codex/v2-server-authority-m1`; the freshly reopened editor showed Save disabled. No setting was changed. The latest visible preview for HEAD `640879e` was “No deployment available / skipped.”
+- Required next checks before push: run the focused test again if code changes, validate `git diff --check`, review release lock (managed-engine source is unchanged), then push only after confirming remote HEAD still fast-forwards; after push inspect Cloudflare Deployments and run exact-SHA full Linux CI.
+
 ## Current T3 batch: `shengJi` pre-action/post-transition atomic pair — fixture verified; general healing remains unsupported
 
 - Starting from remote HEAD `54ac1df185ad9849152d9d64ce41c9461e330010`, the current uncommitted isolated-branch change adds a distinct `xingbei_native_private_pre_action_capture_v1` input-waiting fence for the real `gongJiOrFaShu` managed-choice boundary. It does not alter the already accepted completed `phaseOver` fence.
