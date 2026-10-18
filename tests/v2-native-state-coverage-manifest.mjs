@@ -38,7 +38,7 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 	assert.equal(resourceAudit.authorityEvent5Created, false);
 	assert.equal(resourceAudit.authorityRevision, 4);
 	assert.deepEqual(resourceAudit.nativePathCandidates.map(candidate => [candidate.resource, candidate.skill, candidate.status]), [
-		["achievement_resources", "jiRi_moBaoChongJie", "native_skill_and_preaction_verified_event4_postphase_pair_linux_pending"],
+		["achievement_resources", "jiRi_moBaoChongJie", "jiRi_moBaoChongJie_baoShi_plus_one_pre_post_atomic_pair_verified_fixture_only"],
 		["achievement_resources", "_gongJiXingShi", "source_definition_only"],
 		["healing_resource", "shengJi", "native_pre_post_atomic_pair_verified_fixture_only"],
 	]);
