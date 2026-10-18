@@ -165,6 +165,31 @@ function createManagedChoiceController({
 		}
 		return Object.freeze({ ok: true, delivery: "sent", choice: publicChoice(attempting) });
 	}
+
+	// Read-only inspection for an authenticated native input boundary. This does
+	// not allocate a choice, sequence, timer, delivery, or authority event; it is
+	// suitable for diagnostic continuation while the authority chain is closed.
+	function inspectNativeCandidateSet(request) {
+		const keys = "eventName,hostProof,hostSessionId,kind,nativeEventId,optionKinds,options,protocol,roomId,rootInstanceId,seatId";
+		const kinds = request?.optionKinds;
+		if (!request || Object.getPrototypeOf(request) !== Object.prototype || Object.keys(request).sort().join(",") !== keys ||
+			request.protocol !== 1 || request.kind !== "managed_host" || !ROOM_ID.test(request.roomId) ||
+			!SESSION_ID.test(request.hostSessionId) || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(request.rootInstanceId || "") ||
+			!NATIVE_EVENT_ID.test(request.nativeEventId || "") || !SEAT_ID.test(request.seatId) || request.eventName !== "gongJiOrFaShu" ||
+			!Array.isArray(request.options) || request.options.length < 1 || request.options.length > 64 ||
+			new Set(request.options).size !== request.options.length ||
+			request.options.some(option => !/^native_option_[a-f0-9]{32}$/.test(option)) ||
+			!kinds || Object.getPrototypeOf(kinds) !== Object.prototype ||
+			Object.keys(kinds).sort().join(",") !== [...request.options].sort().join(",") ||
+			Object.values(kinds).some(kind => kind !== "gongJi" && kind !== "faShu") ||
+			!isHostSessionActive(request.roomId, request.hostSessionId) || !authorizeManagedHost(request)) {
+			return failure("MANAGED_NATIVE_CANDIDATE_INSPECTION_REJECTED");
+		}
+		return Object.freeze({ ok: true, roomId: request.roomId, hostSessionId: request.hostSessionId,
+			rootInstanceId: request.rootInstanceId, nativeEventId: request.nativeEventId, seatId: request.seatId,
+			eventName: request.eventName, optionCount: request.options.length,
+			optionIds: Object.freeze([...request.options]) });
+	}
 	function scheduleDeliveryRetry(record) {
 		const current = choices.get(key(record?.roomId, record?.choiceId));
 		if (!current || !["delivery_pending", "applying"].includes(current.state) || current.deliveryId !== record.deliveryId || current.deliveryTimer) return;
@@ -283,6 +308,7 @@ function createManagedChoiceController({
 
 	return Object.freeze({
 		openChoice,
+		inspectNativeCandidateSet,
 		bindSeatConnection,
 		submitChoice,
 		expireChoice,

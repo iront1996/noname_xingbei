@@ -56,13 +56,15 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		"a held native phase boundary requires the managed native event-completion evidence source");
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
 	let manager, controller, sessionSecret, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeResourceFixtureSeatId = null, nativeJiRiFixtureSeatId = null, nativeResourceTransition = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeJiRiTargetChoice = null, nativeJiRiTargetCandidate = null, nativeJiRiTargetAckCount = 0, nativeJiRiTargetAckDropped = false, dropNativeJiRiTargetAckOnce = process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1", nativeLiveSnapshotAtInputGate = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [], disconnectedActionHostIdentity = null;
 	let event4AcceptedProjection = null;
+	let nextSeatCandidateInspection = null;
+	let nativeHostPidAtFirstCandidate = null, nativeChromiumPidAtFirstCandidate = null;
 	let firstAtomicCapture = null, firstAtomicRepeat = null, atomicCaptureSessionId = null, atomicCapturePid = null, atomicChromiumPid = null;
 	let nativeCardLedgerBefore = null, nativeCardLedgerAfter = null, nativeCardLedgerFailures = [];
 	const nativeCardLedgerCaptureContexts = [];
@@ -76,7 +78,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
 	const launchedHandles = new Map();
 	const disconnectActionToTrustee = process.env.V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE === "1";
-	const useSeatRegistry = disconnectActionToTrustee || process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
+	const useSeatRegistry = disconnectActionToTrustee || process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
 		process.env.V2_NATIVE_RESPONSE_REBIND === "1";
 	const seatRegistry = useSeatRegistry ? createManagedRoomSeatRegistry() : null;
 	const seatCredentials = new Map(), seatSockets = new Map();
@@ -205,8 +207,23 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		browserReadyTimeoutMs: 20000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000,
 		onSessionEnd: event => { sessionEnds.push({ roomId: event.roomId, sessionId: event.sessionId, state: event.state, code: event.code });
 			controller.cleanupHostSession(event.roomId, event.sessionId); },
-			onManagedChoiceMessage: async ({ type, message }) => {
+		onManagedChoiceMessage: async ({ type, message }) => {
 			try {
+			if (type === "host_native_input_candidates_diagnostic") {
+				assert.equal(process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE, "1");
+				const candidate = controller.inspectNativeCandidateSet({ protocol: 1, kind: "managed_host", roomId,
+					hostSessionId: message.sessionId, rootInstanceId: message.rootInstanceId, nativeEventId: message.nativeEventId,
+					seatId: message.seatId, eventName: message.eventName, options: message.options, optionKinds: message.optionKinds,
+					hostProof: message.secret });
+				assert.equal(candidate.ok, true, `read-only next-seat candidate inspection rejected: ${candidate.code}`);
+				assert.ok(seatRegistry, "the diagnostic input must be backed by the Seat Registry");
+				const connectionId = seatSockets.get(message.seatId);
+				assert.ok(connectionId, "next actor must have a current ordinary-player connection binding");
+				assert.equal(seatRegistry.authenticateSeat({ roomId, seatId: message.seatId, connectionId,
+					credential: credentialFor(message.seatId) }, { roomId, seatId: message.seatId }), true);
+				nextSeatCandidateInspection = candidate;
+				return;
+			}
 			if (type === "host_choice_diagnostic" && message?.observed?.stage === "native_targetless_deck_fixture_ready") {
 				targetlessDeckFixtureProof = message.observed;
 				if (process.env.V2_NATIVE_JIRIMO_FIXTURE === "1") {
@@ -286,6 +303,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 			} else if (type === "host_native_action_candidates") {
 				sessionSecret = message.secret;
+				const firstActionHost = launchedHandles.get(message.sessionId);
+				if (firstActionHost) { nativeHostPidAtFirstCandidate = firstActionHost.pid; nativeChromiumPidAtFirstCandidate = firstActionHost.resources()[0]?.pid ?? null; }
 				assert.equal(message.eventName, "gongJiOrFaShu");
 				assert.equal(message.eventSequence, 4, "first action choice must reserve native authority event #4 after opening-state event #3");
 				assert.match(message.nativeEventId, /^native_[A-Za-z0-9_-]{16,96}$/);
@@ -2474,6 +2493,16 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					const release = await manager.releaseNativePhaseBoundary(roomId, { nativeEventId: waitingSnapshot.nativeEventId,
 						rootInstanceId: waitingSnapshot.rootInstanceId, seatId: waitingSnapshot.seatId });
 					assert.equal(release.ok, true);
+					if (process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1") {
+						const releaseTrace = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_boundary_release_command_accepted"), 3000,
+							() => ({ stages: nativeDiagnostic.slice(-12).map(entry => entry?.stage), host: manager.inspect(roomId) }));
+						assert.equal(releaseTrace.snapshot?.multiTurnInputGateProbe, true,
+							"the ACK-loss probe mode must explicitly enable the diagnostic-only next-seat gate");
+						assert.equal(releaseTrace.snapshot?.nextSeatInputProbeArmed, true,
+							"the authenticated Event #4 phase boundary must arm the one-shot next-seat gate");
+						assert.equal(releaseTrace.snapshot?.priorGateCleared, true,
+							"the completed first-seat gate must be cleared before the successor gate is considered");
+					}
 					const releasedBoundaryFence = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_boundary_fence_released"), 3000,
 						() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), host: manager.inspect(roomId) }));
 					assert.equal(releasedBoundaryFence.snapshot.releaseCount, 1);
@@ -2487,6 +2516,48 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						() => ({ stages: nativeDiagnostic.map(entry => entry?.stage), latest: nativeDiagnostic.slice(-12), host: manager.inspect(roomId) }));
 					assert.equal(successor.snapshot.rootObjectMatches, true);
 					assert.equal(successor.snapshot.gameMeAbsent, true);
+					if (process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1") {
+						const nextInput = await until(() => nextSeatCandidateInspection, 10000,
+							() => ({ latest: nativeDiagnostic.slice(-24), gateEvaluations: nativeDiagnostic.filter(entry => entry?.stage === "native_next_seat_gate_evaluated").slice(-8),
+								authority: manager.inspect(roomId), host: manager.inspect(roomId) }));
+						assert.notEqual(nextInput.seatId, waitingSnapshot.firstActSeatId);
+						assert.equal(nextInput.seatId, waitingSnapshot.nextActorSeatId,
+							"the input gate must belong to the next seat selected by the native phaseLoop rotation");
+						assert.equal(nextInput.eventName, "gongJiOrFaShu");
+						assert.ok(nextInput.optionCount > 0);
+						assert.equal(nextInput.rootInstanceId, waitingSnapshot.rootInstanceId);
+						const nextSeatActionStart = nativeDiagnostic.find(entry => entry?.stage === "native_next_seat_action_start_observed" &&
+							entry.snapshot?.seatId === nextInput.seatId && entry.snapshot?.eventName === "gongJiOrFaShu");
+						assert.ok(nextSeatActionStart, "the native xingDong must create the successor's ordinary action child");
+						assert.equal(nextSeatActionStart.snapshot.parentEventName, "xingDong");
+						assert.equal(nextSeatActionStart.snapshot.eventAction, true);
+						assert.ok(Number.isSafeInteger(nextSeatActionStart.snapshot.gamePhaseNumber) && nextSeatActionStart.snapshot.gamePhaseNumber >= 1);
+						assert.ok(Number.isSafeInteger(nextSeatActionStart.snapshot.playerPhaseNumber) && nextSeatActionStart.snapshot.playerPhaseNumber >= 1);
+						assert.deepEqual(nextSeatActionStart.snapshot.quotas,
+							{ gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0 },
+							"the next actor's action quota must come from native xingDong initialization");
+						const compactGateTrace = nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open" &&
+							entry.snapshot?.nativeInputGate?.diagnosticOnly === true && entry.snapshot.nativeInputGate.seatId === nextInput.seatId &&
+							Number.isSafeInteger(entry.snapshot.sourcePayloadBytes));
+						assert.ok(compactGateTrace, "the successor's compact input-wait diagnostic must reach the authenticated host channel");
+						t.diagnostic(`successor diagnostic binding payload bytes: ${compactGateTrace.snapshot.sourcePayloadBytes}`);
+						assert.equal(manager.inspect(roomId).sessionId, nativeActionCandidate.sessionId);
+						const nextHost = launchedHandles.get(nativeActionCandidate.sessionId);
+						assert.ok(nextHost && nextHost.pid === nativeHostPidAtFirstCandidate);
+						assert.equal(nextHost.resources()[0]?.pid, nativeChromiumPidAtFirstCandidate,
+							"the input boundary must remain in the original managed Chromium process");
+						assert.equal(manager.inspect(roomId).authorityStateRevision, 4);
+						assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 5);
+						assert.equal(manager.inspect(roomId).checkpointAvailable, false);
+						assert.equal(authoritySubmissions.some(entry => entry.proof.eventSequence === 5), false);
+						assert.equal(nativeDiagnostic.some(entry => entry?.stage === "native_input_wait_open" &&
+							entry.snapshot?.nativeInputGate?.seatId === nextInput.seatId &&
+							entry.snapshot?.nativeInputGate?.diagnosticOnly === true), true);
+						t.diagnostic(`next-seat native input boundary reached without authority submission: ${JSON.stringify({ seatId: nextInput.seatId,
+							nativeEventId: nextInput.nativeEventId, optionCount: nextInput.optionCount, rootInstanceId: nextInput.rootInstanceId,
+							authorityRevision: manager.inspect(roomId).authorityStateRevision, nextAuthorityEventSequence: manager.inspect(roomId).nextAuthorityEventSequence,
+							gameMeAbsent: true })}`);
+					}
 					let nextSeatBoundary = null;
 					if (process.env.V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE === "1") {
 						nextSeatBoundary = await until(() => nativeDiagnostic.find(entry => entry?.stage === "native_phase_loop_wait_next_boundary" &&

@@ -35,6 +35,7 @@ let choiceDiagnosticTimer = null;
 const nativeAuthorityAckWaiters = new Map();
 const pendingNativeActionAuthorities = new Map();
 const nativeStartDiagnosticRing = [];
+const nextSeatDiagnosticDispatched = new Set();
 let nativeStartDiagnosticUnsubscribe = null;
 let nativeFailureReported = false;
 let managedRandomFailureReported = false;
@@ -123,6 +124,7 @@ function createCdpSession(url) {
 async function cleanup() {
 	if (stopping) return;
 	stopping = true;
+	nextSeatDiagnosticDispatched.clear();
 	for (const pending of pendingNativeActionAuthorities.values()) clearTimeout(pending.timer);
 	pendingNativeActionAuthorities.clear();
 	if (nativeEffectSnapshotStopBarrier) {
@@ -2488,6 +2490,17 @@ function dispatchManagedNativeActionCandidates(snapshot) {
 	const directResumeModes = new Set(["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop"]);
 	const mode = process.env.V2_NATIVE_START_PROBE_MODE;
 	const gate = snapshot?.nativeInputGate;
+	if (process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" && gate?.diagnosticOnly === true &&
+		["managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss"].includes(mode) &&
+		gate.eventName === "gongJiOrFaShu" && gate.waiting === true) {
+		if (nextSeatDiagnosticDispatched.has(gate.nativeEventId) || nextSeatDiagnosticDispatched.size >= 8) return false;
+		nextSeatDiagnosticDispatched.add(gate.nativeEventId);
+		const optionKinds = Object.fromEntries(gate.candidates.map(candidate => [candidate.optionId, candidate.cardType]));
+		process.send?.({ ...identity, type: "host_native_input_candidates_diagnostic", eventName: gate.eventName,
+			nativeEventId: gate.nativeEventId, rootInstanceId: snapshot.rootInstanceId, seatId: gate.seatId,
+			options: gate.candidates.map(candidate => candidate.optionId), optionKinds });
+		return true;
+	}
 	if (!interactiveChoice || (!managedModes.has(mode) && !directResumeModes.has(mode)) || !gate ||
 		gate.eventName !== "gongJiOrFaShu" || gate.action !== true || gate.waiting !== true ||
 		!/^native_[A-Za-z0-9_-]{16,96}$/.test(gate.nativeEventId || "") ||
@@ -2777,6 +2790,19 @@ async function runNativeStartDiagnostic(message) {
 					} });
 					return;
 				}
+				if (payload.stage === "native_input_wait_open" && process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" &&
+					["managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss"].includes(process.env.V2_NATIVE_START_PROBE_MODE) &&
+					payload.snapshot?.nativeInputGate?.diagnosticOnly === true) {
+					const source = payload.snapshot.nativeInputGate;
+					emitNativeStartDiagnostic({ stage: payload.stage, snapshot: { eventName: "gongJiOrFaShu",
+						rootInstanceId: payload.snapshot.rootInstanceId,
+						sourcePayloadBytes: Buffer.byteLength(event.params.payload, "utf8"),
+						nativeInputGate: { diagnosticOnly: true, eventName: "gongJiOrFaShu", nativeEventId: source.nativeEventId,
+							seatId: source.seatId, action: source.action === true, waiting: source.waiting === true,
+							candidates: Array.isArray(source.candidates) ? source.candidates.slice(0, 64).map(candidate => ({
+								optionId: candidate.optionId, cardType: candidate.cardType })) : [] } } });
+					return;
+				}
 				if (event.params.payload.length > 8192) {
 					const criticalStages = new Set(["native_useResult_entered", "native_useResult_exception", "native_useCard_child_exception", "native_viewas_result_assignment_exception",
 						"native_viewas_useCard_child_exception", "native_viewas_partial_effect_exception", "native_viewas_partial_effect_barrier", "wait_next_error", "root_promise_rejected",
@@ -2839,7 +2865,8 @@ async function runNativeStartDiagnostic(message) {
 	const install = `(()=>{
 	 const managedInputGate=${message.mode === "managed_input_gate"};
 	 const reuseOpeningRoot=${["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "managed_native_skill_candidate_probe"].includes(message.mode)};
-	 const managedInputController=${["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "managed_native_skill_candidate_probe"].includes(message.mode)};
+		 const managedInputController=${["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_native_response_probe", "managed_native_skill_candidate_probe"].includes(message.mode)};
+	 const multiTurnInputGateProbe=${process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" && ["managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss"].includes(message.mode)};
 	 const managedNativeResponse=${process.env.V2_NATIVE_MANAGED_RESPONSE === "1"};
 	 const multiTurnCapture=${process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" && process.env.V2_NATIVE_ATOMIC_CAPTURE_PROBE === "1" && message.mode === "managed_opening_root_action_event4"};
 	 const nestedResponseProbe=${process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1"};
@@ -2849,6 +2876,7 @@ async function runNativeStartDiagnostic(message) {
 	 const managed=window.__v2ManagedEngine,{game,lib,get,_status}=managed.core,manager=_status.eventManager,Player=lib.element.Player;
 	 const state=reuseOpeningRoot?window.__v2ManagedOpeningDraw:(window.__v2NativeStartDiagnosticState||{traceCount:0,lastSuccessfulEventStep:null,gameStartCount:0,drawCreated:false,drawEntered:false,phaseLoopCreated:false,prepareArenaCalls:0,waitForPlayerCalls:0,randomMapOLCalls:0,chooseCharacterCalls:0,phaseCalls:0,rootPromiseState:'not_started',failureCode:null});
 	 state.multiTurnCaptureProbe=multiTurnCapture;
+	 state.multiTurnInputGateProbe=multiTurnInputGateProbe;
 	 state.nativeSkillTargetGates??=new Map();
 	 window.__v2NativeStartDiagnosticState=state;
 	 if(!state.managedResponseTraceWrapped&&typeof window.__v2NativeStartTrace==='function'){
@@ -2856,7 +2884,7 @@ async function runNativeStartDiagnostic(message) {
 	  window.__v2NativeStartTrace=function(payload){try{const item=JSON.parse(payload);if(item?.stage==='native_response_wait_open'){const gate=state.managedNativeResponseGates?.get(item.snapshot?.nativeEventId);if(gate){item.snapshot.sourceSeatId=gate.sourceSeatId||null;item.snapshot.actionEventId=gate.actionEventId||null;item.snapshot.forced=gate.forced===true;if(${JSON.stringify(process.env.V2_NATIVE_RESPONSE_REQUIRE_NESTED === "1")})item.snapshot.optionCanTriggerNestedResponse=gate.optionCanTriggerNestedResponse;payload=JSON.stringify(item)}}else if(item?.stage==='native_response_completed'){const gate=state.managedNativeResponseGates?.get(item.snapshot?.nativeEventId);if(gate&&item.snapshot?.eventName==='yingZhan'&&item.snapshot?.rootObjectMatches===true&&item.snapshot?.gameMeAbsent===true)gate.nativeCompletionFence=Object.freeze({nativeEventId:gate.nativeEventId,seatId:item.snapshot.seatId,eventInstance:gate.event,rootEvent:state.root,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:true,gameMeAbsent:true,useCardChildrenCompleted:gate.useCardChildrenCompleted})}}catch{}return nativeTrace(payload)};
 	  state.managedResponseTraceWrapped=true;
 	 }
-	 const snapshot=()=>{const current=_status.event,top=manager.eventStack.at(-1),phaseLoop=state.phaseLoop||manager.eventStack.find(event=>event.name==='phaseLoop')||manager.rootEvent?.next?.find(event=>event.name==='phaseLoop'),phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct),draft=state.nativePhaseOverDispatchDraft;const failureDetailCode=/^[A-Z0-9_]{3,96}$/.test(state.failureDetail||'')?state.failureDetail:null;return {eventName:current?.name||null,eventStep:Number.isSafeInteger(current?.step)?current.step:null,parentEventName:current?.parent?.name||null,rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,eventStackDepth:manager.eventStack.length,eventStackTop:top?.name||null,eventStack:manager.eventStack.map(event=>event.name),eventStackDetails:manager.eventStack.map(event=>({eventName:event.name||null,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,seatId:event.player?.playerid||null,finished:Boolean(event.finished),nextCount:Array.isArray(event.next)?event.next.length:null,nextHeadName:event.next?.[0]?.name||null,nextHeadStep:Number.isSafeInteger(event.next?.[0]?.step)?event.next[0].step:null,nextHeadFinished:Boolean(event.next?.[0]?.finished)})),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:state.gameStartCount>0,gameStartCount:state.gameStartCount,gameDrawCreated:state.drawCreated||Boolean(manager.rootEvent?.next?.some(event=>event.name==='gameDraw')),gameDrawEntered:state.drawEntered,gameDrawParentName:state.drawParentName||state.draw?.parent?.name||manager.rootEvent?.next?.find(event=>event.name==='gameDraw')?.parent?.name||null,phaseLoopCreated:state.phaseLoopCreated||Boolean(phaseLoop),phaseLoopStartRequested:state.phaseLoopStartRequested||false,phaseLoopStarted:state.phaseLoopStarted||false,phaseLoopPaused:state.phaseLoopPaused||false,phaseLoopReleased:state.phaseLoopReleased||false,phaseLoopParentName:phaseLoop?.parent?.name||state.phaseLoopParentName||null,phaseLoopIdentityMatches:phaseLoop===state.phaseLoop,phaseOverTriggerCount:state.nativePhaseOverTriggerCount||0,phaseOverDraftPresent:Boolean(draft),phaseOverDraftRootMatches:draft?.rootInstanceId===state.rootInstanceId,phaseOverDraftOwnerMatches:draft?.phaseLoopEvent===phaseLoop,phaseOverDraftSeatId:draft?.seatId||null,phaseOverDraftStep:Number.isSafeInteger(draft?.ownerEventStep)?draft.ownerEventStep:null,phaseOverDraftOrdinal:Number.isSafeInteger(draft?.triggerOrdinal)?draft.triggerOrdinal:null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:state.firstPhaseGate||null,nativeInputGate:state.nativeInputGate||null,nativeInputGateStatus:state.nativeInputResumeGate?.status||null,nativeAction:state.nativeAction||null,nativeSkillEventTrace:(state.nativeSkillEventTrace||[]).slice(-24),nativeResponseGates:[...(state.managedNativeResponseGates?.values()||[])].slice(-16).map(gate=>({nativeEventId:gate.nativeEventId,seatId:gate.seatId,eventName:gate.eventName,eventStep:Number.isSafeInteger(gate.event?.step)?gate.event.step:null,status:gate.status,waitEventName:gate.waitEvent?.name||null,waitEventFinished:Boolean(gate.waitEvent?.finished),waitResolved:gate.waitResolved===true,optionCount:gate.optionIds?.length||0,deliveryStatus:gate.delivery?.status||null,useCardChildrenStarted:gate.useCardChildrenStarted||0,useCardChildrenCompleted:gate.useCardChildrenCompleted||0})),testFaultMode:${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")},prepareArenaCalls:state.prepareArenaCalls,waitForPlayerCalls:state.waitForPlayerCalls,randomMapOLCalls:state.randomMapOLCalls,chooseCharacterCalls:state.chooseCharacterCalls,phaseCalls:state.phaseCalls,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(current?.name||'')?current.name:null,pendingChoiceSeatId:current?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')})),nativeEventTrail:(state.nativeEventTrail||[]).slice(-12),lastSuccessfulEventStep:state.lastSuccessfulEventStep,nativeWaitError:state.nativeWaitError||null,rootPromiseState:state.rootPromiseState,failureCode:state.failureCode,failureDetailCode,traceCount:state.traceCount}};
+	 const snapshot=()=>{const current=_status.event,top=manager.eventStack.at(-1),phaseLoop=state.phaseLoop||manager.eventStack.find(event=>event.name==='phaseLoop')||manager.rootEvent?.next?.find(event=>event.name==='phaseLoop'),phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct),draft=state.nativePhaseOverDispatchDraft;const failureDetailCode=/^[A-Z0-9_]{3,96}$/.test(state.failureDetail||'')?state.failureDetail:null;return {eventName:current?.name||null,eventStep:Number.isSafeInteger(current?.step)?current.step:null,parentEventName:current?.parent?.name||null,rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,eventStackDepth:manager.eventStack.length,eventStackTop:top?.name||null,eventStack:manager.eventStack.map(event=>event.name),eventStackDetails:manager.eventStack.map(event=>({eventName:event.name||null,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,seatId:event.player?.playerid||null,finished:Boolean(event.finished),nextCount:Array.isArray(event.next)?event.next.length:null,nextHeadName:event.next?.[0]?.name||null,nextHeadStep:Number.isSafeInteger(event.next?.[0]?.step)?event.next[0].step:null,nextHeadFinished:Boolean(event.next?.[0]?.finished)})),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),multiTurnInputGateProbe:state.multiTurnInputGateProbe===true,nextSeatInputProbeArmed:state.nextSeatInputProbeArmed===true,nextSeatInputGateSeen:state.nextSeatInputGateSeen===true,gameStartTriggered:state.gameStartCount>0,gameStartCount:state.gameStartCount,gameDrawCreated:state.drawCreated||Boolean(manager.rootEvent?.next?.some(event=>event.name==='gameDraw')),gameDrawEntered:state.drawEntered,gameDrawParentName:state.drawParentName||state.draw?.parent?.name||manager.rootEvent?.next?.find(event=>event.name==='gameDraw')?.parent?.name||null,phaseLoopCreated:state.phaseLoopCreated||Boolean(phaseLoop),phaseLoopStartRequested:state.phaseLoopStartRequested||false,phaseLoopStarted:state.phaseLoopStarted||false,phaseLoopPaused:state.phaseLoopPaused||false,phaseLoopReleased:state.phaseLoopReleased||false,phaseLoopParentName:phaseLoop?.parent?.name||state.phaseLoopParentName||null,phaseLoopIdentityMatches:phaseLoop===state.phaseLoop,phaseOverTriggerCount:state.nativePhaseOverTriggerCount||0,phaseOverDraftPresent:Boolean(draft),phaseOverDraftRootMatches:draft?.rootInstanceId===state.rootInstanceId,phaseOverDraftOwnerMatches:draft?.phaseLoopEvent===phaseLoop,phaseOverDraftSeatId:draft?.seatId||null,phaseOverDraftStep:Number.isSafeInteger(draft?.ownerEventStep)?draft.ownerEventStep:null,phaseOverDraftOrdinal:Number.isSafeInteger(draft?.triggerOrdinal)?draft.triggerOrdinal:null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:state.firstPhaseGate||null,nativeInputGate:state.nativeInputGate||null,nativeInputGateStatus:state.nativeInputResumeGate?.status||null,nativeAction:state.nativeAction||null,nativeSkillEventTrace:(state.nativeSkillEventTrace||[]).slice(-24),nativeResponseGates:[...(state.managedNativeResponseGates?.values()||[])].slice(-16).map(gate=>({nativeEventId:gate.nativeEventId,seatId:gate.seatId,eventName:gate.eventName,eventStep:Number.isSafeInteger(gate.event?.step)?gate.event.step:null,status:gate.status,waitEventName:gate.waitEvent?.name||null,waitEventFinished:Boolean(gate.waitEvent?.finished),waitResolved:gate.waitResolved===true,optionCount:gate.optionIds?.length||0,deliveryStatus:gate.delivery?.status||null,useCardChildrenStarted:gate.useCardChildrenStarted||0,useCardChildrenCompleted:gate.useCardChildrenCompleted||0})),testFaultMode:${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")},prepareArenaCalls:state.prepareArenaCalls,waitForPlayerCalls:state.waitForPlayerCalls,randomMapOLCalls:state.randomMapOLCalls,chooseCharacterCalls:state.chooseCharacterCalls,phaseCalls:state.phaseCalls,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(current?.name||'')?current.name:null,pendingChoiceSeatId:current?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')})),nativeEventTrail:(state.nativeEventTrail||[]).slice(-12),lastSuccessfulEventStep:state.lastSuccessfulEventStep,nativeWaitError:state.nativeWaitError||null,rootPromiseState:state.rootPromiseState,failureCode:state.failureCode,failureDetailCode,traceCount:state.traceCount}};
 	 const completionLedgerForRoot=()=>{if(${JSON.stringify(process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE === "1")}){let ledger=state.nativeEventCompletionLedger;
 	   if(!ledger||ledger.rootEvent!==state.root||ledger.rootInstanceId!==state.rootInstanceId){ledger={rootEvent:state.root,rootInstanceId:state.rootInstanceId,nextInstanceOrdinal:0,completionOrdinal:0,eventIds:new WeakMap(),completed:new WeakSet(),completionEvidence:new WeakMap(),recent:[]};state.nativeEventCompletionLedger=ledger}return ledger}return null};
 	 const registerNativeEventInstance=(event,ledger)=>{if(!ledger||!event||typeof event!=='object')return null;
@@ -2892,7 +2920,7 @@ async function runNativeStartDiagnostic(message) {
 	  };
 	 }
 	 const ring=state.ring||(state.ring=[]);let emittedMilestones=0,emittedSteps=0,lastEventStepToken='';
-	 const emit=stage=>{state.traceCount++;const snap=snapshot();ring.push({stage,snapshot:snap});if(ring.length>128)ring.shift();const token=[snap.eventName,snap.eventStep].join(':');const milestone=new Set(['root_event_created','root_start_dispatched','wait_for_player_called','random_map_ol_called','prepare_arena_called','choose_character_called','game_start_trigger','game_draw_called','phase_loop_called','phase_called','native_input_gate','native_input_gate_waiting','native_input_wait_open','native_input_resume_accepted','native_input_resume_rejected','native_input_cancelled','native_input_cancel_rejected','native_input_gate_expired','native_useResult_entered','native_useResult_dispatched','native_useResult_exception','native_useCard_child_exception','native_action_child_wait_completed','root_promise_fulfilled','root_promise_rejected','wait_next_error']).has(stage);const criticalFailure=['native_input_gate_expired','native_input_resume_rejected','native_input_cancel_rejected','native_useResult_exception','native_useCard_child_exception','root_promise_rejected','wait_next_error'].includes(stage);const criticalProgress=stage==='native_useResult_entered';const changedStep=token!==lastEventStepToken;lastEventStepToken=token;if(milestone){if(!criticalFailure&&!criticalProgress&&emittedMilestones++>=64)return}else if(changedStep){if(emittedSteps++>=64)return}else return;const payload={kind:'native_start_trace_v1',stage,snapshot:snap};try{window.__v2NativeStartTrace(JSON.stringify(payload))}catch{}};
+	 const emit=stage=>{state.traceCount++;const snap=snapshot();ring.push({stage,snapshot:snap});if(ring.length>128)ring.shift();const token=[snap.eventName,snap.eventStep].join(':');const milestone=new Set(['root_event_created','root_start_dispatched','wait_for_player_called','random_map_ol_called','prepare_arena_called','choose_character_called','game_start_trigger','game_draw_called','phase_loop_called','phase_called','native_input_gate','native_input_gate_waiting','native_input_wait_open','native_input_resume_accepted','native_input_resume_rejected','native_input_cancelled','native_input_cancel_rejected','native_input_gate_expired','native_next_seat_gate_evaluated','native_useResult_entered','native_useResult_dispatched','native_useResult_exception','native_useCard_child_exception','native_action_child_wait_completed','root_promise_fulfilled','root_promise_rejected','wait_next_error']).has(stage);const criticalFailure=['native_input_gate_expired','native_input_resume_rejected','native_input_cancel_rejected','native_useResult_exception','native_useCard_child_exception','root_promise_rejected','wait_next_error'].includes(stage);const successorGateEvaluation=multiTurnInputGateProbe&&state.nextSeatInputProbeArmed===true&&stage==='native_next_seat_gate_evaluated'&&(state.nextSeatGateEvaluationCount||0)<8;if(successorGateEvaluation)state.nextSeatGateEvaluationCount=(state.nextSeatGateEvaluationCount||0)+1;const successorGateProgress=multiTurnInputGateProbe&&state.nextSeatInputGateSeen===true&&['native_input_gate','native_input_gate_waiting','native_input_wait_open'].includes(stage);const criticalProgress=stage==='native_useResult_entered'||successorGateEvaluation||successorGateProgress;const changedStep=token!==lastEventStepToken;lastEventStepToken=token;if(milestone){if(!criticalFailure&&!criticalProgress&&emittedMilestones++>=64)return}else if(changedStep){if(emittedSteps++>=64)return}else return;const payload={kind:'native_start_trace_v1',stage,snapshot:snap};try{window.__v2NativeStartTrace(JSON.stringify(payload))}catch{}};
 	 if(!state.instrumented){
 	  state.instrumented=true;
 	 const GameEvent=lib.element.GameEvent,originalStart=GameEvent.prototype.start,originalWaitNext=GameEvent.prototype.waitNext,originalLoop=GameEvent.prototype.loop,originalTrigger=GameEvent.prototype.trigger,originalCreateEvent=game.createEvent,originalWaitForPlayer=game.waitForPlayer,originalPrepareArena=game.prepareArena,originalChooseCharacter=game.chooseCharacter,originalRandomMapOL=game.randomMapOL,originalDraw=game.gameDraw,originalPhaseLoop=game.phaseLoop,originalPhase=Player.prototype.phase,originalUseResult=Player.prototype.useResult;
@@ -2946,7 +2974,12 @@ async function runNativeStartDiagnostic(message) {
 	    if(candidateCount===0)throw Error('JIRIMO_NATIVE_SKILL_CANDIDATE_MISSING');
 	   }
 	   if(options.size>64)throw Error('NATIVE_ACTION_OPTION_CAPACITY_REJECTED');
-	   if(options.size===0)throw Error('NATIVE_ACTION_NO_SUPPORTED_CANDIDATE');
+	   if(options.size===0){if(multiTurnInputGateProbe&&state.nextSeatInputProbeArmed===true&&player!==_status.firstAct){const audit={eventName:event.name,
+	    parentEventName:event.parent?.name||null,seatId:player?.playerid||null,eventAction:event.action===true,eventShapeSupported,
+	    cardFilterPassCount:cardFilterPassed,targetFilterPassCount:targetFilterPassed,unsupportedCardShapes,filterErrors,
+	    nativeCandidateCount:0,probeArmed:true,rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null};
+	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_next_seat_candidate_set_empty',snapshot:audit}))}catch{}}
+	    throw Error('NATIVE_ACTION_NO_SUPPORTED_CANDIDATE')}
 	   window.__v2ManagedNativeActionOptions=options;
 	   const eventBytes=crypto.getRandomValues(new Uint8Array(16));const nativeEventId='native_event_'+Array.from(eventBytes,value=>value.toString(16).padStart(2,'0')).join('');event.__v2NativeEventId=nativeEventId;
 	   if(${JSON.stringify(process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1")}){const ledger=completionLedgerForRoot();if(!ledger||ledger.rootEvent!==state.root||!registerNativeEventInstance(event,ledger))throw Error('NATIVE_PREACTION_CAPTURE_EVENT_INSTANCE_REGISTRATION_FAILED')}
@@ -3370,6 +3403,16 @@ async function runNativeStartDiagnostic(message) {
 	   emit('wait_next_end');return value},error=>{const name=typeof error?.name==='string'&&/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(error.name)?error.name:'Error',message=typeof error?.message==='string'?error.message:'';const nullProperty=/^Cannot read properties of (null|undefined) \(reading '([A-Za-z_$][A-Za-z0-9_$]{0,48})'\)$/.exec(message),notFunction=/^([A-Za-z_$][A-Za-z0-9_$]{0,48}) is not a function$/.exec(message),reference=/^([A-Za-z_$][A-Za-z0-9_$]{0,48}) is not defined$/.exec(message),code=/^[A-Z][A-Z0-9_]{0,80}$/.test(message)?message:null;state.nativeWaitError={name,...(nullProperty?{nullBase:nullProperty[1],property:nullProperty[2]}:{}),...(notFunction?{notFunction:notFunction[1]}:{}),...(reference?{referenceIdentifier:reference[1]}:{}),...(code?{code}:{})};state.failureCode='NATIVE_WAIT_NEXT_REJECTED';emit('wait_next_error');throw error})};
 	 const completedActionStart=GameEvent.prototype.start;
 	 GameEvent.prototype.start=function(...args){const event=this;
+	  if(multiTurnInputGateProbe&&state.nextSeatInputProbeArmed===true&&event.name==='gongJiOrFaShu'&&event.player!==_status.firstAct&&!state.nextSeatInputStartObserved){
+	   state.nextSeatInputStartObserved=true;try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_next_seat_action_start_observed',snapshot:{eventName:event.name,
+	    parentEventName:event.parent?.name||null,seatId:event.player?.playerid||null,eventAction:event.action===true,isFirstActSeat:event.player===_status.firstAct,
+	    gamePhaseNumber:Number.isSafeInteger(game.phaseNumber)?game.phaseNumber:null,playerPhaseNumber:Number.isSafeInteger(event.player?.phaseNumber)?event.player.phaseNumber:null,
+	    quotas:{gongJiOrFaShu:Number.isSafeInteger(event.player?.storage?.gongJiOrFaShu)?event.player.storage.gongJiOrFaShu:null,
+	     faShu:Number.isSafeInteger(event.player?.storage?.faShu)?event.player.storage.faShu:null,
+	     gongJi:Number.isSafeInteger(event.player?.storage?.gongJi)?event.player.storage.gongJi:null,
+	     extraXingDongCount:Array.isArray(event.player?.storage?.extraXingDong)?event.player.storage.extraXingDong.length:null},
+	    probeArmed:state.nextSeatInputProbeArmed===true,priorGatePresent:Boolean(state.nativeInputGate),rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null}}))}catch{}
+	  }
 	  if(${JSON.stringify(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1")}&&
 	   ['useSkill','jiRi_moBaoChongJie','jiRi_moBaoChongJieContentBefore','chooseToDiscard','changeZhanJi'].includes(event.name)){
 	   state.nativeSkillEventTrace??=[];
@@ -3478,6 +3521,14 @@ async function runNativeStartDiagnostic(message) {
 	 GameEvent.prototype.loop=function(...args){
 	   if(managedStart){
 	    const event=this,step=Number.isSafeInteger(event.step)?event.step:null,seatId=event.player?.playerid||null;
+	    if(multiTurnInputGateProbe&&state.nextSeatInputProbeArmed===true&&event.name==='gongJiOrFaShu'&&event.player!==_status.firstAct&&!state.nextSeatInputLoopObserved){
+	     state.nextSeatInputLoopObserved=true;let isUnderControl=null;try{isUnderControl=event.player?.isUnderControl?.()===true}catch{}try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_next_seat_action_loop_observed',snapshot:{eventName:event.name,
+	      parentEventName:event.parent?.name||null,seatId,eventAction:event.action===true,isFirstActSeat:event.player===_status.firstAct,
+	      probeEnabled:multiTurnInputGateProbe,managedStart,managedInputGate,managedInputResume,
+	      diagnosticGateEligible:multiTurnInputGateProbe&&state.nextSeatInputProbeArmed===true&&event.player!==_status.firstAct,
+	      isUnderControl,autoMode:Boolean(_status.auto),isMine:event.isMine?.()===true,isOnline:event.isOnline?.()===true,
+	      probeArmed:state.nextSeatInputProbeArmed===true,priorGatePresent:Boolean(state.nativeInputGate),rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null}}))}catch{}
+	    }
 	    if(${JSON.stringify(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1")}&&event.name==='chooseToDiscard'){
 	     const action=state.nativeAction,mapping=action?.optionId?window.__v2ManagedNativeActionOptions?.get(action.optionId):null;let skillEvent=null;
 	     for(let parent=event.parent,count=0;parent&&count<20;parent=parent.parent,count++){if(parent.name==='useSkill'&&parent.skill==='jiRi_moBaoChongJie'){skillEvent=parent;break}}
@@ -3582,12 +3633,16 @@ async function runNativeStartDiagnostic(message) {
 	    }
 	   }
 	   if(managedNativeResponse&&this.name==='yingZhan'){if(!this.__v2ManagedResponseGate)prepareManagedNativeResponseGate(this);bindManagedResponseContext(this)}
-	   if((managedInputGate||managedInputResume)&&!state.nativeInputGate&&this.name==='gongJiOrFaShu'&&this.player===_status.firstAct&&this.action===true){
+	   const diagnosticNextSeatGate=multiTurnInputGateProbe&&state.nextSeatInputProbeArmed===true&&this.player!==_status.firstAct;
+	   if(multiTurnInputGateProbe&&this.name==='gongJiOrFaShu')emit('native_next_seat_gate_evaluated');
+	   if((managedInputGate||managedInputResume)&&(!state.nativeInputGate||diagnosticNextSeatGate)&&this.name==='gongJiOrFaShu'&&
+	    (this.player===_status.firstAct||diagnosticNextSeatGate)&&this.action===true){
 	    observeNativeInputGate(this);
+	    if(diagnosticNextSeatGate){state.nativeInputGate.diagnosticOnly=true;state.nextSeatInputProbeArmed=false;state.nextSeatInputGateSeen=true}
 	    if(managedInputGate){game.pause();return new Promise(()=>{})}
-	    const gate={event:this,nativeEventId:state.nativeInputGate.nativeEventId,seatId:this.player.playerid,status:'open',timer:null,controllerManaged:managedInputController};state.nativeInputResumeGate=gate;state.inputEvent=gate.event;
+	    const gate={event:this,nativeEventId:state.nativeInputGate.nativeEventId,seatId:this.player.playerid,status:'open',timer:null,controllerManaged:managedInputController,diagnosticOnly:diagnosticNextSeatGate};state.nativeInputResumeGate=gate;state.inputEvent=gate.event;
 	    this.isOnline=()=>true;
-	    this.send=function(){if(this!==gate.event||gate.status!=='open'||gate.timer)throw Error('NATIVE_INPUT_GATE_DUPLICATE_SEND_REJECTED');gate.status='waiting';gate.nativeSendCount=(gate.nativeSendCount||0)+1;state.nativeInputGate.nativeSendCount=gate.nativeSendCount;state.nativeInputGate.waiting=true;if(!gate.controllerManaged)gate.timer=setTimeout(()=>{if(gate.status!=='waiting')return;gate.status='expired';state.nativeInputGate.status='expired';state.nativeInputGate.failureCode='NATIVE_INPUT_DEADLINE_EXPIRED';state.nativeInputGate.engineResumeCount=(state.nativeInputGate.engineResumeCount||0)+1;this.result={bool:false};game.resume();emit('native_input_gate_expired')},managedInputDeadlineMs);game.pause();emit('native_input_wait_open')};
+	    this.send=function(){if(this!==gate.event||gate.status!=='open'||gate.timer)throw Error('NATIVE_INPUT_GATE_DUPLICATE_SEND_REJECTED');gate.status='waiting';gate.nativeSendCount=(gate.nativeSendCount||0)+1;state.nativeInputGate.nativeSendCount=gate.nativeSendCount;state.nativeInputGate.waiting=true;if(multiTurnInputGateProbe&&gate.diagnosticOnly)try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_next_seat_native_send_invoked',snapshot:{eventName:this.name,seatId:gate.seatId,nativeSendCount:gate.nativeSendCount,rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null}}))}catch{}if(!gate.controllerManaged)gate.timer=setTimeout(()=>{if(gate.status!=='waiting')return;gate.status='expired';state.nativeInputGate.status='expired';state.nativeInputGate.failureCode='NATIVE_INPUT_DEADLINE_EXPIRED';state.nativeInputGate.engineResumeCount=(state.nativeInputGate.engineResumeCount||0)+1;this.result={bool:false};game.resume();emit('native_input_gate_expired')},managedInputDeadlineMs);game.pause();emit('native_input_wait_open')};
 	    emit('native_input_gate_waiting');return originalLoop.apply(this,args)
 	   }
 	   return originalLoop.apply(this,args)
@@ -4333,15 +4388,20 @@ async function releaseNativePhaseBoundary(message) {
 			return {ok:false,code:'NATIVE_PHASE_BOUNDARY_FENCE_BINDING_REJECTED'};
 		f.status='accepted';f.releaseCount=1;f.acceptedAuthority=Object.freeze({eventSequence:4,stateRevision:4,afterDigest:command.afterDigest});
 		f.resolve({accepted:true,...command});
+		if(s?.multiTurnInputGateProbe===true&&f.boundaryOrdinal===1){s.priorNativeInputGate=s.nativeInputGate;s.nativeInputGate=null;s.nativeInputResumeGate=null;s.inputEvent=null;s.nextSeatInputProbeArmed=true}
 		return {ok:true,status:f.status,releaseCount:f.releaseCount,nativeEventId:f.nativeEventId,rootInstanceId:f.rootInstanceId,seatId:f.seatId,
-			eventSequence:f.acceptedAuthority.eventSequence,stateRevision:f.acceptedAuthority.stateRevision,afterDigest:f.acceptedAuthority.afterDigest};})()`, returnByValue: true }, 1500);
+			eventSequence:f.acceptedAuthority.eventSequence,stateRevision:f.acceptedAuthority.stateRevision,afterDigest:f.acceptedAuthority.afterDigest,
+			multiTurnInputGateProbe:s?.multiTurnInputGateProbe===true,nextSeatInputProbeArmed:s?.nextSeatInputProbeArmed===true,
+			priorGateCleared:s?.nativeInputGate==null};})()`, returnByValue: true }, 1500);
 	const observed = result.result?.value;
 	if (result.exceptionDetails || observed?.ok !== true || observed.releaseCount !== 1 || observed.nativeEventId !== message.nativeEventId ||
 		observed.rootInstanceId !== message.rootInstanceId || observed.seatId !== message.seatId || observed.eventSequence !== 4 ||
 		observed.stateRevision !== 4 || observed.afterDigest !== message.afterDigest) throw new Error("NATIVE_PHASE_BOUNDARY_RELEASE_UNCERTAIN");
 	emitNativeStartDiagnostic({ stage: "native_phase_boundary_release_command_accepted", snapshot: {
 		nativeEventId: observed.nativeEventId, rootInstanceId: observed.rootInstanceId, seatId: observed.seatId,
-		releaseCount: observed.releaseCount, eventSequence: observed.eventSequence, stateRevision: observed.stateRevision } });
+		releaseCount: observed.releaseCount, eventSequence: observed.eventSequence, stateRevision: observed.stateRevision,
+		multiTurnInputGateProbe: observed.multiTurnInputGateProbe === true,
+		nextSeatInputProbeArmed: observed.nextSeatInputProbeArmed === true, priorGateCleared: observed.priorGateCleared === true } });
 }
 
 process.on("message", message => {

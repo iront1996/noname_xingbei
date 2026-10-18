@@ -641,7 +641,26 @@ function createHostSessionManager({
 					}
 				}
 					else if (message?.type === "authoritative_result") commitAuthoritativeResult(message);
-					else if (["host_choice_candidates", "host_choice_delivery_started", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates", "host_native_response_candidates", "host_native_skill_target_candidates"].includes(message?.type) && authenticate(record, message)) {
+				else if (["host_choice_candidates", "host_choice_delivery_started", "host_choice_ack", "host_choice_diagnostic", "host_native_action_candidates", "host_native_response_candidates", "host_native_skill_target_candidates", "host_native_input_candidates_diagnostic"].includes(message?.type) && authenticate(record, message)) {
+					if (message.type === "host_native_input_candidates_diagnostic") {
+						const keys = ["kind", "type", "protocol", "secret", "roomId", "sessionId", "eventName", "nativeEventId", "rootInstanceId", "seatId", "options", "optionKinds"];
+						const context = record.xingbeiAuthorityContext;
+						const validOptions = Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 64 &&
+							new Set(message.options).size === message.options.length && message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)) &&
+							message.optionKinds && Object.getPrototypeOf(message.optionKinds) === Object.prototype &&
+							Object.keys(message.optionKinds).sort().join(",") === [...message.options].sort().join(",") &&
+							Object.values(message.optionKinds).every(kind => kind === "gongJi" || kind === "faShu");
+						if (process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE !== "1" || record.state !== "playable_probe" ||
+							record.authorityStateRevision !== 4 || record.lastAuthorityEvent?.sequence !== 4 ||
+							Object.keys(message).sort().join(",") !== keys.sort().join(",") || message.eventName !== "gongJiOrFaShu" ||
+							!/^[A-Za-z0-9_-]{1,64}$/.test(message.seatId || "") || !record.seatIds.includes(message.seatId) ||
+							message.seatId === context?.firstActSeatId || message.rootInstanceId !== context?.rootInstanceId ||
+							!/^native_event_[a-f0-9]{32}$/.test(message.nativeEventId || "") || !validOptions) {
+							fail(record, "NATIVE_NEXT_SEAT_CANDIDATE_REJECTED");
+							Promise.resolve(record.handle?.stop("native_next_seat_candidate_rejected")).catch(() => {});
+							return;
+						}
+					}
 						if (message.type === "host_native_action_candidates" && process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe" &&
 							process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1" && process.env.V2_NATIVE_JIRIMO_FIXTURE === "1") {
 							const validOptions = Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 64 &&

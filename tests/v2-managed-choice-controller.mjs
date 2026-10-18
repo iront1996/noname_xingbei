@@ -242,3 +242,22 @@ test("delivery retry exhaustion invokes fail-closed host hook exactly once", asy
 	assert.equal(f.c.inspect(roomId, opened.choice.choiceId).state, "delivery_failed");
 	assert.equal(failures, 1);
 });
+
+test("read-only native candidate inspection authenticates a seat without allocating an authority choice", () => {
+	const f = fixture();
+	const request = { protocol: 1, kind: "managed_host", roomId, hostSessionId, rootInstanceId: "native_root_abcdefghijklmnop",
+		nativeEventId: "native_abcdefghijklmnop", seatId, eventName: "gongJiOrFaShu",
+		options: [`native_option_${"a".repeat(32)}`, `native_option_${"b".repeat(32)}`],
+		optionKinds: { [`native_option_${"a".repeat(32)}`]: "gongJi", [`native_option_${"b".repeat(32)}`]: "faShu" }, hostProof: hostSessionId };
+	const inspected = f.c.inspectNativeCandidateSet(request);
+	assert.equal(inspected.ok, true);
+	assert.equal(inspected.seatId, seatId);
+	assert.equal(inspected.optionCount, 2);
+	assert.equal(Object.hasOwn(inspected, "eventSequence"), false);
+	assert.equal(f.c.pendingCount(), 0);
+	assert.equal(f.c.inspect(roomId, inspected.choiceId), null);
+	assert.equal(f.c.inspectNativeCandidateSet({ ...request, hostProof: "forged" }).code,
+		"MANAGED_NATIVE_CANDIDATE_INSPECTION_REJECTED");
+	assert.equal(f.c.inspectNativeCandidateSet({ ...request, optionKinds: { ...request.optionKinds, extra: "gongJi" } }).ok, false);
+	assert.equal(f.c.pendingCount(), 0, "read-only candidate inspection must never allocate a managed choice or delivery");
+});
