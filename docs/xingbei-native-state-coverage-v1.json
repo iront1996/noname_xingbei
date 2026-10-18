@@ -89,7 +89,7 @@
 				"nativeSource": "character/shiZhouNian.js shengQiangQiShi; forced gongJiMingZhong trigger invokes Player.changeZhiLiao(1)",
 				"requiredNativePath": "native legal character candidate -> native gongJi hit -> native optional response decline -> shengJi trigger -> completed changeZhiLiao child and triggers -> phaseOver atomic capture",
 				"status": "isolated_real_chromium_fixture_pending",
-				"blocker": "the opt-in fixture has not yet passed Linux Chromium; even after that it will prove a post-transition capture only, not a pre/post atomic commitment pair, full overflow behavior, or general healing-resource support"
+				"blocker": "Linux CI 39102999286 reached the real Chromium fixture but rejected during bootstrap with SHENGJI_NATIVE_CHARACTER_POOL_UNAVAILABLE: the fixture required firstAct before the native start/side-assignment event had established it. The guard is being moved to the native get.charactersOL invocation; still requires Linux rerun and proves only post-transition capture, not a pre/post atomic commitment pair, full overflow behavior, or general healing-resource support"
 			}
 		],
 		"authorityEvent5Created": false,

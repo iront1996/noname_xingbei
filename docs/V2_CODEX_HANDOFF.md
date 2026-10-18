@@ -1,5 +1,12 @@
 # V2 Codex engineering handoff
 
+## T3 native healing probe — first Linux attempt failed closed; fixture lifecycle correction pending
+
+- Commit `e2ea44355104006f7f9a294f2b04cb0ea44b980d` added an opt-in real Chromium probe for the original `shengJi` → `changeZhiLiao(1)` path. Linux CI `39102999286` failed at the dedicated Chromium step before opening a host session: `SHENGJI_NATIVE_CHARACTER_POOL_UNAVAILABLE`.
+- Inspection of `mode/xingBei.js` confirms `chooseCharacterOLDuoXuanYi` first executes native `initSideAndPosition()` in step 0 and only calls `get.charactersOL()` in step 1. The probe had required `_status.firstAct` while installing its observer, before the native start event had run. The guard now checks the APIs at installation and checks role availability plus `_status.firstAct` exactly when the native event requests the legal pool. It still requires the role to occur in the unmodified native legal pool and fails closed otherwise; no candidate is inserted into native data.
+- The correction is local and not yet Linux Chromium-verified. Focused local suites: 21 pass, 0 fail, 1 Windows symlink-capability skip (`EPERM`); this workspace has no Chromium binary. The release lock was recomputed to `53ece7931eed238865ebefad9aab5df1dcab874940010974c409fd33f09bfadc` (209 files, 18,919,350 bytes). No push or CI rerun has occurred after this correction.
+- Healing remains unsupported. The test, if it passes, would only prove native event ancestry/completion and a post-transition atomic capture; it does not prove an atomic pre/post commitment pair, overflow, or complete healing semantics. All global gates remain closed.
+
 ## T3 resource-transition probe — native `shengJi` healing path pending Linux Chromium
 
 - Starting from `b1953f74f7cea920a34e4cc70dfbfb598c5ed7d`, added an opt-in, isolated real-Chromium fixture for the source-verified `shengQiangQiShi.shengJi` path: native candidate generation/selection, a legal native `gongJi`, ordinary defender decline through managed choice, the original `gongJiMingZhong` trigger, and its original `Player.changeZhiLiao(1)` child. The fixture rejects if the role is not already in the native legal candidate pool; it does not write Player/resource fields or change native rules.

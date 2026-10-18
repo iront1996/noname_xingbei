@@ -927,11 +927,16 @@ async function runManagedUnifiedRoot() {
 	  };
 	 }
 	 if(shengJiResourceFixture){
-	  if(!lib.character.shengQiangQiShi||typeof get.charactersOL!=='function'||typeof get.characterGets!=='function'||!_status.firstAct)
+	  // Character data, the legal OL pool, and firstAct are established by the
+	  // native start/side-assignment events. Validate them when the native event
+	  // requests its pool, not while installing the opt-in observer.
+	  if(typeof get.charactersOL!=='function'||typeof get.characterGets!=='function')
 	   throw Error('SHENGJI_NATIVE_CHARACTER_POOL_UNAVAILABLE');
 	  get.charactersOL=function(...args){
 	   if(args.length)return originalCharactersOL.apply(this,args);
 	   if(state.shengJiCandidatePool)return state.shengJiCandidatePool.slice();
+	   if(!lib.character.shengQiangQiShi||!_status.firstAct)
+	    throw Error('SHENGJI_NATIVE_CHARACTER_POOL_UNAVAILABLE');
 	   const native=originalCharactersOL.call(this);
 	   if(!native.includes('shengQiangQiShi'))throw Error('SHENGJI_CHARACTER_NOT_IN_NATIVE_LEGAL_POOL');
 	   const actor=_status.firstAct,targetIndex=game.players.indexOf(actor),pool=Array(8).fill(null);
