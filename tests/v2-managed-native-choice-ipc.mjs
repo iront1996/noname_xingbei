@@ -1036,7 +1036,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		return;
 	}
 	const expectedAuthorityRevision = process.env.V2_NATIVE_OPENING_DRAW_EVENT3 === "1" ?
-		(process.env.V2_NATIVE_START_PROBE_MODE?.startsWith("managed_opening_root_action_event4") ? 4 : 3) : 2;
+		(process.env.V2_NATIVE_START_PROBE_MODE?.startsWith("managed_opening_root_action_event4") ||
+			process.env.V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR === "1" ? 4 : 3) : 2;
 	const probeMode = process.env.V2_NATIVE_START_PROBE_MODE || "native_start";
 	if (process.env.V2_NATIVE_RANDOM_FAILURE_PROBE === "1") {
 		assert.equal(expectedAuthorityRevision, 3, "the runtime RNG failure probe must stop after accepted native opening draw");
