@@ -1921,6 +1921,22 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	  achievementBeforeList=s?.jiRiZhanJiBaseline?.orderedList,
 	  afterCount=Array.isArray(achievementList)?achievementList.filter(value=>value==='baoShi').length:null;
 	 const state=window.__v2ManagedUnifiedRoot;
+	 const completionDiagnostics=()=>{const describe=(event,proof)=>event?{eventName:typeof event.name==='string'?event.name:null,
+	  eventInstanceId:ledger?.eventIds.get(event)||null,parentEventName:typeof event.parent?.name==='string'?event.parent.name:null,
+	  parentEventInstanceId:event.parent&&ledger?.eventIds.get(event.parent)||null,finished:event.finished===true,
+	  managerMatches:event.manager===manager,parentContainsEvent:Array.isArray(event.parent?.childEvents)&&event.parent.childEvents.includes(event),
+	  parentIsStackTop:manager?.eventStack.at(-1)===event.parent,parentNextIsEvent:Array.isArray(event.parent?.next)&&event.parent.next[0]===event,
+	  proofPresent:Boolean(proof),proofEventName:proof?.eventName||null,proofRootMatches:proof?.rootInstanceId===state?.rootInstanceId,
+	  proofEventInstanceMatches:proof?.eventInstanceId===(ledger?.eventIds.get(event)||null),
+	  proofParentMatches:proof?.parentEventInstanceId===(event.parent&&ledger?.eventIds.get(event.parent)||null),
+	  proofOrdinal:Number.isSafeInteger(proof?.completionOrdinal)?proof.completionOrdinal:null}:null;
+	  return {useSkill:describe(useSkill,useSkillProof),zhanJi:describe(zhanJi,zhanJiProof),targetDiscard:describe(discardEvent,discardProof),
+	   eventStack:(manager?.eventStack||[]).slice(-8).map(event=>({eventName:typeof event?.name==='string'?event.name:null,
+	    eventInstanceId:ledger?.eventIds.get(event)||null,parentEventName:typeof event?.parent?.name==='string'?event.parent.name:null,
+	    finished:event?.finished===true,step:Number.isSafeInteger(event?.step)?event.step:null})),
+	   nativeCompletionOrdinal:Number.isSafeInteger(ledger?.completionOrdinal)?ledger.completionOrdinal:null,
+	   recentCompletionEvents:(ledger?.recent||[]).slice(-12).map(entry=>({eventName:entry.eventName,eventInstanceId:entry.eventInstanceId,
+	    parentEventName:entry.parentEventName,parentEventInstanceId:entry.parentEventInstanceId,completionOrdinal:entry.completionOrdinal}))};};
 	 const checks={actionBinding:Boolean(a&&a.eventId===${JSON.stringify(gate.nativeEventId)}&&a.seatId===${JSON.stringify(gate.seatId)}&&a.optionId===${JSON.stringify(record.option)}),
 	  actionCompleted:Boolean(a?.actionKind==='native_skill'&&a.skillId==='jiRi_moBaoChongJie'&&a.useResultCount===1&&a.nativeChildWaitCompleted===true&&
 	   a.nativeEventInstanceMatches===true&&a.nativeUseSkillChildCompleted===true&&a.nativeTargetChoiceCompleted===true&&a.nativeChangeZhanJiCompleted===true&&
@@ -1961,7 +1977,8 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 	  JSON.stringify(achievementList)!==JSON.stringify([...achievementBeforeList,'baoShi'])||!Number.isSafeInteger(afterCount)||
 	  afterCount!==a.nativeChangeZhanJiAfter||game?.me!==null||game?.players?.some(p=>p.ws)||manager?.rootEvent!==state?.root||
 	  actionEvent?.finished!==true||manager.eventStack.at(-1)!==state?.phaseLoop||manager.eventStack.some(event=>event===useSkill||event===discardEvent||event===zhanJi))
-	  return {ok:false,code:'JIRIMO_NATIVE_ACTION_COMPLETION_EVIDENCE_INVALID',failedChecks:Object.entries(checks).filter(([,ok])=>!ok).map(([name])=>name)};
+	  return {ok:false,code:'JIRIMO_NATIVE_ACTION_COMPLETION_EVIDENCE_INVALID',failedChecks:Object.entries(checks).filter(([,ok])=>!ok).map(([name])=>name),
+	   proofDiagnostics:completionDiagnostics()};
 	 const hands=game.players.map(p=>({seatId:p.playerid,handCount:p.countCards('h'),hand:p.getCards('h').map(card=>({name:card.name||null,suit:card.suit||null,number:card.number||null,nature:card.nature||null}))}));
 	 return {ok:true,nativeEventId:a.eventId,rootInstanceId:state.rootInstanceId,seatId:a.seatId,targetSeatId:target.seatId,optionId:a.optionId,
 	  nativeEventStep:a.nativeEventStepAfterWait,nativeEventInstanceMatches:a.nativeEventInstanceMatches===true,nativeChildWaitCompleted:a.nativeChildWaitCompleted===true,
@@ -1991,7 +2008,7 @@ async function commitNativeJiRiSkillAuthority(gate, record) {
 				"materialConsumed", "actionEventProof", "achievementList", "serverRoot", "actionParentFinished"].includes(value))) {
 			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
 				observed: { kind: "native_start_diagnostic", stage: "native_jiri_authority_proof_rejected",
-					failureCode: observed.code, failedChecks: [...observed.failedChecks] } });
+					failureCode: observed.code, failedChecks: [...observed.failedChecks], proofDiagnostics: observed.proofDiagnostics } });
 		}
 		throw new Error(observed?.code || "NATIVE_SKILL_AUTHORITY_PROOF_REJECTED");
 	}
