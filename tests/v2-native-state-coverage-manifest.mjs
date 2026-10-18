@@ -34,6 +34,51 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 	]);
 	assert.equal(resourceAudit.authorityEvent5Created, false);
 	assert.equal(resourceAudit.authorityRevision, 4);
+	assert.deepEqual(resourceAudit.nativePathCandidates.map(candidate => [candidate.resource, candidate.skill, candidate.status]), [
+		["achievement_resources", "jiRi_moBaoChongJie", "candidate_not_runtime_verified"],
+		["achievement_resources", "_gongJiXingShi", "source_definition_only"],
+	]);
+	assert.ok(resourceAudit.nativePathCandidates.every(candidate => candidate.nativeSource && candidate.requiredNativePath && candidate.blocker),
+		"source candidates must retain an explicit unverified state and a blocker");
+	const dynamicAudit = manifest.dynamicStateSourceAudit;
+	assert.equal(dynamicAudit.status, "source_reviewed_not_canonicalized");
+	assert.match(dynamicAudit.promotionRule, /creation, mutation, expiry\/removal, rule impact/);
+	assert.deepEqual(dynamicAudit.families.map(family => family.id), ["temporary_skills", "additional_skills", "player_when_dynamic_effects",
+		"marks_and_rule_storage", "extra_xingdong_payloads", "virtual_card_material_links"]);
+	for (const family of dynamicAudit.families) {
+		assert.equal(family.status, "unsupported", `${family.id} has no complete typed lifecycle extractor`);
+		assert.ok(family.nativeSources.length && family.lifecycle && family.futureRuleImpact && family.safeFence && family.blocker);
+		assert.equal(family.canonicalRepresentation, null, `${family.id} must not use a placeholder canonical value`);
+	}
+	const schemaAudit = manifest.schemaV2FieldAudit;
+	assert.equal(schemaAudit.schema, "xingbei_authority_state_v2");
+	assert.equal(schemaAudit.status, "projection_contract_only_incomplete_sources");
+	assert.equal(schemaAudit.fullCanonicalStateEligible, false);
+	const allMappedFields = schemaAudit.groups.flatMap(group => group.fields);
+	assert.equal(new Set(allMappedFields).size, allMappedFields.length, "schema v2 fields must map exactly once");
+	const expectedSchemaFields = [
+		"schema", "schemaVersion", "roomId", "rootInstanceId", "authorityEventSequence", "authorityStateRevision", "firstActSeatId",
+		"turn.currentSeatId", "turn.roundNumber", "turn.phaseNumber", "turn.phase", "turn.actionIndex", "turn.quotas.gongJiOrFaShu",
+		"turn.quotas.faShu", "turn.quotas.gongJi", "turn.quotas.extraXingDongCount",
+		"resources.hongShiQi", "resources.lanShiQi", "resources.hongXingBei", "resources.lanXingBei", "resources.hongZhanJiCount",
+		"resources.hongZhanJiCommitment", "resources.lanZhanJiCount", "resources.lanZhanJiCommitment",
+		"cardZones.drawCount", "cardZones.drawCommitment", "cardZones.discardCount", "cardZones.discardCommitment",
+		"cardZones.orderingCount", "cardZones.orderingCommitment", "cardZones.specialCount", "cardZones.specialCommitment",
+		"seats[].seatId", "seats[].position", "seats[].character", "seats[].side", "seats[].alive", "seats[].hp", "seats[].maxHp",
+		"seats[].zhiLiao", "seats[].hujia", "seats[].handCount", "seats[].handCommitment", "seats[].equipmentCount",
+		"seats[].equipmentCommitment", "seats[].judgmentCount", "seats[].judgmentCommitment", "seats[].expansionCount",
+		"seats[].expansionCommitment", "seats[].specialCount", "seats[].specialCommitment", "seats[].nengLiangCommitment",
+		"seats[].skillStateCommitment", "seats[].marksCommitment",
+	].sort();
+	assert.deepEqual([...allMappedFields].sort(), expectedSchemaFields, "schema-v2 mapping must cover every validator field with no omissions");
+	for (const group of schemaAudit.groups) {
+		assert.ok(["partial", "unsupported"].includes(group.status));
+		for (const key of ["path", "nativeSource", "extractor", "fence", "canonicalEncoding", "invariants", "linuxEvidence", "blocker"])
+			assert.ok(group[key], `${group.path} must state ${key}`);
+	}
+	assert.equal(schemaAudit.groups.find(group => group.path === "turn.roundNumber,turn.actionIndex").status, "unsupported");
+	assert.equal(schemaAudit.groups.find(group => group.path === "resources.*").status, "unsupported");
+	assert.equal(schemaAudit.groups.find(group => group.path === "seats.hujia").status, "unsupported");
 	assert.ok(Array.isArray(manifest.families) && manifest.families.length >= 8);
 	const ids = manifest.families.map(family => family.id);
 	assert.equal(new Set(ids).size, ids.length);

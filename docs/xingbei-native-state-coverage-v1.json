@@ -66,8 +66,195 @@
 				"reason": "Damage/recovery/death semantics are not covered as a complete native transition; the managed runtime lacks the referenced changeHujia implementation and that rule cannot be repaired without separate authorization."
 			}
 		],
+		"nativePathCandidates": [
+			{
+				"resource": "achievement_resources",
+				"skill": "jiRi_moBaoChongJie",
+				"nativeSource": "character/teDian.js character jieRiMoDao; skill contentBefore calls player.changeZhanJi('baoShi',1) before its native target effect",
+				"requiredNativePath": "native character selection -> legal faShu skill/card use -> contentBefore -> completed changeZhanJi child and any overflow triggers -> parent use completion -> phase fence",
+				"status": "candidate_not_runtime_verified",
+				"blocker": "managed action gate currently enumerates physical one-card/one-target candidates and the YinYang-specific viewAs branch; it does not yet prove this skill candidate, its physical cost, or nested target response through the controller"
+			},
+			{
+				"resource": "achievement_resources",
+				"skill": "_gongJiXingShi",
+				"nativeSource": "noname/library/index.js defines a gongJiMingZhong source trigger that calls changeZhanJi",
+				"requiredNativePath": "legal native attack hit -> actual skill ownership/activation -> completed changeZhanJi child and overflow triggers -> phase fence",
+				"status": "source_definition_only",
+				"blocker": "tracked-source search finds the definition but no character or mode attachment reference; do not attach or invoke it as a test shortcut"
+			}
+		],
 		"authorityEvent5Created": false,
 		"authorityRevision": 4
+	},
+	"dynamicStateSourceAudit": {
+		"status": "source_reviewed_not_canonicalized",
+		"promotionRule": "A family remains unsupported until native creation, mutation, expiry/removal, rule impact and same-fence Chromium evidence are all bounded; no arbitrary object serialization or silent omission is allowed.",
+		"families": [
+			{
+				"id": "temporary_skills",
+				"nativeSources": ["Player.addTempSkill", "Player.tempSkills", "GameEvent.trigger"],
+				"lifecycle": "addTempSkill stores a skill-keyed expiry which may be a trigger descriptor or function; GameEvent.trigger removes expired skill entries and the skill itself",
+				"futureRuleImpact": "Affects getSkills, trigger eligibility and legal card/skill choices until expiry",
+				"canonicalRepresentation": null,
+				"safeFence": "after the owning native trigger event and all expiry child effects complete; no general fence contract accepted",
+				"status": "unsupported",
+				"blocker": "expiry values are heterogeneous and no complete skill-identity plus expiry semantics extractor has passed real Chromium tests"
+			},
+			{
+				"id": "additional_skills",
+				"nativeSources": ["Player.addAdditionalSkill", "Player.addAdditionalSkills", "Player.removeAdditionalSkill", "Player.additionalSkills", "Player.getSkills"],
+				"lifecycle": "source-keyed strings or arrays are added/removed and contribute to getSkills and later legality/trigger evaluation",
+				"futureRuleImpact": "Changes skill availability and trigger behavior",
+				"canonicalRepresentation": null,
+				"safeFence": "after the native skill-grant/removal event and its descendants complete",
+				"status": "unsupported",
+				"blocker": "source identity, hidden entries, nested skills and removal interactions are not covered by a real Chromium typed projection"
+			},
+			{
+				"id": "player_when_dynamic_effects",
+				"nativeSources": ["Player.when", "lib.skill player_when_*", "GameEvent.trigger"],
+				"lifecycle": "Player.when creates a generated skill with dynamic filter/content/vars; trigger completion removes that skill and related library entries",
+				"futureRuleImpact": "Callbacks can change future event results and may close over native state",
+				"canonicalRepresentation": null,
+				"safeFence": "after the generated trigger instance completes and its removal is observed",
+				"status": "unsupported",
+				"blocker": "closures and generated callback semantics have no stable typed representation bound to an immutable engine build and native event lifetime"
+			},
+			{
+				"id": "marks_and_rule_storage",
+				"nativeSources": ["Player.addMark", "Player.removeMark", "Player.storage", "Player.marks", "Player.countMark", "Player.countZhiShiWu"],
+				"lifecycle": "mark count commonly resides in storage but mark UI nodes and skill-specific storage have heterogeneous values and lifecycle hooks",
+				"futureRuleImpact": "Marks/storage can gate skills, costs, limits, targets, expiry and damage effects",
+				"canonicalRepresentation": null,
+				"safeFence": "after the owning native mark/storage event and any registered triggers complete",
+				"status": "unsupported",
+				"blocker": "only the separately scoped guiHuo and NengLiang projections are reviewed; unknown keys, references and values must fail closed"
+			},
+			{
+				"id": "extra_xingdong_payloads",
+				"nativeSources": ["xingDong content steps 0/4", "Player.addExtraXingDong", "player.storage.extraXingDong"],
+				"lifecycle": "xingDong resets the queue, native effects may push payloads, and the action event pops the payload LIFO and invokes its named action",
+				"futureRuleImpact": "Can change the next native action, filters, targets and action quota sequence",
+				"canonicalRepresentation": null,
+				"safeFence": "after all extra action payloads and their native children are consumed; current accepted capture requires an empty queue",
+				"status": "unsupported",
+				"blocker": "payloads may contain callbacks such as filterCard/filterTarget/createDialog and arbitrary spread data"
+			},
+			{
+				"id": "virtual_card_material_links",
+				"nativeSources": ["native VCard/viewAs", "Player.useResult", "Player.useCard", "physical Card identity"],
+				"lifecycle": "virtual cards may be constructed from physical materials; materials move through native ordering/discard zones while virtual cards are not physical instances",
+				"futureRuleImpact": "Determines costs, duplicate-use prevention and subsequent zones/effects",
+				"canonicalRepresentation": null,
+				"safeFence": "after the native useCard child tree and every material movement trigger complete",
+				"status": "unsupported",
+				"blocker": "the accepted physical ledger excludes virtual cards, but a general source-material relation contract has not passed Chromium coverage"
+			}
+		]
+	},
+	"schemaV2FieldAudit": {
+		"schema": "xingbei_authority_state_v2",
+		"status": "projection_contract_only_incomplete_sources",
+		"fullCanonicalStateEligible": false,
+		"groups": [
+			{
+				"path": "identity",
+				"fields": ["schema", "schemaVersion", "roomId", "rootInstanceId", "authorityEventSequence", "authorityStateRevision", "firstActSeatId"],
+				"nativeSource": "managed bootstrap identity, pinned build/root and accepted legacy Event #1-#4 chain",
+				"extractor": "HostSession identity checks plus legacy event-chain validator; no full-state-v2 extractor",
+				"fence": "authenticated managed host and event-specific accepted legacy boundary",
+				"canonicalEncoding": "strict v2 validator canonical JSON; does not establish completeness of omitted native state",
+				"invariants": "room/root/session/build/seat binding and contiguous legacy revision",
+				"linuxEvidence": "C3 Event #1-#4 regression; no schema-v2 seed acceptance",
+				"status": "partial",
+				"blocker": "no authorized or complete initial schema-v2 state"
+			},
+			{
+				"path": "turn.currentSeatId,turn.phaseNumber,turn.phase,turn.quotas.*",
+				"fields": ["turn.currentSeatId", "turn.phaseNumber", "turn.phase", "turn.quotas.gongJiOrFaShu", "turn.quotas.faShu", "turn.quotas.gongJi", "turn.quotas.extraXingDongCount"],
+				"nativeSource": "phaseLoop.player, completed phase child, _status.currentPhase and xingDong quota storage",
+				"extractor": "Node turn/resource projection validator only; real Chromium atomic projection is limited to completed phaseOver fixtures with empty extraXingDong",
+				"fence": "two adjacent completed seat phase fences; not a general in-turn resource fence",
+				"canonicalEncoding": "bounded seat IDs, phase enum and integer quota tuple",
+				"invariants": "live actor/phaseLoop agreement, native completion ordinal, allowed quota ranges and next living seat",
+				"linuxEvidence": "39065347253 cross-seat atomic capture; quota reset is separately observed, not atomic",
+				"status": "partial",
+				"blocker": "no real legal resource mutation proof; no same-fence capture for every in-turn phase/choice boundary"
+			},
+			{
+				"path": "turn.roundNumber,turn.actionIndex",
+				"fields": ["turn.roundNumber", "turn.actionIndex"],
+				"nativeSource": "generic game.roundNumber is not an accepted XingBei round source; action index lacks a complete native event-derived counter",
+				"extractor": "Node bounds validator only; no runtime extractor",
+				"fence": "none accepted",
+				"canonicalEncoding": "bounded integers in schema validator only",
+				"invariants": "must be derived from a reviewed native boundary, never inferred from firstActSeatId or local test counter",
+				"linuxEvidence": "no accepted Chromium evidence",
+				"status": "unsupported",
+				"blocker": "schema's fields currently invite caller-supplied numbers without an accepted native source"
+			},
+			{
+				"path": "resources.*",
+				"fields": ["resources.hongShiQi", "resources.lanShiQi", "resources.hongXingBei", "resources.lanXingBei", "resources.hongZhanJiCount", "resources.hongZhanJiCommitment", "resources.lanZhanJiCount", "resources.lanZhanJiCommitment"],
+				"nativeSource": "game team resource fields and native changeShiQi/changeXingBei/changeZhanJi GameEvents",
+				"extractor": "bounded Node projection only; no accepted resource-transition Chromium extractor",
+				"fence": "none accepted for completed resource changes and triggers",
+				"canonicalEncoding": "bounded integers and digest strings in validator",
+				"invariants": "team counters, sorted allowlisted achievement list commitments, terminal check boundary",
+				"linuxEvidence": "source audit only; resourceTransitionAudit has no accepted transition",
+				"status": "unsupported",
+				"blocker": "no legal source event bracketed by same-root completed children and before/after commitment"
+			},
+			{
+				"path": "cardZones.*",
+				"fields": ["cardZones.drawCount", "cardZones.drawCommitment", "cardZones.discardCount", "cardZones.discardCommitment", "cardZones.orderingCount", "cardZones.orderingCommitment", "cardZones.specialCount", "cardZones.specialCommitment"],
+				"nativeSource": "private native Card Ledger zones and physical Card identity",
+				"extractor": "private Card Ledger projection; atomic envelope includes its limited schema-v1 snapshot",
+				"fence": "restricted accepted phaseOver atomic capture fixtures",
+				"canonicalEncoding": "counts plus private zone commitments; virtual cards excluded",
+				"invariants": "unique physical identity and zone accounting within enumerated zones",
+				"linuxEvidence": "T3-B1 and restricted atomic capture CI; not all native zones/material links",
+				"status": "partial",
+				"blocker": "not all zones and virtual-material relations are covered; cannot promote to full state"
+			},
+			{
+				"path": "seats.identity_and_character",
+				"fields": ["seats[].seatId", "seats[].position", "seats[].character", "seats[].side", "seats[].alive", "seats[].hp", "seats[].maxHp", "seats[].zhiLiao"],
+				"nativeSource": "immutable managed seats, native Player identity/position, character initialization and selected bounded Player fields",
+				"extractor": "turn/resource projection plus seat identity checks; no full schema-v2 seat extractor",
+				"fence": "restricted completed phaseOver atomic capture",
+				"canonicalEncoding": "ordered fixed seats, bounded values and private digests",
+				"invariants": "seat order and side/character bind to native Player; resources must be captured at safe event boundary",
+				"linuxEvidence": "C3 four-seat and T3 cross-seat capture regression",
+				"status": "partial",
+				"blocker": "HP/damage chains, unknown deaths and all dynamic per-player state are not covered"
+			},
+			{
+				"path": "seats.hujia",
+				"fields": ["seats[].hujia"],
+				"nativeSource": "damage absorption reads hujia and calls unresolved Player.changeHujia; runtime audit observed no method/value",
+				"extractor": "none; validator bounds a caller-supplied integer only",
+				"fence": "none accepted",
+				"canonicalEncoding": "not supported; integer shape check is not source validation",
+				"invariants": "cannot assert armor value or damage result until source/semantics exist",
+				"linuxEvidence": "read-only runtime audit 39066874592",
+				"status": "unsupported",
+				"blocker": "requires locating the true implementation or separate user-authorized native rule repair"
+			},
+			{
+				"path": "seats.*.commitments",
+				"fields": ["seats[].handCount", "seats[].handCommitment", "seats[].equipmentCount", "seats[].equipmentCommitment", "seats[].judgmentCount", "seats[].judgmentCommitment", "seats[].expansionCount", "seats[].expansionCommitment", "seats[].specialCount", "seats[].specialCommitment", "seats[].nengLiangCommitment", "seats[].skillStateCommitment", "seats[].marksCommitment"],
+				"nativeSource": "private Card Ledger, limited Effect State, and bounded NengLiang mark projection",
+				"extractor": "three projection validators inside restricted atomic capture; legacy schema-v2 mapper is not wired to them",
+				"fence": "one shared interval for the accepted limited three-projection envelope",
+				"canonicalEncoding": "private commitment digests with separate schemas and scope; not a public preimage",
+				"invariants": "same room/session/build/root/seats and native completion ordinal across the three projections",
+				"linuxEvidence": "T3-B1/B2 and restricted atomic capture CI; coverage is limited, not complete",
+				"status": "partial",
+				"blocker": "limited skill/mark allowlist, incomplete zones, dynamic effects, virtual materials and resource event transitions"
+			}
+		]
 	},
 	"families": [
 		{
