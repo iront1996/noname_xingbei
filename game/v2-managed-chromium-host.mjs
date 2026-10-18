@@ -9,7 +9,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { validateManagedEngineSourceManifest, MANAGED_ENGINE_TRUST_CONTRACT } = require("./server-managed-engine-integrity.js");
-const { createManagedRandomBootstrap } = require("./server-managed-random-source.js");
+const { createManagedRandomBootstrap, isManagedTestSeedAllowed } = require("./server-managed-random-source.js");
 const { createManagedNativeCardLedger } = require("./server-managed-native-card-ledger.js");
 const EFFECT_STATE_SCHEMA = "xingbei_native_private_effect_state_v1";
 
@@ -339,10 +339,7 @@ async function boot(message) {
 	}
 	let managedRandomSource;
 	if (process.env.V2_NATIVE_TEST_RANDOM_SEED !== undefined) {
-		const managedResponseSeed = process.env.V2_NATIVE_MANAGED_RESPONSE === "1";
-		const managedActionKindSeed = ["gongJi", "faShu"].includes(process.env.V2_NATIVE_ACTION_KIND);
-		const yinYangFixtureSeed = process.env.V2_NATIVE_YINYANG_FIXTURE === "1";
-		if ((!managedResponseSeed && !managedActionKindSeed && !yinYangFixtureSeed) || !/^(0|[1-9][0-9]{0,9})$/.test(process.env.V2_NATIVE_TEST_RANDOM_SEED)) {
+		if (!isManagedTestSeedAllowed(process.env)) {
 			throw new Error("NATIVE_TEST_RANDOM_SEED_REJECTED");
 		}
 		const seed = Number(process.env.V2_NATIVE_TEST_RANDOM_SEED) >>> 0;

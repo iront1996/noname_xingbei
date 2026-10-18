@@ -4,7 +4,23 @@ import test from "node:test";
 import vm from "node:vm";
 
 const require = createRequire(import.meta.url);
-const { createManagedRandomBootstrap, PRODUCTION_KIND, TEST_KIND } = require("../game/server-managed-random-source.js");
+const { createManagedRandomBootstrap, isManagedTestSeedAllowed, PRODUCTION_KIND, TEST_KIND } = require("../game/server-managed-random-source.js");
+
+test("deterministic seed is accepted only for an explicitly scoped native fixture", () => {
+	const base = { V2_NATIVE_TEST_RANDOM_SEED: "1" };
+	assert.equal(isManagedTestSeedAllowed(base), false);
+	assert.equal(isManagedTestSeedAllowed({ ...base, V2_NATIVE_JIRIMO_FIXTURE: "1" }), false,
+		"a fixture flag alone does not authorize deterministic randomness");
+	assert.equal(isManagedTestSeedAllowed({ ...base, V2_NATIVE_JIRIMO_FIXTURE: "1", V2_NATIVE_JIRIMO_ACTION_PROBE: "1" }), false,
+		"the native action probe must also be explicitly enabled");
+	assert.equal(isManagedTestSeedAllowed({ ...base, V2_NATIVE_JIRIMO_FIXTURE: "1", V2_NATIVE_JIRIMO_ACTION_PROBE: "1",
+		V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR: "1" }), true);
+	assert.equal(isManagedTestSeedAllowed({ ...base, V2_NATIVE_JIRIMO_FIXTURE: "1", V2_NATIVE_JIRIMO_ACTION_PROBE: "1",
+		V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR: "1", V2_NATIVE_TEST_RANDOM_SEED: "01" }), false,
+		"non-canonical numeric seeds remain rejected");
+	assert.equal(isManagedTestSeedAllowed({ ...base, V2_NATIVE_JIRIMO_FIXTURE: "1", V2_NATIVE_JIRIMO_ACTION_PROBE: "1",
+		V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR: "0" }), false);
+});
 
 function run(source, crypto, onFailure = () => {}) {
 	const context = { window: { __v2ManagedRandomFailureNotify: onFailure }, crypto, Math: Object.create(Math), Uint32Array, Object };
