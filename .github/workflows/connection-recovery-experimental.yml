@@ -174,6 +174,15 @@ jobs:
           done
           test -n "$browser"
           env V2_CHROMIUM="$browser" V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_CARD_LEDGER_PROBE=1 V2_NATIVE_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1 V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESOURCE_SHENGJI_FIXTURE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
+      - name: V2 M2 T3 shengJi pre-action and post-phaseOver atomic commitments in real Chromium
+        shell: bash
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          env V2_CHROMIUM="$browser" V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_CARD_LEDGER_PROBE=1 V2_NATIVE_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1 V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event4 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_RESOURCE_SHENGJI_FIXTURE=1 V2_NATIVE_TEST_RANDOM_SEED=1 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs
       - name: V2 M2 P1-C2 fences native parent until Event 4 acceptance
         shell: bash
         run: |

@@ -44,10 +44,15 @@ function validateNativeTurnResourceProjectionV2(snapshot, expected = {}) {
 		(expected.seatIds !== undefined && canonicalize(snapshot.seatIds) !== canonicalize(expected.seatIds))) fail("NATIVE_TURN_STATE_V2_BINDING_INVALID");
 
 	const fence = snapshot.fence;
-	if (!exact(fence, ["kind", "rootMatches", "eventStackConsistent", "allChildrenCompleted", "pendingChildCount", "captureLocked", "nativeCompletionOrdinal"]) ||
-		fence.kind !== "managed_native_quiescent_fence_v1" || fence.rootMatches !== true || fence.eventStackConsistent !== true ||
-		fence.allChildrenCompleted !== true || fence.pendingChildCount !== 0 || fence.captureLocked !== true ||
-		!Number.isSafeInteger(fence.nativeCompletionOrdinal) || fence.nativeCompletionOrdinal < 1) fail("NATIVE_TURN_STATE_V2_FENCE_INVALID");
+	const fenceKeys = ["kind", "rootMatches", "eventStackConsistent", "allChildrenCompleted", "pendingChildCount", "captureLocked", "nativeCompletionOrdinal"];
+	const completedFence = exact(fence, fenceKeys) && fence.kind === "managed_native_quiescent_fence_v1" &&
+		fence.allChildrenCompleted === true && fence.pendingChildCount === 0;
+	const inputWaitingFence = exact(fence, fenceKeys) && fence.kind === "managed_native_input_waiting_fence_v1" &&
+		fence.allChildrenCompleted === false && fence.pendingChildCount === 1;
+	if ((!completedFence && !inputWaitingFence) || fence.rootMatches !== true || fence.eventStackConsistent !== true ||
+		fence.captureLocked !== true || !Number.isSafeInteger(fence.nativeCompletionOrdinal) || fence.nativeCompletionOrdinal < 1) {
+		fail("NATIVE_TURN_STATE_V2_FENCE_INVALID");
+	}
 
 	const turn = snapshot.turn;
 	if (!exact(turn, ["phase", "actorSeatId", "phaseLoopSeatId", "currentPhaseSeatId", "gamePhaseNumber", "playerPhaseNumber", "quotas", "extraActionQueueEmpty"]) ||

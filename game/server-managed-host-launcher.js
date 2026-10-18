@@ -148,6 +148,21 @@ function createManagedHostProcessLauncher({
 				Array.isArray(command.seatIds) && command.seatIds.length === 4 &&
 				command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
 				Object.keys(command).sort().join(",") === "boundaryOrdinal,captureOrdinal,engineBuildId,kind,protocol,requestId,roomId,rootInstanceId,seatIds,secret,sessionId,type";
+			const nativePreActionCaptureCommand = process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1" &&
+				process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" && process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
+				process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
+				command?.type === "host_native_pre_action_capture" && command.kind === "managed_host" &&
+				command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
+				command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret &&
+				/^preaction_[a-f0-9]{32}$/.test(command.requestId || "") &&
+				/^choice_[a-f0-9]{32}$/.test(command.choiceId || "") &&
+				/^native_[A-Za-z0-9_-]{16,96}$/.test(command.nativeEventId || "") &&
+				bootstrap.gameSetup?.seats?.some(seat => seat.seatId === command.seatId) &&
+				command.engineBuildId === bootstrap.engineSourceManifest?.buildId &&
+				/^native_root_[A-Za-z0-9_-]{16,96}$/.test(command.rootInstanceId || "") &&
+				Array.isArray(command.seatIds) && command.seatIds.length === bootstrap.gameSetup.seats.length &&
+				command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
+				Object.keys(command).sort().join(",") === "choiceId,engineBuildId,kind,nativeEventId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type";
 			const nativePhaseBoundaryReleaseCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1" && command?.type === "host_native_phase_boundary_release" &&
 				command.kind === "managed_host" && command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
@@ -163,7 +178,7 @@ function createManagedHostProcessLauncher({
 				typeof command.nativeEventId === "string" && typeof command.seatId === "string" &&
 				Object.keys(command).every(key => ["type", "nativeEventId", "seatId"].includes(key));
 			if (exited || !child.connected || !command ||
-				!(diagnosticCommand || nativeSnapshotCommand || nativeCardLedgerCommand || nativeEffectStateCommand || nativeAtomicCaptureCommand || nativePhaseBoundaryReleaseCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
+				!(diagnosticCommand || nativeSnapshotCommand || nativeCardLedgerCommand || nativeEffectStateCommand || nativeAtomicCaptureCommand || nativePreActionCaptureCommand || nativePhaseBoundaryReleaseCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
 					(command?.type === "host_authority_event_ack" && command.kind === "managed_host" &&
 						command.accepted === true &&
 						command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&

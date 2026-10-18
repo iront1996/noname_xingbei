@@ -13,6 +13,9 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 	assert.equal(manifest.event5Enabled, false);
 	assert.equal(manifest.checkpointAvailable, false);
 	assert.equal(manifest.unknownStatePolicy, "fail_closed");
+	assert.equal(manifest.stageScopeSeparation.m2LiveAuthority.status, "in_progress_independent_of_full_checkpoint_serialization");
+	assert.equal(manifest.stageScopeSeparation.m4ProcessRecovery.status, "not_implemented_requires_complete_recovery_proof");
+	assert.match(manifest.stageScopeSeparation.m2LiveAuthority.contract, /unsupported state remains fail-closed/);
 	const resourceAudit = manifest.resourceTransitionAudit;
 	assert.equal(resourceAudit.status, "source_reviewed_runtime_transition_unverified");
 	assert.deepEqual(resourceAudit.transitions.map(transition => transition.id), [
@@ -37,7 +40,7 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 	assert.deepEqual(resourceAudit.nativePathCandidates.map(candidate => [candidate.resource, candidate.skill, candidate.status]), [
 		["achievement_resources", "jiRi_moBaoChongJie", "candidate_not_runtime_verified"],
 		["achievement_resources", "_gongJiXingShi", "source_definition_only"],
-		["healing_resource", "shengJi", "native_post_transition_path_verified_atomic_pair_pending"],
+		["healing_resource", "shengJi", "native_pre_post_atomic_pair_local_chromium_verified_linux_ci_pending"],
 	]);
 	assert.ok(resourceAudit.nativePathCandidates.every(candidate => candidate.nativeSource && candidate.requiredNativePath && candidate.blocker),
 		"source candidates must retain an explicit unverified state and a blocker");

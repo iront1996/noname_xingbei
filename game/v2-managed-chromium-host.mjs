@@ -2055,7 +2055,7 @@ function dispatchManagedNativeActionCandidates(snapshot) {
 		candidateDispatched: controllerManaged, optionIds, actionDeliveries: controllerManaged ? new Map() : null };
 	if (!controllerManaged) return true;
 	const message = { ...identity, type: "host_native_action_candidates", nativeEventId: gate.nativeEventId,
-		eventSequence: 4, seatId: gate.seatId, options: optionIds,
+		eventSequence: 4, seatId: gate.seatId, rootInstanceId: snapshot.rootInstanceId || null, options: optionIds,
 		optionKinds: Object.fromEntries(gate.candidates.map(candidate => [candidate.optionId, candidate.cardType])),
 		...(process.env.V2_NATIVE_YINYANG_FIXTURE === "1" ? { optionTargetSeatIds: Object.fromEntries(gate.candidates.map(candidate => [candidate.optionId, candidate.targetSeatId])) } : {}),
 		...(process.env.V2_NATIVE_YINYANG_FIXTURE === "1" ? { optionYinYangEligible: Object.fromEntries(gate.candidates.map(candidate => [candidate.optionId, candidate.yinyangEligible === true])) } : {}),
@@ -2249,7 +2249,9 @@ async function runNativeStartDiagnostic(message) {
 	 const snapshot=()=>{const current=_status.event,top=manager.eventStack.at(-1),phaseLoop=state.phaseLoop||manager.eventStack.find(event=>event.name==='phaseLoop')||manager.rootEvent?.next?.find(event=>event.name==='phaseLoop'),phaseEvent=phaseLoop?.next?.find(event=>event.name==='phase'&&event.player===_status.firstAct),draft=state.nativePhaseOverDispatchDraft;return {eventName:current?.name||null,eventStep:Number.isSafeInteger(current?.step)?current.step:null,parentEventName:current?.parent?.name||null,rootEventName:manager.rootEvent?.name||null,rootInstanceId:state.rootInstanceId||null,rootObjectMatches:state.root?manager.rootEvent===state.root:null,eventStackDepth:manager.eventStack.length,eventStackTop:top?.name||null,eventStack:manager.eventStack.map(event=>event.name),eventStackDetails:manager.eventStack.map(event=>({eventName:event.name||null,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,seatId:event.player?.playerid||null,finished:Boolean(event.finished),nextCount:Array.isArray(event.next)?event.next.length:null,nextHeadName:event.next?.[0]?.name||null,nextHeadStep:Number.isSafeInteger(event.next?.[0]?.step)?event.next[0].step:null,nextHeadFinished:Boolean(event.next?.[0]?.finished)})),connectMode:Boolean(_status.connectMode),paused:Boolean(_status.paused),gameStartTriggered:state.gameStartCount>0,gameStartCount:state.gameStartCount,gameDrawCreated:state.drawCreated||Boolean(manager.rootEvent?.next?.some(event=>event.name==='gameDraw')),gameDrawEntered:state.drawEntered,gameDrawParentName:state.drawParentName||state.draw?.parent?.name||manager.rootEvent?.next?.find(event=>event.name==='gameDraw')?.parent?.name||null,phaseLoopCreated:state.phaseLoopCreated||Boolean(phaseLoop),phaseLoopStartRequested:state.phaseLoopStartRequested||false,phaseLoopStarted:state.phaseLoopStarted||false,phaseLoopPaused:state.phaseLoopPaused||false,phaseLoopReleased:state.phaseLoopReleased||false,phaseLoopParentName:phaseLoop?.parent?.name||state.phaseLoopParentName||null,phaseLoopIdentityMatches:phaseLoop===state.phaseLoop,phaseOverTriggerCount:state.nativePhaseOverTriggerCount||0,phaseOverDraftPresent:Boolean(draft),phaseOverDraftRootMatches:draft?.rootInstanceId===state.rootInstanceId,phaseOverDraftOwnerMatches:draft?.phaseLoopEvent===phaseLoop,phaseOverDraftSeatId:draft?.seatId||null,phaseOverDraftStep:Number.isSafeInteger(draft?.ownerEventStep)?draft.ownerEventStep:null,phaseOverDraftOrdinal:Number.isSafeInteger(draft?.triggerOrdinal)?draft.triggerOrdinal:null,firstPhaseEventName:phaseEvent?.name||null,firstPhaseParentName:phaseEvent?.parent?.name||null,firstPhaseGate:state.firstPhaseGate||null,nativeInputGate:state.nativeInputGate||null,nativeInputGateStatus:state.nativeInputResumeGate?.status||null,nativeAction:state.nativeAction||null,nativeResponseGates:[...(state.managedNativeResponseGates?.values()||[])].slice(-16).map(gate=>({nativeEventId:gate.nativeEventId,seatId:gate.seatId,eventName:gate.eventName,eventStep:Number.isSafeInteger(gate.event?.step)?gate.event.step:null,status:gate.status,waitEventName:gate.waitEvent?.name||null,waitEventFinished:Boolean(gate.waitEvent?.finished),waitResolved:gate.waitResolved===true,optionCount:gate.optionIds?.length||0,deliveryStatus:gate.delivery?.status||null,useCardChildrenStarted:gate.useCardChildrenStarted||0,useCardChildrenCompleted:gate.useCardChildrenCompleted||0})),testFaultMode:${JSON.stringify(process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "")},prepareArenaCalls:state.prepareArenaCalls,waitForPlayerCalls:state.waitForPlayerCalls,randomMapOLCalls:state.randomMapOLCalls,chooseCharacterCalls:state.chooseCharacterCalls,phaseCalls:state.phaseCalls,currentPhaseSeatId:_status.currentPhase?.playerid||null,firstActSeatId:_status.firstAct?.playerid||null,pendingChoiceEventName:/choose|respond|useCard/i.test(current?.name||'')?current.name:null,pendingChoiceSeatId:current?.player?.playerid||null,hostPlayerAbsent:game.me===null,seats:game.players.map(player=>({seatId:player.playerid||null,characterInitialized:typeof player.name1==='string',handCount:player.countCards('h')})),nativeEventTrail:(state.nativeEventTrail||[]).slice(-12),lastSuccessfulEventStep:state.lastSuccessfulEventStep,nativeWaitError:state.nativeWaitError||null,rootPromiseState:state.rootPromiseState,failureCode:state.failureCode,traceCount:state.traceCount}};
 	 const completionLedgerForRoot=()=>{if(${JSON.stringify(process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE === "1")}){let ledger=state.nativeEventCompletionLedger;
 	   if(!ledger||ledger.rootEvent!==state.root||ledger.rootInstanceId!==state.rootInstanceId){ledger={rootEvent:state.root,rootInstanceId:state.rootInstanceId,nextInstanceOrdinal:0,completionOrdinal:0,eventIds:new WeakMap(),completed:new WeakSet(),completionEvidence:new WeakMap(),recent:[]};state.nativeEventCompletionLedger=ledger}return ledger}return null};
-	 const registerNativeEventInstance=(event,ledger)=>{if(!ledger||!event||typeof event!=='object')return null;let id=ledger.eventIds.get(event);if(id)return id;
+	 const registerNativeEventInstance=(event,ledger)=>{if(!ledger||!event||typeof event!=='object')return null;
+	   if(!ledger.eventIds.has(ledger.rootEvent)){if(ledger.nextInstanceOrdinal>=1000000)throw Error('NATIVE_EVENT_INSTANCE_SEQUENCE_EXHAUSTED');ledger.eventIds.set(ledger.rootEvent,'event_'+(++ledger.nextInstanceOrdinal))}
+	   let id=ledger.eventIds.get(event);if(id)return id;
 	   const chain=[],seen=new Set();let current=event;while(current&&current!==ledger.rootEvent&&chain.length<64&&!seen.has(current)){seen.add(current);chain.push(current);current=current.parent}
 	   if(current!==ledger.rootEvent||chain.length>=64)return null;for(const node of chain.reverse()){if(!ledger.eventIds.has(node)){if(ledger.nextInstanceOrdinal>=1000000)throw Error('NATIVE_EVENT_INSTANCE_SEQUENCE_EXHAUSTED');ledger.eventIds.set(node,'event_'+(++ledger.nextInstanceOrdinal))}}return ledger.eventIds.get(event)};
 	 const recordNativeEventCompletion=(event,ledger)=>{if(!ledger||!event||event===ledger.rootEvent||ledger.completed.has(event)||!state.root||state.root!==ledger.rootEvent||
@@ -2308,6 +2310,7 @@ async function runNativeStartDiagnostic(message) {
 	   if(options.size===0)throw Error('NATIVE_ACTION_NO_SUPPORTED_CANDIDATE');
 	   window.__v2ManagedNativeActionOptions=options;
 	   const eventBytes=crypto.getRandomValues(new Uint8Array(16));const nativeEventId='native_event_'+Array.from(eventBytes,value=>value.toString(16).padStart(2,'0')).join('');event.__v2NativeEventId=nativeEventId;
+	   if(${JSON.stringify(process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1")}){const ledger=completionLedgerForRoot();if(!ledger||ledger.rootEvent!==state.root||!registerNativeEventInstance(event,ledger))throw Error('NATIVE_PREACTION_CAPTURE_EVENT_INSTANCE_REGISTRATION_FAILED')}
 	   state.nativeInputGate={nativeEventId,eventName:event.name,eventStep:Number.isSafeInteger(event.step)?event.step:null,parentEventName:event.parent?.name||null,seatId:player.playerid,action:Boolean(event.action),handCount:player.countCards('h'),nativeCardFilterPassCount:cardFilterPassed,nativeTargetFilterPassCount:targetFilterPassed,nativeCandidateMappingCount:options.size,candidates:[...options].map(([optionId,item])=>({optionId,cardName:item.card.name||null,cardType:get.type(item.card,player)||null,targetSeatId:item.target.playerid||null,...(${process.env.V2_NATIVE_YINYANG_FIXTURE === "1"}?{yinyangEligible:get.type(item.card,player)==='gongJi'&&get.xiBie(item.card)!=='an'&&item.target.getCards('h').some(card=>get.type(card,item.target)==='gongJi'&&get.mingGe(card)===get.mingGe(item.card))}:{}),...(managedNativeResponse?{responseProbePotential:get.type(item.card,player)==='gongJi'&&responseProbePossible(item.card,item.target,player)}:{})})),supportedOptionShape:'one-native-physical-card-one-native-target',eventShapeSupported,unsupportedCardShapes,filterErrors,gateBeforeAiBranch:true,offlineAiPrevented:true,nativeAiResultPending:event.result==='ai',eventIsMine:Boolean(event.isMine()),eventIsOnline:Boolean(event.isOnline()),gameMeAbsent:game.me===null,useResultCount:0};emit('native_input_gate')
 	  };
 	  const nativeResponseContentNames=new WeakMap(),originalSetContent=GameEvent.prototype.setContent;
@@ -3230,6 +3233,108 @@ async function snapshotNativeAtomicCapture(message) {
 	}
 }
 
+async function snapshotNativePreActionCapture(message) {
+	const keys = "choiceId,engineBuildId,kind,nativeEventId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type";
+	if (process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE !== "1" || process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE !== "1" ||
+		process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" ||
+		process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" || !validHostCommand(message) || message.type !== "host_native_pre_action_capture" ||
+		Object.keys(message).sort().join(",") !== keys || !/^preaction_[a-f0-9]{32}$/.test(message.requestId || "") ||
+		!/^choice_[a-f0-9]{32}$/.test(message.choiceId || "") || !/^native_[A-Za-z0-9_-]{16,96}$/.test(message.nativeEventId || "") ||
+		!managedEngineBuildId || message.engineBuildId !== managedEngineBuildId || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(message.rootInstanceId || "") ||
+		!Array.isArray(message.seatIds) || message.seatIds.length !== 4 || JSON.stringify(message.seatIds) !== JSON.stringify(managedSeatIds) ||
+		!message.seatIds.includes(message.seatId) || !cdp) throw new Error("NATIVE_PREACTION_CAPTURE_COMMAND_REJECTED");
+	const command = { roomId: message.roomId, hostSessionId: message.sessionId, engineBuildId: message.engineBuildId,
+		rootInstanceId: message.rootInstanceId, seatIds: message.seatIds, nativeEventId: message.nativeEventId,
+		choiceId: message.choiceId, seatId: message.seatId };
+	try {
+		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{
+			const command=${JSON.stringify(command)},state=window.__v2NativeStartDiagnosticState,managed=window.__v2ManagedEngine,
+				core=managed?.core,game=core?.game,status=core?._status,manager=status?.eventManager,gate=state?.nativeInputResumeGate,
+				event=gate?.event,ledger=state?.nativeEventCompletionLedger;
+			if(!state||!game||!status||!manager||manager.rootEvent!==state.root||manager.rootEvent?.name!=='game'||game.me!==null||
+				state.rootInstanceId!==command.rootInstanceId||!Array.isArray(game.players)||game.players.length!==4||game.players.some(player=>player.ws)||
+				new Set(game.players.map(player=>player.playerid)).size!==4||command.seatIds.some(id=>!game.players.some(player=>player.playerid===id)))
+				throw Error('NATIVE_PREACTION_CAPTURE_ROOT_OR_SEATS_INVALID');
+			if(!gate||gate.status!=='waiting'||gate.controllerManaged!==true||gate.nativeEventId!==command.nativeEventId||gate.seatId!==command.seatId||
+				!event||event!==state.inputEvent||event.__v2NativeEventId!==command.nativeEventId||event.name!=='gongJiOrFaShu'||event.player?.playerid!==command.seatId||
+				state.nativeInputGate?.waiting!==true||state.nativeInputGate?.nativeEventId!==command.nativeEventId||state.nativeInputGate?.seatId!==command.seatId||
+				status.paused!==true||manager.eventStack.at(-1)!==event||event.result!==undefined&&event.result!=='ai'||
+				state.nativeAction?.eventId===command.nativeEventId||state.nativeInputGate.useResultCount!==0)
+				throw Error('NATIVE_PREACTION_CAPTURE_INPUT_GATE_INVALID');
+			const names=['game','phaseLoop','phase','xingDong','gongJiOrFaShu'],chain=[];let current=event;
+			while(current&&chain.length<6){chain.push(current);current=current.parent;}
+			chain.reverse();
+			if(chain.length!==5||chain.some((item,index)=>item.name!==names[index])||chain[0]!==state.root||chain[1]!==state.phaseLoop||
+				chain[2].parent!==chain[1]||chain[3].parent!==chain[2]||chain[4].parent!==chain[3])throw Error('NATIVE_PREACTION_CAPTURE_PARENT_CHAIN_INVALID');
+			const stack=manager.eventStack;if(stack.at(-1)!==event||names.some((name,index)=>stack.findIndex(item=>item===chain[index])<0)||
+				names.some((name,index)=>index>0&&stack.indexOf(chain[index-1])>=stack.indexOf(chain[index])))throw Error('NATIVE_PREACTION_CAPTURE_EVENT_STACK_INVALID');
+			const descendants=root=>{const seen=new WeakSet(),allowed=new Set(chain);let pendingInput=0,runnable=0,nodes=0,overflow=false;
+				const walk=node=>{if(!node||typeof node!=='object'||seen.has(node))return;seen.add(node);if(++nodes>4096){overflow=true;return}
+					if(node!==root&&node.finished!==true){if(node===event)pendingInput++;else if(!allowed.has(node))runnable++}
+					for(const child of [...(Array.isArray(node.childEvents)?node.childEvents:[]),...(Array.isArray(node.next)?node.next:[])])walk(child)};
+				walk(root);return {pendingInput,runnable,nodes,overflow}};
+			const pending=descendants(state.root);if(pending.overflow||pending.pendingInput!==1||pending.runnable!==0)throw Error('NATIVE_PREACTION_CAPTURE_PENDING_DESCENDANT_INVALID');
+			if(!ledger||ledger.rootEvent!==state.root||ledger.rootInstanceId!==command.rootInstanceId||!Number.isSafeInteger(ledger.completionOrdinal)||
+				ledger.completionOrdinal<1)throw Error('NATIVE_PREACTION_CAPTURE_COMPLETION_LEDGER_INVALID');
+			const ids=chain.map(item=>{const id=ledger.eventIds.get(item);if(!id)throw Error('NATIVE_PREACTION_CAPTURE_EVENT_INSTANCE_MISSING_'+String(names[chain.indexOf(item)]||'UNKNOWN').toUpperCase());return id});
+			const parentChain=chain.map((item,index)=>({eventName:item.name,eventInstanceId:ids[index],step:Number.isSafeInteger(item.step)?item.step:0,
+				seatId:item.player?.playerid||null,finished:item.finished===true}));
+			const seatIds=command.seatIds,players=game.players,registryEntries=Object.entries(core.lib?.cardOL||{}),registryByCard=new Map();
+			for(const [id,card] of registryEntries){if(typeof id!=='string'||!id||registryByCard.has(card)||!(card instanceof Element)||!card.classList?.contains('card'))throw Error('NATIVE_PREACTION_CAPTURE_CARD_REGISTRY_INVALID');registryByCard.set(card,id)}
+			let sidecar=window.__v2NativeCardLedgerSidecar;if(!sidecar){sidecar={nonce:${JSON.stringify(managedCardSidecarNonce)},nextId:0,ids:new WeakMap()};Object.defineProperty(window,'__v2NativeCardLedgerSidecar',{value:sidecar,configurable:true})}
+			if(sidecar.nonce!==${JSON.stringify(managedCardSidecarNonce)}||!(sidecar.ids instanceof WeakMap))throw Error('NATIVE_PREACTION_CAPTURE_CARD_SIDECAR_INVALID');
+			const cards=[],seen=new Set(),zoneTypes=[['h','hand'],['e','equipment'],['j','judgment'],['s','player_special'],['x','expansion']];
+			const append=(card,zone,ownerSeatId,position)=>{if(!(card instanceof Element)||!card.classList?.contains('card')||seen.has(card))throw Error('NATIVE_PREACTION_CAPTURE_CARD_INVALID');seen.add(card);
+				const registered=registryByCard.get(card);if(card.cardid!==undefined&&card.cardid!==null&&typeof card.cardid!=='string'||registered&&card.cardid&&card.cardid!==registered)throw Error('NATIVE_PREACTION_CAPTURE_CARD_ID_INVALID');
+				let cardId=sidecar.ids.get(card);if(!cardId){cardId='native_card_'+sidecar.nonce+'_'+(++sidecar.nextId);sidecar.ids.set(card,cardId)}
+				if(typeof card.name!=='string'||typeof card.xiBie!=='string'||!(typeof card.mingGe==='string'||Number.isSafeInteger(card.mingGe))||card.duYou!==undefined&&card.duYou!==null&&typeof card.duYou!=='string')throw Error('NATIVE_PREACTION_CAPTURE_CARD_SOURCE_INVALID');
+				cards.push({cardId,zone,ownerSeatId,position,name:card.name,xiBie:card.xiBie,mingGe:card.mingGe,duYou:card.duYou===undefined?null:card.duYou,kind:'physical_dom_card_v1'})};
+			const appendGlobal=(node,zone)=>{if(!node)throw Error('NATIVE_PREACTION_CAPTURE_ZONE_MISSING');Array.from(node.children).forEach((card,index)=>append(card,zone,null,index))};
+			appendGlobal(core.ui?.cardPile,'draw');appendGlobal(core.ui?.discardPile,'discard');appendGlobal(core.ui?.ordering,'ordering');appendGlobal(core.ui?.special,'special');
+			const allPlayers=[...players,...(game.dead||[])];if(allPlayers.length!==seatIds.length||new Set(allPlayers.map(player=>player.playerid)).size!==allPlayers.length||seatIds.some(id=>!allPlayers.some(player=>player.playerid===id)))throw Error('NATIVE_PREACTION_CAPTURE_SEAT_SET_INVALID');
+			for(const seatId of seatIds){const player=allPlayers.find(item=>item.playerid===seatId);for(const [slot,zone] of zoneTypes){const list=player.getCards(slot);if(!Array.isArray(list))throw Error('NATIVE_PREACTION_CAPTURE_PLAYER_ZONE_INVALID');list.forEach((card,index)=>append(card,zone,seatId,index))}}
+			const tracked=new Set([...allPlayers.flatMap(player=>zoneTypes.flatMap(([slot])=>player.getCards(slot))),...Array.from(core.ui.cardPile.children),
+				...Array.from(core.ui.discardPile.children),...Array.from(core.ui.ordering.children),...Array.from(core.ui.special.children)]);
+			if(registryEntries.some(([id,card])=>id!==registryByCard.get(card)||!tracked.has(card)||(card.cardid&&card.cardid!==id)))throw Error('NATIVE_PREACTION_CAPTURE_UNASSIGNED_PHYSICAL_CARD');
+			const effectSeats=seatIds.map(seatId=>{const player=allPlayers.find(item=>item.playerid===seatId);if(typeof player.hasSkill!=='function'||typeof player.countZhiShiWu!=='function')throw Error('NATIVE_PREACTION_CAPTURE_EFFECT_SOURCE_INVALID');
+				return {seatId,skills:player.hasSkill('yinYangZhanHuan')?[{id:'yinYangZhanHuan',present:true,source:'native_hasSkill'}]:[],guiHuo:player.countZhiShiWu('guiHuo')}});
+			const actor=event.player,loopActor=state.phaseLoop?.player,quotas=actor?.storage,resources={hongShiQi:game.hongShiQi,lanShiQi:game.lanShiQi,
+				hongXingBei:game.hongXingBei,lanXingBei:game.lanXingBei,hongZhanJi:game.hongZhanJi,lanZhanJi:game.lanZhanJi};
+			if(actor?.playerid!==command.seatId||loopActor!==actor||status.currentPhase!==actor||!Array.isArray(quotas?.extraXingDong)||quotas.extraXingDong.length!==0||
+				![quotas.gongJiOrFaShu,quotas.faShu,quotas.gongJi].every(Number.isSafeInteger)||![resources.hongShiQi,resources.lanShiQi,resources.hongXingBei,resources.lanXingBei].every(Number.isSafeInteger)||
+				!Array.isArray(resources.hongZhanJi)||!Array.isArray(resources.lanZhanJi)||allPlayers.some(player=>player.hujia!==undefined||typeof player.changeHujia==='function'))
+				throw Error('NATIVE_PREACTION_CAPTURE_TURN_SOURCE_UNSUPPORTED');
+			const seats=seatIds.map((seatId,position)=>{const player=allPlayers.find(item=>item.playerid===seatId),limit=player.getNengLiangLimit?.(),baoShi=player.countNengLiang?.('baoShi'),shuiJing=player.countNengLiang?.('shuiJing');
+				if(typeof player.name1!=='string'||typeof player.side!=='boolean'||!Number.isSafeInteger(player.hp)||!Number.isSafeInteger(player.maxHp)||!Number.isSafeInteger(player.zhiLiao)||
+					typeof player.isDead!=='function'||!Number.isSafeInteger(limit)||!Number.isSafeInteger(baoShi)||!Number.isSafeInteger(shuiJing))throw Error('NATIVE_PREACTION_CAPTURE_PLAYER_SOURCE_UNSUPPORTED');
+				return {seatId,position,character:player.name1,side:player.side,alive:!player.isDead(),hp:player.hp,maxHp:player.maxHp,zhiLiao:player.zhiLiao,hujiaSupported:false,nengLiang:{baoShi,shuiJing,effectiveLimit:limit}}});
+			return {schema:'xingbei_native_private_pre_action_capture_v1',captureOrdinal:1,roomId:command.roomId,hostSessionId:command.hostSessionId,
+				engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,fence:{captureLockKind:'single_turn_native_task_v1',
+				choiceId:command.choiceId,controllerStatus:'pending',deliveryCount:0,eventInstanceId:ids[4],eventName:event.name,eventStep:event.step,
+				eventStackConsistent:true,gamePaused:true,inputWaiting:true,nativeCompletionOrdinal:ledger.completionOrdinal,nativeEventId:command.nativeEventId,
+				parentChain,pendingInputCount:1,rootEventInstanceId:ids[0],rootMatches:true,runnableDescendantCount:0,resultPresent:false,seatId:command.seatId,
+				useCardChildCount:0,useResultCount:0},cardLedger:{schema:'xingbei_native_private_card_ledger_v1',rootInstanceId:command.rootInstanceId,seatIds,cards},
+				effectState:{schema:'xingbei_native_private_effect_state_v1',rootInstanceId:command.rootInstanceId,seatIds,seats:effectSeats},
+				turnResource:{schema:'xingbei_native_private_turn_resource_state_v2',roomId:command.roomId,hostSessionId:command.hostSessionId,
+					engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,fence:{kind:'managed_native_input_waiting_fence_v1',
+						rootMatches:true,eventStackConsistent:true,allChildrenCompleted:false,pendingChildCount:1,captureLocked:true,nativeCompletionOrdinal:ledger.completionOrdinal},
+					turn:{phase:'xingDong',actorSeatId:actor.playerid,phaseLoopSeatId:loopActor.playerid,currentPhaseSeatId:status.currentPhase.playerid,
+						gamePhaseNumber:game.phaseNumber,playerPhaseNumber:actor.phaseNumber,quotas:{gongJiOrFaShu:quotas.gongJiOrFaShu,faShu:quotas.faShu,gongJi:quotas.gongJi},extraActionQueueEmpty:true},resources,seats}}})();`, returnByValue: true }, 5000);
+		const envelope = result.result?.value;
+		if (result.exceptionDetails) {
+			const detail = `${result.exceptionDetails.text || ""} ${result.exceptionDetails.exception?.description || ""}`;
+			const code = detail.match(/\b(NATIVE_PREACTION_CAPTURE_[A-Z0-9_]{1,80})\b/)?.[1];
+			throw new Error(code || "NATIVE_PREACTION_CAPTURE_NATIVE_EXTRACTION_REJECTED");
+		}
+		if (!envelope || envelope.schema !== "xingbei_native_private_pre_action_capture_v1" || envelope.captureOrdinal !== 1)
+			throw new Error("NATIVE_PREACTION_CAPTURE_NATIVE_EXTRACTION_INVALID");
+		process.send?.({ ...identity, type: "host_private_pre_action_capture", requestId: message.requestId, envelope });
+	} catch (error) {
+		const code = /^NATIVE_PREACTION_CAPTURE_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "NATIVE_PREACTION_CAPTURE_NATIVE_EXTRACTION_FAILED";
+		process.send?.({ ...identity, type: "host_private_pre_action_capture_failed", requestId: message.requestId, code });
+	}
+}
+
 async function snapshotNativeEffectState(message) {
 	const keys = "captureBoundary,engineBuildId,kind,mode,nativeCompletionOrdinal,nativeEventId,protocol,requestId,roomId,rootInstanceId,schema,seatId,seatIds,secret,sessionId,type";
 	if (process.env.V2_NATIVE_EFFECT_STATE_PROBE !== "1" || process.env.V2_NATIVE_YINYANG_FIXTURE !== "1" ||
@@ -3478,6 +3583,13 @@ process.on("message", message => {
 			const code = /^NATIVE_ATOMIC_CAPTURE_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "NATIVE_ATOMIC_CAPTURE_CAPTURE_FAILED";
 			process.send?.({ ...identity, type: "host_private_atomic_capture_failed", requestId: message?.requestId,
 				captureOrdinal: message?.captureOrdinal, code });
+		});
+		return;
+	}
+	if (message?.type === "host_native_pre_action_capture" && process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1") {
+		choiceCommandChain = choiceCommandChain.then(() => snapshotNativePreActionCapture(message)).catch(error => {
+			const code = /^NATIVE_PREACTION_CAPTURE_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "NATIVE_PREACTION_CAPTURE_CAPTURE_FAILED";
+			process.send?.({ ...identity, type: "host_private_pre_action_capture_failed", requestId: message?.requestId, code });
 		});
 		return;
 	}

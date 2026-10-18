@@ -7,6 +7,16 @@
 	"event5Enabled": false,
 	"checkpointAvailable": false,
 	"unknownStatePolicy": "fail_closed",
+	"stageScopeSeparation": {
+		"m2LiveAuthority": {
+			"status": "in_progress_independent_of_full_checkpoint_serialization",
+			"contract": "M2 may continue live server-authoritative execution for explicitly supported native state and event boundaries; unsupported state remains fail-closed and cannot be silently omitted. Full arbitrary storage/closure serialization is not a prerequisite for every M2 task."
+		},
+		"m4ProcessRecovery": {
+			"status": "not_implemented_requires_complete_recovery_proof",
+			"contract": "M4 requires a complete, validated recoverable checkpoint and replay/recovery semantics after managed process failure; current private commitments are not checkpoints."
+		}
+	},
 	"resourceTransitionAudit": {
 		"status": "source_reviewed_runtime_transition_unverified",
 		"promotionRequires": [
@@ -88,8 +98,9 @@
 				"skill": "shengJi",
 				"nativeSource": "character/shiZhouNian.js shengQiangQiShi; forced gongJiMingZhong trigger invokes Player.changeZhiLiao(1)",
 				"requiredNativePath": "native legal character candidate -> native gongJi hit -> native optional response decline -> shengJi trigger -> completed changeZhiLiao child and triggers -> phaseOver atomic capture",
-				"status": "native_post_transition_path_verified_atomic_pair_pending",
-				"blocker": "Linux CI 39104008901 passed the real Chromium fixture: the native legal pool selected shengQiangQiShi, a legal native gongJi hit was followed by the managed optional decline, the original shengJi trigger completed its changeZhiLiao child with a +1 zhiLiao delta, and a later same-root three-projection atomic capture followed that child. The fixture proves this isolated post-transition path only. It does not yet produce an atomic pre-transition commitment at a completed safe fence, prove complete overflow/healing semantics, or support general healing transitions; keep the resource family unsupported until those requirements are met. Earlier setup/assertion failures remain in the handoff history."
+				"status": "native_pre_post_atomic_pair_local_chromium_verified_linux_ci_pending",
+				"evidence": "A real managed Chromium shengJi fixture captures one atomic three-projection commitment while the original gongJiOrFaShu event is paused at a controller-managed input wait, then follows the same native action lineage through gongJiMingZhong -> shengJi -> completed changeZhiLiao(+1) child and captures a second atomic commitment at the completed phaseOver fence. Both captures bind the same room/session/build/root/four seats; the two commitments are separate intervals, not one interval. The input-waiting event itself is not claimed complete, and the healing delta is attributed only through the native child proof.",
+				"blocker": "This proves only the isolated shengJi +1 fixture, not general healing, clamp/overflow behavior, alternate sources/roles/seats/rounds, or all downstream triggers. Keep healing_resource unsupported until those semantics and transitions have their own bounded native evidence."
 			}
 		],
 		"authorityEvent5Created": false,
