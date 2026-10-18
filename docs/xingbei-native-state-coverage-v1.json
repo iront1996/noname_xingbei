@@ -8,9 +8,11 @@
 	"checkpointAvailable": false,
 	"unknownStatePolicy": "fail_closed",
 	"m2RealtimeContinuityProbe": {
-		"status": "local_real_chromium_passed_linux_ci_pending",
+		"status": "linux_real_chromium_passed_limited_fixture",
 		"scope": "isolated_four_seat_event4_disconnect_to_trustee_probe",
 		"evidence": [
+			"Linux CI 39119696019 for commit 224d0fe4b0ac4163c3ba6df92bf270dd8c6408c2 passed 87/87 workflow steps and 270/270 tests with zero failures or skips; dedicated step 62 ran the real Chromium disconnect-to-trustee probe",
+			"The same run reran the accepted shengJi pre/post atomic pair at step 35",
 			"A normal player seat is disconnected while its native action choice remains pending",
 			"the seat stays offline through the existing server deadline/trustee resolution",
 			"the same managed HostSession ID, PID, and state remain active across player transport loss",

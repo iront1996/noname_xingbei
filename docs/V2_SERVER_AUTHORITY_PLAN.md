@@ -1,13 +1,13 @@
 # V2 server-authority plan and evidence
 
-## M2 live continuity probe: ordinary-seat disconnect while a native choice is pending (Linux CI pending)
+## M2 live continuity probe: ordinary-seat disconnect while a native choice is pending (Linux CI accepted)
 
 - Added an opt-in mode to the existing true managed-Chromium four-seat Event #4 test. During a real native `gongJiOrFaShu` choice, the acting ordinary seat is disconnected through the Seat Registry and is not rebound before its deadline. The pending controller choice remains intact and the existing trustee policy completes it.
 - The test asserts that the room administrator socket and forged credential cannot bind the player seat; the seat remains offline after resolution; and the managed HostSession ID, PID, and state are unchanged across player transport loss.
-- Local Windows Chrome: 3/3 consecutive runs passed, 0 skipped. Linux CI has not run this diff yet. This is isolated M2/M3-prerequisite evidence only, not HALL integration or M3 completion. It exercises one action seat; it does not prove four-seat multi-turn continuity, host-crash recovery, or M4.
+- Local Windows Chrome: 3/3 consecutive runs passed, 0 skipped. Commit `224d0fe4b0ac4163c3ba6df92bf270dd8c6408c2` passed exact-SHA Linux CI `39119696019`: 87/87 workflow steps, 270/270 TAP tests, zero failures and zero skips. Dedicated workflow step 62 ran this real-Chromium mode; step 35 reran the accepted `shengJi` pre/post atomic pair. This is isolated M2/M3-prerequisite evidence only, not HALL integration or M3 completion. It exercises one action seat; it does not prove four-seat multi-turn continuity, host-crash recovery, or M4.
 - The test is bounded to the currently authorized chain: authority revision 4, next sequence 5, Event #5 remains closed. It creates no new authority event beyond Event #4 and does not change rules or use administrator authority to operate the engine.
 - T3 status is unchanged: the `shengJi` pre/post pair remains accepted and is not being redone. The reusable pre-action capture remains limited to its reviewed native `gongJiOrFaShu` input-waiting topology; other input event topologies and resource transition families remain unsupported until separately reviewed and proven.
-- Cloudflare `xingbei-play` settings were reloaded and reread in Chrome. Production branch is `feature/auto-lobby`, production automatic deployment is enabled, Preview is Custom, Include is `*`, and Exclude is `codex/v2-server-authority-m1`; Save was disabled in the freshly opened editor. No configuration was changed. The current HEAD deployment row is skipped/no deployment. After any push, this must be checked again.
+- Cloudflare `xingbei-play` settings were reloaded and reread in Chrome. Production branch is `feature/auto-lobby`, production automatic deployment is enabled, Preview is Custom, Include is `*`, and Exclude is `codex/v2-server-authority-m1`; Save was disabled in the freshly opened editor. No configuration was changed. After push, Preview `224d0fe` showed “No deployment available / skipped”; production remained on `feature/auto-lobby`.
 
 ## Architecture scope boundary: M2 realtime operation versus M4 recovery
 
