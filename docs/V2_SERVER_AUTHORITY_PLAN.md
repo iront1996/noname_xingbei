@@ -1,5 +1,12 @@
 # V2 server-authority plan and evidence
 
+## T3 legal resource-transition evidence — source audit only
+
+- From base `d1c9a67d400917173d2a2bb2e9c4ddec4dc1e7bb`, the coverage manifest now enumerates native lifecycles for `changeShiQi`, `changeXingBei`, `changeZhanJi`, `changeZhiLiao`, `changeNengLiang`, and HP/damage/recovery. All remain `unsupported` as transitions: source method existence or bounded projection values do not prove a legal in-game cause, completed native trigger tree, or commitment-bound before/after state.
+- Native source findings: morale runs Judge/Before/Begin triggers, mutates team state, checks results, then runs End/After; XingBei mutates a team counter and checks results; ZhanJi mutates/sorts the achievement array and may trigger overflow; ZhiLiao mutates/clamps and may trigger overflow; NengLiang mutates typed marks but general mark lifecycle remains uncovered; HP/damage can invoke the unresolved `changeHujia` path. No rules were changed and no Player/Game resource fields were directly written.
+- The manifest test now prevents promotion from source-only evidence. Local validation: targeted Node suites 25/25, zero skip; preserved real Chromium cross-seat atomic-capture test 1/1, zero skip. The latter confirms only previously accepted phase captures (completion ordinals 112/223; atomic capture ordinals 1–4), not a resource transition.
+- This is an inventory milestone, not T3 completion. `fullCanonicalStateEligible=false`, seed unauthorized, authority revision 4, Event #5 rejected and checkpoint unavailable. The next engineering step is to obtain a legal native resource-producing fixture and prove its event ancestry/completion plus atomic before/after commitment. If none is achievable without changing rules, keep that family unsupported. `hujia` remains read-only; a native rule repair requires separate authorization.
+
 ## Latest phaseOver repair — full Linux acceptance passed
 
 - Commit `c89a7f66d8dbd758a779a632e489c07576acf3ce` passed Linux CI `39070132480` with 86/86 workflow steps, 266/266 tests, zero failures and zero skipped steps/tests. Real Chromium steps 31–34 all passed: unified-root Event #1–#4, Card Ledger/restricted atomic capture, distinct cross-seat repeated captures, and ACK-loss phase boundary. Subsequent Effect State, YinYang, stop/rebind, fault, Seat Registry and cleanup/security checks also passed.

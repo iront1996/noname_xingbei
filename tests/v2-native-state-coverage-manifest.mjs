@@ -13,6 +13,27 @@ test("native state coverage manifest cannot claim a seed or complete schema whil
 	assert.equal(manifest.event5Enabled, false);
 	assert.equal(manifest.checkpointAvailable, false);
 	assert.equal(manifest.unknownStatePolicy, "fail_closed");
+	const resourceAudit = manifest.resourceTransitionAudit;
+	assert.equal(resourceAudit.status, "source_reviewed_runtime_transition_unverified");
+	assert.deepEqual(resourceAudit.transitions.map(transition => transition.id), [
+		"team_morale", "xingbei_cup", "achievement_resources", "healing_resource", "nengliang_resources", "hp_damage_recovery",
+	]);
+	for (const transition of resourceAudit.transitions) {
+		assert.equal(transition.status, "unsupported", `${transition.id} cannot be promoted from source inspection alone`);
+		assert.equal(transition.supportedBoundary, null);
+		assert.ok(transition.nativeSources.length > 0);
+		assert.match(transition.nativeLifecycle, /native|event|change|mutate/);
+		assert.ok(transition.reason.length > 40);
+	}
+	assert.deepEqual(resourceAudit.promotionRequires, [
+		"legal native XingBei action or skill creates the event",
+		"same-root parent/child completion evidence brackets the state change",
+		"before/after values are captured at a supported native fence",
+		"atomic private commitment changes only when the native state changes",
+		"negative stale-event, wrong-seat, unfinished-child and replay tests pass",
+	]);
+	assert.equal(resourceAudit.authorityEvent5Created, false);
+	assert.equal(resourceAudit.authorityRevision, 4);
 	assert.ok(Array.isArray(manifest.families) && manifest.families.length >= 8);
 	const ids = manifest.families.map(family => family.id);
 	assert.equal(new Set(ids).size, ids.length);

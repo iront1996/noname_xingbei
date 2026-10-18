@@ -7,6 +7,68 @@
 	"event5Enabled": false,
 	"checkpointAvailable": false,
 	"unknownStatePolicy": "fail_closed",
+	"resourceTransitionAudit": {
+		"status": "source_reviewed_runtime_transition_unverified",
+		"promotionRequires": [
+			"legal native XingBei action or skill creates the event",
+			"same-root parent/child completion evidence brackets the state change",
+			"before/after values are captured at a supported native fence",
+			"atomic private commitment changes only when the native state changes",
+			"negative stale-event, wrong-seat, unfinished-child and replay tests pass"
+		],
+		"transitions": [
+			{
+				"id": "team_morale",
+				"nativeSources": ["Player.changeShiQi", "content.changeShiQi"],
+				"nativeLifecycle": "changeShiQiJudge -> changeShiQiBefore -> changeShiQiBegin -> mutate game.hongShiQi/game.lanShiQi -> game.checkResult -> changeShiQiEnd -> changeShiQiAfter",
+				"status": "unsupported",
+				"supportedBoundary": null,
+				"reason": "No accepted real Chromium proof yet ties a legally triggered morale change, all nested triggers, result checks and a before/after atomic commitment to one completed source event."
+			},
+			{
+				"id": "xingbei_cup",
+				"nativeSources": ["Player.changeXingBei", "content.changeXingBei"],
+				"nativeLifecycle": "native changeXingBei event mutates the side counter, updates the native display/video, then invokes game.checkResult",
+				"status": "unsupported",
+				"supportedBoundary": null,
+				"reason": "A legal in-game source, completed event proof and atomic before/after commitment have not been demonstrated; terminal-result interaction must remain fail-closed."
+			},
+			{
+				"id": "achievement_resources",
+				"nativeSources": ["Player.changeZhanJi", "content.changeZhanJi", "game.hongZhanJi", "game.lanZhanJi"],
+				"nativeLifecycle": "native event mutates and sorts the team achievement array; overflow may dispatch zhanJiYiChu",
+				"status": "unsupported",
+				"supportedBoundary": null,
+				"reason": "The projection bounds baoShi/shuiJing values only; no legal real Chromium transition currently proves array order, nested overflow trigger completion and commitment correspondence."
+			},
+			{
+				"id": "healing_resource",
+				"nativeSources": ["Player.changeZhiLiao", "content.changeZhiLiao", "player.zhiLiao"],
+				"nativeLifecycle": "native event changes zhiLiao, clamps negative values, and may dispatch zhiLiaoYiChu after overflow",
+				"status": "unsupported",
+				"supportedBoundary": null,
+				"reason": "The bounded projection is not a transition proof; a legal skill/card source, completed overflow triggers and atomic before/after capture remain unverified."
+			},
+			{
+				"id": "nengliang_resources",
+				"nativeSources": ["Player.changeNengLiang", "content.changeNengLiang", "_tiLian_baoShi", "_tiLian_shuiJing"],
+				"nativeLifecycle": "native event changes the corresponding mark; max-resource legality depends on mod evaluation and mark semantics",
+				"status": "unsupported",
+				"supportedBoundary": null,
+				"reason": "Current values are projected through reviewed counters/limits, but no legally triggered native resource event, full mark lifecycle, and atomic commitment transition are accepted."
+			},
+			{
+				"id": "hp_damage_recovery",
+				"nativeSources": ["Player.changeHp", "content.changeHp", "damage", "dying", "recover"],
+				"nativeLifecycle": "changeHp may absorb damage through changeHujia, mutate hp, dispatch changeHp triggers, and continue into dying/save/death children",
+				"status": "unsupported",
+				"supportedBoundary": null,
+				"reason": "Damage/recovery/death semantics are not covered as a complete native transition; the managed runtime lacks the referenced changeHujia implementation and that rule cannot be repaired without separate authorization."
+			}
+		],
+		"authorityEvent5Created": false,
+		"authorityRevision": 4
+	},
 	"families": [
 		{
 			"id": "native_event_completion",

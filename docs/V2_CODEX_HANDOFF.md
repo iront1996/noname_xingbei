@@ -1,5 +1,12 @@
 # V2 Codex engineering handoff
 
+## T3 legal resource-transition audit — source inventory only, no promotion
+
+- Starting from `d1c9a67d400917173d2a2bb2e9c4ddec4dc1e7bb`, source review confirmed the native event paths for morale, XingBei, achievement resources, healing resource, NengLiang, and HP/damage. `docs/xingbei-native-state-coverage-v1.json` now records each path, its native completion boundary, and why it remains unsupported until a legal real-Chromium transition is bracketed by completed parent/child evidence and atomic before/after commitments.
+- This is not a resource-transition acceptance: no native resource value was manually changed, no new legal resource-producing fixture has yet been proven, and no authority event was added. In particular `changeShiQi` and `changeXingBei` invoke result checks; `changeZhanJi` may schedule an overflow trigger; `changeZhiLiao` may clamp and dispatch overflow; NengLiang is represented by marks whose lifecycle is not yet covered; HP/damage may enter the unresolved `changeHujia` call path.
+- The coverage-manifest regression now requires all six transition families to stay unsupported until the stated evidence exists. Local targeted Node suites pass 25/25 with zero skips; the existing real Chromium two-seat atomic-capture regression also passed locally (1/1, zero skips), preserving native completion ordinals 112/223 and capture ordinals 1–4. That Chromium run does not exercise or validate a resource transition.
+- Current local changes are not yet pushed or Linux-validated. `fullCanonicalStateEligible=false`; seed unauthorized, authority revision 4, Event #5 rejected, checkpoint unavailable. Next work remains finding a legal native resource-producing action and implementing a real Chromium pre/post fence without directly writing game/player fields. `hujia` remains read-only and requires separate authorization if repairing native rules proves necessary.
+
 ## Latest phaseOver repair — full Linux acceptance passed
 
 - Code/doc commit `c89a7f66d8dbd758a779a632e489c07576acf3ce` passed Linux CI `39070132480`: 86/86 workflow steps and 266/266 TAP tests, zero failures, zero skipped steps/tests. Required real-Chromium steps 31 (same-root Event #1–#4), 32 (Card Ledger and restricted atomic capture), 33 (two-seat repeated atomic capture), and 34 (ACK-loss/phase boundary) all executed and passed. Later YinYang, Effect State, stop/rebind, native fault, Seat Registry, and cleanup/security regressions also passed.
