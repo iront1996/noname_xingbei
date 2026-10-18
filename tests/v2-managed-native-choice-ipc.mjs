@@ -2702,7 +2702,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.ok(event5Review, "review evidence must be derived from accepted Event #4, phase fence, native gate, and current seat binding");
 					const provenance = assessEvent5Evidence({ proposalOnly: true, submissionEnabled: false,
 						phaseOver: { completed: true }, actorRotation: { rotationVerified: true },
-						seatBinding: { authenticated: true }, postStateFence: { knownStateOnly: true, afterDigest: "f".repeat(64), completionOrdinal: 999 } }, event5Review);
+						seatBinding: { authenticated: true }, postStateFence: { knownStateOnly: true,
+							afterPrivateStateDigest: "f".repeat(64), completionOrdinal: 999 } }, event5Review);
 					assert.equal(provenance.reviewObservationShapeValid, true);
 					assert.equal(provenance.classifications.predecessor.status, "manager_scoped_review_candidate");
 					assert.equal(provenance.classifications.phaseOver.status, "manager_scoped_review_candidate",
