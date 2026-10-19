@@ -8,11 +8,15 @@ Focused protocol/projection/registry/Gateway Node validation passed 18/18 with z
 
 Linux CI `39209379427` passed at `e60df2e524bf5092ec8e5e500d5fc5adf1dd8f75`: all 90 primary workflow steps succeeded; aggregated TAP was 308/308 with zero failures/skips. Gateway/protocol/projection tests passed 29/29. The required Linux real-Chromium successor-seat/four-client WebSocket probe passed 1/1 with zero skips. It verified Event #4 → phaseOver → successor input gate/capture, unchanged managed room/session/PID/root/build, four ordinary seats, recipient-only opaque hand IDs, uniform reconnect with new generations, stale socket fencing, no second choice/action, and no Event #5. An additional exploratory local invocation set a multi-turn-completion flag not used by the required workflow step and timed out awaiting an extra phase completion; no required test or timeout changed.
 
+Final Linux CI `39210986674` passed at `80aaa657578fee0b0efb1f97df88fcea597fbf29`: 308/308 aggregated TAP tests, zero failures/skips, including the latest-batch lock consistency regression and required Linux Chromium four-client probe (1/1, no skip). Cloudflare Deployments showed `80aaa65` as skipped / “No deployment available”; Production remains on `feature/auto-lobby`.
+
 Cloudflare Branch Controls were read-only reverified in Chrome after closing the editor and reloading the settings page: Production `feature/auto-lobby`, automatic production deployments Enabled, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`; Save was disabled and no setting changed. After both pushes, `0438cba` and `e60df2e` appear only as Preview records with “No deployment available” (skipped); production remains `feature/auto-lobby`. Gates remain `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4 / next sequence 5, Event #5 rejected and `checkpointAvailable=false`. PR #1 remains Open/unmerged; no formal services or deployment settings were changed.
 
 First Linux run `39209136293` failed because client-side close was observed before server-side gateway cleanup when the test sampled `clientCount`. The other 28 tests in that Node step passed; later steps were not run. The bounded wait for server-observed zero-client cleanup fixed the test race without weakening the assertion. Full rerun `39209379427` passed as recorded above.
 
 Documentation follow-up run `39210704960` found that the handoff consistency test selected an older in-progress section after the new accepted-batch heading was added, so it compared a historical `ea8e…` entry with the current verified lock `9807…`. The selector now checks the latest Accepted-or-in-progress section and still requires exact equality with the verified lock. The focused consistency test passes locally; full CI is rerunning this correction.
+
+The corrected selector was verified in full CI run `39210986674` at `80aaa657578fee0b0efb1f97df88fcea597fbf29`.
 
 ## Accepted batch: trusted seat projection and stop-race revalidation
 
