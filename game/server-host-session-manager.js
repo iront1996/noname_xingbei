@@ -758,7 +758,9 @@ function createHostSessionManager({
 							Object.values(message.optionKinds).every(kind => kind === "gongJi" || kind === "faShu") &&
 							message.optionTargetSeatIds && Object.getPrototypeOf(message.optionTargetSeatIds) === Object.prototype &&
 							Object.keys(message.optionTargetSeatIds).sort().join(",") === [...message.options].sort().join(",") &&
-							message.options.every(option => record.seatIds.includes(message.optionTargetSeatIds[option]) && message.optionTargetSeatIds[option] !== message.seatId) &&
+							// Native spell candidates may legally target their own actor. This
+							// read-only candidate set is broader than an accepted Event #5 action.
+							message.options.every(option => record.seatIds.includes(message.optionTargetSeatIds[option])) &&
 							message.optionCardNames && Object.getPrototypeOf(message.optionCardNames) === Object.prototype &&
 							Object.keys(message.optionCardNames).sort().join(",") === [...message.options].sort().join(",") &&
 							message.options.every(option => typeof message.optionCardNames[option] === "string" &&

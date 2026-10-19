@@ -2825,7 +2825,8 @@ async function runNativeStartDiagnostic(message) {
 						nativeInputGate: { diagnosticOnly: true, eventName: "gongJiOrFaShu", nativeEventId: source.nativeEventId,
 							seatId: source.seatId, action: source.action === true, waiting: source.waiting === true,
 							candidates: Array.isArray(source.candidates) ? source.candidates.slice(0, 64).map(candidate => ({
-								optionId: candidate.optionId, cardType: candidate.cardType })) : [] } } });
+								optionId: candidate.optionId, cardType: candidate.cardType,
+								cardName: candidate.cardName, targetSeatId: candidate.targetSeatId })) : [] } } });
 					return;
 				}
 				if (event.params.payload.length > 8192) {

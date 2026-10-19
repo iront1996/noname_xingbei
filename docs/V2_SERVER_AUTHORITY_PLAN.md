@@ -1,5 +1,13 @@
 # V2 server-authority plan and evidence
 
+## Current in-progress batch: successor candidate IPC regression repair
+
+Linux CI `39220551610` at `caace16a346c41815ed0a2a351aac93bfdbe41d0` failed in the successor input/Gateway step. Local real Chrome reproduced `NATIVE_NEXT_SEAT_CANDIDATE_REJECTED`: the bounded CDP projection dropped card/target metadata newly required by the private IPC contract, and the manager incorrectly prohibited native self-target spell candidates. The fix retains those fields through private routing (card names remain removed from ordinary diagnostics) and validates target membership without imposing a global non-self rule. Event #5 action validation remains separate and unchanged.
+
+Local exact-workflow real Chrome passed 1/1 with zero skips; HostSession tests passed 16/16. The test reaches successor capture and four ordinary WebSocket clients with uniform reconnection and cleanup. Full Linux repair CI is pending. Release lock verifies as `86aefba7bcb690dd3afc5e3f7831f6826c7071547d20c6c6b210b1c61372c8e6` (219 files). Reloaded Cloudflare branch controls retain Production `feature/auto-lobby`, Preview Custom / Include `*` / experimental branch excluded.
+
+Event #5 remains contract-only: trusted post-action capture and native second-seat operation are not connected. No native Event #5 acceptance is claimed; Event #6–#8 remain disabled pending its Linux verification. No seed/checkpoint/full canonical state or production integration is provided.
+
 ## Current in-progress batch: bounded Event #5 proof contract; native action path not yet connected
 
 Starting remote HEAD: `747962793f6af346c412c08199df49f0282c901b`. The isolated opt-in verifier currently checks Event #5 predecessor revision/digest, successor seat candidate, option/card/target binding, native child completion claims, seat generation, and a post-capture envelope. The default HostSession remains at a four-event ceiling. Release lock verifies as `43c52b82c0a5a9a9582f67e4158bbda00680c75d164d2a88640df5308805ec31` (`219` managed source files).

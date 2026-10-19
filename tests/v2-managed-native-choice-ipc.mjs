@@ -255,6 +255,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			try {
 			if (type === "host_native_input_candidates_diagnostic") {
 				assert.equal(process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE, "1");
+				assert.deepEqual(Object.keys(message.optionCardNames).sort(), [...message.options].sort(),
+					"private successor routing must retain native card metadata for every opaque option");
+				assert.deepEqual(Object.keys(message.optionTargetSeatIds).sort(), [...message.options].sort(),
+					"private successor routing must retain native target metadata for every opaque option");
+				assert.ok(message.options.every(option => setup.seats.some(seat => seat.seatId === message.optionTargetSeatIds[option])));
 				const candidate = controller.inspectNativeCandidateSet({ protocol: 1, kind: "managed_host", roomId,
 					hostSessionId: message.sessionId, rootInstanceId: message.rootInstanceId, nativeEventId: message.nativeEventId,
 					seatId: message.seatId, eventName: message.eventName, options: message.options, optionKinds: message.optionKinds,

@@ -1,5 +1,12 @@
 # V2 Codex engineering handoff
 
+## Current in-progress batch: successor candidate IPC regression repair
+
+- Linux CI `39220551610` at `caace16a346c41815ed0a2a351aac93bfdbe41d0` failed in the successor input/Gateway step. Local real Chrome reproduced `NATIVE_NEXT_SEAT_CANDIDATE_REJECTED`: the bounded CDP projection dropped card/target metadata newly required by the private IPC contract, and the manager incorrectly prohibited native self-target spell candidates. The fix retains those fields through private routing (card names remain removed from ordinary diagnostics) and validates target membership without imposing a global non-self rule. Event #5 action validation remains separate and unchanged.
+- Local exact-workflow Chrome fixture passed 1/1, zero failures/skips, including successor pre-action capture and four-seat WebSocket reconnect/cleanup. HostSession tests passed 16/16. New assertions require complete private option/card/target maps. Full Linux CI for this repair is pending.
+- Release lock was recomputed and verified as `86aefba7bcb690dd3afc5e3f7831f6826c7071547d20c6c6b210b1c61372c8e6` across 219 managed files. Cloudflare saved branch controls were reloaded and read-only confirmed: Production `feature/auto-lobby`, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`.
+- Second-seat action and Event #5 native post-capture ingress remain unfinished; no Event #5 accepted. Ordinary sessions stay at revision 4, seed/checkpoint/full canonical remain unavailable. Event #6–#8 await real Event #5 acceptance and Linux validation. PR #1 remains unmerged; formal services unchanged.
+
 ## Current in-progress batch: isolated Event #5 successor-action authority bridge
 
 - Starting remote HEAD is `747962793f6af346c412c08199df49f0282c901b`. Local changes add a bounded opt-in Event #5 proof validator, a default Event #4 HostSession ceiling, and negative contract tests. The release lock was recomputed and verified as `43c52b82c0a5a9a9582f67e4158bbda00680c75d164d2a88640df5308805ec31` across 219 files.
