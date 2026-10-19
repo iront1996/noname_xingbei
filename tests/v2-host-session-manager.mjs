@@ -163,6 +163,47 @@ test("experimental Event #5 ceiling requires both isolated opt-in guards and is 
 	await f.manager.stop("room_event5_optin", "event5_optin_test_complete");
 });
 
+test("Event #6 HostSession ceiling is opt-in, bounded, and isolated from the default and Event #5 modes", async t => {
+	const priorLimit = process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT;
+	const priorNetwork = process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK;
+	t.after(() => {
+		if (priorLimit === undefined) delete process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT;
+		else process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT = priorLimit;
+		if (priorNetwork === undefined) delete process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK;
+		else process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK = priorNetwork;
+	});
+	delete process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT;
+	delete process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK;
+	assert.throws(() => fixture({ experimentalAuthorityEventLimit: 6 }), /HOST_SESSION_CONFIG_INVALID/);
+	process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT = "5";
+	process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK = "1";
+	assert.throws(() => fixture({ experimentalAuthorityEventLimit: 6 }), /HOST_SESSION_CONFIG_INVALID/);
+	process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT = "6";
+	const f = fixture({ experimentalAuthorityEventLimit: 6 });
+	const started = await f.manager.start("room_event6_optin", gameSetup);
+	assert.equal(started.ok, true);
+	assert.equal(f.launches[0].bootstrap.authorityEventLimit, 6);
+	assert.equal(f.manager.inspect("room_event6_optin").authorityStateRevision, null,
+		"the ceiling opt-in must not synthesize Game Ready, an authority seed, or an Event #6 predecessor");
+	assert.equal(f.manager.inspect("room_event6_optin").nextAuthorityEventSequence, 1);
+	assert.equal(f.manager.inspect("room_event6_optin").seedAuthorized, false);
+	assert.equal(f.manager.inspect("room_event6_optin").checkpointAvailable, false);
+	const bootstrap = f.launches[0].bootstrap;
+	assert.equal(f.manager.markBrowserReady(hostMessage(bootstrap, "host_browser_ready")).ok, true);
+	assert.equal(f.manager.markEngineReady(hostMessage(bootstrap, "host_engine_ready")).ok, true);
+	assert.equal(f.manager.markGameReady(hostMessage(bootstrap, "host_game_ready", {
+		proof: gameReadyProof(bootstrap),
+	})).ok, true);
+	const ungroundedEvent6 = { kind: "native_authority_event_v1", checkpoint: null, eventSequence: 6,
+		stateRevisionBefore: 5, stateRevisionAfter: 6, beforeDigest: "a".repeat(64), afterDigest: "b".repeat(64),
+		beforeSummary: {}, afterSummary: {}, event: { kind: "xingbei_native_successor_card_action_v2" } };
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: ungroundedEvent6 })).code,
+		"EVENT6_AUTHORITY_PRECHECK_SEQUENCE", "a six-event ceiling cannot synthesize or skip the Event #5 predecessor");
+	assert.equal(f.manager.inspect("room_event6_optin").authorityStateRevision, 0);
+	assert.equal(f.manager.inspect("room_event6_optin").nextAuthorityEventSequence, 1);
+	await f.manager.stop("room_event6_optin", "event6_optin_test_complete");
+});
+
 test("managed host refuses a working-tree source revision that does not match its pinned release lock", async t => {
 	const directory = await mkdtemp(path.join(os.tmpdir(), "managed-engine-lock-"));
 	t.after(() => rm(directory, { recursive: true, force: true }));
@@ -860,6 +901,13 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 		"HOST_AUTHORITY_EVENT_REJECTED", "Event #5 remains disabled until a trusted schema-v2 seed and event-specific validator exist");
 	assert.equal(f.manager.inspect(bootstrap.roomId).authorityStateRevision, 4,
 		"an unsupported Event #5 must not advance the legacy authority revision");
+	const rejectedEvent6 = { ...experimentalEvent5, eventSequence: 6, stateRevisionBefore: 5, stateRevisionAfter: 6,
+		beforeDigest: experimentalEvent5.afterDigest, afterDigest: "ab".repeat(32), beforeSummary: event5AfterSummary,
+		event: { ...successorAction, kind: "xingbei_native_successor_card_action_v2", nativeEventId: "native_event_" + "d".repeat(32) } };
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: rejectedEvent6 })).code,
+		"EVENT6_AUTHORITY_PRECHECK_OPT_IN", "Event #6 remains unavailable without its separate isolated opt-in");
+	assert.equal(f.manager.inspect(bootstrap.roomId).authorityStateRevision, 4,
+		"an Event #6 attempt cannot change the Event #4 tip or create an Event #5 predecessor");
 	const publicSessionJson = JSON.stringify(cardCommitted.session);
 	assert.equal(publicSessionJson.includes("handCommitment"), false, "public session inspection must not disclose hidden-hand commitments");
 	assert.equal(Object.hasOwn(cardCommitted.session, "secret"), false, "public session inspection must not expose the managed-host secret field");

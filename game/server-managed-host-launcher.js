@@ -199,7 +199,9 @@ function createManagedHostProcessLauncher({
 				Object.keys(command).sort().join(",") === "afterDigest,eventSequence,kind,nativeEventId,protocol,roomId,rootInstanceId,seatId,secret,sessionId,stateRevision,type";
 			const nativeEvent5PostCaptureReadyFailure = (() => {
 				if (command?.type !== "host_native_event5_post_capture_ready") return null;
-				if (process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT !== "5" || process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1") return "OPT_IN";
+				if (![5, 6].includes(bootstrap.authorityEventLimit) || bootstrap.authorityEventLimit < 5 ||
+					process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT !== String(bootstrap.authorityEventLimit) ||
+					process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1") return "OPT_IN";
 				if (command.kind !== "managed_host" || command.protocol !== bootstrap.protocol || command.roomId !== bootstrap.roomId ||
 					command.sessionId !== bootstrap.sessionId || command.secret !== bootstrap.secret) return "IDENTITY";
 				if (command.eventSequence !== 5 || command.stateRevision !== 4) return "SEQUENCE";
@@ -221,7 +223,8 @@ function createManagedHostProcessLauncher({
 				}
 				return null;
 			})();
-			const nativeEvent5PostCaptureReadyCommand = process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "5" &&
+			const nativeEvent5PostCaptureReadyCommand = [5, 6].includes(bootstrap.authorityEventLimit) && bootstrap.authorityEventLimit >= 5 &&
+				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(bootstrap.authorityEventLimit) &&
 				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" && command?.type === "host_native_event5_post_capture_ready" &&
 				command.kind === "managed_host" && command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
 				command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret && command.eventSequence === 5 &&
@@ -248,7 +251,9 @@ function createManagedHostProcessLauncher({
 						command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
 						command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret &&
 						([1, 2, 3, 4].includes(command.eventSequence) || (command.eventSequence === 5 &&
-							process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "5" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1")) &&
+							[5, 6].includes(bootstrap.authorityEventLimit) && bootstrap.authorityEventLimit >= command.eventSequence &&
+							process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(bootstrap.authorityEventLimit) &&
+							process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1")) &&
 						command.stateRevision === command.eventSequence &&
 						/^[a-f0-9]{64}$/.test(command.afterDigest)) ||
 					["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||

@@ -145,7 +145,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			seatId: choice.seatId, deliveryAttempts: choice.deliveryAttempts, code: choice.deliveryFailureCode }); void manager.stop(choice.roomId, "choice_delivery_failed"); },
 	});
 	manager = createHostSessionManager({
-		experimentalAuthorityEventLimit: process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "5" ? 5 : 4,
+		experimentalAuthorityEventLimit: [5, 6].includes(Number(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT))
+			? Number(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT) : 4,
 		isManagedChoicePending: input => {
 			const choice = controller?.inspect(input.roomId, input.choiceId);
 			return Boolean(choice && choice.state === "pending" && choice.deliveryId === null && choice.roomId === input.roomId &&
@@ -256,7 +257,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			try {
 			if (type === "host_native_action_candidates" && message?.eventSequence === 5) {
 				assert.equal(process.env.V2_NATIVE_START_PROBE_MODE, "managed_opening_root_action_event5");
-				assert.equal(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT, "5");
+				assert.ok(["5", "6"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT),
+					"the isolated ceiling must permit Event #5 without exceeding the configured maximum");
 				assert.equal(process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK, "1");
 				assert.equal(manager.inspect(roomId)?.authorityStateRevision, 4);
 				assert.equal(manager.inspect(roomId)?.nextAuthorityEventSequence, 5);
@@ -2769,7 +2771,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.notEqual(successorRepeat.snapshot.commitment, successorCapture.snapshot.commitment,
 						"ordinal-scoped commitments must not be replay-identical even when the captured state is stable");
 					if (probeMode === "managed_opening_root_action_event5") {
-						assert.equal(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT, "5");
+						assert.ok(["5", "6"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT));
 						assert.ok(event5CandidateMessage, "the authenticated Chromium must expose the next-seat native action candidates");
 					assert.equal(event5CandidateMessage.nativeEventId, successorCapture.snapshot.nativeEventId);
 					assert.equal(event5CandidateMessage.eventInstanceId, successorCapture.snapshot.eventInstanceId);

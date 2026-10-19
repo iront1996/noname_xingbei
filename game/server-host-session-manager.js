@@ -9,6 +9,7 @@ const { createManagedNativePreActionCapture } = require("./server-managed-native
 const { createManagedSuccessorPreActionCapture } = require("./server-managed-successor-preaction-capture.js");
 const { createManagedV3SeatStateProjection } = require("./server-managed-v3-seat-state-projection.js");
 const { validateExperimentalEvent5 } = require("./server-managed-authority-event5.js");
+const { validateExperimentalEvent6 } = require("./server-managed-authority-event6.js");
 
 const PROTOCOL = 1;
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -20,6 +21,13 @@ const ACTIVE_STATES = new Set(["starting", "browser_ready", "engine_ready", "gam
 
 function failure(code) {
 	return Object.freeze({ ok: false, code });
+}
+
+function experimentalAuthorityEnabled(record, eventSequence) {
+	return Boolean(record && Number.isSafeInteger(record.experimentalAuthorityEventLimit) &&
+		record.experimentalAuthorityEventLimit >= eventSequence &&
+		process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(record.experimentalAuthorityEventLimit) &&
+		process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1");
 }
 
 function safeEqualHex(left, right) {
@@ -109,8 +117,9 @@ function createHostSessionManager({
 		typeof onAuthoritativeResult !== "function" || typeof onManagedChoiceMessage !== "function" ||
 		typeof isManagedChoicePending !== "function" || typeof hasPendingManagedChoices !== "function" ||
 		typeof getCurrentSeatBinding !== "function" || typeof authorizeSeatStateRequest !== "function" || typeof onSessionEnd !== "function" ||
-		![4, 5].includes(experimentalAuthorityEventLimit) || (experimentalAuthorityEventLimit === 5 &&
-			(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT !== "5" || process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1"))) {
+		![4, 5, 6].includes(experimentalAuthorityEventLimit) || (experimentalAuthorityEventLimit > 4 &&
+			(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT !== String(experimentalAuthorityEventLimit) ||
+				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1"))) {
 		throw new TypeError("HOST_SESSION_CONFIG_INVALID");
 	}
 
@@ -428,6 +437,11 @@ function createHostSessionManager({
 				experimentalEvent5PostCaptureStarted: false,
 				experimentalEvent5CaptureProgress: null,
 				experimentalEvent5Delivery: null,
+				nativeEvent6Candidate: null,
+				experimentalEvent6PreActionCapture: null,
+				experimentalEvent6PostCapture: null,
+				experimentalEvent6Delivery: null,
+				experimentalEvent6AcceptedProofDigest: null,
 			nextResultSequence: 1,
 			failureCode: null,
 			gameSetup: prepared.setup,
@@ -459,6 +473,7 @@ function createHostSessionManager({
 			nativePhaseBoundaryReleaseSent: false,
 			experimentalAuthorityEventLimit,
 			experimentalEvent5AcceptedProofDigest: null,
+			experimentalEvent5ActorSeatId: null,
 			authorityStateSummary: null,
 			authorityDigestChain: [],
 			endNotified: false,
@@ -780,8 +795,7 @@ function createHostSessionManager({
 							let binding = null;
 							try { binding = getCurrentSeatBinding(record.roomId, message.seatId); } catch (_) {}
 							const candidateChecks = {
-								opt_in: process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "5" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
-									record.experimentalAuthorityEventLimit === 5,
+								opt_in: experimentalAuthorityEnabled(record, 5),
 								predecessor: record.state === "playable_probe" && record.authorityStateRevision === 4 &&
 									record.nextAuthorityEventSequence === 5 && record.lastAuthorityEvent?.sequence === 4 && record.nativePhaseBoundaryReleaseSent,
 								schema: candidateKeysValid,
@@ -860,8 +874,7 @@ function createHostSessionManager({
 						}
 						}
 						if (message.type === "host_choice_diagnostic" && message.observed?.stage === "native_phase_boundary_fence_waiting" &&
-							record.experimentalAuthorityEventLimit === 5 && process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "5" &&
-							process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1") {
+							experimentalAuthorityEnabled(record, 5)) {
 							const observed = message.observed.snapshot;
 							record.experimentalEvent5CaptureProgress = Object.freeze({
 								stage: "phase_fence_observed",
@@ -875,8 +888,7 @@ function createHostSessionManager({
 							});
 						}
 						if (message.type === "host_choice_diagnostic" && message.observed?.stage === "native_phase_boundary_fence_waiting" &&
-							message.observed.snapshot?.boundaryOrdinal === 2 && record.experimentalAuthorityEventLimit === 5 &&
-							process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "5" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
+							message.observed.snapshot?.boundaryOrdinal === 2 && experimentalAuthorityEnabled(record, 5) &&
 							record.nativeEvent5Candidate && !record.experimentalEvent5PostCapture && !record.experimentalEvent5PostCaptureStarted) {
 							record.experimentalEvent5PostCaptureStarted = true;
 							record.experimentalEvent5CaptureProgress = Object.freeze({ ...record.experimentalEvent5CaptureProgress,
@@ -1120,7 +1132,27 @@ function createHostSessionManager({
 				postCapture: record.experimentalEvent5PostCapture || null,
 				actionDelivery: record.experimentalEvent5Delivery || null,
 				seatBinding,
-			}, { enabled: record.experimentalAuthorityEventLimit === 5 });
+			}, { enabled: experimentalAuthorityEnabled(record, 5) });
+			record.authorityFailureReason = result.ok ? null : result.code;
+			return result.ok;
+		}
+		if (event?.kind === "xingbei_native_successor_card_action_v2") {
+			const candidate = record.nativeEvent6Candidate;
+			let seatBinding = null;
+			try { seatBinding = candidate ? getCurrentSeatBinding(record.roomId, candidate.seatId) : null; } catch (_) {}
+			const result = validateExperimentalEvent6(proof, {
+				roomId: record.roomId, hostSessionId: record.sessionId, engineBuildId: record.engineBuildId,
+				rootInstanceId: record.xingbeiAuthorityContext?.rootInstanceId, seatIds: record.seatIds,
+				predecessor: record.authorityStateSummary ? { eventSequence: 5, revision: 5,
+					digest: record.authorityStateDigest, summary: record.authorityStateSummary,
+					actorSeatId: record.experimentalEvent5ActorSeatId } : null,
+				successorCandidate: candidate,
+				successorCapture: record.experimentalEvent6PreActionCapture || null,
+				postCapture: record.experimentalEvent6PostCapture || null,
+				actionDelivery: record.experimentalEvent6Delivery || null,
+				seatBinding,
+			}, { enabled: record.experimentalAuthorityEventLimit === 6 &&
+				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" });
 			record.authorityFailureReason = result.ok ? null : result.code;
 			return result.ok;
 		}
@@ -1392,8 +1424,20 @@ function createHostSessionManager({
 			} catch (_) { return failure("HOST_AUTHORITY_EVENT_REJECTED"); }
 		}
 		if (message?.type === "host_authority_event" && authenticate(record, message) &&
+			proof?.event?.kind === "xingbei_native_successor_card_action_v2" && proof.eventSequence === 6 &&
+			experimentalAuthorityEnabled(record, 6) && record.state === "playable_probe" &&
+			record.authorityStateRevision === 6 && record.nextAuthorityEventSequence === 7 &&
+			record.lastAuthorityEvent?.sequence === 6 && record.experimentalEvent6AcceptedProofDigest) {
+			try {
+				const proofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
+				if (proofDigest === record.experimentalEvent6AcceptedProofDigest && proof.afterDigest === record.authorityStateDigest) {
+					return Object.freeze({ ok: true, idempotent: true, session: publicView(record) });
+				}
+			} catch (_) { return failure("HOST_AUTHORITY_EVENT_REJECTED"); }
+		}
+		if (message?.type === "host_authority_event" && authenticate(record, message) &&
 			proof?.event?.kind === "xingbei_native_successor_card_action_v1" && proof.eventSequence === 5 &&
-			record.experimentalAuthorityEventLimit === 5 && record.state === "playable_probe" &&
+			experimentalAuthorityEnabled(record, 5) && record.state === "playable_probe" &&
 			record.authorityStateRevision === 5 && record.nextAuthorityEventSequence === 6 &&
 			record.lastAuthorityEvent?.sequence === 5 && record.experimentalEvent5AcceptedProofDigest) {
 			try {
@@ -1417,6 +1461,21 @@ function createHostSessionManager({
 				return failure(`EVENT5_AUTHORITY_PRECHECK_${precheckFailure}`);
 			}
 		}
+		if (proof?.event?.kind === "xingbei_native_successor_card_action_v2") {
+			const precheckFailure = !authenticate(record, message) ? "IDENTITY" :
+				!experimentalAuthorityEnabled(record, 6) ? "OPT_IN" :
+				!['game_ready', 'playable_probe'].includes(record.state) ? "SESSION_STATE" :
+				proof.kind !== "native_authority_event_v1" || proof.checkpoint !== null ? "PROOF_KIND" :
+				!Number.isSafeInteger(proof.eventSequence) || proof.eventSequence !== record.nextAuthorityEventSequence ? "SEQUENCE" :
+				!Number.isSafeInteger(proof.stateRevisionBefore) || proof.stateRevisionBefore !== record.authorityStateRevision ||
+				!Number.isSafeInteger(proof.stateRevisionAfter) || proof.stateRevisionAfter !== proof.stateRevisionBefore + 1 ? "REVISION" :
+				!DIGEST.test(proof.beforeDigest || "") || !DIGEST.test(proof.afterDigest || "") || proof.beforeDigest === proof.afterDigest ? "DIGEST" :
+				record.authorityStateDigest !== null && proof.beforeDigest !== record.authorityStateDigest ? "PREDECESSOR_DIGEST" : null;
+			if (precheckFailure) {
+				record.authorityFailureReason = `PRECHECK_${precheckFailure}`;
+				return failure(`EVENT6_AUTHORITY_PRECHECK_${precheckFailure}`);
+			}
+		}
 		if (message?.type !== "host_authority_event" || !authenticate(record, message) ||
 			!['game_ready', 'playable_probe'].includes(record.state) || !proof ||
 			proof.kind !== "native_authority_event_v1" || proof.checkpoint !== null ||
@@ -1429,7 +1488,10 @@ function createHostSessionManager({
 			const event5Reason = proof?.event?.kind === "xingbei_native_successor_card_action_v1" &&
 				/^[A-Z0-9_]{3,96}$/.test(record.authorityFailureReason || "") ?
 					(record.authorityFailureReason.startsWith("EVENT5_") ? record.authorityFailureReason : `EVENT5_${record.authorityFailureReason}`) : null;
-			return failure(event5Reason || "HOST_AUTHORITY_EVENT_REJECTED");
+			const event6Reason = proof?.event?.kind === "xingbei_native_successor_card_action_v2" &&
+				/^[A-Z0-9_]{3,96}$/.test(record.authorityFailureReason || "") ?
+					(record.authorityFailureReason.startsWith("EVENT6_") ? record.authorityFailureReason : `EVENT6_${record.authorityFailureReason}`) : null;
+			return failure(event5Reason || event6Reason || "HOST_AUTHORITY_EVENT_REJECTED");
 		}
 		record.authorityStateRevision = proof.stateRevisionAfter;
 		record.authorityFailureReason = null;
@@ -1469,6 +1531,10 @@ function createHostSessionManager({
 		}
 		if (proof.event.kind === "xingbei_native_successor_card_action_v1") {
 			record.experimentalEvent5AcceptedProofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
+			record.experimentalEvent5ActorSeatId = proof.event.seatId;
+		}
+		if (proof.event.kind === "xingbei_native_successor_card_action_v2") {
+			record.experimentalEvent6AcceptedProofDigest = crypto.createHash("sha256").update(canonicalize(proof)).digest("hex");
 		}
 		return Object.freeze({ ok: true, session: publicView(record) });
 	}
@@ -1598,8 +1664,7 @@ function createHostSessionManager({
 		let event5Binding = null;
 		if (isEvent5Choice) {
 			try { event5Binding = getCurrentSeatBinding(roomId, event5Candidate.seatId); } catch (_) {}
-			if (record.experimentalAuthorityEventLimit !== 5 || process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT !== "5" ||
-				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" || record.authorityStateRevision !== 4 ||
+			if (!experimentalAuthorityEnabled(record, 5) || record.authorityStateRevision !== 4 ||
 				delivery.eventSequence !== 5 || !/^choice_[a-f0-9]{32}$/.test(delivery.choiceId || "") ||
 				!/^delivery_choice_[a-f0-9]{32}$/.test(delivery.deliveryId || "") || !event5Candidate.options.includes(option) ||
 				!event5Binding || event5Binding.connected !== true || event5Binding.current !== true ||
@@ -2109,8 +2174,7 @@ function createHostSessionManager({
 
 	function inspectEvent5CaptureProgress(roomId) {
 		const record = sessions.get(roomId);
-		if (!record || record.experimentalAuthorityEventLimit !== 5 ||
-			process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT !== "5" || process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1") return null;
+		if (!experimentalAuthorityEnabled(record, 5)) return null;
 		return record.experimentalEvent5CaptureProgress ? Object.freeze({ ...record.experimentalEvent5CaptureProgress,
 			postCaptureStarted: record.experimentalEvent5PostCaptureStarted,
 			postCaptureAccepted: Boolean(record.experimentalEvent5PostCapture),
