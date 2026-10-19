@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { appendFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -102,6 +104,24 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	let releaseEvent4AckBarrier;
 	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
 	const launchedHandles = new Map();
+	const event6LogStage = stage => {
+		if (process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE !== "1") return;
+		const safeStage = typeof stage === "string" && /^[a-z0-9_:.-]{1,128}$/.test(stage) ? stage : "invalid_stage";
+		const line = `event6-test-progress:${new Date().toISOString()}:${safeStage}\n`;
+		process.stderr.write(line);
+		const diagnosticFile = process.env.V2_NATIVE_EVENT6_DIAGNOSTIC_FILE;
+		const diagnosticsRoot = path.resolve(process.env.RUNNER_TEMP && path.isAbsolute(process.env.RUNNER_TEMP) ? process.env.RUNNER_TEMP : tmpdir());
+		if (typeof diagnosticFile === "string" && path.isAbsolute(diagnosticFile) && path.dirname(path.resolve(diagnosticFile)) === diagnosticsRoot && path.basename(diagnosticFile) === "event6-progress.log") {
+			appendFileSync(diagnosticFile, line, { encoding: "utf8", mode: 0o600 });
+		}
+	};
+	const logEvent6Message = (type, stage = null) => {
+		if (process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE !== "1") return;
+		const safeType = typeof type === "string" && /^[a-z_]{1,64}$/.test(type) ? type : "unknown";
+		const safeStage = typeof stage === "string" && /^[a-z0-9_]{1,96}$/.test(stage) ? stage : null;
+		event6LogStage(`host-message:${safeType}${safeStage ? `:${safeStage}` : ""}`);
+	};
+	event6LogStage("test-start");
 	const disconnectActionToTrustee = process.env.V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE === "1";
 	const useSeatRegistry = disconnectActionToTrustee || process.env.V2_V3_SEAT_STATE_WEBSOCKET_PROBE === "1" || process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" || process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
 		process.env.V2_NATIVE_RESPONSE_REBIND === "1";
@@ -255,6 +275,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		onSessionEnd: event => { sessionEnds.push({ roomId: event.roomId, sessionId: event.sessionId, state: event.state, code: event.code });
 			controller.cleanupHostSession(event.roomId, event.sessionId); },
 		onManagedChoiceMessage: async ({ type, message }) => {
+			logEvent6Message(type, message?.observed?.stage);
 			try {
 			if (type === "host_native_action_candidates" && message?.eventSequence === 6) {
 				assert.equal(process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE, "1");
@@ -961,17 +982,25 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		},
 	});
 	t.after(async () => {
+		event6LogStage("cleanup-start");
 		await seatStateGateway?.close();
+		event6LogStage("gateway-closed");
 		await manager.stop(roomId, "test_cleanup");
+		event6LogStage("manager-stopped");
 		if (process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" && atomicCaptureSessionId) {
 			const handle = launchedHandles.get(atomicCaptureSessionId);
 			assert.ok(handle, "the captured managed host must remain registered for cleanup verification");
+			event6LogStage("host-cleanup-wait-start");
 			await handle.waitForCleanup();
+			event6LogStage("host-cleanup-wait-finished");
 			assert.equal(handle.resources().length, 0, "both real Chromium fence captures must clean the host and temporary profile");
 			assert.equal(manager.inspect(roomId)?.state, "stopped");
 		}
+		event6LogStage("cleanup-finished");
 	});
+	event6LogStage("manager-start-called");
 	const startResult = await manager.start(roomId, setup);
+	event6LogStage(`manager-start-result:${startResult?.ok ? "ok" : startResult?.code || "unknown"}`);
 	assert.equal(startResult.ok, true, `managed host start rejected: ${startResult.code || "unknown"}`);
 	if (process.env.V2_NATIVE_EFFECT_STATE_ONLY === "1") {
 		await until(() => nativeEffectStateFailures.length > 0 || nativeEffectStateRepeat?.ok && nativeResponseChoice &&
@@ -2902,6 +2931,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					checkpointAvailable: acceptedEvent5Session.checkpointAvailable })}`);
 					if (process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1") {
 						assert.equal(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT, "6");
+						event6LogStage("event5-accepted-await-candidate");
 						const candidate = await until(() => event6CandidateMessage, 15000, () => ({
 							session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-24).map(entry => entry?.stage || entry?.observed?.stage),
 							event6DispatchChecks: nativeDiagnostic.filter(entry => entry?.kind === "native_event6_candidate_dispatch_v1")
@@ -2918,6 +2948,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 								boundaryOrdinal: entry.snapshot?.boundaryOrdinal, seatId: entry.snapshot?.seatId,
 								completionOrdinal: entry.snapshot?.nativeCompletionOrdinal, eventStep: entry.snapshot?.eventStep })),
 							handlerFailures: managedChoiceHandlerFailures.slice(-4) }));
+						event6LogStage("event6-candidate-received");
 						assert.equal(candidate.eventSequence, 6);
 						assert.notEqual(candidate.seatId, event5CandidateMessage.seatId);
 						assert.equal(candidate.rootInstanceId, event5Proof.event.rootInstanceId);
@@ -2933,13 +2964,17 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.ok(e6Seat?.connected && !e6Seat.revoked && e6Connection);
 						assert.equal(seatRegistry.authenticateSeat({ roomId, seatId: candidate.seatId, connectionId: e6Connection,
 							credential: credentialFor(candidate.seatId) }, { roomId, seatId: candidate.seatId }), true);
+					event6LogStage("pre-capture-a-start");
 					event6PreActionCapture = await manager.snapshotEvent6PreActionCapture(roomId);
+					event6LogStage(`pre-capture-a-result:${event6PreActionCapture?.ok ? "ok" : event6PreActionCapture?.code || "unknown"}`);
 					if (!event6PreActionCapture.ok) t.diagnostic(`Event #6 pre-capture failure diagnostics: ${JSON.stringify({ progress: manager.inspectEvent6CaptureProgress(roomId), session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-12) })}`);
 					assert.equal(event6PreActionCapture.ok, true, `Event #6 pre-action capture rejected: ${event6PreActionCapture.code}`);
 					const firstE6Capture = event6PreActionCapture.snapshot;
 					assert.equal(firstE6Capture.captureOrdinal, 1);
 					assert.equal(firstE6Capture.stableWithPrevious, null);
+					event6LogStage("pre-capture-b-start");
 					const repeatedE6Capture = await manager.snapshotEvent6PreActionCapture(roomId);
+					event6LogStage(`pre-capture-b-result:${repeatedE6Capture?.ok ? "ok" : repeatedE6Capture?.code || "unknown"}`);
 					assert.equal(repeatedE6Capture.ok, true, `same-gate Event #6 recapture rejected: ${repeatedE6Capture.code}`);
 					const e6Capture = repeatedE6Capture.snapshot;
 					assert.equal(e6Capture.captureOrdinal, 2);
@@ -2996,10 +3031,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							choiceId: event6Choice.choiceId, connectionId: e6Connection, credential: credentialFor(candidate.seatId),
 							option: "forged_native_option" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 						const event6AckBaseline = event6NativeActionAckCount;
+						event6LogStage("choice-submit-start");
 						const submitted6 = controller.submitChoice({ protocol: 1, roomId, hostSessionId: candidate.sessionId,
 							nativeEventId: candidate.nativeEventId, seatId: candidate.seatId, eventSequence: 6,
 							choiceId: event6Choice.choiceId, connectionId: e6Connection, credential: credentialFor(candidate.seatId), option });
 						assert.equal(submitted6.ok, true, `ordinary Event #6 seat could not submit legal native action: ${submitted6.code}`);
+						event6LogStage("choice-submit-accepted-await-authority");
 						const accepted6 = await until(() => {
 							const session = manager.inspect(roomId);
 							if (session?.state === "failed") throw new Error(`Event #6 host failed ${session.failureCode}: ${JSON.stringify({
@@ -3050,6 +3087,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(event6NativeActionAckCount, event6AckBaseline + 1,
 							"Event #6 success ACK must follow host acceptance of the complete native event proof");
 						assert.equal(authoritySubmissions.some(entry => entry.proof.eventSequence > 6), false, "Event #7 remains closed");
+						event6LogStage("authority-event6-accepted");
 						assert.equal(manager.inspect(roomId)?.authorityStateRevision, 6);
 						assert.equal(manager.inspect(roomId)?.checkpointAvailable, false);
 						assert.equal(manager.inspect(roomId)?.seedAuthorized, false);

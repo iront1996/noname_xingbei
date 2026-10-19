@@ -1,5 +1,13 @@
 # V2 server-authority plan and evidence
 
+## Event #6 Linux timeout diagnosis — instrumentation pending CI
+
+- CI `39330178618` reached the dedicated Event #6 job's 20-minute ceiling (test began 21:57:34Z; cancellation at 22:17:43Z). Visible TAP output was only the header; cancellation cleanup terminated orphaned Node/Chromium processes. The primary regression job passed 189 workflow steps / 320 TAP tests; Event #6 did not complete. The workflow-budget cancellation is confirmed, but the stalled application-level stage is undetermined.
+- Added opt-in, allowlisted progress diagnostics at managed-host start, Event #6 candidate, both pre-captures, player submission, authority acceptance, and cleanup. Because `node --test` buffers a still-running subtest's stderr, the probe now appends only safe labels/timestamps to a mode-0600 file in `RUNNER_TEMP`, and the required Linux step tails that file live. Original test output and exit status are retained. No native or protocol timeout/assertion was changed.
+- Exact-fixture Windows Chrome rerun passed 1/1, zero skips, through Event #6 revision 5→6 and complete cleanup; bounded file diagnostics reached cleanup completion. Linux revalidation is pending; this local pass is not Linux acceptance.
+- After a fresh read of the saved Cloudflare settings page, production remained `feature/auto-lobby` with automatic deployments enabled; Preview was Custom, Include `*`, Exclude `codex/v2-server-authority-m1`. The read-only Branch control modal was dismissed without saving. Prior deployment history showed no experimental preview deployment; no settings were changed.
+- Do not start isolated Event #7 until the complete current required workflow succeeds. Event #9 remains forbidden.
+
 ## Accepted batch: separate Event #6 Linux authority validation
 
 - Workflow commit `437d618b5096a088f55ca708db08c53b12ec53ce` is verified by Linux CI `39328243895`, latest attempt 2: `node-recovery-tests` passed 320/320 TAP tests, and required `event6-native-authority-linux` passed the real Chromium Event #6 test 1/1. Both required jobs succeeded; zero failed, skipped, or cancelled tests on the final attempt.

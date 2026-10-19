@@ -1,5 +1,13 @@
 # V2 Codex engineering handoff
 
+## Event #6 Linux timeout diagnosis — instrumentation pending CI
+
+- CI `39330178618` confirms the 20-minute dedicated Event #6 job itself reached its configured ceiling: the test step ran from 21:57:34Z to cancellation at 22:17:43Z. Its visible output contained only the TAP header, and runner cleanup terminated orphaned Node/Chromium processes. The primary regression job passed 189 workflow steps / 320 TAP tests; the dedicated E6 job did not complete. This establishes a job-budget timeout, but not the application-level wait that failed to progress; do not infer a native-rule or IPC root cause.
+- Added opt-in Event #6 progress breadcrumbs for manager start, native candidate, capture, choice submission, authority acceptance, and cleanup. The test runner buffers subtest stderr until completion, so the diagnostic is also written to a mode-0600 file directly under `RUNNER_TEMP`; the required workflow tails that file live while preserving the original TAP output and exit status. Entries are limited to allowlisted stage/type labels and timestamps; no secrets, player credentials, native identifiers, cards, or private projections are recorded.
+- Local Windows real-Chromium rerun with the exact Linux fixture passed 1/1, zero skips, and reached Event #6 revision 5→6 and cleanup; the bounded diagnostic file also recorded its terminal cleanup checkpoints. This does not replace Linux evidence. The diagnostic change has not yet passed Linux CI, and Event #6 Linux acceptance remains pending until its required job completes successfully.
+- Cloudflare `xingbei-play` settings were read after page reload; the Branch control modal showed Production `feature/auto-lobby`, automatic production deployments enabled, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`. The modal was dismissed without saving. Deployment history showed no preview available for the prior experimental commits. No Cloudflare setting was modified.
+- Do not begin Event #7 on the basis of the earlier successful rerun while this newer full workflow is red. Event #7 remains gated on a successful complete required workflow for the current diagnostic fix; Event #9 remains forbidden.
+
 ## Accepted batch: isolated Event #6 Linux authority validation
 
 - Workflow commit `437d618b5096a088f55ca708db08c53b12ec53ce` is verified by Linux CI run `39328243895`, latest attempt 2: the full regression job passed 320/320 TAP tests and the separate mandatory Linux Chromium Event #6 job passed 1/1; zero failures, zero skips, and both required jobs succeeded. The Event #6 test was actually executed in Linux Chromium.
