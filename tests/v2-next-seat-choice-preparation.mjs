@@ -13,11 +13,13 @@ const nativeFence = () => {
 		eventStackDetails: eventStack.map((eventName, index) => ({ eventName, parentEventName: parents[index], seatId: index === 0 ? null : "seat_b",
 			finished: false, nextCount: index < 4 ? 1 : 0, nextHeadName: index < 4 ? eventStack[index + 1] : null, nextHeadFinished: false })),
 		nativeInputGate: { diagnosticOnly: true, eventName: "gongJiOrFaShu", nativeEventId: `native_event_${"d".repeat(32)}`,
+			eventInstanceId: "event_8", parentEventInstanceId: "event_4", waitingCompletionOrdinal: 115,
 			seatId: "seat_b", action: true, waiting: true } };
 };
 const base = () => ({
 	candidate: { roomId: "room_a", hostSessionId: `hs_${"a".repeat(32)}`, rootInstanceId: `native_root_${"b".repeat(32)}`,
 		engineBuildId: "c".repeat(64), seatIds: [...seats], nativeEventId: `native_event_${"d".repeat(32)}`,
+		eventInstanceId: "event_8", parentEventInstanceId: "event_4", waitingCompletionOrdinal: 115,
 		eventName: "gongJiOrFaShu", parentEventName: "xingDong", seatId: "seat_b",
 		options: [`native_option_${"1".repeat(32)}`, `native_option_${"2".repeat(32)}`],
 		optionKinds: { [`native_option_${"1".repeat(32)}`]: "gongJi", [`native_option_${"2".repeat(32)}`]: "faShu" },
@@ -67,6 +69,8 @@ test("next-seat preparation rejects missing or malformed native fence evidence a
 		input => { input.nativeFenceEvidence.eventStackDetails[3].nextHeadName = "unrelatedEvent"; },
 		input => { input.nativeFenceEvidence.eventStackDetails[4].nextCount = 1; },
 		input => { input.nativeFenceEvidence.nativeInputGate.waiting = false; },
+		input => { input.nativeFenceEvidence.nativeInputGate.eventInstanceId = "event_9"; },
+		input => { input.nativeFenceEvidence.nativeInputGate.waitingCompletionOrdinal += 1; },
 		input => { input.nativeFenceEvidence.nativeInputGate.nativeEventId = `native_event_${"f".repeat(32)}`; },
 		input => { input.priorChoice.deliveryActive = true; },
 		input => { input.candidate.optionKinds[input.candidate.options[0]] = "arbitrary"; },

@@ -8,6 +8,7 @@ const SESSION = /^hs_[a-f0-9]{32}$/;
 const SEAT = /^[A-Za-z0-9_-]{1,64}$/;
 const ROOT = /^native_root_[A-Za-z0-9_-]{16,96}$/;
 const EVENT = /^native_event_[a-f0-9]{32}$/;
+const INSTANCE = /^event_[1-9][0-9]{0,6}$/;
 const OPTION = /^native_option_[a-f0-9]{32}$/;
 const BUILD = /^[a-f0-9]{64}$/;
 const CONNECTION = /^[A-Za-z0-9_-]{1,128}$/;
@@ -41,8 +42,10 @@ function validateNativeFenceEvidence(candidate, evidence) {
 			(detail.nextCount !== 0 || detail.nextHeadName !== null || detail.nextHeadFinished !== false)) return false;
 	}
 	const gate = evidence.nativeInputGate;
-	return exact(gate, "diagnosticOnly,eventName,nativeEventId,seatId,action,waiting".split(",")) &&
+	return exact(gate, "diagnosticOnly,eventName,nativeEventId,eventInstanceId,parentEventInstanceId,waitingCompletionOrdinal,seatId,action,waiting".split(",")) &&
 		gate.diagnosticOnly === true && gate.eventName === candidate.eventName && gate.nativeEventId === candidate.nativeEventId &&
+		gate.eventInstanceId === candidate.eventInstanceId && gate.parentEventInstanceId === candidate.parentEventInstanceId &&
+		gate.waitingCompletionOrdinal === candidate.waitingCompletionOrdinal &&
 		gate.seatId === candidate.seatId && gate.action === true && gate.waiting === true;
 }
 
@@ -56,14 +59,16 @@ function prepareNextSeatChoice(input) {
 		!ROOT.test(managedContext.rootInstanceId || "") || !BUILD.test(managedContext.engineBuildId || "") || !uniqueSeats(managedContext.seatIds)) {
 		return reject("NEXT_SEAT_MANAGED_CONTEXT_REJECTED");
 	}
-	const candidateKeys = "roomId,hostSessionId,rootInstanceId,engineBuildId,seatIds,nativeEventId,eventName,parentEventName,seatId,options,optionKinds,waiting,diagnosticOnly";
+	const candidateKeys = "roomId,hostSessionId,rootInstanceId,engineBuildId,seatIds,nativeEventId,eventInstanceId,parentEventInstanceId,waitingCompletionOrdinal,eventName,parentEventName,seatId,options,optionKinds,waiting,diagnosticOnly";
 	if (!exact(candidate, candidateKeys.split(",")) || !ROOM.test(candidate.roomId || "") || !SESSION.test(candidate.hostSessionId || "") ||
 		!ROOT.test(candidate.rootInstanceId || "") || !BUILD.test(candidate.engineBuildId || "") || !uniqueSeats(candidate.seatIds) ||
 		candidate.eventName !== "gongJiOrFaShu" || candidate.parentEventName !== "xingDong" || candidate.waiting !== true ||
 		candidate.diagnosticOnly !== true || candidate.roomId !== managedContext.roomId ||
 		candidate.hostSessionId !== managedContext.hostSessionId || candidate.rootInstanceId !== managedContext.rootInstanceId ||
 		candidate.engineBuildId !== managedContext.engineBuildId || candidate.seatIds.join(",") !== managedContext.seatIds.join(",") ||
-		!EVENT.test(candidate.nativeEventId || "") || !SEAT.test(candidate.seatId || "") ||
+		!EVENT.test(candidate.nativeEventId || "") || !INSTANCE.test(candidate.eventInstanceId || "") ||
+		!INSTANCE.test(candidate.parentEventInstanceId || "") || !Number.isSafeInteger(candidate.waitingCompletionOrdinal) ||
+		candidate.waitingCompletionOrdinal < 1 || !SEAT.test(candidate.seatId || "") ||
 		!Array.isArray(candidate.options) || candidate.options.length < 1 || candidate.options.length > 64 ||
 		new Set(candidate.options).size !== candidate.options.length || candidate.options.some(option => !OPTION.test(option)) ||
 		!candidate.optionKinds || Object.getPrototypeOf(candidate.optionKinds) !== Object.prototype ||

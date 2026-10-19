@@ -850,7 +850,7 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 		afterDigest: createHash("sha256").update(canonicalize(event5AfterSummary)).digest("hex"),
 		beforeSummary: cardAction.afterSummary, afterSummary: event5AfterSummary, event: successorAction };
 	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: experimentalEvent5 })).code,
-		"HOST_AUTHORITY_EVENT_REJECTED", "a correctly shaped successor-action proof remains rejected in a default session");
+		"EVENT5_EXPERIMENTAL_OPT_IN_REQUIRED", "a correctly shaped successor-action proof remains rejected in a default session");
 	assert.equal(f.manager.inspect(bootstrap.roomId).authorityStateRevision, 4,
 		"an Event #5 attempt cannot change the default authority tip");
 	const unsupportedEvent5 = { ...cardAction, eventSequence: 5, stateRevisionBefore: 4, stateRevisionAfter: 5,

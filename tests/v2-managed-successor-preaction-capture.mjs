@@ -54,7 +54,8 @@ function createCapture() {
 
 test("successor gate capture binds a distinct actor/event and repeats only stable state without allocating a choice", () => {
 	const capture = createCapture();
-	const first = capture.commit(envelope(), { nativeEventId: `native_event_${"2".repeat(32)}`, seatId: "seat_b", nativeCompletionOrdinal: 12 });
+	const first = capture.commit(envelope(), { nativeEventId: `native_event_${"2".repeat(32)}`, seatId: "seat_b", nativeCompletionOrdinal: 12,
+		eventInstanceId: "event_5", parentEventInstanceId: "event_4" });
 	assert.equal(first.seatId, "seat_b");
 	assert.equal(first.previousSeatId, "seat_a");
 	assert.equal(first.captureOrdinal, 1);
@@ -63,7 +64,8 @@ test("successor gate capture binds a distinct actor/event and repeats only stabl
 	assert.equal(first.authorityRevision, 4);
 	assert.equal(first.nextAuthorityEventSequence, 5);
 	assert.equal(first.checkpointAvailable, false);
-	const repeated = capture.commit(envelope(2), { nativeEventId: first.nativeEventId, seatId: "seat_b", nativeCompletionOrdinal: 12 });
+	const repeated = capture.commit(envelope(2), { nativeEventId: first.nativeEventId, seatId: "seat_b", nativeCompletionOrdinal: 12,
+		eventInstanceId: "event_5", parentEventInstanceId: "event_4" });
 	assert.equal(repeated.captureOrdinal, 2);
 	assert.equal(repeated.stateDigest, first.stateDigest);
 	assert.equal(repeated.stableWithPrevious, true);
@@ -97,6 +99,18 @@ test("successor gate capture rejects caller claims, stale identities, cross-seat
 	const changed = envelope(2); changed.turnResource.resources.hongShiQi = 4;
 	assert.throws(() => capture.commit(changed), /SUCCESSOR_PREACTION_REPEAT_STATE_CHANGED/);
 	capture.destroy();
+});
+
+test("successor capture rejects caller event-instance claims that do not match native parent-chain evidence", () => {
+	for (const expected of [
+		{ eventInstanceId: "event_6", parentEventInstanceId: "event_4" },
+		{ eventInstanceId: "event_5", parentEventInstanceId: "event_3" },
+	]) {
+		const capture = createCapture();
+		assert.throws(() => capture.commit(envelope(), { nativeEventId: `native_event_${"2".repeat(32)}`,
+			seatId: "seat_b", nativeCompletionOrdinal: 12, ...expected }), /SUCCESSOR_PREACTION_EVENT_BINDING_INVALID/);
+		capture.destroy();
+	}
 });
 
 test("successor capture rejects stale seat generation and destroys private commitment key", () => {

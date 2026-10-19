@@ -18,27 +18,35 @@ function fixture() {
 	const beforeDigest = digest(beforeSummary);
 	const postCapture = { roomId: "room_test", hostSessionId: `hs_${"b".repeat(32)}`, rootInstanceId: rootId,
 		engineBuildId: "c".repeat(64), seatIds, nativeEventId: eventId(2), seatId: "seat_b", captureOrdinal: 3,
-		nativeCompletionOrdinal: 51, commitment: "d".repeat(64) };
+		nativeCompletionOrdinal: 52, boundaryOrdinal: 2, phaseOverTriggerOrdinal: 2, phaseOverSeatId: "seat_b",
+		phaseOverEventInstanceId: "event_72", commitment: "d".repeat(64) };
 	const successorCapture = { roomId: "room_test", hostSessionId: `hs_${"b".repeat(32)}`, rootInstanceId: rootId,
-		nativeEventId: eventId(2), seatId: "seat_b", captureOrdinal: 2, nativeCompletionOrdinal: 48, commitment: "e".repeat(64) };
+		nativeEventId: eventId(2), eventInstanceId: "event_71", parentEventInstanceId: "event_70", seatId: "seat_b",
+		captureOrdinal: 2, nativeCompletionOrdinal: 48, commitment: "e".repeat(64) };
 	const event = { kind: "xingbei_native_successor_card_action_v1", name: "gongJiOrFaShu", nativeEventName: "gongJiOrFaShu",
 		nativeEventId: eventId(2), rootInstanceId: rootId, seatId: "seat_b", optionId: opaque(1), cardName: "sha", cardKind: "gongJi",
 		targetSeatId: "seat_c", nativeEventCompleted: true, useResultCount: 1, useCardChildName: "useCard", useCardChildCompleted: true,
 		usedCardPosition: "d",
 		nativeChildWaitCompleted: true, nativeEventInstanceMatches: true, nativeCompletionOrdinal: 51,
 		actionEventInstanceId: "event_71", actionParentEventInstanceId: "event_70", connectionGeneration: 4,
+		choiceId: `choice_${"1".repeat(32)}`, deliveryId: `delivery_choice_${"2".repeat(32)}`, resolutionKind: "player",
 		gameMeNull: true, connectedTransports: 0 };
 	const afterSummary = { revision: 5, predecessorDigest: beforeDigest, actorSeatId: "seat_b", nativeEventId: eventId(2),
-		nativeCompletionOrdinal: 51, captureOrdinal: 3, captureCommitment: postCapture.commitment };
+		actionCompletionOrdinal: 51, postFenceCompletionOrdinal: 52, captureOrdinal: 3,
+		captureCommitment: postCapture.commitment, phaseOverEventInstanceId: "event_72" };
 	const proof = { kind: "native_authority_event_v1", checkpoint: null, eventSequence: 5, stateRevisionBefore: 4,
 		stateRevisionAfter: 5, beforeDigest, afterDigest: digest(afterSummary), beforeSummary, afterSummary, event };
 	const evidence = { roomId: "room_test", hostSessionId: `hs_${"b".repeat(32)}`, engineBuildId: "c".repeat(64), rootInstanceId: rootId,
 		seatIds, predecessor: { eventSequence: 4, revision: 4, digest: beforeDigest, summary: beforeSummary, actorSeatId: "seat_a" },
 		successorCandidate: { roomId: "room_test", hostSessionId: `hs_${"b".repeat(32)}`, rootInstanceId: rootId,
-			nativeEventId: eventId(2), seatId: "seat_b", eventName: "gongJiOrFaShu", options: [opaque(1)],
+			nativeEventId: eventId(2), eventSequence: 5, eventInstanceId: "event_71", parentEventInstanceId: "event_70", waitingCompletionOrdinal: 48,
+			seatId: "seat_b", eventName: "gongJiOrFaShu", options: [opaque(1)],
 			previousActorSeatId: "seat_a", optionKinds: { [opaque(1)]: "gongJi" }, optionCardNames: { [opaque(1)]: "sha" },
 			optionTargetSeatIds: { [opaque(1)]: "seat_c" } },
-		successorCapture, postCapture, seatBinding: { roomId: "room_test", seatId: "seat_b", connected: true, current: true,
+		successorCapture, postCapture, actionDelivery: { roomId: "room_test", hostSessionId: `hs_${"b".repeat(32)}`,
+			nativeEventId: eventId(2), seatId: "seat_b", choiceId: `choice_${"1".repeat(32)}`,
+			deliveryId: `delivery_choice_${"2".repeat(32)}`, optionId: opaque(1), resolutionKind: "player", connectionGeneration: 4, immutable: true },
+		seatBinding: { roomId: "room_test", seatId: "seat_b", connected: true, current: true,
 			credentialAuthenticated: true, ordinaryPlayer: true, connectionGeneration: 4 } };
 	return { proof, evidence };
 }
@@ -74,9 +82,17 @@ test("Event #5 requires a different native successor action and current ordinary
 		({ proof }) => { proof.event.nativeChildWaitCompleted = false; },
 		({ proof }) => { proof.event.useResultCount = 2; },
 		({ evidence }) => { evidence.successorCapture.nativeCompletionOrdinal = 51; },
-		({ evidence }) => { evidence.postCapture.nativeCompletionOrdinal = 50; },
+		({ evidence }) => { evidence.successorCapture.eventInstanceId = "event_72"; },
+		({ evidence }) => { evidence.successorCapture.parentEventInstanceId = "event_72"; },
+		({ evidence }) => { evidence.postCapture.nativeCompletionOrdinal = 51; },
+		({ evidence }) => { evidence.postCapture.boundaryOrdinal = 1; },
+		({ evidence }) => { evidence.postCapture.phaseOverTriggerOrdinal = 1; },
+		({ evidence }) => { evidence.postCapture.phaseOverSeatId = "seat_c"; },
 		({ evidence }) => { evidence.seatBinding.connectionGeneration++; },
 		({ evidence }) => { evidence.seatBinding.ordinaryPlayer = false; },
+		({ evidence }) => { evidence.actionDelivery.immutable = false; },
+		({ evidence }) => { evidence.actionDelivery.deliveryId = `delivery_choice_${"f".repeat(32)}`; },
+		({ proof }) => { proof.event.resolutionKind = "admin"; },
 	]) {
 		const value = fixture(); mutate(value);
 		assert.equal(validateExperimentalEvent5(value.proof, value.evidence, { enabled: true }).ok, false);
@@ -94,9 +110,11 @@ test("Event #5 binds private post capture to the same root/build/seats and compl
 		({ evidence }) => { evidence.postCapture.rootInstanceId = `native_root_${"f".repeat(32)}`; },
 		({ evidence }) => { evidence.postCapture.engineBuildId = "f".repeat(64); },
 		({ evidence }) => { evidence.postCapture.seatIds = [...seatIds].reverse(); },
-		({ evidence }) => { evidence.postCapture.captureOrdinal = 1; },
+		({ evidence }) => { evidence.postCapture.captureOrdinal = 0; },
 		({ evidence }) => { evidence.postCapture.commitment = evidence.successorCapture.commitment; },
 		({ evidence }) => { evidence.postCapture.nativeEventId = eventId(3); },
+		({ evidence }) => { evidence.successorCandidate.eventInstanceId = "event_72"; },
+		({ evidence }) => { evidence.successorCandidate.parentEventInstanceId = "event_72"; },
 		({ evidence, proof }) => { evidence.successorCandidate.optionTargetSeatIds[proof.event.optionId] = "seat_d"; },
 		({ evidence, proof }) => { evidence.successorCandidate.optionKinds[proof.event.optionId] = "faShu"; },
 		({ evidence, proof }) => { evidence.successorCandidate.optionCardNames[proof.event.optionId] = "tao"; },

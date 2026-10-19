@@ -95,7 +95,10 @@ function createManagedSuccessorPreActionCapture({ roomId, sessionId, engineBuild
 				fence.parentChain.some((row, i) => fence.parentChain.slice(i + 1).some(next => next.eventInstanceId === row.eventInstanceId)) ||
 				(expected.nativeEventId !== undefined && expected.nativeEventId !== fence.nativeEventId) ||
 				(expected.seatId !== undefined && expected.seatId !== fence.seatId) ||
-				(expected.nativeCompletionOrdinal !== undefined && expected.nativeCompletionOrdinal !== fence.nativeCompletionOrdinal)) reject("SUCCESSOR_PREACTION_EVENT_BINDING_INVALID");
+				(expected.nativeCompletionOrdinal !== undefined && expected.nativeCompletionOrdinal !== fence.nativeCompletionOrdinal) ||
+				(expected.eventInstanceId !== undefined && expected.eventInstanceId !== fence.eventInstanceId) ||
+				(expected.parentEventInstanceId !== undefined && expected.parentEventInstanceId !== fence.parentChain[3]?.eventInstanceId))
+				reject("SUCCESSOR_PREACTION_EVENT_BINDING_INVALID");
 			const bindings = { roomId, hostSessionId: sessionId, engineBuildId, rootInstanceId, seatIds };
 			const cardRows = validateNativeCardLedgerSnapshot(envelope.cardLedger, seatIds);
 			const effect = validateManagedNativeEffectStateSnapshot(envelope.effectState, bindings);
@@ -114,7 +117,8 @@ function createManagedSuccessorPreActionCapture({ roomId, sessionId, engineBuild
 			const result = Object.freeze({ schema: "xingbei_native_private_successor_preaction_commitment_v1", schemaVersion: 1,
 				roomId, hostSessionId: sessionId, rootInstanceId, engineBuildId, seatIds: Object.freeze([...seatIds]),
 				captureOrdinal: envelope.captureOrdinal, nativeCompletionOrdinal: fence.nativeCompletionOrdinal, nativeEventId: fence.nativeEventId,
-				eventInstanceId: fence.eventInstanceId, seatId: fence.seatId, connectionGeneration: seatBinding.connectionGeneration,
+				eventInstanceId: fence.eventInstanceId, parentEventInstanceId: fence.parentChain[3].eventInstanceId,
+				seatId: fence.seatId, connectionGeneration: seatBinding.connectionGeneration,
 				previousNativeEventId: previousCapture.nativeEventId, previousSeatId: previousActorSeatId,
 				previousCommitment: previousCapture.commitment, priorStateDigest: previousCapture.stateDigest,
 				candidateOptionCount: fence.candidateOptionIds.length,
