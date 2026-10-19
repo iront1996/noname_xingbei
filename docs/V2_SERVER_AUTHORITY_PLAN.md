@@ -1,5 +1,15 @@
 # V2 server-authority plan and evidence
 
+## Current in-progress batch: bounded Event #5 proof contract; native action path not yet connected
+
+Starting remote HEAD: `747962793f6af346c412c08199df49f0282c901b`. The isolated opt-in verifier currently checks Event #5 predecessor revision/digest, successor seat candidate, option/card/target binding, native child completion claims, seat generation, and a post-capture envelope. The default HostSession remains at a four-event ceiling. Release lock verifies as `43c52b82c0a5a9a9582f67e4158bbda00680c75d164d2a88640df5308805ec31` (`219` managed source files).
+
+The verifier's positive Node fixture is synthetic contract coverage only. There is not yet a trusted Chromium-to-manager post-action capture ingress, and `experimentalEvent5PostCapture` is not populated; therefore HostSession cannot accept Event #5 from the current implementation. No second-seat managed choice/action/native result has run. Revision remains 4 / next sequence 5; Event #6–#8 remain gated. Do not interpret candidate/pre-action evidence as action completion or post-state evidence.
+
+Local targeted tests currently pass 31, fail 0, with one Windows-only symlink `EPERM` skip. Linux CI and real Linux Chromium validation are pending. Cloudflare Branch Controls were read-only reverified in Chrome after reload: Production `feature/auto-lobby`, automatic deployments enabled, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`; no settings changed. After push, verify Deployments show no preview deployment.
+
+Permanent gates: `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4 / next sequence 5, Event #5 rejected until a genuine native post-action capture is wired and validated, `checkpointAvailable=false`. PR #1 stays Open/unmerged. No formal V1/V2/V3, HALL, VPS, monitoring, external service, or Cloudflare configuration change is included.
+
 ## Accepted batch: isolated four-seat V3 WebSocket state gateway (Linux CI verified)
 
 Starting remote baseline: `8d9875df5014a19d0c9660946d19e714ba0e469a`. Existing local Gateway work was preserved and extended with bounded connection/rate handling and deterministic stop/rebind/send tests. It binds only to `127.0.0.1`, supports seat authentication, read-only state projection and transport ACK, and denies all game actions, managed choices, native commands and authority events. A room creator is only an ordinary seat.

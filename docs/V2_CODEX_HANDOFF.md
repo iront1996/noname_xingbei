@@ -1,5 +1,14 @@
 # V2 Codex engineering handoff
 
+## Current in-progress batch: isolated Event #5 successor-action authority bridge
+
+- Starting remote HEAD is `747962793f6af346c412c08199df49f0282c901b`. Local changes add a bounded opt-in Event #5 proof validator, a default Event #4 HostSession ceiling, and negative contract tests. The release lock was recomputed and verified as `43c52b82c0a5a9a9582f67e4158bbda00680c75d164d2a88640df5308805ec31` across 219 files.
+- Local targeted verification: 31 passed, 0 failed, 1 skipped (Windows symlink capability `EPERM`); the skip is not acceptance. Syntax and final diff checks are being completed. No Linux CI has run for this batch, and no real Chromium second-seat action has been executed.
+- Important boundary: the manager currently has no trusted post-action capture ingress for Event #5 (`experimentalEvent5PostCapture` remains unset). Thus this batch's pure validator fixture is contract-only; actual HostSession acceptance must fail closed. The successor input candidate and pre-action capture do not prove an action, native settlement, or post-state. No Event #5 has been accepted; revision remains 4, next sequence 5. Event #6–#8 are not enabled or attempted.
+- The experimental Event #5 limit requires both `V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT=5` and `V2_TEST_BLOCK_EXTERNAL_NETWORK=1`; ordinary sessions remain capped at Event #4. This is isolated opt-in only and does not authorize seed, checkpoint, full canonical state, or production integration.
+- Cloudflare `xingbei-play` Branch Controls were read-only reverified in Chrome after closing the editor and reloading: Production `feature/auto-lobby`, automatic production deployments enabled, Preview Custom / Include `*` / Exclude `codex/v2-server-authority-m1`. No setting was changed. Push and Linux CI are pending; after any push, inspect Deployments for skipped/no-preview status.
+- PR #1 remains Open/unmerged. No formal V1/V2/V3, HALL, VPS, monitoring, external service, or Cloudflare setting was changed. Gates remain `fullCanonicalStateEligible=false`, `seedAuthorized=false`, authority revision 4 / next sequence 5, Event #5 rejected, `checkpointAvailable=false`.
+
 ## Accepted batch: isolated four-seat V3 WebSocket state gateway (Linux CI verified)
 
 - Starting remote baseline for this batch: `8d9875df5014a19d0c9660946d19e714ba0e469a`. Existing local Gateway, manager, Chromium integration and workflow edits were preserved. The loopback-only gateway is read-only: it authenticates four ordinary seats, publishes only HostSession-verified recipient projections, and rejects gameplay/choice/native/authority commands. A creator seat has no additional authority.

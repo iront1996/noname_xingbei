@@ -68,6 +68,7 @@ function fixture(options = {}) {
 		browserReadyTimeoutMs: options.browserReadyTimeoutMs || 1000,
 		engineReadyTimeoutMs: options.engineReadyTimeoutMs || 1000,
 		gameReadyTimeoutMs: options.gameReadyTimeoutMs || 1000,
+		experimentalAuthorityEventLimit: options.experimentalAuthorityEventLimit,
 		onAuthoritativeResult: result => results.push(result),
 		onSessionEnd: options.onSessionEnd || (() => {}),
 		onManagedChoiceMessage: options.onManagedChoiceMessage || (() => {}),
@@ -106,6 +107,7 @@ test("browser readiness cannot authorize results before separate engine readines
 	assert.equal(started.session.state, "starting");
 	assert.equal("secret" in started.session, false);
 	assert.equal(f.launches[0].bootstrap.kind, "host_session_bootstrap");
+	assert.equal(f.launches[0].bootstrap.authorityEventLimit, 4, "ordinary sessions retain the Event #4 ceiling");
 
 	const browserReady = f.manager.markBrowserReady(hostMessage(f.launches[0].bootstrap, "host_browser_ready"));
 	assert.equal(browserReady.ok, true);
@@ -134,6 +136,31 @@ test("browser readiness cannot authorize results before separate engine readines
 	assert.equal(stopped.ok, true);
 	assert.equal(stopped.session.state, "stopped");
 	assert.deepEqual(f.launches[0].handle.stops, ["room_cleanup"]);
+});
+
+test("experimental Event #5 ceiling requires both isolated opt-in guards and is never the default", async t => {
+	const priorLimit = process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT;
+	const priorNetwork = process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK;
+	t.after(() => {
+		if (priorLimit === undefined) delete process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT;
+		else process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT = priorLimit;
+		if (priorNetwork === undefined) delete process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK;
+		else process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK = priorNetwork;
+	});
+	delete process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT;
+	delete process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK;
+	assert.throws(() => fixture({ experimentalAuthorityEventLimit: 5 }), /HOST_SESSION_CONFIG_INVALID/);
+	process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT = "5";
+	assert.throws(() => fixture({ experimentalAuthorityEventLimit: 5 }), /HOST_SESSION_CONFIG_INVALID/);
+	process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK = "1";
+	const f = fixture({ experimentalAuthorityEventLimit: 5 });
+	const started = await f.manager.start("room_event5_optin", gameSetup);
+	assert.equal(started.ok, true);
+	assert.equal(f.launches[0].bootstrap.authorityEventLimit, 5);
+	assert.equal(f.manager.inspect("room_event5_optin").authorityStateRevision, null,
+		"an experimental event ceiling does not skip Game Ready or synthesize an authority revision");
+	assert.equal(f.manager.inspect("room_event5_optin").nextAuthorityEventSequence, 1);
+	await f.manager.stop("room_event5_optin", "event5_optin_test_complete");
 });
 
 test("managed host refuses a working-tree source revision that does not match its pinned release lock", async t => {
@@ -809,6 +836,23 @@ test("authority event chain requires authenticated balanced native Xingbei side 
 	assert.equal(cardCommitted.session.nextAuthorityEventSequence, 5);
 	assert.deepEqual(cardCommitted.session.lastAuthorityEvent, { sequence: 4, name: "gongJiOrFaShu" });
 	assert.equal(cardCommitted.session.authorityStateDigest, cardAction.afterDigest);
+	const event5AfterSummary = { revision: 5, predecessorDigest: cardAction.afterDigest, actorSeatId: "seat_2",
+		nativeEventId: "native_event_" + "f".repeat(32), nativeCompletionOrdinal: 90, captureOrdinal: 2,
+		captureCommitment: "91".repeat(32) };
+	const successorAction = { kind: "xingbei_native_successor_card_action_v1", name: "gongJiOrFaShu", nativeEventName: "gongJiOrFaShu",
+		nativeEventId: event5AfterSummary.nativeEventId, rootInstanceId: "native_root_" + "a".repeat(32), seatId: "seat_2",
+		optionId: "native_option_" + "b".repeat(32), cardName: "sha", targetSeatId: "seat_3", nativeEventCompleted: true,
+		useResultCount: 1, useCardChildName: "useCard", nativeChildWaitCompleted: true, nativeEventInstanceMatches: true,
+		nativeCompletionOrdinal: 90, actionEventInstanceId: "event_31", actionParentEventInstanceId: "event_30",
+		connectionGeneration: 2, gameMeNull: true, connectedTransports: 0 };
+	const experimentalEvent5 = { kind: "native_authority_event_v1", checkpoint: null, eventSequence: 5,
+		stateRevisionBefore: 4, stateRevisionAfter: 5, beforeDigest: cardAction.afterDigest,
+		afterDigest: createHash("sha256").update(canonicalize(event5AfterSummary)).digest("hex"),
+		beforeSummary: cardAction.afterSummary, afterSummary: event5AfterSummary, event: successorAction };
+	assert.equal(f.manager.commitAuthorityEvent(hostMessage(bootstrap, "host_authority_event", { proof: experimentalEvent5 })).code,
+		"HOST_AUTHORITY_EVENT_REJECTED", "a correctly shaped successor-action proof remains rejected in a default session");
+	assert.equal(f.manager.inspect(bootstrap.roomId).authorityStateRevision, 4,
+		"an Event #5 attempt cannot change the default authority tip");
 	const unsupportedEvent5 = { ...cardAction, eventSequence: 5, stateRevisionBefore: 4, stateRevisionAfter: 5,
 		beforeDigest: cardAction.afterDigest, afterDigest: "ef".repeat(32), event: { ...cardAction.event,
 			kind: "xingbei_native_transition_v2", name: "phaseLoop", nativeEventId: "native_event_" + "e".repeat(32) } };

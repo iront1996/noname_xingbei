@@ -156,6 +156,9 @@ async function cleanup() {
 function validBootstrap(message) {
 	return message?.kind === "host_session_bootstrap" && message.protocol === 1 &&
 		message.trustContract === MANAGED_ENGINE_TRUST_CONTRACT &&
+		[4, 5].includes(message.authorityEventLimit) &&
+		(message.authorityEventLimit !== 5 || (process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "5" &&
+			process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1")) &&
 		ROOM_ID.test(message.roomId) && SESSION_ID.test(message.sessionId) && SECRET.test(message.secret) &&
 		validateManagedEngineSourceManifest(message.engineSourceManifest);
 }
@@ -2499,7 +2502,11 @@ function dispatchManagedNativeActionCandidates(snapshot) {
 		const optionKinds = Object.fromEntries(gate.candidates.map(candidate => [candidate.optionId, candidate.cardType]));
 		process.send?.({ ...identity, type: "host_native_input_candidates_diagnostic", eventName: gate.eventName,
 			nativeEventId: gate.nativeEventId, rootInstanceId: snapshot.rootInstanceId, seatId: gate.seatId,
-			options: gate.candidates.map(candidate => candidate.optionId), optionKinds });
+			options: gate.candidates.map(candidate => candidate.optionId), optionKinds,
+			optionCardNames: Object.fromEntries(gate.candidates.filter(candidate => typeof candidate.cardName === "string")
+				.map(candidate => [candidate.optionId, candidate.cardName])),
+			optionTargetSeatIds: Object.fromEntries(gate.candidates.filter(candidate => typeof candidate.targetSeatId === "string")
+				.map(candidate => [candidate.optionId, candidate.targetSeatId])) });
 		return true;
 	}
 	if (!interactiveChoice || (!managedModes.has(mode) && !directResumeModes.has(mode)) || !gate ||
@@ -4484,7 +4491,9 @@ process.on("message", message => {
 		return;
 	}
 	if (message?.type === "host_authority_event_ack" && validHostCommand(message) &&
-		[1, 2, 3, 4].includes(message.eventSequence) && message.stateRevision === message.eventSequence &&
+		([1, 2, 3, 4].includes(message.eventSequence) || (message.eventSequence === 5 &&
+			process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "5" &&
+			process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1")) && message.stateRevision === message.eventSequence &&
 		typeof message.afterDigest === "string" && /^[a-f0-9]{64}$/.test(message.afterDigest)) {
 		if (process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && message.eventSequence === 1) {
 			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: null,
