@@ -16,7 +16,10 @@ permissions:
 jobs:
   node-recovery-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # This serialized recovery matrix now includes three real-Chromium authority chains.
+    # The previous run was cancelled at about 10m11 while the mandatory successor
+    # checks were running; this is a job budget, not a native gameplay timeout.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
