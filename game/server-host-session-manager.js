@@ -111,6 +111,8 @@ function createHostSessionManager({
 	}
 
 	const sessions = new Map();
+	const sessionEndListeners = new Set();
+	const sessionLifecycleListeners = new Set();
 	const releaseLockPath = engineReleaseLockPath || path.resolve(engineSourceRoot, "managed-engine-release.json");
 
 	function publicView(record) {
@@ -208,6 +210,7 @@ function createHostSessionManager({
 		record.v3SeatStateProjection?.destroy();
 		record.v3SeatStateProjection = null;
 		record.v3SeatStateSequences?.clear();
+		record.v3SeatStateGenerations?.clear();
 		record.nativeNextSeatCandidate = null;
 	}
 
@@ -246,7 +249,26 @@ function createHostSessionManager({
 	function notifySessionEnd(record) {
 		if (record.endNotified) return;
 		record.endNotified = true;
-		try { onSessionEnd(Object.freeze({ roomId: record.roomId, sessionId: record.sessionId, state: record.state, code: record.failureCode })); } catch (_) {}
+		const event = Object.freeze({ roomId: record.roomId, sessionId: record.sessionId, state: record.state, code: record.failureCode });
+		try { onSessionEnd(event); } catch (_) {}
+		for (const listener of sessionEndListeners) { try { listener(event); } catch (_) {} }
+		notifySessionLifecycle(Object.freeze({ ...event, stage: "ended" }));
+	}
+
+	function notifySessionLifecycle(event) {
+		for (const listener of sessionLifecycleListeners) { try { listener(event); } catch (_) {} }
+	}
+
+	function subscribeSessionEnd(listener) {
+		if (typeof listener !== "function") throw new TypeError("HOST_SESSION_LISTENER_INVALID");
+		sessionEndListeners.add(listener);
+		return () => sessionEndListeners.delete(listener);
+	}
+
+	function subscribeLifecycle(listener) {
+		if (typeof listener !== "function") throw new TypeError("HOST_SESSION_LISTENER_INVALID");
+		sessionLifecycleListeners.add(listener);
+		return () => sessionLifecycleListeners.delete(listener);
 	}
 
 	function fail(record, code) {
@@ -394,6 +416,7 @@ function createHostSessionManager({
 			successorPreActionCaptureEnvelope: null,
 			v3SeatStateProjection: null,
 			v3SeatStateSequences: new Map(),
+			v3SeatStateGenerations: new Map(),
 			nativeNextSeatCandidate: null,
 			nextResultSequence: 1,
 			failureCode: null,
@@ -1302,6 +1325,8 @@ function createHostSessionManager({
 		}
 		clearPhaseTimer(record);
 		record.state = "stopping";
+		notifySessionLifecycle(Object.freeze({ roomId: record.roomId, sessionId: record.sessionId,
+			state: record.state, code: null, stage: "stopping" }));
 		// Fence private snapshots as soon as stop is requested, not only after the
 		// child exits. A response already in flight must not mint a commitment for
 		// a session whose shutdown has begun.
@@ -1702,10 +1727,12 @@ function createHostSessionManager({
 		const exact = (value, keys) => Boolean(value && Object.getPrototypeOf(value) === Object.prototype &&
 			Object.keys(value).sort().join(",") === [...keys].sort().join(","));
 		if (!record || record.state !== "playable_probe" || record.authorityStateRevision !== 4 || record.nextAuthorityEventSequence !== 5 ||
-			record.lastAuthorityEvent?.sequence !== 4 || !exact(input, ["recipientSeatId", "request"]) ||
+			record.lastAuthorityEvent?.sequence !== 4 || !(exact(input, ["recipientSeatId", "request"]) ||
+				exact(input, ["recipientSeatId", "request", "stateSequence"])) ||
 			!SEAT_ID.test(input.recipientSeatId || "") || !record.seatIds.includes(input.recipientSeatId) ||
 			!input.request || Object.getPrototypeOf(input.request) !== Object.prototype || !record.successorPreActionCaptureResult ||
-			!record.successorPreActionCaptureEnvelope || hasPendingManagedChoices(roomId, record.sessionId) !== false) return failure("V3_SEAT_STATE_NOT_AVAILABLE");
+			!record.successorPreActionCaptureEnvelope || hasPendingManagedChoices(roomId, record.sessionId) !== false ||
+			(input.stateSequence !== undefined && (!Number.isSafeInteger(input.stateSequence) || input.stateSequence < 1))) return failure("V3_SEAT_STATE_NOT_AVAILABLE");
 		let authorized = null, binding = null;
 		try {
 			authorized = authorizeSeatStateRequest({ roomId, recipientSeatId: input.recipientSeatId, request: input.request });
@@ -1725,7 +1752,12 @@ function createHostSessionManager({
 			catch (_) { key.fill(0); return failure("V3_SEAT_STATE_PROJECTION_UNAVAILABLE"); }
 			key.fill(0);
 		}
-		const nextSequence = (record.v3SeatStateSequences.get(input.recipientSeatId) || 0) + 1;
+		const previousSequence = record.v3SeatStateSequences.get(input.recipientSeatId) || 0;
+		const previousGeneration = record.v3SeatStateGenerations.get(input.recipientSeatId) || 0;
+		const nextSequence = input.stateSequence === undefined ? previousSequence + 1 : input.stateSequence;
+		const isNextLogicalState = nextSequence === previousSequence + 1;
+		const isFreshGenerationProjection = nextSequence === previousSequence && binding.connectionGeneration > previousGeneration;
+		if (!isNextLogicalState && !isFreshGenerationProjection) return failure("V3_SEAT_STATE_SEQUENCE_REJECTED");
 		const projected = record.v3SeatStateProjection.project({ envelope: record.successorPreActionCaptureEnvelope,
 			capture: record.successorPreActionCaptureResult, roomId, hostSessionId: record.sessionId, engineBuildId: record.engineBuildId,
 			rootInstanceId: record.xingbeiAuthorityContext?.rootInstanceId, seatIds: record.seatIds,
@@ -1738,7 +1770,8 @@ function createHostSessionManager({
 		if (!projected.ok || active !== record || record.state !== "playable_probe" || !validBinding(activeBinding) ||
 			!validBinding(reauthorized) || activeBinding.connectionGeneration !== binding.connectionGeneration ||
 			reauthorized.connectionGeneration !== binding.connectionGeneration) return failure(projected.code || "V3_SEAT_STATE_SOURCE_STALE");
-		record.v3SeatStateSequences.set(input.recipientSeatId, nextSequence);
+		record.v3SeatStateSequences.set(input.recipientSeatId, Math.max(previousSequence, nextSequence));
+		record.v3SeatStateGenerations.set(input.recipientSeatId, binding.connectionGeneration);
 		return Object.freeze({ ok: true, message: projected.message });
 	}
 
@@ -1855,6 +1888,8 @@ function createHostSessionManager({
 		releaseNativePhaseBoundary,
 		resumeNativeInput,
 		cancelNativeInput,
+		subscribeSessionEnd,
+		subscribeLifecycle,
 		stop,
 		inspect: roomId => publicView(sessions.get(roomId)),
 	});
