@@ -60,6 +60,8 @@ jobs:
         run: node --test tests/v2-host-session-manager.mjs tests/v2-managed-host-process.mjs tests/v2-managed-choice-controller.mjs
       - name: V2 isolated opt-in Event 5 authority proof contract
         run: node --test tests/v2-event5-authority-validator.mjs
+      - name: V3 isolated opt-in Event 6 authority proof contract (not submission-enabled)
+        run: node --test tests/v2-event6-authority-validator.mjs
       - name: V3 isolated per-seat state-sync protocol contract
         env:
           NODE_PATH: ${{ runner.temp }}/xingbei-ws/node_modules
