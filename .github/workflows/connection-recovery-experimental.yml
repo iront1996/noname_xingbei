@@ -729,4 +729,12 @@ jobs:
           wait "$tail_pid" 2>/dev/null || true
           trap - EXIT
           cat "$test_output"
+          if [ "$test_status" -eq 0 ]; then
+            for marker in manager-stopped server-closed cleanup-finished; do
+              if ! grep -Fq ":$marker" "$diagnostic_file"; then
+                echo "::error::Event #6 passed without required cleanup checkpoint: $marker"
+                exit 1
+              fi
+            done
+          fi
           exit "$test_status"
