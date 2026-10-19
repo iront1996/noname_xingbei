@@ -12,6 +12,8 @@ Cloudflare Branch Controls were read-only reverified in Chrome after closing the
 
 First Linux run `39209136293` failed because client-side close was observed before server-side gateway cleanup when the test sampled `clientCount`. The other 28 tests in that Node step passed; later steps were not run. The bounded wait for server-observed zero-client cleanup fixed the test race without weakening the assertion. Full rerun `39209379427` passed as recorded above.
 
+Documentation follow-up run `39210704960` found that the handoff consistency test selected an older in-progress section after the new accepted-batch heading was added, so it compared a historical `ea8e…` entry with the current verified lock `9807…`. The selector now checks the latest Accepted-or-in-progress section and still requires exact equality with the verified lock. The focused consistency test passes locally; full CI is rerunning this correction.
+
 ## Accepted batch: trusted seat projection and stop-race revalidation
 
 Starting from remote `9233352d399fdebb276571e61395253b795513f9`, the batch adds a recipient-scoped V3 state projection from the manager-accepted successor pre-action envelope and a deterministic fix/test for the intentional-stop race. Final code/test commit `8cdb4601709fcaac5907582c7b1a64b9ad8f20a3` passed Linux run `39167270201`: 93/93 workflow steps, 303/303 aggregated TAP tests, zero failures and zero skips. The actual Linux Chromium successor-seat waiting/capture probe and Event #5 provenance assertions both passed. Earlier runs `39164930666` (late ACK/intentional-stop race) and `39166873284` (stale test-only `afterDigest` fixture field) remain historical failures and are not counted as passes.
