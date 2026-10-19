@@ -281,6 +281,7 @@ test("gateway applies deterministic per-socket rate limits and malformed input r
 	for (let i = 0; i < 3; i++) socket.send(JSON.stringify({ type: "unknown", privateProbe: "must-not-echo" }));
 	assert.equal(await closed, 1008);
 	assert.equal(fixture.projectionCalls.length, 0);
+	await waitFor(() => fixture.gateway.inspect().clientCount === 0, "WS_RATE_LIMIT_CLEANUP_TIMEOUT");
 	assert.equal(fixture.gateway.inspect().clientCount, 0);
 	clock += 1000;
 	assert.equal(clock, 2000);
