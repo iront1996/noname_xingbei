@@ -24,10 +24,13 @@ const CHROMIUM_BOOT_WAIT_MS = 20000;
 
 function experimentalAuthorityEventEnabled(eventSequence) {
 	const ceiling = Number(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT);
+	const mode = process.env.V2_NATIVE_START_PROBE_MODE;
+	const eventSixContinuation = eventSequence === 6 && process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" &&
+		mode === "managed_opening_root_action_event5";
 	return [5, 6].includes(eventSequence) && [5, 6].includes(ceiling) && ceiling === managedAuthorityEventLimit && ceiling >= eventSequence &&
 		process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(ceiling) &&
 		process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
-		process.env.V2_NATIVE_START_PROBE_MODE === `managed_opening_root_action_event${eventSequence}`;
+		(mode === `managed_opening_root_action_event${eventSequence}` || eventSixContinuation);
 }
 
 let chromium = null;
@@ -1816,6 +1819,7 @@ async function inspectNativeResponseDelivery(gate, delivery) {
 async function applyManagedNativeActionDelivery(message) {
 	const gate = interactiveChoice?.nativeInputGate;
 	if (!gate || !validHostCommand(message) || message.nativeEventId !== gate.nativeEventId || message.seatId !== gate.seatId ||
+		([5, 6].includes(gate.eventSequence) && message.eventSequence !== gate.eventSequence) ||
 		typeof message.choiceId !== "string" || typeof message.deliveryId !== "string" ||
 		!(["player", "trustee"].includes(message.resolution?.kind)) || typeof message.resolution?.option !== "string") {
 		throw new Error("NATIVE_ACTION_DELIVERY_REJECTED");
@@ -1834,7 +1838,11 @@ async function applyManagedNativeActionDelivery(message) {
 			process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
 				observed: { kind: "native_action_authority_pending_retry_v1", stage: "native_action_delivery_joined_authority_commit",
 					choiceId: prior.choiceId, deliveryId: prior.deliveryId } });
-			await prior.authorityCommitPromise;
+			// Do not hold the serialized IPC command chain while authority acceptance
+			// itself waits for a later native fence/capture command on that chain.
+			// The original immutable delivery owns the commit and ACK; a retry during
+			// that interval is inert and will be retried by the controller if needed.
+			return;
 		}
 		if (prior.status !== "authority_committed" && prior.status !== "applied") throw new Error("NATIVE_ACTION_DELIVERY_UNCERTAIN");
 		const proofResponse = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2NativeStartDiagnosticState,a=s?.nativeAction,o=window.__v2ManagedNativeActionOptions?.get(${JSON.stringify(prior.option)}),p=o?.event?.player;const skill=a?.actionKind==='native_skill',t=skill?[...(s?.nativeSkillTargetGates?.values()||[])].find(g=>g.actionEventId===a.eventId):null;return {eventId:a?.eventId||null,seatId:a?.seatId||null,optionId:a?.optionId||null,actionKind:a?.actionKind||null,skillId:a?.skillId||null,useResultCount:a?.useResultCount||0,childWaitCompleted:a?.nativeChildWaitCompleted===true,eventInstanceMatches:a?.nativeEventInstanceMatches===true,nativeEventStepAfterWait:a?.nativeEventStepAfterWait??null,cardInHand:Boolean(o&&p?.getCards('h').includes(o.card)),useSkillChildCompleted:a?.nativeUseSkillChildCompleted===true,targetChoiceCompleted:a?.nativeTargetChoiceCompleted===true,targetChoiceApplied:t?.status==='applied'&&t?.delivery?.status==='applied',changeZhanJiCompleted:a?.nativeChangeZhanJiCompleted===true,baoShiBefore:a?.nativeChangeZhanJiBefore??null,baoShiAfter:a?.nativeChangeZhanJiAfter??null,completionReported:s?.nativeActionCompletionReported===true,hostPlayerAbsent:window.__v2ManagedEngine?.core?.game?.me===null}})()`, returnByValue: true }, 1500);
@@ -1851,7 +1859,8 @@ async function applyManagedNativeActionDelivery(message) {
 		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
 			observed: { kind: "native_action_delivery_proof", stage: "native_action_duplicate_delivery_verified", snapshot: proof } });
 		process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: prior.choiceId, deliveryId: prior.deliveryId,
-			nativeEventId: gate.nativeEventId, nativeApplied: true, ...(gate.eventSequence === 5 ? { authorityEventSequence: 5 } : {}) });
+			nativeEventId: gate.nativeEventId, nativeApplied: true,
+			...(gate.eventSequence >= 5 ? { authorityEventSequence: gate.eventSequence } : {}) });
 		return;
 	}
 	if (gate.status !== "waiting" || !gate.optionIds.includes(message.resolution.option)) throw new Error("NATIVE_ACTION_OPTION_REJECTED");
@@ -1859,7 +1868,7 @@ async function applyManagedNativeActionDelivery(message) {
 	const record = { choiceId: message.choiceId, deliveryId: message.deliveryId, eventSequence: message.eventSequence,
 		resolutionKind: message.resolution.kind,
 		option: message.resolution.option, status: "applying" };
-	if (gate.eventSequence === 5) {
+	if ([5, 6].includes(gate.eventSequence)) {
 		record.authorityCommitPromise = new Promise((resolve, reject) => {
 			record.resolveAuthorityCommit = resolve;
 			record.rejectAuthorityCommit = reject;
@@ -2350,25 +2359,29 @@ async function commitNativeCardActionAuthority(gate, record) {
 	return record.authorityCommitPromise;
 }
 
-async function commitNativeSuccessorActionAuthority(command) {
+async function commitNativeSuccessorActionAuthority(command, eventSequence = 5) {
+	const eventRevision = eventSequence;
+	const predecessorRevision = eventSequence - 1;
+	const isEvent6 = eventSequence === 6;
 	const gate = interactiveChoice?.nativeInputGate;
 	const record = gate?.actionDeliveries?.get(gate.seatId);
-	const commandFailure = !experimentalAuthorityEventEnabled(5) ? "MODE_OR_OPT_IN" :
-		!validHostCommand(command) || command.type !== "host_native_event5_post_capture_ready" ? "IDENTITY" :
+	const commandFailure = !experimentalAuthorityEventEnabled(eventSequence) ? "MODE_OR_OPT_IN" :
+		!validHostCommand(command) || command.type !== (isEvent6 ? "host_native_event6_post_capture_ready" : "host_native_event5_post_capture_ready") ? "IDENTITY" :
 		Object.keys(command).sort().join(",") !== "afterDigestBefore,captureOrdinal,commitment,connectionGeneration,eventSequence,kind,nativeCompletionOrdinal,nativeEventId,phaseOverEventInstanceId,phaseOverTriggerOrdinal,protocol,roomId,rootInstanceId,seatId,secret,sessionId,stateRevision,type" ? "SCHEMA" :
-		command.eventSequence !== 5 || command.stateRevision !== 4 || gate?.eventSequence !== 5 ? "SEQUENCE" :
+		command.eventSequence !== eventSequence || command.stateRevision !== predecessorRevision || gate?.eventSequence !== eventSequence ? "SEQUENCE" :
 		gate.status !== "native_applied_authority_pending" ? "GATE_STATE" :
 		!record || record.status !== "native_applied_authority_pending" ? "DELIVERY_STATE" :
 		gate.nativeEventId !== command.nativeEventId || gate.seatId !== command.seatId ? "GATE_BINDING" :
-		gate.eventInstanceId == null || gate.parentEventInstanceId == null || !interactiveChoice?.authorityEvent4Accepted ? "PREDECESSOR" :
+		gate.eventInstanceId == null || gate.parentEventInstanceId == null ||
+		(isEvent6 ? !interactiveChoice?.event5AuthorityAccepted : !interactiveChoice?.authorityEvent4Accepted) ? "PREDECESSOR" :
 		interactiveChoice.nativeRootInstanceId !== command.rootInstanceId || !/^native_event_[a-f0-9]{32}$/.test(command.nativeEventId || "") ? "ROOT_OR_EVENT" :
 		!Number.isSafeInteger(command.captureOrdinal) || command.captureOrdinal < 1 ? "CAPTURE_ORDINAL" :
 		!/^[a-f0-9]{64}$/.test(command.commitment || "") ? "COMMITMENT" :
 		!Number.isSafeInteger(command.nativeCompletionOrdinal) || command.nativeCompletionOrdinal < 1 ? "COMPLETION_ORDINAL" :
-		!Number.isSafeInteger(command.phaseOverTriggerOrdinal) || command.phaseOverTriggerOrdinal < 2 ? "PHASE_OVER_ORDINAL" :
+		!Number.isSafeInteger(command.phaseOverTriggerOrdinal) || command.phaseOverTriggerOrdinal < (isEvent6 ? 3 : 2) ? "PHASE_OVER_ORDINAL" :
 		!/^[a-f0-9]{64}$/.test(command.afterDigestBefore || "") ? "PREDECESSOR_DIGEST" : null;
 	if (commandFailure) throw new Error(`EVENT5_POST_CAPTURE_COMMAND_REJECTED_${commandFailure}`);
-	const candidate = interactiveChoice.event5SuccessorCandidate;
+	const candidate = isEvent6 ? interactiveChoice.event6SuccessorCandidate : interactiveChoice.event5SuccessorCandidate;
 	const delivery = record;
 	const candidateFailure = !candidate ? "CANDIDATE_MISSING" :
 		candidate.nativeEventId !== gate.nativeEventId ? "EVENT_ID" :
@@ -2376,21 +2389,32 @@ async function commitNativeSuccessorActionAuthority(command) {
 		candidate.parentEventInstanceId !== gate.parentEventInstanceId ? "PARENT_INSTANCE" :
 		candidate.seatId !== gate.seatId ? "SEAT" :
 		candidate.waitingCompletionOrdinal !== gate.waitingCompletionOrdinal ? "WAIT_ORDINAL" :
-		delivery.eventSequence !== 5 ? "DELIVERY_SEQUENCE" :
+		delivery.eventSequence !== eventSequence ? "DELIVERY_SEQUENCE" :
 		delivery.status !== "native_applied_authority_pending" ? "DELIVERY_STATE" :
 		delivery.deliveryId == null ? "DELIVERY_ID" : delivery.choiceId == null ? "CHOICE_ID" : null;
 	if (candidateFailure) throw new Error(`EVENT5_NATIVE_ACTION_BINDING_REJECTED_${candidateFailure}`);
 	const base = interactiveChoice.openingAuthoritySummary;
 	const beforeDigest = interactiveChoice.openingAuthorityDigest;
-	if (!base || base.revision !== 4 || command.afterDigestBefore !== beforeDigest ||
-		!Array.isArray(base.seats) || !/^[a-f0-9]{64}$/.test(beforeDigest || "")) throw new Error("EVENT5_AUTHORITY_PREDECESSOR_REJECTED");
+	const predecessorSeatIds = isEvent6 ? interactiveChoice.authoritySeatIds : base?.seats?.map(seat => seat.seatId);
+	const predecessorCheck = { expectedRevision: predecessorRevision, observedRevision: Number.isSafeInteger(base?.revision) ? base.revision : null,
+		summaryPresent: Boolean(base), seatsPresent: Array.isArray(predecessorSeatIds) && predecessorSeatIds.length === 4 && new Set(predecessorSeatIds).size === 4,
+		localDigestValid: /^[a-f0-9]{64}$/.test(beforeDigest || ""),
+		commandDigestMatchesLocal: command.afterDigestBefore === beforeDigest };
+	if (!base || base.revision !== predecessorRevision || command.afterDigestBefore !== beforeDigest ||
+		!predecessorCheck.seatsPresent || !/^[a-f0-9]{64}$/.test(beforeDigest || "")) {
+		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId,
+			observed: { kind: "native_authority_predecessor_check_v1", stage: `event_${eventSequence}_authority_predecessor_rejected`, ...predecessorCheck } });
+		const reason = !base || !predecessorCheck.seatsPresent ? "SUMMARY" : base.revision !== predecessorRevision ? "REVISION" :
+			command.afterDigestBefore !== beforeDigest ? "DIGEST_MISMATCH" : "DIGEST_INVALID";
+		throw new Error(`EVENT${eventSequence}_AUTHORITY_PREDECESSOR_REJECTED_${reason}`);
+	}
 	const inspected = await cdp.send("Runtime.evaluate", { expression: `(()=>{
 		const s=window.__v2NativeStartDiagnosticState,gate=s?.nativeInputResumeGate,a=s?.nativeAction,
 			option=window.__v2ManagedNativeActionOptions?.get(${JSON.stringify(delivery.option)}),managed=window.__v2ManagedEngine?.core,
 			game=managed?.game,manager=managed?._status?.eventManager,ledger=s?.nativeEventCompletionLedger,
 			event=gate?.event,proof=event&&ledger?.completionEvidence?.get(event),f=s?.nativePhaseBoundaryFence;
 		const nativeCardType=option&&event?.player&&typeof managed?.get?.type==='function'?managed.get.type(option.card,event.player):null;
-		const checks={sessionState:Boolean(s&&gate&&gate.eventSequence===5&&gate.status==='applying'&&s.nativeActionCompletionReported===true),
+		const checks={sessionState:Boolean(s&&gate&&gate.eventSequence===${eventSequence}&&gate.status==='applying'&&s.nativeActionCompletionReported===true),
 			actionIdentity:Boolean(gate?.nativeEventId===${JSON.stringify(command.nativeEventId)}&&gate?.seatId===${JSON.stringify(command.seatId)}),
 			nativeEventBinding:Boolean(event&&event===s?.inputEvent&&event.__v2NativeEventId===gate?.nativeEventId),
 			nativeEventCompletion:Boolean(event?.finished===true&&proof&&proof.rootInstanceId===s?.rootInstanceId&&
@@ -2399,10 +2423,10 @@ async function commitNativeSuccessorActionAuthority(command) {
 			actionResult:Boolean(a?.eventId===gate?.nativeEventId&&a?.seatId===gate?.seatId&&a?.optionId===${JSON.stringify(delivery.option)}&&
 				a?.useResultCount===1&&a?.nativeChildWaitCompleted===true&&a?.nativeEventInstanceMatches===true&&a?.nativeUseCardChildCompleted===true),
 			optionBinding:Boolean(option&&option.event===event&&option.seatId===gate?.seatId&&managed?.game?.me===null&&!game?.players?.some(p=>p.ws)),
-			phaseFence:Boolean(f?.boundaryOrdinal===2&&f.status==='waiting'&&f.releaseCount===0&&f.rootEvent===s?.root&&
+			phaseFence:Boolean(f?.boundaryOrdinal===${isEvent6 ? 3 : 2}&&f.status==='waiting'&&f.releaseCount===0&&f.rootEvent===s?.root&&
 				f.phaseLoopEvent===s?.phaseLoop&&manager?.rootEvent===s?.root&&f.seatId===gate?.seatId&&f.nativeEventId===gate?.nativeEventId&&
 				f.pendingDescendantCount===0&&f.phaseOverTriggerComplete===true&&
-				f.phaseOverCompletionEvidence?.triggerOrdinal===${command.phaseOverTriggerOrdinal}&&
+			f.phaseOverCompletionEvidence?.triggerOrdinal===${command.phaseOverTriggerOrdinal}&&
 				f.phaseOverCompletionEvidence?.ownerEventInstanceId===f.completionEvidence?.parentEventInstanceId),
 			completionOrder:Boolean(Number.isSafeInteger(proof?.completionOrdinal)&&proof.completionOrdinal>${candidate.waitingCompletionOrdinal}&&
 				proof.completionOrdinal<${command.nativeCompletionOrdinal}),
@@ -2430,7 +2454,7 @@ async function commitNativeSuccessorActionAuthority(command) {
 		observed.nativeChildWaitCompleted !== true || observed.nativeEventInstanceMatches !== true ||
 				(observed.usedCardPosition !== "d" && observed.usedCardPosition !== "x") ||
 		observed.cardName !== candidate.optionCardNames[delivery.option] || observed.cardKind !== candidate.optionKinds[delivery.option] ||
-		observed.targetSeatId !== candidate.optionTargetSeatIds[delivery.option] || observed.hands?.length !== base.seats.length) {
+		observed.targetSeatId !== candidate.optionTargetSeatIds[delivery.option] || observed.hands?.length !== predecessorSeatIds.length) {
 		if (!inspected.exceptionDetails && Array.isArray(observed?.failedChecks) && observed.failedChecks.length <= 9 &&
 			observed.failedChecks.every(value => ["sessionState", "actionIdentity", "nativeEventBinding", "nativeEventCompletion", "actionResult",
 				"optionBinding", "phaseFence", "completionOrder", "cardType", "targetPresent", "targetMatchesAction", "targetIsOtherSeat"].includes(value))) {
@@ -2441,19 +2465,19 @@ async function commitNativeSuccessorActionAuthority(command) {
 		throw new Error(observed?.code || "EVENT5_NATIVE_STATE_PROOF_REJECTED");
 	}
 	const seats = observed.hands.map((seat, index) => {
-		const prior = base.seats[index];
-		if (seat.seatId !== prior.seatId) throw new Error("EVENT5_SEAT_ORDER_REJECTED");
-		return { seatId: seat.seatId, position: prior.position, character: prior.character, side: prior.side,
-			handCount: seat.handCount, handCommitment: createHash("sha256").update(canonicalize(seat.hand)).digest("hex") };
+		const priorSeatId = predecessorSeatIds[index];
+		if (seat.seatId !== priorSeatId) throw new Error(`EVENT${eventSequence}_SEAT_ORDER_REJECTED`);
+		return { seatId: seat.seatId, handCount: seat.handCount,
+			handCommitment: createHash("sha256").update(canonicalize(seat.hand)).digest("hex") };
 	});
-	const after = { revision: 5, predecessorDigest: beforeDigest, actorSeatId: gate.seatId, nativeEventId: gate.nativeEventId,
+	const after = { revision: eventRevision, predecessorDigest: beforeDigest, actorSeatId: gate.seatId, nativeEventId: gate.nativeEventId,
 		actionCompletionOrdinal: observed.nativeCompletionOrdinal, postFenceCompletionOrdinal: command.nativeCompletionOrdinal,
 		captureOrdinal: command.captureOrdinal, captureCommitment: command.commitment,
 		phaseOverEventInstanceId: command.phaseOverEventInstanceId };
 	const afterDigest = createHash("sha256").update(canonicalize(after)).digest("hex");
-	const proof = { kind: "native_authority_event_v1", checkpoint: null, eventSequence: 5, stateRevisionBefore: 4,
-		stateRevisionAfter: 5, beforeDigest, afterDigest, beforeSummary: base, afterSummary: after,
-		event: { kind: "xingbei_native_successor_card_action_v1", name: "gongJiOrFaShu", nativeEventName: "gongJiOrFaShu",
+	const proof = { kind: "native_authority_event_v1", checkpoint: null, eventSequence, stateRevisionBefore: predecessorRevision,
+		stateRevisionAfter: eventRevision, beforeDigest, afterDigest, beforeSummary: base, afterSummary: after,
+		event: { kind: isEvent6 ? "xingbei_native_successor_card_action_v2" : "xingbei_native_successor_card_action_v1", name: "gongJiOrFaShu", nativeEventName: "gongJiOrFaShu",
 			nativeEventId: gate.nativeEventId, rootInstanceId: command.rootInstanceId, seatId: gate.seatId, optionId: delivery.option,
 			cardName: observed.cardName, cardKind: observed.cardKind, targetSeatId: observed.targetSeatId,
 			nativeEventCompleted: true, useResultCount: observed.useResultCount, useCardChildName: observed.useCardChildName,
@@ -2463,7 +2487,7 @@ async function commitNativeSuccessorActionAuthority(command) {
 			actionParentEventInstanceId: observed.actionParentEventInstanceId, connectionGeneration: command.connectionGeneration,
 			choiceId: delivery.choiceId, deliveryId: delivery.deliveryId, resolutionKind: delivery.resolutionKind,
 			gameMeNull: observed.gameMeNull, connectedTransports: observed.connectedTransports } };
-	const ack = waitForAuthorityEventAck(5, 5, afterDigest, 10000);
+	const ack = waitForAuthorityEventAck(eventSequence, eventRevision, afterDigest, 10000);
 	let accepted = null;
 	for (let attempt = 0; attempt < 3 && accepted === null; attempt++) {
 		await new Promise((resolve, reject) => process.send?.({ ...identity, type: "host_authority_event", proof }, error => error ? reject(error) : resolve()));
@@ -2472,27 +2496,41 @@ async function commitNativeSuccessorActionAuthority(command) {
 	if (accepted === null) accepted = await ack;
 	if (accepted !== true) throw new Error("EVENT5_AUTHORITY_REJECTED");
 	const finalized = await cdp.send("Runtime.evaluate", { expression: `(()=>{const state=window.__v2ManagedGame,draw=window.__v2ManagedOpeningDraw;
-		if(state?.authorityState?.revision!==4||draw?.authorityDigest!==${JSON.stringify(beforeDigest)})return {ok:false};
-		state.authorityState.revision=5;draw.authoritySummary=${JSON.stringify(after)};draw.authorityDigest=${JSON.stringify(afterDigest)};return {ok:true}})()`,
+		if(state?.authorityState?.revision!==${predecessorRevision}||draw?.authorityDigest!==${JSON.stringify(beforeDigest)})return {ok:false};
+		state.authorityState.revision=${eventRevision};draw.authoritySummary=${JSON.stringify(after)};draw.authorityDigest=${JSON.stringify(afterDigest)};return {ok:true}})()`,
 		returnByValue: true }, 1500);
 	if (finalized.exceptionDetails || finalized.result?.value?.ok !== true) throw new Error("EVENT5_AUTHORITY_FINALIZE_FAILED");
+	if (eventSequence === 5) {
+		if (!Array.isArray(base.seats) || base.seats.length !== 4 || base.seats.some(seat => typeof seat?.seatId !== "string")) {
+			throw new Error("EVENT5_AUTHORITY_SEAT_BASELINE_INVALID");
+		}
+		interactiveChoice.authoritySeatIds = Object.freeze(base.seats.map(seat => seat.seatId));
+	}
+	interactiveChoice.openingAuthoritySummary = Object.freeze(after);
+	interactiveChoice.openingAuthorityDigest = afterDigest;
+	if (eventSequence === 5) {
+		interactiveChoice.event5AuthorityAccepted = true;
+		if (interactiveChoice.nativeInputGate?.nativeEventId === gate.nativeEventId) interactiveChoice.nativeInputGate.status = "authority_committed";
+	}
 	const released = await cdp.send("Runtime.evaluate", { expression: `(()=>{const s=window.__v2NativeStartDiagnosticState,f=s?.nativePhaseBoundaryFence,
 		game=window.__v2ManagedEngine?.core?.game,manager=window.__v2ManagedEngine?.core?._status?.eventManager;
-		if(!f||f.status!=='waiting'||f.releaseCount!==0||f.boundaryOrdinal!==2||f.nativeEventId!==${JSON.stringify(gate.nativeEventId)}||
+		if(!f||f.status!=='waiting'||f.releaseCount!==0||f.boundaryOrdinal!==${isEvent6 ? 3 : 2}||f.nativeEventId!==${JSON.stringify(gate.nativeEventId)}||
 			f.seatId!==${JSON.stringify(gate.seatId)}||f.rootEvent!==s?.root||f.phaseLoopEvent!==s?.phaseLoop||manager?.rootEvent!==s?.root||
 			f.pendingDescendantCount!==0||f.phaseOverTriggerComplete!==true||game?.me!==null||
-			window.__v2ManagedGame?.authorityState?.revision!==5||window.__v2ManagedOpeningDraw?.authorityDigest!==${JSON.stringify(afterDigest)})return {ok:false};
-		f.status='accepted';f.releaseCount=1;f.acceptedAuthority=Object.freeze({eventSequence:5,stateRevision:5,afterDigest:${JSON.stringify(afterDigest)}});
-		f.resolve({accepted:true,nativeEventId:f.nativeEventId,rootInstanceId:f.rootInstanceId,seatId:f.seatId,eventSequence:5,stateRevision:5,afterDigest:${JSON.stringify(afterDigest)}});
+			window.__v2ManagedGame?.authorityState?.revision!==${eventRevision}||window.__v2ManagedOpeningDraw?.authorityDigest!==${JSON.stringify(afterDigest)})return {ok:false};
+		f.status='accepted';f.releaseCount=1;f.acceptedAuthority=Object.freeze({eventSequence:${eventSequence},stateRevision:${eventRevision},afterDigest:${JSON.stringify(afterDigest)}});
+		f.resolve({accepted:true,nativeEventId:f.nativeEventId,rootInstanceId:f.rootInstanceId,seatId:f.seatId,eventSequence:${eventSequence},stateRevision:${eventRevision},afterDigest:${JSON.stringify(afterDigest)}});
 		return {ok:true,releaseCount:f.releaseCount}})()`, returnByValue: true }, 1500);
-	if (released.exceptionDetails || released.result?.value?.ok !== true || released.result.value.releaseCount !== 1) throw new Error("EVENT5_PHASE_BOUNDARY_RELEASE_UNCERTAIN");
+	if (released.exceptionDetails || released.result?.value?.ok !== true || released.result.value.releaseCount !== 1) throw new Error(`EVENT${eventSequence}_PHASE_BOUNDARY_RELEASE_UNCERTAIN`);
 	record.status = gate.status = "authority_committed";
 	record.resolveAuthorityCommit?.(true);
 	record.resolveAuthorityCommit = null;
 	record.rejectAuthorityCommit = null;
+	if(isEvent6) interactiveChoice.event6AuthorityAccepted = true;
+	else interactiveChoice.event5AuthorityAccepted = true;
 	process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: delivery.choiceId,
-		deliveryId: delivery.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true, authorityEventSequence: 5 });
-	emitNativeStartDiagnostic({ stage: "native_successor_card_action_event_5_accepted", snapshot: { eventSequence: 5, stateRevision: 5,
+		deliveryId: delivery.deliveryId, nativeEventId: gate.nativeEventId, nativeApplied: true, authorityEventSequence: eventSequence });
+	emitNativeStartDiagnostic({ stage: `native_successor_card_action_event_${eventSequence}_accepted`, snapshot: { eventSequence, stateRevision: eventRevision,
 		beforeDigest, afterDigest, seatId: gate.seatId, nativeEventId: gate.nativeEventId,
 		actionCompletionOrdinal: observed.nativeCompletionOrdinal, postFenceCompletionOrdinal: command.nativeCompletionOrdinal,
 		captureOrdinal: command.captureOrdinal, gameMeAbsent: true, checkpointAvailable: false } });
@@ -2500,6 +2538,11 @@ async function commitNativeSuccessorActionAuthority(command) {
 
 function emitNativeStartDiagnostic(observed) {
 	if (process.env.V2_NATIVE_START_DIAGNOSTICS !== "1" || !observed || typeof observed !== "object") return;
+	if (observed.stage === "native_input_wait_open" && observed.snapshot?.nativeInputGate &&
+		typeof observed.snapshot.rootInstanceId === "string" && observed.snapshot.nativeInputGate.rootInstanceId !== observed.snapshot.rootInstanceId) {
+		observed = { ...observed, snapshot: { ...observed.snapshot,
+			nativeInputGate: { ...observed.snapshot.nativeInputGate, rootInstanceId: observed.snapshot.rootInstanceId } } };
+	}
 	if (observed.stage === "native_input_wait_open") dispatchManagedNativeActionCandidates(observed.snapshot);
 	let nativeResponseAckOutcome = null;
 	if (observed.stage === "native_response_applied" && interactiveChoice?.nativeResponseGates?.has(observed.snapshot?.nativeEventId)) {
@@ -2630,9 +2673,9 @@ function emitNativeStartDiagnostic(observed) {
 						process.send?.({ ...identity, type: "host_failure", code }, () => cleanup().finally(() => process.exit(1)));
 					});
 				}
-			} else if (experimentalAuthorityEventEnabled(5) && gate.eventSequence === 5) {
-				// Event #5's native result is held until the second completed phaseOver
-				// boundary is captured and the independent authority validator accepts it.
+			} else if (experimentalAuthorityEventEnabled(gate.eventSequence) && [5, 6].includes(gate.eventSequence)) {
+				// Successor native results remain held until their matching completed
+				// phaseOver boundary is captured and the event-specific validator accepts.
 				record.status = "native_applied_authority_pending";
 				gate.status = "native_applied_authority_pending";
 			} else {
@@ -2640,7 +2683,7 @@ function emitNativeStartDiagnostic(observed) {
 				gate.status = "applied";
 			}
 			if (!process.env.V2_NATIVE_START_PROBE_MODE?.startsWith("managed_opening_root_action_event4") &&
-				!(experimentalAuthorityEventEnabled(5) && gate.eventSequence >= 4) &&
+				!([4, 5, 6].includes(gate.eventSequence) && experimentalAuthorityEventEnabled(gate.eventSequence)) &&
 				process.env.V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR !== "1" &&
 				process.env.V2_MANAGED_NATIVE_FAULT_INJECTION !== "cdp_result_unknown_after_dispatch") {
 				process.send?.({ ...identity, type: "host_choice_ack", seatId: gate.seatId, choiceId: record.choiceId,
@@ -2681,6 +2724,19 @@ function dispatchManagedNativeActionCandidates(snapshot) {
 	const directResumeModes = new Set(["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop"]);
 	const mode = process.env.V2_NATIVE_START_PROBE_MODE;
 	const gate = snapshot?.nativeInputGate;
+	if (gate?.eventSequence === 6 && process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1") {
+		const current = interactiveChoice?.nativeInputGate;
+		process.send?.({ ...identity, type: "host_choice_diagnostic", nativeEventId: gate.nativeEventId || null,
+			observed: { kind: "native_event6_candidate_dispatch_v1", stage: "event6_candidate_dispatch_inspected",
+				snapshot: { modeAllowed: mode === "managed_opening_root_action_event5", event6ProbeEnabled: true,
+					authorityLimit: process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6",
+					networkBlocked: process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1",
+					inputGateWaiting: gate.waiting === true, inputGateAction: gate.action === true,
+					candidateCount: Array.isArray(gate.candidates) ? gate.candidates.length : 0,
+					interactiveChoicePresent: Boolean(interactiveChoice), authorityEvent5Accepted: interactiveChoice?.event5AuthorityAccepted === true,
+					currentEventSequence: current?.eventSequence ?? null, currentStatus: current?.status || null,
+					rootInstanceMatches: gate.rootInstanceId === snapshot.rootInstanceId, gameMeAbsent: snapshot.hostPlayerAbsent === true } } });
+	}
 	if (process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" && gate?.diagnosticOnly === true &&
 		["managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss"].includes(mode) &&
 		gate.eventName === "gongJiOrFaShu" && gate.waiting === true) {
@@ -2707,19 +2763,25 @@ function dispatchManagedNativeActionCandidates(snapshot) {
 	const controllerManaged = managedModes.has(mode);
 	if (current?.nativeEventId === gate.nativeEventId && (current.candidateDispatched === true || !controllerManaged)) return false;
 		const event5Mode = mode === "managed_opening_root_action_event5" && gate.eventSequence === 5 && experimentalAuthorityEventEnabled(5);
-	if (current && current.nativeEventId !== gate.nativeEventId && !(event5Mode && current.eventSequence === 4 &&
-		current.status === "authority_committed" && interactiveChoice.authorityEvent4Accepted === true)) return false;
+		const event6Mode = mode === "managed_opening_root_action_event5" && gate.eventSequence === 6 &&
+			process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" && process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" &&
+			process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" && interactiveChoice.event5AuthorityAccepted === true;
+	if (current && current.nativeEventId !== gate.nativeEventId &&
+		!(event5Mode && current.eventSequence === 4 && current.status === "authority_committed" && interactiveChoice.authorityEvent4Accepted === true) &&
+		!(event6Mode && current.eventSequence === 5 && current.status === "authority_committed" && interactiveChoice.event5AuthorityAccepted === true)) return false;
 	// Event #5's versioned authority validator only represents targeted actions
 	// against another seat. Keep native self-target options in the engine's
 	// private candidate map, but do not advertise them through this narrower
 	// experimental authority protocol.
-	const candidates = event5Mode ? gate.candidates.filter(candidate => typeof candidate?.targetSeatId === "string" &&
+	const successorMode = event5Mode || event6Mode;
+	const candidates = successorMode ? gate.candidates.filter(candidate => typeof candidate?.targetSeatId === "string" &&
 		candidate.targetSeatId !== gate.seatId) : gate.candidates;
 	const optionIds = candidates.map(candidate => candidate?.optionId);
 	if (optionIds.some(optionId => !/^native_option_[a-f0-9]{32}$/.test(optionId || "")) || new Set(optionIds).size !== optionIds.length) return false;
-	if (event5Mode && (optionIds.length < 1 || optionIds.some(optionId => !gate.candidates.some(candidate => candidate.optionId === optionId &&
+	if (successorMode && (optionIds.length < 1 || optionIds.some(optionId => !gate.candidates.some(candidate => candidate.optionId === optionId &&
 		["gongJi", "faShu"].includes(candidate.cardType) && candidate.targetSeatId !== gate.seatId)))) return false;
-	interactiveChoice.nativeInputGate = { nativeEventId: gate.nativeEventId, eventSequence: event5Mode ? 5 : 4,
+	const successorSequence = event6Mode ? 6 : event5Mode ? 5 : 4;
+	interactiveChoice.nativeInputGate = { nativeEventId: gate.nativeEventId, eventSequence: successorMode ? successorSequence : 4,
 		eventInstanceId: gate.eventInstanceId, parentEventInstanceId: gate.parentEventInstanceId,
 		waitingCompletionOrdinal: gate.waitingCompletionOrdinal, seatId: gate.seatId, status: "waiting", controllerManaged,
 		candidateDispatched: controllerManaged, optionIds, actionDeliveries: controllerManaged ? new Map() : null };
@@ -2729,24 +2791,30 @@ function dispatchManagedNativeActionCandidates(snapshot) {
 		optionKinds: Object.freeze(Object.fromEntries(candidates.map(candidate => [candidate.optionId, candidate.cardType]))),
 		optionCardNames: Object.freeze(Object.fromEntries(candidates.map(candidate => [candidate.optionId, candidate.cardName]))),
 		optionTargetSeatIds: Object.freeze(Object.fromEntries(candidates.map(candidate => [candidate.optionId, candidate.targetSeatId]))) });
+	if (event6Mode) interactiveChoice.event6SuccessorCandidate = Object.freeze({ nativeEventId: gate.nativeEventId,
+		eventInstanceId: gate.eventInstanceId, parentEventInstanceId: gate.parentEventInstanceId,
+		waitingCompletionOrdinal: gate.waitingCompletionOrdinal, seatId: gate.seatId,
+		optionKinds: Object.freeze(Object.fromEntries(candidates.map(candidate => [candidate.optionId, candidate.cardType]))),
+		optionCardNames: Object.freeze(Object.fromEntries(candidates.map(candidate => [candidate.optionId, candidate.cardName]))),
+		optionTargetSeatIds: Object.freeze(Object.fromEntries(candidates.map(candidate => [candidate.optionId, candidate.targetSeatId]))) });
 	if (controllerManaged) interactiveChoice.nativeSkillTargetGates = new Map();
 	if (!controllerManaged) return true;
-	const candidatesForMessage = event5Mode ? candidates : gate.candidates;
+	const candidatesForMessage = successorMode ? candidates : gate.candidates;
 	const message = { ...identity, type: "host_native_action_candidates", nativeEventId: gate.nativeEventId,
-		eventSequence: event5Mode ? 5 : 4, seatId: gate.seatId, rootInstanceId: snapshot.rootInstanceId || null,
-		...(event5Mode ? { eventInstanceId: gate.eventInstanceId, parentEventInstanceId: gate.parentEventInstanceId,
+		eventSequence: successorMode ? successorSequence : 4, seatId: gate.seatId, rootInstanceId: snapshot.rootInstanceId || null,
+		...(successorMode ? { eventInstanceId: gate.eventInstanceId, parentEventInstanceId: gate.parentEventInstanceId,
 			waitingCompletionOrdinal: gate.waitingCompletionOrdinal } : {}), options: optionIds,
 		optionKinds: Object.fromEntries(candidatesForMessage.map(candidate => [candidate.optionId, candidate.cardType])),
-		optionCardNames: event5Mode ? Object.fromEntries(candidatesForMessage.map(candidate => [candidate.optionId, candidate.cardName])) : undefined,
+		optionCardNames: successorMode ? Object.fromEntries(candidatesForMessage.map(candidate => [candidate.optionId, candidate.cardName])) : undefined,
 		optionTargetSeatIds: Object.fromEntries(candidatesForMessage.filter(candidate => typeof candidate.targetSeatId === "string")
 			.map(candidate => [candidate.optionId, candidate.targetSeatId])),
 		...(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" ? { optionNativeTargetSpellEligible: Object.fromEntries(gate.candidates
 			.filter(candidate => candidate.cardType === "native_skill").map(candidate => [candidate.optionId, candidate.targetHasNativeSpell === true])) } : {}),
-		...(event5Mode ? {} : { skillCandidateCount: gate.nativeSkillCandidateCount || 0 }),
+		...(successorMode ? {} : { skillCandidateCount: gate.nativeSkillCandidateCount || 0 }),
 		...(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" ? { jiRiFixture: { seatId: gate.seatId, nativeCandidateGenerated: (gate.nativeSkillCandidateCount || 0) > 0 } } : {}),
 		...(process.env.V2_NATIVE_YINYANG_FIXTURE === "1" ? { optionTargetSeatIds: Object.fromEntries(gate.candidates.map(candidate => [candidate.optionId, candidate.targetSeatId])) } : {}),
 		...(process.env.V2_NATIVE_YINYANG_FIXTURE === "1" ? { optionYinYangEligible: Object.fromEntries(gate.candidates.map(candidate => [candidate.optionId, candidate.yinyangEligible === true])) } : {}),
-		...(!event5Mode && process.env.V2_NATIVE_MANAGED_RESPONSE === "1"
+		...(!successorMode && process.env.V2_NATIVE_MANAGED_RESPONSE === "1"
 			? { responseProbeOptions: gate.candidates.filter(candidate => candidate.responseProbePotential === true).map(candidate => candidate.optionId) } : {}),
 		trusteeOption: optionIds[0], deadlineMs: ["managed_input_controller_trustee", "managed_opening_root_action_event4_trustee"].includes(process.env.V2_NATIVE_START_PROBE_MODE) ? 750 : 5000,
 		eventName: "gongJiOrFaShu" };
@@ -3045,7 +3113,9 @@ async function runNativeStartDiagnostic(message) {
 					return;
 				}
 				if (payload.stage === "native_input_wait_open" && process.env.V2_NATIVE_START_PROBE_MODE === "managed_opening_root_action_event5" &&
-					process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" && payload.snapshot?.nativeInputGate?.eventSequence === 5) {
+					process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" && [5, 6].includes(payload.snapshot?.nativeInputGate?.eventSequence) &&
+					(payload.snapshot.nativeInputGate.eventSequence !== 6 || process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" &&
+						process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1")) {
 					const native = payload.snapshot, source = native.nativeInputGate, candidates = source.candidates;
 					const candidateSetValid = Array.isArray(candidates) && candidates.length > 0 && candidates.length <= 64 &&
 						candidates.every(candidate => candidate && typeof candidate === "object" &&
@@ -3068,7 +3138,7 @@ async function runNativeStartDiagnostic(message) {
 					// authenticated candidate path; other private trace data is omitted.
 					emitNativeStartDiagnostic({ stage: payload.stage, snapshot: { eventName: "gongJiOrFaShu",
 						rootInstanceId: native.rootInstanceId, rootObjectMatches: true, hostPlayerAbsent: true,
-						nativeInputGate: { eventName: "gongJiOrFaShu", nativeEventId: source.nativeEventId, eventSequence: 5,
+							nativeInputGate: { eventName: "gongJiOrFaShu", nativeEventId: source.nativeEventId, eventSequence: source.eventSequence,
 							eventInstanceId: source.eventInstanceId, parentEventInstanceId: source.parentEventInstanceId,
 							waitingCompletionOrdinal: source.waitingCompletionOrdinal, seatId: source.seatId,
 							gameMeAbsent: native.hostPlayerAbsent === true, action: true, waiting: true, candidates: candidates.map(candidate => ({ optionId: candidate.optionId,
@@ -3138,6 +3208,7 @@ async function runNativeStartDiagnostic(message) {
 	 const managedInputGate=${message.mode === "managed_input_gate"};
 	 const reuseOpeningRoot=${["managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_opening_root_action_event5", "managed_native_response_probe", "managed_native_skill_candidate_probe"].includes(message.mode)};
 		 const managedInputController=${["managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_opening_root_action_event5", "managed_native_response_probe", "managed_native_skill_candidate_probe"].includes(message.mode)};
+	 const event6Continuation=${process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" && process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" && message.mode === "managed_opening_root_action_event5"};
 	 const multiTurnInputGateProbe=${process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" && ["managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event5"].includes(message.mode)};
 	 const managedNativeResponse=${process.env.V2_NATIVE_MANAGED_RESPONSE === "1"};
 	 const multiTurnCapture=${process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" && process.env.V2_NATIVE_ATOMIC_CAPTURE_PROBE === "1" && ["managed_opening_root_action_event4", "managed_opening_root_action_event5"].includes(message.mode)};
@@ -3147,6 +3218,7 @@ async function runNativeStartDiagnostic(message) {
 	 const managedStart=${message.mode === "managed_start" || message.mode === "managed_input_gate" || ["managed_input_resume", "managed_input_timeout", "managed_input_cancel", "managed_input_cancel_resume_race", "managed_input_stop", "managed_input_controller", "managed_input_controller_trustee", "managed_input_controller_registry", "managed_input_controller_fault_before_apply", "managed_opening_root_action", "managed_opening_root_action_event4", "managed_opening_root_action_event4_ack_loss", "managed_opening_root_action_event4_trustee", "managed_opening_root_action_event5", "managed_native_response_probe", "managed_native_skill_candidate_probe"].includes(message.mode)};
 	 const managed=window.__v2ManagedEngine,{game,lib,get,_status}=managed.core,manager=_status.eventManager,Player=lib.element.Player;
 	 const state=reuseOpeningRoot?window.__v2ManagedOpeningDraw:(window.__v2NativeStartDiagnosticState||{traceCount:0,lastSuccessfulEventStep:null,gameStartCount:0,drawCreated:false,drawEntered:false,phaseLoopCreated:false,prepareArenaCalls:0,waitForPlayerCalls:0,randomMapOLCalls:0,chooseCharacterCalls:0,phaseCalls:0,rootPromiseState:'not_started',failureCode:null});
+	 state.event6ContinuationProbe=event6Continuation;
 	 state.multiTurnCaptureProbe=multiTurnCapture;
 	 state.multiTurnInputGateProbe=multiTurnInputGateProbe;
 	 state.nativeSkillTargetGates??=new Map();
@@ -3545,9 +3617,12 @@ async function runNativeStartDiagnostic(message) {
 	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_loop_wait_next_boundary',snapshot}))}catch{}
 	    const boundaryOrdinal=(state.nativePhaseBoundaryFences?.length||0)+1;
 	    const firstCaptureBoundary=boundaryOrdinal===1&&!priorBoundary;
-	     const secondCaptureBoundary=multiTurnCapture&&boundaryOrdinal===2&&priorBoundary?.status==='released'&&phaseChild?.player!==priorBoundary.seatPlayer;
+	    const secondCaptureBoundary=multiTurnCapture&&boundaryOrdinal===2&&priorBoundary?.status==='released'&&phaseChild?.player!==priorBoundary.seatPlayer;
+	    const thirdCaptureBoundary=event6Continuation&&multiTurnCapture&&boundaryOrdinal===3&&priorBoundary?.status==='released'&&
+	     priorBoundary.boundaryOrdinal===2&&phaseChild?.player?.playerid!==priorBoundary.seatId&&state.event5AuthorityAccepted===true&&
+	     priorBoundary.releaseResolution?.eventSequence===5;
 	    if(${JSON.stringify(process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1")}&&phaseOverBoundary&&
-	     (!priorBoundary||priorBoundary.status==='released')&&(firstCaptureBoundary||secondCaptureBoundary)){
+	     (!priorBoundary||priorBoundary.status==='released')&&(firstCaptureBoundary||secondCaptureBoundary||thirdCaptureBoundary)){
 	     const actionEvent=state.inputEvent,action=state.nativeAction,authority=window.__v2ManagedGame?.authorityState;
 	     const pendingDescendants=(root)=>{const seen=new WeakSet();let pending=0,nodes=0,overflow=false;const walk=node=>{if(!node||typeof node!=='object'||seen.has(node))return;seen.add(node);if(++nodes>4096){overflow=true;return}if(node!==root&&node.finished!==true)pending++;for(const child of [...(Array.isArray(node.childEvents)?node.childEvents:[]),...(Array.isArray(node.next)?node.next:[])])walk(child)};walk(root);return {pending,nodes,overflow}};
 	     const descendants=pendingDescendants(event),priorFence=state.nativeParentContinuationFence;
@@ -3559,8 +3634,14 @@ async function runNativeStartDiagnostic(message) {
 	      priorFence.nativeEventId===action.eventId&&phaseChild?.player===_status.firstAct&&state.nativePhaseOverTriggerCount===1;
 	     const secondFenceValid=secondCaptureBoundary&&priorBoundary?.phaseOverDispatchEvidence!==phaseOverDispatch&&
 	      state.nativePhaseOverTriggerCount>priorBoundary.phaseOverTriggerCount&&phaseChild?.player?.playerid!==_status.firstAct?.playerid;
-	     const fenceChecks={firstFenceValid,secondFenceValid,localAuthorityRevision:Number.isSafeInteger(authority?.revision)?authority.revision:null,
-	      boundaryOrdinal,firstCaptureBoundary,secondCaptureBoundary,actionPresent:Boolean(action),actionEventMatches:Boolean(action&&actionEvent&&action.eventId===actionEvent.__v2NativeEventId),
+	     const thirdFenceValid=thirdCaptureBoundary&&actionEvent&&action&&action.eventId===actionEvent.__v2NativeEventId&&
+	      actionEvent.__v2NativeEventId===state.nativeEvent6Candidate?.nativeEventId&&action.seatId===state.nativeEvent6Candidate?.seatId&&
+	      action.useResultCount===1&&action.nativeChildWaitCompleted===true&&action.nativeUseCardChildCompleted===true&&
+	      priorBoundary?.releaseCount===1&&priorBoundary.releaseResolution?.eventSequence===5&&
+	      phaseChild?.player?.playerid===state.nativeEvent6Candidate?.seatId&&state.nativePhaseOverTriggerCount>priorBoundary.phaseOverTriggerCount;
+	     const expectedAuthorityRevision=thirdCaptureBoundary?5:4;
+	     const fenceChecks={firstFenceValid,secondFenceValid,thirdFenceValid,localAuthorityRevision:Number.isSafeInteger(authority?.revision)?authority.revision:null,
+	      boundaryOrdinal,firstCaptureBoundary,secondCaptureBoundary,thirdCaptureBoundary,actionPresent:Boolean(action),actionEventMatches:Boolean(action&&actionEvent&&action.eventId===actionEvent.__v2NativeEventId),
 	      useResultCount:action?.useResultCount??null,nativeChildWaitCompleted:action?.nativeChildWaitCompleted===true,
 	      nativeUseCardChildCompleted:action?.nativeUseCardChildCompleted===true,nativeUseSkillChildCompleted:action?.nativeUseSkillChildCompleted===true,
 	      nativeTargetChoiceCompleted:action?.nativeTargetChoiceCompleted===true,nativeChangeZhanJiCompleted:action?.nativeChangeZhanJiCompleted===true,
@@ -3570,10 +3651,11 @@ async function runNativeStartDiagnostic(message) {
 	      phaseOverOwnerStep:phaseOverDispatch?.ownerEventStep??null,pendingDescendantCount:descendants.pending,descendantOverflow:descendants.overflow,
 	      rootMatches:manager.rootEvent===state.root&&Boolean(state.root),gameMeAbsent:game.me===null,connectedTransportCount:game.players.filter(player=>player.ws).length,
 	      currentPhaseAbsent:_status.currentPhase==null,openingDigestMatches:Boolean(firstCaptureBoundary&&window.__v2ManagedOpeningDraw?.authorityDigest===priorFence?.releaseResolution?.afterDigest),
-	      previousBoundaryWasEvent4:Boolean(secondCaptureBoundary&&priorBoundary?.releaseResolution?.eventSequence===4)};
-	    if((!firstFenceValid&&!secondFenceValid)||authority?.revision!==4||
+	      previousBoundaryWasEvent4:Boolean(secondCaptureBoundary&&priorBoundary?.releaseResolution?.eventSequence===4),previousBoundaryWasEvent5:Boolean(thirdCaptureBoundary&&priorBoundary?.releaseResolution?.eventSequence===5)};
+	    if((!firstFenceValid&&!secondFenceValid&&!thirdFenceValid)||authority?.revision!==expectedAuthorityRevision||
 	      firstCaptureBoundary&&window.__v2ManagedOpeningDraw?.authorityDigest!==priorFence?.releaseResolution?.afterDigest||
 	      secondCaptureBoundary&&priorBoundary?.releaseResolution?.eventSequence!==4||
+	      thirdCaptureBoundary&&priorBoundary?.releaseResolution?.eventSequence!==5||
 	      event!==state.phaseLoop||event.step!==3||!phaseChild||!phaseOverTriggerComplete||
 	      phaseOverDispatch?.ownerEventStep!==2||descendants.overflow||descendants.pending!==0||
 	      manager.rootEvent!==state.root||!state.root||game.me!==null||game.players.some(player=>player.ws)||_status.currentPhase!=null){
@@ -3604,7 +3686,8 @@ async function runNativeStartDiagnostic(message) {
 	      seatPlayer:phaseChild.player,nextActorSeatId:event.player?.playerid||null,
 	     phaseLoopStep:event.step,phaseOverTriggerCount:state.nativePhaseOverTriggerCount,phaseOverTriggerComplete,
 	     nativeCompletionOrdinal:completionLedger.completionOrdinal,completionEvidence:completedPhaseEvidence,phaseOverCompletionEvidence:completedPhaseOverEvidence,
-	      priorAuthority:Object.freeze({eventSequence:4,stateRevision:4,afterDigest:firstCaptureBoundary?priorFence.releaseResolution.afterDigest:window.__v2ManagedOpeningDraw?.authorityDigest||null}),
+	      priorAuthority:Object.freeze(thirdCaptureBoundary?{eventSequence:5,stateRevision:5,afterDigest:window.__v2ManagedOpeningDraw?.authorityDigest||null}:
+	       {eventSequence:4,stateRevision:4,afterDigest:firstCaptureBoundary?priorFence.releaseResolution.afterDigest:window.__v2ManagedOpeningDraw?.authorityDigest||null}),
 	      descendantNodeCount:descendants.nodes,pendingDescendantCount:descendants.pending,promise:wait,resolve:releaseBoundary};
 	     state.nativePhaseBoundaryFence=fence;
 	     state.nativePhaseBoundaryFences??=[];state.nativePhaseBoundaryFences.push(fence);
@@ -3628,18 +3711,23 @@ async function runNativeStartDiagnostic(message) {
 	      rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null,connectedTransports:game.players.filter(player=>player.ws).length};
 	     try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_boundary_fence_waiting',snapshot:waiting}))}catch{}
 			const release=await fence.promise;
-			const acceptedBoundaryAuthority=fence.boundaryOrdinal===2?fence.acceptedAuthority:fence.priorAuthority;
+			const acceptedBoundaryAuthority=fence.boundaryOrdinal>=2?fence.acceptedAuthority:fence.priorAuthority;
 			if(fence.status!=='accepted'||fence.releaseCount!==1||release?.accepted!==true||
 			 release.nativeEventId!==fence.nativeEventId||release.rootInstanceId!==fence.rootInstanceId||release.seatId!==fence.seatId||
 			 release.eventSequence!==acceptedBoundaryAuthority?.eventSequence||release.stateRevision!==acceptedBoundaryAuthority?.stateRevision||release.afterDigest!==acceptedBoundaryAuthority?.afterDigest||
 			 manager.rootEvent!==fence.rootEvent||event!==fence.phaseLoopEvent||event.step!==3||phaseChild!==fence.completedPhaseEvent||
 			 state.nativePhaseOverTriggerCount!==fence.phaseOverTriggerCount||fence.boundaryOrdinal===1&&fence.phaseOverTriggerCount!==1||
-			 fence.boundaryOrdinal===2&&fence.phaseOverTriggerCount<2||fence.phaseOverTriggerComplete!==true||
+				 fence.boundaryOrdinal===2&&fence.phaseOverTriggerCount<2||fence.boundaryOrdinal===3&&fence.phaseOverTriggerCount<3||fence.phaseOverTriggerComplete!==true||
 			 fence.phaseOverDispatchEvidence!==state.nativePhaseOverDispatchEvidence||
 			 state.nativeAction?.eventId!==fence.nativeEventId||authority?.revision!==acceptedBoundaryAuthority?.stateRevision||
 			 window.__v2ManagedOpeningDraw?.authorityDigest!==acceptedBoundaryAuthority?.afterDigest)throw Error('NATIVE_PHASE_BOUNDARY_FENCE_RELEASE_REJECTED');
 			fence.status='released';fence.releaseResolution=Object.freeze({eventSequence:acceptedBoundaryAuthority.eventSequence,
 			 stateRevision:acceptedBoundaryAuthority.stateRevision,afterDigest:acceptedBoundaryAuthority.afterDigest});
+			if(fence.boundaryOrdinal===2&&acceptedBoundaryAuthority.eventSequence===5&&event6Continuation){
+			 state.event5AuthorityAccepted=true;state.event5ActorSeatId=fence.seatId;state.event6ManagedGateOpened=false;
+			 state.priorNativeInputGate=state.nativeInputGate;state.nativeInputGate=null;state.nativeInputResumeGate=null;state.inputEvent=null;
+				 state.nextSeatInputProbeArmed=true;state.nextSeatInputStartObserved=false;state.nextSeatInputLoopObserved=false;
+			}
 	     try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_phase_boundary_fence_released',snapshot:{status:fence.status,
 	      releaseCount:fence.releaseCount,nativeEventId:fence.nativeEventId,seatId:fence.seatId,rootInstanceId:fence.rootInstanceId,
 	      releaseResolution:fence.releaseResolution,rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null}}))}catch{}
@@ -3931,7 +4019,9 @@ async function runNativeStartDiagnostic(message) {
 	   if(managedNativeResponse&&this.name==='yingZhan'){if(!this.__v2ManagedResponseGate)prepareManagedNativeResponseGate(this);bindManagedResponseContext(this)}
 	   const event5SuccessorGate=multiTurnInputGateProbe&&${JSON.stringify(message.mode === "managed_opening_root_action_event5")}&&
 	    state.nextSeatInputProbeArmed===true&&this.player!==_status.firstAct&&state.event5ManagedGateOpened!==true;
-	   const diagnosticNextSeatGate=multiTurnInputGateProbe&&state.nextSeatInputProbeArmed===true&&this.player!==_status.firstAct&&!event5SuccessorGate;
+	   const event6SuccessorGate=event6Continuation&&state.event5AuthorityAccepted===true&&state.nextSeatInputProbeArmed===true&&
+	    this.player!==state.event5ActorSeatId&&state.event6ManagedGateOpened!==true;
+	   const diagnosticNextSeatGate=multiTurnInputGateProbe&&state.nextSeatInputProbeArmed===true&&this.player!==_status.firstAct&&!event5SuccessorGate&&!event6SuccessorGate;
 	   if(multiTurnInputGateProbe&&this.name==='gongJiOrFaShu'&&(state.nativeNextSeatGateDecisionCount||0)<16){
 	    state.nativeNextSeatGateDecisionCount=(state.nativeNextSeatGateDecisionCount||0)+1;
 	    try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_next_seat_gate_decision',snapshot:{eventName:this.name,
@@ -3943,7 +4033,7 @@ async function runNativeStartDiagnostic(message) {
 	   }
 	   if(multiTurnInputGateProbe&&this.name==='gongJiOrFaShu')emit('native_next_seat_gate_evaluated');
 	   if((managedInputGate||managedInputResume)&&(!state.nativeInputGate||diagnosticNextSeatGate)&&this.name==='gongJiOrFaShu'&&
-	    (this.player===_status.firstAct||diagnosticNextSeatGate||event5SuccessorGate)&&this.action===true){
+	    (this.player===_status.firstAct||diagnosticNextSeatGate||event5SuccessorGate||event6SuccessorGate)&&this.action===true){
 	    if(multiTurnInputGateProbe&&(state.nativeNextSeatGateSelectedCount||0)<8){
 	     state.nativeNextSeatGateSelectedCount=(state.nativeNextSeatGateSelectedCount||0)+1;
 	     try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_next_seat_gate_selected',snapshot:{eventName:this.name,
@@ -3952,10 +4042,19 @@ async function runNativeStartDiagnostic(message) {
 	      rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null}}))}catch{}
 	    }
 	    observeNativeInputGate(this);
+	    if(state.nativeInputGate)state.nativeInputGate.rootInstanceId=state.rootInstanceId;
 	    if(diagnosticNextSeatGate){state.nativeInputGate.diagnosticOnly=true;state.nextSeatInputProbeArmed=false;state.nextSeatInputGateSeen=true}
 	    if(event5SuccessorGate){state.nativeInputGate.eventSequence=5;state.event5ManagedGateOpened=true;state.nextSeatInputProbeArmed=false;state.nativeActionCompletionReported=false;state.nativeAction=null}
+	    if(event6SuccessorGate){state.nativeInputGate.eventSequence=6;state.event6ManagedGateOpened=true;state.nextSeatInputProbeArmed=false;state.nativeActionCompletionReported=false;state.nativeAction=null;
+	     state.nativeEvent6Candidate=Object.freeze({nativeEventId:state.nativeInputGate.nativeEventId,eventSequence:6,
+	      eventInstanceId:state.nativeInputGate.eventInstanceId,parentEventInstanceId:state.nativeInputGate.parentEventInstanceId,
+	      waitingCompletionOrdinal:state.nativeInputGate.waitingCompletionOrdinal,seatId:this.player.playerid,rootInstanceId:state.rootInstanceId,
+	      options:Object.freeze(state.nativeInputGate.candidates.map(item=>item.optionId)),
+	      optionKinds:Object.freeze(Object.fromEntries(state.nativeInputGate.candidates.map(item=>[item.optionId,item.cardType]))),
+	      optionCardNames:Object.freeze(Object.fromEntries(state.nativeInputGate.candidates.map(item=>[item.optionId,item.cardName]))),
+	      optionTargetSeatIds:Object.freeze(Object.fromEntries(state.nativeInputGate.candidates.map(item=>[item.optionId,item.targetSeatId])))})}
 	    if(managedInputGate){game.pause();return new Promise(()=>{})}
-	    const gate={event:this,nativeEventId:state.nativeInputGate.nativeEventId,seatId:this.player.playerid,status:'open',timer:null,controllerManaged:managedInputController,diagnosticOnly:diagnosticNextSeatGate,eventSequence:event5SuccessorGate?5:4};state.nativeInputResumeGate=gate;state.inputEvent=gate.event;
+	    const gate={event:this,nativeEventId:state.nativeInputGate.nativeEventId,seatId:this.player.playerid,status:'open',timer:null,controllerManaged:managedInputController,diagnosticOnly:diagnosticNextSeatGate,eventSequence:event6SuccessorGate?6:event5SuccessorGate?5:4};state.nativeInputResumeGate=gate;state.inputEvent=gate.event;
 	    this.isOnline=()=>true;
 	    this.send=function(){if(this!==gate.event||gate.status!=='open'||gate.timer)throw Error('NATIVE_INPUT_GATE_DUPLICATE_SEND_REJECTED');gate.status='waiting';gate.nativeSendCount=(gate.nativeSendCount||0)+1;state.nativeInputGate.nativeSendCount=gate.nativeSendCount;state.nativeInputGate.waiting=true;if(multiTurnInputGateProbe&&(gate.diagnosticOnly||gate.eventSequence===5))try{window.__v2NativeStartTrace(JSON.stringify({kind:'native_start_trace_v1',stage:'native_next_seat_native_send_invoked',snapshot:{eventName:this.name,seatId:gate.seatId,eventSequence:gate.eventSequence,controllerManaged:gate.controllerManaged,diagnosticOnly:gate.diagnosticOnly,nativeSendCount:gate.nativeSendCount,rootObjectMatches:manager.rootEvent===state.root,gameMeAbsent:game.me===null}}))}catch{}if(!gate.controllerManaged)gate.timer=setTimeout(()=>{if(gate.status!=='waiting')return;gate.status='expired';state.nativeInputGate.status='expired';state.nativeInputGate.failureCode='NATIVE_INPUT_DEADLINE_EXPIRED';state.nativeInputGate.engineResumeCount=(state.nativeInputGate.engineResumeCount||0)+1;this.result={bool:false};game.resume();emit('native_input_gate_expired')},managedInputDeadlineMs);game.pause();emit('native_input_wait_open')};
 	    emit('native_input_gate_waiting');return originalLoop.apply(this,args)
@@ -4324,8 +4423,10 @@ async function snapshotNativeAtomicCapture(message) {
 		process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE !== "1" || process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" ||
 		!validHostCommand(message) || message.type !== "host_native_atomic_capture" || Object.keys(message).sort().join(",") !== keys ||
 		!/^atomic_[a-f0-9]{32}$/.test(message.requestId || "") || !Number.isSafeInteger(message.captureOrdinal) || message.captureOrdinal < 1 ||
-		!Number.isSafeInteger(message.boundaryOrdinal) || message.boundaryOrdinal < 1 || message.boundaryOrdinal > 2 ||
-		(message.boundaryOrdinal === 2 && process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE !== "1") ||
+		!Number.isSafeInteger(message.boundaryOrdinal) || message.boundaryOrdinal < 1 ||
+		!(message.boundaryOrdinal <= 2 && (message.boundaryOrdinal !== 2 || process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1") ||
+			message.boundaryOrdinal === 3 && process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" &&
+			process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" && process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1") ||
 		message.engineBuildId !== managedEngineBuildId || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(message.rootInstanceId || "") ||
 		!Array.isArray(message.seatIds) || message.seatIds.length !== 4 || JSON.stringify(message.seatIds) !== JSON.stringify(managedSeatIds) || !cdp) {
 		throw new Error("NATIVE_ATOMIC_CAPTURE_COMMAND_REJECTED");
@@ -4438,8 +4539,12 @@ async function snapshotNativeAtomicCapture(message) {
 }
 
 async function snapshotNativePreActionCapture(message, successor = false) {
+	const event6Successor = successor && message?.eventSequence === 6 &&
+		process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" &&
+		process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1";
+	const successorSequence = event6Successor ? 6 : 5;
 	const keys = successor
-		? "candidateOptionIds,candidateOptionKinds,captureOrdinal,engineBuildId,eventInstanceId,kind,nativeEventId,parentEventInstanceId,previousNativeEventId,previousSeatId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type,waitingCompletionOrdinal"
+		? `${event6Successor ? "candidateOptionIds,candidateOptionKinds,captureOrdinal,engineBuildId,eventInstanceId,eventSequence,kind,nativeEventId,parentEventInstanceId,previousNativeEventId,previousSeatId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type,waitingCompletionOrdinal" : "candidateOptionIds,candidateOptionKinds,captureOrdinal,engineBuildId,eventInstanceId,kind,nativeEventId,parentEventInstanceId,previousNativeEventId,previousSeatId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type,waitingCompletionOrdinal"}`
 		: "choiceId,engineBuildId,kind,nativeEventId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type";
 	const supportedFixture = process.env.V2_NATIVE_RESOURCE_SHENGJI_FIXTURE === "1" ||
 		(process.env.V2_NATIVE_JIRIMO_FIXTURE === "1" && process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1") ||
@@ -4451,10 +4556,11 @@ async function snapshotNativePreActionCapture(message, successor = false) {
 		process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE === "1" ? null : "completion_ledger_disabled",
 		process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" ? null : "network_guard_disabled",
 		validHostCommand(message) ? null : "host_identity_mismatch",
-		message.type === (successor ? "host_native_successor_preaction_capture" : "host_native_pre_action_capture") ? null : "type_mismatch",
+		message.type === (event6Successor ? "host_native_event6_preaction_capture" : successor ? "host_native_successor_preaction_capture" : "host_native_pre_action_capture") ? null : "type_mismatch",
 		Object.keys(message).sort().join(",") === keys ? null : "schema_mismatch",
-		(successor ? /^successor_[a-f0-9]{32}$/ : /^preaction_[a-f0-9]{32}$/).test(message.requestId || "") ? null : "request_id_invalid",
+		(successor ? (event6Successor ? /^event6pre_[a-f0-9]{32}$/ : /^successor_[a-f0-9]{32}$/) : /^preaction_[a-f0-9]{32}$/).test(message.requestId || "") ? null : "request_id_invalid",
 		(successor ? (message.previousNativeEventId !== message.nativeEventId && /^native_[A-Za-z0-9_-]{16,96}$/.test(message.previousNativeEventId || "") &&
+			(!event6Successor || message.eventSequence === 6) &&
 			Number.isSafeInteger(message.captureOrdinal) && message.captureOrdinal >= 1 && message.captureOrdinal <= 2 &&
 			/^event_[1-9][0-9]{0,6}$/.test(message.eventInstanceId || "") && /^event_[1-9][0-9]{0,6}$/.test(message.parentEventInstanceId || "") &&
 			Number.isSafeInteger(message.waitingCompletionOrdinal) && message.waitingCompletionOrdinal > 0 &&
@@ -4486,22 +4592,22 @@ async function snapshotNativePreActionCapture(message, successor = false) {
 		choiceId: successor ? null : message.choiceId, seatId: message.seatId,
 		previousNativeEventId: successor ? message.previousNativeEventId : null, previousSeatId: successor ? message.previousSeatId : null,
 				candidateOptionIds: successor ? message.candidateOptionIds : null, candidateOptionKinds: successor ? message.candidateOptionKinds : null,
-			captureOrdinal: successor ? message.captureOrdinal : 1 };
+			captureOrdinal: successor ? message.captureOrdinal : 1, eventSequence: successorSequence };
 	try {
 		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{
-			const command=${JSON.stringify(command)},state=window.__v2NativeStartDiagnosticState,managed=window.__v2ManagedEngine,
+			const command=${JSON.stringify(command)},event6Successor=${JSON.stringify(event6Successor)},state=window.__v2NativeStartDiagnosticState,managed=window.__v2ManagedEngine,
 				core=managed?.core,game=core?.game,status=core?._status,manager=status?.eventManager,gate=state?.nativeInputResumeGate,
 				event=gate?.event,ledger=state?.nativeEventCompletionLedger;
 			if(!state||!game||!status||!manager||manager.rootEvent!==state.root||manager.rootEvent?.name!=='game'||game.me!==null||
 				state.rootInstanceId!==command.rootInstanceId||!Array.isArray(game.players)||game.players.length!==4||game.players.some(player=>player.ws)||
 				new Set(game.players.map(player=>player.playerid)).size!==4||command.seatIds.some(id=>!game.players.some(player=>player.playerid===id)))
 				throw Error('NATIVE_PREACTION_CAPTURE_ROOT_OR_SEATS_INVALID');
-			const event5CaptureChecks={mode:command.successor===true&&${JSON.stringify(successor && experimentalAuthorityEventEnabled(5))},
-				opt_in:${JSON.stringify(experimentalAuthorityEventEnabled(5))},
+			const event5CaptureChecks={mode:command.successor===true&&${JSON.stringify(successor && (event6Successor ? experimentalAuthorityEventEnabled(6) : experimentalAuthorityEventEnabled(5)))},
+				opt_in:${JSON.stringify(event6Successor ? experimentalAuthorityEventEnabled(6) : experimentalAuthorityEventEnabled(5))},
 				network_guard:${JSON.stringify(process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1")},
-				controller_gate:gate?.controllerManaged===true,sequence:gate?.eventSequence===5,status:gate?.status==='waiting',
-				opened:state.event5ManagedGateOpened===true,state_event:state.nativeInputGate?.nativeEventId===command.nativeEventId,
-				state_sequence:state.nativeInputGate?.eventSequence===5,state_waiting:state.nativeInputGate?.waiting===true,
+				controller_gate:gate?.controllerManaged===true,sequence:gate?.eventSequence===command.eventSequence,status:gate?.status==='waiting',
+				opened:event6Successor?state.event6ManagedGateOpened===true:state.event5ManagedGateOpened===true,state_event:state.nativeInputGate?.nativeEventId===command.nativeEventId,
+				state_sequence:state.nativeInputGate?.eventSequence===command.eventSequence,state_waiting:state.nativeInputGate?.waiting===true,
 				unused:state.nativeInputGate?.useResultCount===0,send_once:gate?.nativeSendCount===1,
 				no_applied_action:state.nativeAction?.eventId!==command.nativeEventId};
 			const event5SuccessorCapture=Object.values(event5CaptureChecks).every(value=>value===true);
@@ -4518,6 +4624,7 @@ async function snapshotNativePreActionCapture(message, successor = false) {
 				use_result_unapplied:state.nativeInputGate?.useResultCount===0};
 			if(command.successor)Object.assign(gateChecks,{previous_event_distinct:command.previousNativeEventId!==command.nativeEventId,
 				previous_seat_distinct:command.previousSeatId!==command.seatId,candidate_ids_array:Array.isArray(command.candidateOptionIds)&&Array.isArray(state.nativeInputGate?.candidates),
+				event6_predecessor:!event6Successor||state.event5AuthorityAccepted===true&&state.event5ActorSeatId===command.previousSeatId&&state.nativeInputGate?.eventSequence===6,
 				candidate_ids_match:Array.isArray(command.candidateOptionIds)&&Array.isArray(state.nativeInputGate?.candidates)&&
 				JSON.stringify(state.nativeInputGate.candidates.map(item=>item.optionId))===JSON.stringify(command.candidateOptionIds),
 				candidate_kinds_match:Array.isArray(state.nativeInputGate?.candidates)&&
@@ -4601,14 +4708,16 @@ async function snapshotNativePreActionCapture(message, successor = false) {
 		}
 		if (!envelope || envelope.schema !== (successor ? "xingbei_native_private_successor_preaction_capture_v1" : "xingbei_native_private_pre_action_capture_v1") || envelope.captureOrdinal !== command.captureOrdinal)
 			throw new Error("NATIVE_PREACTION_CAPTURE_NATIVE_EXTRACTION_INVALID");
-		process.send?.({ ...identity, type: successor ? "host_private_successor_preaction_capture" : "host_private_pre_action_capture", requestId: message.requestId, envelope });
+		process.send?.({ ...identity, type: event6Successor ? "host_private_event6_preaction_capture" :
+			successor ? "host_private_successor_preaction_capture" : "host_private_pre_action_capture", requestId: message.requestId, envelope });
 	} catch (error) {
-		const prefix = successor ? "SUCCESSOR_PREACTION" : "NATIVE_PREACTION_CAPTURE";
+		const prefix = event6Successor ? "EVENT6_PREACTION" : successor ? "SUCCESSOR_PREACTION" : "NATIVE_PREACTION_CAPTURE";
 		const messageCode = error?.message || "";
 		const code = new RegExp(`^${prefix}_[A-Z0-9_]{1,80}$`).test(messageCode) ? messageCode :
 			(successor && /^NATIVE_PREACTION_CAPTURE_[A-Z0-9_]{1,80}$/.test(messageCode)
 				? `SUCCESSOR_PREACTION_${messageCode.slice("NATIVE_PREACTION_CAPTURE_".length)}` : `${prefix}_NATIVE_EXTRACTION_FAILED`);
-		process.send?.({ ...identity, type: successor ? "host_private_successor_preaction_capture_failed" : "host_private_pre_action_capture_failed", requestId: message.requestId, code });
+		process.send?.({ ...identity, type: event6Successor ? "host_private_event6_preaction_capture_failed" :
+			successor ? "host_private_successor_preaction_capture_failed" : "host_private_pre_action_capture_failed", requestId: message.requestId, code });
 	}
 }
 
@@ -4834,6 +4943,21 @@ process.on("message", message => {
 		});
 		return;
 	}
+	if (message?.type === "host_native_event6_post_capture_ready") {
+		choiceCommandChain = choiceCommandChain.then(() => commitNativeSuccessorActionAuthority(message, 6)).catch(error => {
+			const gate = interactiveChoice?.nativeInputGate;
+			const delivery = gate?.actionDeliveries?.get(gate.seatId);
+			if (delivery?.status === "native_applied_authority_pending") {
+				delivery.status = "uncertain";
+				delivery.rejectAuthorityCommit?.(error);
+				delivery.resolveAuthorityCommit = null;
+				delivery.rejectAuthorityCommit = null;
+			}
+			const code = /^[A-Z0-9_]{3,96}$/.test(error?.message || "") ? error.message : "EVENT6_AUTHORITY_UNCERTAIN";
+			process.send?.({ ...identity, type: "host_failure", code }, () => cleanup().finally(() => process.exit(1)));
+		});
+		return;
+	}
 	// Choice delivery is accepted only after the C2 IPC adapter validates the
 	// private host identity inside the managed process. Unknown IPC is inert.
 				if (message?.type === "host_choice_delivery") {
@@ -4882,8 +5006,15 @@ process.on("message", message => {
 		return;
 	}
 	if (message?.type === "host_native_atomic_capture" && process.env.V2_NATIVE_ATOMIC_CAPTURE_PROBE === "1") {
+		if (message.boundaryOrdinal === 3) emitNativeStartDiagnostic({ stage: "event6_atomic_capture_command_received",
+			classification: "authenticated_event6_capture_request", snapshot: { boundaryOrdinal: message.boundaryOrdinal,
+				captureOrdinal: Number.isSafeInteger(message.captureOrdinal) ? message.captureOrdinal : null,
+				rootMatches: message.rootInstanceId === interactiveChoice?.nativeRootInstanceId,
+				event6ProbeEnabled: process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" } });
 		choiceCommandChain = choiceCommandChain.then(() => snapshotNativeAtomicCapture(message)).catch(error => {
 			const code = /^NATIVE_ATOMIC_CAPTURE_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "NATIVE_ATOMIC_CAPTURE_CAPTURE_FAILED";
+			if (message.boundaryOrdinal === 3) emitNativeStartDiagnostic({ stage: "event6_atomic_capture_command_failed",
+				classification: "explicit_exception", failureCode: code });
 			process.send?.({ ...identity, type: "host_private_atomic_capture_failed", requestId: message?.requestId,
 				captureOrdinal: message?.captureOrdinal, code });
 		});
@@ -4901,6 +5032,15 @@ process.on("message", message => {
 		choiceCommandChain = choiceCommandChain.then(() => snapshotNativePreActionCapture(message, true)).catch(error => {
 			const code = /^SUCCESSOR_PREACTION_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "SUCCESSOR_PREACTION_CAPTURE_FAILED";
 			process.send?.({ ...identity, type: "host_private_successor_preaction_capture_failed", requestId: message?.requestId, code });
+		});
+		return;
+	}
+	if (message?.type === "host_native_event6_preaction_capture" &&
+		process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1" &&
+		process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1") {
+		choiceCommandChain = choiceCommandChain.then(() => snapshotNativePreActionCapture(message, true)).catch(error => {
+			const code = /^EVENT6_PREACTION_[A-Z0-9_]{1,80}$/.test(error?.message || "") ? error.message : "EVENT6_PREACTION_CAPTURE_FAILED";
+			process.send?.({ ...identity, type: "host_private_event6_preaction_capture_failed", requestId: message?.requestId, code });
 		});
 		return;
 	}

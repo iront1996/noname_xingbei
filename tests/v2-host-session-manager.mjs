@@ -166,11 +166,17 @@ test("experimental Event #5 ceiling requires both isolated opt-in guards and is 
 test("Event #6 HostSession ceiling is opt-in, bounded, and isolated from the default and Event #5 modes", async t => {
 	const priorLimit = process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT;
 	const priorNetwork = process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK;
+	const priorEvent6Probe = process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE;
+	const priorStartMode = process.env.V2_NATIVE_START_PROBE_MODE;
 	t.after(() => {
 		if (priorLimit === undefined) delete process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT;
 		else process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT = priorLimit;
 		if (priorNetwork === undefined) delete process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK;
 		else process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK = priorNetwork;
+		if (priorEvent6Probe === undefined) delete process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE;
+		else process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE = priorEvent6Probe;
+		if (priorStartMode === undefined) delete process.env.V2_NATIVE_START_PROBE_MODE;
+		else process.env.V2_NATIVE_START_PROBE_MODE = priorStartMode;
 	});
 	delete process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT;
 	delete process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK;
@@ -179,6 +185,8 @@ test("Event #6 HostSession ceiling is opt-in, bounded, and isolated from the def
 	process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK = "1";
 	assert.throws(() => fixture({ experimentalAuthorityEventLimit: 6 }), /HOST_SESSION_CONFIG_INVALID/);
 	process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT = "6";
+	process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE = "1";
+	process.env.V2_NATIVE_START_PROBE_MODE = "managed_opening_root_action_event5";
 	const f = fixture({ experimentalAuthorityEventLimit: 6 });
 	const started = await f.manager.start("room_event6_optin", gameSetup);
 	assert.equal(started.ok, true);

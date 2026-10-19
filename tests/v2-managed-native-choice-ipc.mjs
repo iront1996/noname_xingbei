@@ -79,14 +79,15 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		"a held native phase boundary requires the managed native event-completion evidence source");
 	const server = await createV2NativeModuleTestServer({ root });
 	t.after(() => server.close());
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_V3_SEAT_STATE_PROJECTION_PROBE", "V2_V3_SEAT_STATE_WEBSOCKET_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST", "V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_V3_SEAT_STATE_PROJECTION_PROBE", "V2_V3_SEAT_STATE_WEBSOCKET_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST", "V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT", "V2_NATIVE_EVENT6_CONTINUATION_PROBE"].map(key => [key, process.env[key]]));
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
 	const nativeFaultMode = process.env.V2_MANAGED_NATIVE_FAULT_INJECTION || "";
 	t.after(() => { for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value; });
 	let manager, controller, sessionSecret, seatStateGateway = null, engineReadyProof = null, targetlessDeckFixtureProof = null, opened = [], candidatesSeen, nativeYinYangFixtureSeatId = null, nativeResourceFixtureSeatId = null, nativeJiRiFixtureSeatId = null, nativeResourceTransition = null, nativeActionChoice = null, nativeActionCandidate = null, nativeActionOptionId = null, nativeJiRiTargetChoice = null, nativeJiRiTargetCandidate = null, nativeJiRiTargetAckCount = 0, nativeJiRiTargetAckDropped = false, dropNativeJiRiTargetAckOnce = process.env.V2_NATIVE_JIRIMO_ACTION_PROBE === "1", nativeLiveSnapshotAtInputGate = null, nativeNoOptionCandidateAvailable = false, nativeResponseChoice = null, nativeResponseCandidate = null, nativeResponseOptionId = null, nativeResponseChoices = [], nativeResponseAccepted = false, nativeResponseAckCount = 0, nativeResponseAckResults = [], nativeResponseAckAttempts = new Map(), droppedNativeResponseAckChoiceId = null, nativeResponseAckDropped = false, dropNativeResponseAckOnce = process.env.V2_NATIVE_RESPONSE_ACK_LOSS === "1", event3Proof = null, dropAcks = process.env.V2_NATIVE_REJECT_OPENING_DRAW_EVENT3 !== "1", dropNativeActionAckOnce = true, nativeActionAckDropped = false, droppedAcks = 0, nativeDiagnostic = [], ackCount = 0, nativeActionAckCount = 0, deliveryCount = 0, deliveryFailures = [], sessionEnds = [], managedChoiceHandlerFailures = [], applyingReceipts = [], applyingRetryIssued = false, viewasRedeliveryIssued = false, viewasRedeliveryIdentity = null, viewasBarrierReleasePromise = null, viewasBarrierReleased = false, nativeFaultStopPromise = null, event4AckDropCount = 0, event4SubmissionCount = 0, event4ProofSubmissions = [], event4AckBarrierWaitCount = 0, event4AckBarrierReleased = false, event4AuthorityJoinCount = 0, event4ControllerRetryTriggered = false, event4AckSendErrors = [], duplicateEvent4AuthorityAckSent = false, ackTrace = [], disconnectedActionHostIdentity = null;
 	let event4AcceptedProjection = null;
-	let nextSeatCandidateInspection = null, nextSeatCandidateMessage = null, nextSeatPreparation = null, event5CandidateMessage = null, event5Choice = null, event5NativeActionAckCount = 0;
+	let nextSeatCandidateInspection = null, nextSeatCandidateMessage = null, nextSeatPreparation = null, event5CandidateMessage = null, event5Choice = null, event5NativeActionAckCount = 0,
+		event6CandidateMessage = null, event6Choice = null, event6NativeActionAckCount = 0, event6PreActionCapture = null, event6PostCaptureObserved = null;
 	let event5ReviewAfterGatewayRebind = null;
 	let nativeHostPidAtFirstCandidate = null, nativeChromiumPidAtFirstCandidate = null;
 	let firstAtomicCapture = null, firstAtomicRepeat = null, atomicCaptureSessionId = null, atomicCapturePid = null, atomicChromiumPid = null;
@@ -102,7 +103,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const event4AckBarrier = new Promise(resolve => { releaseEvent4AckBarrier = resolve; });
 	const launchedHandles = new Map();
 	const disconnectActionToTrustee = process.env.V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE === "1";
-	const useSeatRegistry = disconnectActionToTrustee || process.env.V2_V3_SEAT_STATE_WEBSOCKET_PROBE === "1" || process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
+	const useSeatRegistry = disconnectActionToTrustee || process.env.V2_V3_SEAT_STATE_WEBSOCKET_PROBE === "1" || process.env.V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE === "1" || process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_native_skill_candidate_probe" || process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_registry" ||
 		process.env.V2_NATIVE_RESPONSE_REBIND === "1";
 	const seatRegistry = useSeatRegistry ? createManagedRoomSeatRegistry() : null;
 	const seatCredentials = new Map(), seatSockets = new Map();
@@ -253,8 +254,43 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		browserReadyTimeoutMs: 20000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000,
 		onSessionEnd: event => { sessionEnds.push({ roomId: event.roomId, sessionId: event.sessionId, state: event.state, code: event.code });
 			controller.cleanupHostSession(event.roomId, event.sessionId); },
-			onManagedChoiceMessage: async ({ type, message }) => {
+		onManagedChoiceMessage: async ({ type, message }) => {
 			try {
+			if (type === "host_native_action_candidates" && message?.eventSequence === 6) {
+				assert.equal(process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE, "1");
+				assert.equal(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT, "6");
+				assert.equal(process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK, "1");
+				assert.equal(manager.inspect(roomId)?.authorityStateRevision, 5);
+				assert.equal(manager.inspect(roomId)?.nextAuthorityEventSequence, 6);
+				assert.equal(manager.inspect(roomId)?.lastAuthorityEvent?.sequence, 5);
+				assert.equal(message.eventName, "gongJiOrFaShu");
+				assert.ok(Array.isArray(message.options) && message.options.length > 0 && message.options.length <= 64);
+				assert.equal(new Set(message.options).size, message.options.length);
+				assert.ok(message.options.every(option => /^native_option_[a-f0-9]{32}$/.test(option)));
+				assert.deepEqual(Object.keys(message.optionKinds).sort(), [...message.options].sort());
+				assert.deepEqual(Object.keys(message.optionCardNames).sort(), [...message.options].sort());
+				assert.deepEqual(Object.keys(message.optionTargetSeatIds).sort(), [...message.options].sort());
+				assert.ok(message.options.every(option => ["gongJi", "faShu"].includes(message.optionKinds[option]) &&
+					typeof message.optionCardNames[option] === "string" &&
+					setup.seats.some(seat => seat.seatId === message.optionTargetSeatIds[option]) &&
+					message.optionTargetSeatIds[option] !== message.seatId));
+				assert.notEqual(message.seatId, event5CandidateMessage?.seatId, "Event #6 must belong to the next native actor");
+				const candidate = controller.inspectNativeCandidateSet({ protocol: 1, kind: "managed_host", roomId,
+					hostSessionId: message.sessionId, rootInstanceId: message.rootInstanceId, nativeEventId: message.nativeEventId,
+					seatId: message.seatId, eventName: message.eventName, options: message.options,
+					optionKinds: message.optionKinds, hostProof: message.secret });
+				assert.equal(candidate.ok, true, `Event #6 native candidate authentication failed: ${candidate.code}`);
+				assert.equal(candidate.seatId, message.seatId);
+				assert.ok(seatRegistry, "Event #6 must use the ordinary-seat registry");
+				const currentConnection = seatSockets.get(message.seatId);
+				assert.ok(currentConnection);
+				assert.equal(seatRegistry.authenticateSeat({ roomId, seatId: message.seatId, connectionId: currentConnection,
+					credential: credentialFor(message.seatId) }, { roomId, seatId: message.seatId }), true);
+				event6CandidateMessage = Object.freeze({ ...message, options: Object.freeze([...message.options]),
+					optionKinds: Object.freeze({ ...message.optionKinds }), optionCardNames: Object.freeze({ ...message.optionCardNames }),
+					optionTargetSeatIds: Object.freeze({ ...message.optionTargetSeatIds }) });
+				return;
+			}
 			if (type === "host_native_action_candidates" && message?.eventSequence === 5) {
 				assert.equal(process.env.V2_NATIVE_START_PROBE_MODE, "managed_opening_root_action_event5");
 				assert.ok(["5", "6"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT),
@@ -327,6 +363,9 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				}
 				assert.equal(targetlessDeckFixtureProof.nativeCardCreation, true);
 				assert.equal(targetlessDeckFixtureProof.nativeGameDraw, true);
+			}
+			if (type === "host_choice_diagnostic" && message?.observed?.stage === "native_successor_card_action_event_6_accepted") {
+				event6PostCaptureObserved = message.observed.snapshot || null;
 			}
 			if (type === "host_choice_diagnostic" && message?.observed?.stage === "test_network_guard_verified") {
 				engineReadyProof = { ...engineReadyProof, testMatchRecordPostBlocked: message.observed.blockedPostCount };
@@ -766,6 +805,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 				ackCount++;
 				if (nativeActionChoice?.choiceId === message.choiceId) nativeActionAckCount++;
 				if (event5Choice?.choiceId === message.choiceId) event5NativeActionAckCount++;
+				if (event6Choice?.choiceId === message.choiceId) event6NativeActionAckCount++;
 				if (nativeJiRiTargetChoice?.choiceId === message.choiceId) {
 					nativeJiRiTargetAckCount++;
 					assert.equal(message.nativeApplied, true, "nested discard ACK must follow native chooseToDiscard completion");
@@ -2851,16 +2891,179 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(event5Proof.afterSummary.captureCommitment, manager.inspectEvent5CaptureProgress(roomId)?.postCaptureCommitment);
 					assert.equal(manager.inspect(roomId).authorityStateDigest, event5Proof.afterDigest);
 					assert.equal(authoritySubmissions.some(entry => entry.proof.eventSequence > 5), false);
-					assert.equal(event5NativeActionAckCount, event5AckBaseline + 1,
-						"the second ordinary player's native choice ACK must follow Event #5 authority acceptance");
-					assert.equal(launchedHandles.get(acceptedEvent5Session.sessionId).resources()[0]?.pid, nativeChromiumPidAtFirstCandidate);
-					assert.equal(acceptedEvent5Session.pid, nativeHostPidAtFirstCandidate);
-					t.diagnostic(`isolated Event #5 accepted: ${JSON.stringify({ sequence: 5, revision: acceptedEvent5Session.authorityStateRevision,
-						seatId: event5Proof.event.seatId, nativeEventId: event5Proof.event.nativeEventId, rootInstanceId: event5Proof.event.rootInstanceId,
-						nativeCompletionOrdinal: event5Proof.event.nativeCompletionOrdinal, postFenceOrdinal: event5Proof.afterSummary.postFenceCompletionOrdinal,
-						captureOrdinal: event5Proof.afterSummary.captureOrdinal, gameMeNull: event5Proof.event.gameMeNull,
-						checkpointAvailable: acceptedEvent5Session.checkpointAvailable })}`);
-					return;
+				assert.equal(event5NativeActionAckCount, event5AckBaseline + 1,
+					"the second ordinary player's native choice ACK must follow Event #5 authority acceptance");
+				assert.equal(launchedHandles.get(acceptedEvent5Session.sessionId).resources()[0]?.pid, nativeChromiumPidAtFirstCandidate);
+				assert.equal(acceptedEvent5Session.pid, nativeHostPidAtFirstCandidate);
+				t.diagnostic(`isolated Event #5 accepted: ${JSON.stringify({ sequence: 5, revision: acceptedEvent5Session.authorityStateRevision,
+					seatId: event5Proof.event.seatId, nativeEventId: event5Proof.event.nativeEventId, rootInstanceId: event5Proof.event.rootInstanceId,
+					nativeCompletionOrdinal: event5Proof.event.nativeCompletionOrdinal, postFenceOrdinal: event5Proof.afterSummary.postFenceCompletionOrdinal,
+					captureOrdinal: event5Proof.afterSummary.captureOrdinal, gameMeNull: event5Proof.event.gameMeNull,
+					checkpointAvailable: acceptedEvent5Session.checkpointAvailable })}`);
+					if (process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1") {
+						assert.equal(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT, "6");
+						const candidate = await until(() => event6CandidateMessage, 15000, () => ({
+							session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-24).map(entry => entry?.stage || entry?.observed?.stage),
+							event6DispatchChecks: nativeDiagnostic.filter(entry => entry?.kind === "native_event6_candidate_dispatch_v1")
+								.slice(-4).map(entry => entry.snapshot),
+							successorGates: nativeDiagnostic.filter(entry => ["native_next_seat_gate_decision", "native_next_seat_gate_selected", "native_input_wait_open"].includes(entry?.stage))
+								.slice(-8).map(entry => ({ stage: entry.stage, eventName: entry.snapshot?.eventName,
+									seatId: entry.snapshot?.seatId || entry.snapshot?.nativeInputGate?.seatId,
+									eventSequence: entry.snapshot?.nativeInputGate?.eventSequence,
+									probeArmed: entry.snapshot?.nextSeatInputProbeArmed, event5Accepted: entry.snapshot?.event5AuthorityAccepted,
+									event5ActorSeatId: entry.snapshot?.event5ActorSeatId,
+									event5SuccessorGate: entry.snapshot?.event5SuccessorGate, event6SuccessorGate: entry.snapshot?.event6SuccessorGate,
+									diagnosticNextSeatGate: entry.snapshot?.diagnosticNextSeatGate, candidateCount: entry.snapshot?.nativeInputGate?.candidates?.length })),
+							phaseFences: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_boundary_fence_waiting").map(entry => ({
+								boundaryOrdinal: entry.snapshot?.boundaryOrdinal, seatId: entry.snapshot?.seatId,
+								completionOrdinal: entry.snapshot?.nativeCompletionOrdinal, eventStep: entry.snapshot?.eventStep })),
+							handlerFailures: managedChoiceHandlerFailures.slice(-4) }));
+						assert.equal(candidate.eventSequence, 6);
+						assert.notEqual(candidate.seatId, event5CandidateMessage.seatId);
+						assert.equal(candidate.rootInstanceId, event5Proof.event.rootInstanceId);
+						assert.equal(manager.inspect(roomId)?.authorityStateRevision, 5);
+						assert.equal(manager.inspect(roomId)?.nextAuthorityEventSequence, 6);
+						assert.equal(controller.pendingCount(), 0);
+						const e6Host = launchedHandles.get(acceptedEvent5Session.sessionId);
+						assert.ok(e6Host && e6Host.pid === nativeHostPidAtFirstCandidate);
+						assert.equal(e6Host.resources()[0]?.pid, nativeChromiumPidAtFirstCandidate,
+							"Event #6 must stay in the same supervised Chromium process");
+						const e6Seat = seatRegistry.inspect(roomId, candidate.seatId);
+						const e6Connection = seatSockets.get(candidate.seatId);
+						assert.ok(e6Seat?.connected && !e6Seat.revoked && e6Connection);
+						assert.equal(seatRegistry.authenticateSeat({ roomId, seatId: candidate.seatId, connectionId: e6Connection,
+							credential: credentialFor(candidate.seatId) }, { roomId, seatId: candidate.seatId }), true);
+					event6PreActionCapture = await manager.snapshotEvent6PreActionCapture(roomId);
+					if (!event6PreActionCapture.ok) t.diagnostic(`Event #6 pre-capture failure diagnostics: ${JSON.stringify({ progress: manager.inspectEvent6CaptureProgress(roomId), session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-12) })}`);
+					assert.equal(event6PreActionCapture.ok, true, `Event #6 pre-action capture rejected: ${event6PreActionCapture.code}`);
+					const firstE6Capture = event6PreActionCapture.snapshot;
+					assert.equal(firstE6Capture.captureOrdinal, 1);
+					assert.equal(firstE6Capture.stableWithPrevious, null);
+					const repeatedE6Capture = await manager.snapshotEvent6PreActionCapture(roomId);
+					assert.equal(repeatedE6Capture.ok, true, `same-gate Event #6 recapture rejected: ${repeatedE6Capture.code}`);
+					const e6Capture = repeatedE6Capture.snapshot;
+					assert.equal(e6Capture.captureOrdinal, 2);
+					assert.equal(e6Capture.stableWithPrevious, true);
+					assert.equal(e6Capture.stateDigest, firstE6Capture.stateDigest,
+						"the same native waiting gate must project a stable pre-action state");
+					assert.notEqual(e6Capture.commitment, firstE6Capture.commitment,
+						"capture-specific HMAC commitments must remain scoped to their ordinal");
+						assert.equal(e6Capture.roomId, roomId);
+						assert.equal(e6Capture.hostSessionId, acceptedEvent5Session.sessionId);
+						assert.equal(e6Capture.rootInstanceId, candidate.rootInstanceId);
+						assert.equal(e6Capture.engineBuildId, acceptedEvent5Session.engineBuildId);
+						assert.deepEqual(e6Capture.seatIds, immutableServerSeatIds);
+						assert.equal(e6Capture.nativeEventId, candidate.nativeEventId);
+						assert.equal(e6Capture.eventInstanceId, candidate.eventInstanceId);
+						assert.equal(e6Capture.parentEventInstanceId, candidate.parentEventInstanceId);
+						assert.equal(e6Capture.seatId, candidate.seatId);
+						assert.equal(e6Capture.nativeCompletionOrdinal, candidate.waitingCompletionOrdinal);
+						assert.equal(e6Capture.captureOrdinal, 2,
+							"the second stable read uses the next capture ordinal without changing the waiting gate");
+						assert.equal(e6Capture.authoritySubmissionAllowed, false);
+						assert.equal(e6Capture.checkpointAvailable, false);
+						assert.notEqual(e6Capture.nativeEventId, event5Proof.event.nativeEventId);
+						assert.notEqual(e6Capture.commitment, event5Proof.afterSummary.captureCommitment);
+						const candidateGate = nativeDiagnostic.find(entry => entry?.stage === "native_input_wait_open" &&
+							entry.snapshot?.nativeInputGate?.nativeEventId === candidate.nativeEventId);
+						assert.ok(candidateGate, "Event #6 capture must bind the real native paused input gate");
+						assert.equal(candidateGate.snapshot.nativeInputGate.seatId, candidate.seatId);
+						assert.equal(candidateGate.snapshot.nativeInputGate.waiting, true);
+						assert.equal(candidateGate.snapshot.nativeInputGate.diagnosticOnly, undefined);
+						const secondActionStart = nativeDiagnostic.find(entry => entry?.stage === "native_next_seat_action_start_observed" &&
+							entry.snapshot?.seatId === candidate.seatId && entry.snapshot?.eventName === "gongJiOrFaShu");
+						assert.ok(secondActionStart, "Event #6 candidate must belong to the next native xingDong child");
+						assert.deepEqual(secondActionStart.snapshot.quotas,
+							{ gongJiOrFaShu: 1, faShu: 0, gongJi: 0, extraXingDongCount: 0 });
+						const option = candidate.options.find(id => candidate.optionKinds[id] === "gongJi");
+						assert.ok(option, "the real native Event #6 gate must expose an allowlisted, non-terminal gongJi option");
+						const targetSeatId = candidate.optionTargetSeatIds[option];
+						assert.ok(immutableServerSeatIds.includes(targetSeatId) && targetSeatId !== candidate.seatId);
+						const opened6 = controller.openChoice({ protocol: 1, roomId, hostSessionId: candidate.sessionId,
+							nativeEventId: candidate.nativeEventId, seatId: candidate.seatId, eventSequence: 6,
+							options: candidate.options, trusteeOption: candidate.trusteeOption,
+							deadlineAt: Date.now() + Math.min(5000, candidate.deadlineMs), hostProof: candidate.secret });
+						assert.equal(opened6.ok, true, `managed Event #6 choice registration rejected: ${opened6.code}`);
+						event6Choice = opened6.choice;
+						const invalidSeat = setup.seats.find(seat => seat.seatId !== candidate.seatId);
+						assert.ok(invalidSeat);
+						assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: candidate.sessionId,
+							nativeEventId: candidate.nativeEventId, seatId: invalidSeat.seatId, eventSequence: 6,
+							choiceId: event6Choice.choiceId, connectionId: e6Connection, credential: credentialFor(candidate.seatId), option }).code,
+							"MANAGED_CHOICE_SUBMIT_REJECTED");
+						assert.equal(controller.submitChoice({ protocol: 1, roomId, hostSessionId: candidate.sessionId,
+							nativeEventId: candidate.nativeEventId, seatId: candidate.seatId, eventSequence: 6,
+							choiceId: event6Choice.choiceId, connectionId: e6Connection, credential: credentialFor(candidate.seatId),
+							option: "forged_native_option" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
+						const event6AckBaseline = event6NativeActionAckCount;
+						const submitted6 = controller.submitChoice({ protocol: 1, roomId, hostSessionId: candidate.sessionId,
+							nativeEventId: candidate.nativeEventId, seatId: candidate.seatId, eventSequence: 6,
+							choiceId: event6Choice.choiceId, connectionId: e6Connection, credential: credentialFor(candidate.seatId), option });
+						assert.equal(submitted6.ok, true, `ordinary Event #6 seat could not submit legal native action: ${submitted6.code}`);
+						const accepted6 = await until(() => {
+							const session = manager.inspect(roomId);
+							if (session?.state === "failed") throw new Error(`Event #6 host failed ${session.failureCode}: ${JSON.stringify({
+								progress: manager.inspectEvent6CaptureProgress?.(roomId) || null,
+								fences: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_boundary_fence_waiting").map(entry => ({
+									boundary: entry.snapshot?.boundaryOrdinal, seatId: entry.snapshot?.seatId,
+									ordinal: entry.snapshot?.nativeCompletionOrdinal })),
+								stages: nativeDiagnostic.slice(-24).map(entry => entry?.stage || entry?.observed?.stage),
+								handlerFailures: managedChoiceHandlerFailures.slice(-4), submissions: authoritySubmissions.map(entry => entry.proof?.eventSequence) })}`);
+							return session?.authorityStateRevision === 6 && session?.nextAuthorityEventSequence === 7 &&
+								session?.lastAuthorityEvent?.sequence === 6 && controller.inspect(roomId, event6Choice.choiceId)?.state === "resolved" ? session : null;
+						}, 30000, () => ({ session: manager.inspect(roomId), choice: controller.inspect(roomId, event6Choice.choiceId),
+							stages: nativeDiagnostic.slice(-24).map(entry => entry?.stage || entry?.observed?.stage),
+							fences: nativeDiagnostic.filter(entry => entry?.stage === "native_phase_boundary_fence_waiting").map(entry => ({
+								boundary: entry.snapshot?.boundaryOrdinal, seatId: entry.snapshot?.seatId,
+								ordinal: entry.snapshot?.nativeCompletionOrdinal, step: entry.snapshot?.eventStep })),
+							submissions: authoritySubmissions.map(entry => entry.proof?.eventSequence) }));
+						assert.deepEqual(authoritySubmissions.map(entry => entry.proof.eventSequence), [1, 2, 3, 4, 5, 6]);
+						for (let index = 0; index < authoritySubmissions.length; index++) {
+							const proof = authoritySubmissions[index].proof;
+							assert.equal(proof.stateRevisionBefore, index);
+							assert.equal(proof.stateRevisionAfter, index + 1);
+							assert.equal(proof.eventSequence, index + 1);
+							if (index) assert.equal(proof.beforeDigest, authoritySubmissions[index - 1].proof.afterDigest);
+							assert.ok(authoritySubmissions[index].resourcePids.length > 0 &&
+								authoritySubmissions[index].resourcePids.every(pid => pid === nativeChromiumPidAtFirstCandidate));
+						}
+						const proof6 = authoritySubmissions[5].proof;
+						assert.equal(proof6.event.kind, "xingbei_native_successor_card_action_v2");
+						assert.equal(proof6.event.seatId, candidate.seatId);
+						assert.equal(proof6.event.nativeEventId, candidate.nativeEventId);
+						assert.equal(proof6.event.optionId, option);
+						assert.equal(proof6.event.cardKind, "gongJi");
+						assert.equal(proof6.event.targetSeatId, targetSeatId);
+						assert.equal(proof6.event.nativeEventCompleted, true);
+						assert.equal(proof6.event.useResultCount, 1);
+						assert.equal(proof6.event.useCardChildCompleted, true);
+						assert.equal(proof6.event.nativeChildWaitCompleted, true);
+						assert.equal(proof6.event.gameMeNull, true);
+						assert.equal(proof6.event.connectedTransports, 0);
+						assert.equal(proof6.event.connectionGeneration, e6Seat.epoch);
+						const event6Progress = manager.inspectEvent6CaptureProgress(roomId);
+						assert.equal(event6Progress?.accepted, true);
+						assert.equal(event6Progress?.preCaptureOrdinal, 2);
+						assert.equal(proof6.afterSummary.captureCommitment, event6Progress?.postCaptureCommitment);
+						assert.ok(event6Progress.postCaptureOrdinal > e6Capture.captureOrdinal);
+						assert.equal(event6Progress.boundaryOrdinal, 3);
+						assert.equal(event6NativeActionAckCount, event6AckBaseline + 1,
+							"Event #6 success ACK must follow host acceptance of the complete native event proof");
+						assert.equal(authoritySubmissions.some(entry => entry.proof.eventSequence > 6), false, "Event #7 remains closed");
+						assert.equal(manager.inspect(roomId)?.authorityStateRevision, 6);
+						assert.equal(manager.inspect(roomId)?.checkpointAvailable, false);
+						assert.equal(manager.inspect(roomId)?.seedAuthorized, false);
+						assert.equal(manager.inspect(roomId)?.pid, nativeHostPidAtFirstCandidate);
+						assert.equal(e6Host.resources()[0]?.pid, nativeChromiumPidAtFirstCandidate);
+						assert.ok(event6PostCaptureObserved || nativeDiagnostic.some(entry => entry?.stage === "native_successor_card_action_event_6_accepted"));
+						t.diagnostic(`isolated Event #6 accepted: ${JSON.stringify({ sequence: 6, revision: accepted6.authorityStateRevision,
+							seatId: proof6.event.seatId, nativeEventId: proof6.event.nativeEventId, rootInstanceId: proof6.event.rootInstanceId,
+							actionCompletionOrdinal: proof6.event.nativeCompletionOrdinal,
+							postFenceOrdinal: proof6.afterSummary.postFenceCompletionOrdinal, captureOrdinal: proof6.afterSummary.captureOrdinal,
+							gameMeNull: proof6.event.gameMeNull, checkpointAvailable: accepted6.checkpointAvailable })}`);
+						return;
+					}
+				return;
 				}
 					if (process.env.V2_V3_SEAT_STATE_PROJECTION_PROBE === "1") {
 						const views = new Map();

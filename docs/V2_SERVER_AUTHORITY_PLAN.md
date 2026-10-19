@@ -1,5 +1,14 @@
 # V2 server-authority plan and evidence
 
+## Current in-progress batch: Event #6 real native action / authority acceptance
+
+- Event #5's prerequisite Linux evidence remains CI `39301195162`: real Chromium Event #5 1/1, zero skips, sequence 5 / revision 4→5. That authorizes isolated Event #6–#8 research only subject to each event's own successful Linux validation.
+- Local real Chromium now accepts Event #6 sequence 6 / revision 5→6 in the same managed room, HostSession, Chromium process, native root, engine build, and immutable four-seat set. The next ordinary seat submitted one native-legal `gongJi`; native result/useCard child and `phaseOver` completed, then a boundary-3 atomic post-capture was accepted. Native completion ordinal 300; post-fence ordinal 435; `game.me === null`; zero player transports. Event #7 was not emitted.
+- Root cause fixed: the Event #6 verifier evidence builder omitted Event #5's accepted `nativeEventId`, and the Event #6 pre-capture record's actual schema included immutable `seatIds` not accepted by the verifier. The predecessor hand/seat baseline is preserved separately from the compact Event #5 transition summary. Validator checks remain strict; detailed rejection codes disclose categories only, no digest or private state.
+- Local targeted Node tests: 25 pass, 0 fail, 1 Windows `EPERM` symlink-capability skip. Real local Chromium Event #6: 1 pass, 0 fail, 0 skip. Syntax, diff check and managed release verification pass. Release lock `7a5953f926bc14e88c48b1df9c3423c810ab1b055e5c064bf765b496de43bb83`, 220 files. Required Linux Event #6 Chromium step is present and not conditional, but CI has not yet run on this worktree.
+- Cloudflare saved Branch Controls were freshly reloaded and read-only checked earlier in this turn: Production `feature/auto-lobby`, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`; settings unchanged. New-revision deployment status remains pending.
+- Next: normal fast-forward push after remote-head check, run full serialized Linux CI, verify the mandatory Chromium Event #6 step and zero Linux skips. Only then proceed to isolated Event #7 and #8. Event #9+, seed, checkpoint and full canonical state remain closed/unavailable. `fullCanonicalStateEligible=false`; no formal V1/V2/V3/HALL/VPS/monitoring or external-service changes; PR #1 stays Open/unmerged.
+
 ## Current in-progress batch: Events #6–#8 successor-action expansion (Event #5 Linux CI accepted)
 
 - Commit `e5c2cb310da88e333fcc194daa593d52de980730` passed Linux CI run `39301195162`: all 95 workflow steps succeeded; 315/315 TAP tests passed, zero failures/skips. The required real Linux Chromium Event #5 step was executed and passed 1/1 with zero skips. It accepted sequence 5 / revision 4→5 after the second-seat native card action completed and same-root post-`phaseOver` fence evidence was validated. Local real Chrome also passed 1/1, zero skips.

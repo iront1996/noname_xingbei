@@ -48,15 +48,18 @@ function validateExperimentalEvent6Internal(proof, evidence, { enabled = false }
 		predecessor.eventSequence !== 5 || predecessor.revision !== 5 || !DIGEST.test(predecessor.digest || "") ||
 		!predecessor.summary || !seatIds.includes(predecessor.actorSeatId)) return reject("EVENT6_PREDECESSOR_EVIDENCE_UNAVAILABLE");
 	const prior = predecessor.summary;
-	if (!exactObject(prior, ["revision", "predecessorDigest", "actorSeatId", "nativeEventId", "actionCompletionOrdinal", "postFenceCompletionOrdinal", "captureOrdinal", "captureCommitment", "phaseOverEventInstanceId"]) ||
-		prior.revision !== 5 || prior.actorSeatId !== predecessor.actorSeatId || prior.nativeEventId !== predecessor.nativeEventId ||
-		!DIGEST.test(prior.predecessorDigest || "") || prior.predecessorDigest !== predecessor.predecessorDigest ||
-		!EVENT_ID.test(prior.nativeEventId || "") || !Number.isSafeInteger(prior.actionCompletionOrdinal) || prior.actionCompletionOrdinal < 1 ||
-		!Number.isSafeInteger(prior.postFenceCompletionOrdinal) || prior.postFenceCompletionOrdinal <= prior.actionCompletionOrdinal ||
-		!Number.isSafeInteger(prior.captureOrdinal) || prior.captureOrdinal < 1 || !DIGEST.test(prior.captureCommitment || "") ||
-		!/^event_[1-9][0-9]{0,6}$/.test(prior.phaseOverEventInstanceId || "") || digest(prior) !== predecessor.digest) {
-		return reject("EVENT6_PREDECESSOR_SUMMARY_REJECTED");
-	}
+	const predecessorSummaryFailure = !exactObject(prior, ["revision", "predecessorDigest", "actorSeatId", "nativeEventId", "actionCompletionOrdinal", "postFenceCompletionOrdinal", "captureOrdinal", "captureCommitment", "phaseOverEventInstanceId"]) ? "SCHEMA" :
+		prior.revision !== 5 ? "REVISION" : prior.actorSeatId !== predecessor.actorSeatId ? "ACTOR" :
+		prior.nativeEventId !== predecessor.nativeEventId ? "EVENT_ID_BINDING" :
+		!DIGEST.test(prior.predecessorDigest || "") || prior.predecessorDigest !== predecessor.predecessorDigest ? "PREDECESSOR_DIGEST" :
+		!EVENT_ID.test(prior.nativeEventId || "") ? "EVENT_ID" :
+		!Number.isSafeInteger(prior.actionCompletionOrdinal) || prior.actionCompletionOrdinal < 1 ? "ACTION_ORDINAL" :
+		!Number.isSafeInteger(prior.postFenceCompletionOrdinal) || prior.postFenceCompletionOrdinal <= prior.actionCompletionOrdinal ? "POST_FENCE_ORDINAL" :
+		!Number.isSafeInteger(prior.captureOrdinal) || prior.captureOrdinal < 1 ? "CAPTURE_ORDINAL" :
+		!DIGEST.test(prior.captureCommitment || "") ? "COMMITMENT" :
+		!/^event_[1-9][0-9]{0,6}$/.test(prior.phaseOverEventInstanceId || "") ? "PHASE_OVER_INSTANCE" :
+		digest(prior) !== predecessor.digest ? "DIGEST_MISMATCH" : null;
+	if (predecessorSummaryFailure) return reject(`EVENT6_PREDECESSOR_SUMMARY_REJECTED_${predecessorSummaryFailure}`);
 	if (proof.kind !== "native_authority_event_v1" || proof.checkpoint !== null || proof.eventSequence !== 6 ||
 		proof.stateRevisionBefore !== 5 || proof.stateRevisionAfter !== 6 || proof.beforeDigest !== predecessor.digest ||
 		!DIGEST.test(proof.afterDigest || "") || proof.afterDigest === proof.beforeDigest ||
@@ -90,41 +93,44 @@ function validateExperimentalEvent6Internal(proof, evidence, { enabled = false }
 		!["player", "trustee"].includes(event.resolutionKind) ? "RESOLUTION_KIND" :
 		event.gameMeNull !== true || event.connectedTransports !== 0 ? "HOST_BOUNDARY" : null;
 	if (eventFailure) return reject(`EVENT6_NATIVE_ACTION_EVIDENCE_REJECTED_${eventFailure}`);
-	if (!exactObject(successorCandidate, ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "seatIds", "nativeEventId", "eventSequence",
+	const candidateFailure = !exactObject(successorCandidate, ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "seatIds", "nativeEventId", "eventSequence",
 		"eventInstanceId", "parentEventInstanceId", "waitingCompletionOrdinal", "eventName", "seatId", "options", "optionKinds", "optionCardNames",
-		"optionTargetSeatIds", "previousActorSeatId", "connectionGeneration"]) ||
-		successorCandidate.roomId !== roomId || successorCandidate.hostSessionId !== hostSessionId ||
-		successorCandidate.rootInstanceId !== rootInstanceId || successorCandidate.eventSequence !== 6 ||
-		successorCandidate.engineBuildId !== engineBuildId || canonicalize(successorCandidate.seatIds) !== canonicalize(seatIds) ||
+		"optionTargetSeatIds", "previousActorSeatId", "connectionGeneration"]) ? "SCHEMA" :
+		successorCandidate.roomId !== roomId || successorCandidate.hostSessionId !== hostSessionId ? "SESSION" :
+		successorCandidate.rootInstanceId !== rootInstanceId || successorCandidate.engineBuildId !== engineBuildId ? "ENGINE_BINDING" :
+		successorCandidate.eventSequence !== 6 || canonicalize(successorCandidate.seatIds) !== canonicalize(seatIds) ? "SEQUENCE_OR_SEATS" :
 		successorCandidate.nativeEventId !== event.nativeEventId || successorCandidate.eventInstanceId !== event.actionEventInstanceId ||
-		successorCandidate.parentEventInstanceId !== event.actionParentEventInstanceId || successorCandidate.seatId !== event.seatId ||
-		successorCandidate.eventName !== event.name || successorCandidate.previousActorSeatId !== predecessor.actorSeatId ||
-		!Number.isSafeInteger(successorCandidate.waitingCompletionOrdinal) || successorCandidate.waitingCompletionOrdinal <= prior.postFenceCompletionOrdinal ||
-		!Array.isArray(successorCandidate.options) || !successorCandidate.options.includes(event.optionId) ||
+		successorCandidate.parentEventInstanceId !== event.actionParentEventInstanceId ? "EVENT_BINDING" :
+		successorCandidate.seatId !== event.seatId || successorCandidate.eventName !== event.name ||
+		successorCandidate.previousActorSeatId !== predecessor.actorSeatId ? "ACTOR_BINDING" :
+		!Number.isSafeInteger(successorCandidate.waitingCompletionOrdinal) || successorCandidate.waitingCompletionOrdinal <= prior.postFenceCompletionOrdinal ? "WAIT_ORDINAL" :
+		!Array.isArray(successorCandidate.options) || !successorCandidate.options.includes(event.optionId) ? "OPTION" :
 		successorCandidate.optionKinds?.[event.optionId] !== event.cardKind || successorCandidate.optionCardNames?.[event.optionId] !== event.cardName ||
-		successorCandidate.optionTargetSeatIds?.[event.optionId] !== event.targetSeatId ||
-		!exactObject(successorCapture, ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "nativeEventId", "eventInstanceId",
-		"parentEventInstanceId", "seatId", "captureOrdinal", "nativeCompletionOrdinal", "commitment"]) ||
-		successorCapture.roomId !== roomId || successorCapture.hostSessionId !== hostSessionId ||
-		successorCapture.rootInstanceId !== rootInstanceId || successorCapture.engineBuildId !== engineBuildId ||
+		successorCandidate.optionTargetSeatIds?.[event.optionId] !== event.targetSeatId ? "OPTION_MAPPING" : null;
+	if (candidateFailure) return reject(`EVENT6_CANDIDATE_CAUSALITY_REJECTED_${candidateFailure}`);
+	const captureFailure = !exactObject(successorCapture, ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "seatIds", "nativeEventId", "eventInstanceId",
+		"parentEventInstanceId", "seatId", "captureOrdinal", "nativeCompletionOrdinal", "commitment"]) ? "SCHEMA" :
+		successorCapture.roomId !== roomId || successorCapture.hostSessionId !== hostSessionId ? "SESSION" :
+		successorCapture.rootInstanceId !== rootInstanceId || successorCapture.engineBuildId !== engineBuildId ? "ENGINE_BINDING" :
+		!Array.isArray(successorCapture.seatIds) || canonicalize(successorCapture.seatIds) !== canonicalize(seatIds) ? "SEATS" :
 		successorCapture.nativeEventId !== event.nativeEventId || successorCapture.eventInstanceId !== event.actionEventInstanceId ||
-		successorCapture.parentEventInstanceId !== event.actionParentEventInstanceId || successorCapture.seatId !== event.seatId ||
-		!Number.isSafeInteger(successorCapture.captureOrdinal) || successorCapture.captureOrdinal < 1 ||
-		successorCapture.nativeCompletionOrdinal !== successorCandidate.waitingCompletionOrdinal ||
-		!DIGEST.test(successorCapture.commitment || "") || event.nativeCompletionOrdinal <= successorCapture.nativeCompletionOrdinal ||
-		!exactObject(postCapture, ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "seatIds", "nativeEventId", "seatId",
-		"captureOrdinal", "nativeCompletionOrdinal", "boundaryOrdinal", "phaseOverTriggerOrdinal", "phaseOverSeatId", "phaseOverEventInstanceId", "commitment"]) ||
-		postCapture.roomId !== roomId || postCapture.hostSessionId !== hostSessionId ||
-		postCapture.rootInstanceId !== rootInstanceId || postCapture.engineBuildId !== engineBuildId ||
-		!Array.isArray(postCapture.seatIds) || canonicalize(postCapture.seatIds) !== canonicalize(seatIds) ||
-		postCapture.nativeEventId !== event.nativeEventId || postCapture.seatId !== event.seatId ||
-		!Number.isSafeInteger(postCapture.nativeCompletionOrdinal) || postCapture.nativeCompletionOrdinal <= event.nativeCompletionOrdinal ||
-		postCapture.boundaryOrdinal !== 3 || !Number.isSafeInteger(postCapture.phaseOverTriggerOrdinal) || postCapture.phaseOverTriggerOrdinal < 3 ||
-		postCapture.phaseOverSeatId !== event.seatId || !/^event_[1-9][0-9]{0,6}$/.test(postCapture.phaseOverEventInstanceId || "") ||
-		!Number.isSafeInteger(postCapture.captureOrdinal) || postCapture.captureOrdinal <= prior.captureOrdinal ||
-		!DIGEST.test(postCapture.commitment || "") || postCapture.commitment === successorCapture.commitment) {
-		return reject("EVENT6_CAPTURE_CAUSALITY_REJECTED");
-	}
+		successorCapture.parentEventInstanceId !== event.actionParentEventInstanceId || successorCapture.seatId !== event.seatId ? "EVENT_BINDING" :
+		!Number.isSafeInteger(successorCapture.captureOrdinal) || successorCapture.captureOrdinal < 1 ? "CAPTURE_ORDINAL" :
+		successorCapture.nativeCompletionOrdinal !== successorCandidate.waitingCompletionOrdinal ? "WAIT_ORDINAL" :
+		!DIGEST.test(successorCapture.commitment || "") || event.nativeCompletionOrdinal <= successorCapture.nativeCompletionOrdinal ? "COMPLETION_ORDER" : null;
+	if (captureFailure) return reject(`EVENT6_PRE_CAPTURE_CAUSALITY_REJECTED_${captureFailure}`);
+	const postCaptureFailure = !exactObject(postCapture, ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "seatIds", "nativeEventId", "seatId",
+		"captureOrdinal", "nativeCompletionOrdinal", "boundaryOrdinal", "phaseOverTriggerOrdinal", "phaseOverSeatId", "phaseOverEventInstanceId", "commitment"]) ? "SCHEMA" :
+		postCapture.roomId !== roomId || postCapture.hostSessionId !== hostSessionId ? "SESSION" :
+		postCapture.rootInstanceId !== rootInstanceId || postCapture.engineBuildId !== engineBuildId ? "ENGINE_BINDING" :
+		!Array.isArray(postCapture.seatIds) || canonicalize(postCapture.seatIds) !== canonicalize(seatIds) ? "SEATS" :
+		postCapture.nativeEventId !== event.nativeEventId || postCapture.seatId !== event.seatId ? "EVENT_BINDING" :
+		!Number.isSafeInteger(postCapture.nativeCompletionOrdinal) || postCapture.nativeCompletionOrdinal <= event.nativeCompletionOrdinal ? "COMPLETION_ORDER" :
+		postCapture.boundaryOrdinal !== 3 || !Number.isSafeInteger(postCapture.phaseOverTriggerOrdinal) || postCapture.phaseOverTriggerOrdinal < 3 ? "PHASE_BOUNDARY" :
+		postCapture.phaseOverSeatId !== event.seatId || !/^event_[1-9][0-9]{0,6}$/.test(postCapture.phaseOverEventInstanceId || "") ? "PHASE_EVENT" :
+		!Number.isSafeInteger(postCapture.captureOrdinal) || postCapture.captureOrdinal <= prior.captureOrdinal ? "CAPTURE_ORDER" :
+		!DIGEST.test(postCapture.commitment || "") || postCapture.commitment === successorCapture.commitment ? "COMMITMENT" : null;
+	if (postCaptureFailure) return reject(`EVENT6_POST_CAPTURE_CAUSALITY_REJECTED_${postCaptureFailure}`);
 	if (!exactObject(seatBinding, ["roomId", "seatId", "connected", "current", "credentialAuthenticated", "ordinaryPlayer", "connectionGeneration"]) ||
 		seatBinding.roomId !== roomId || seatBinding.seatId !== event.seatId || seatBinding.current !== true ||
 		seatBinding.connected !== true || seatBinding.credentialAuthenticated !== true || seatBinding.ordinaryPlayer !== true ||

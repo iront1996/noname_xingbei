@@ -26,7 +26,7 @@ function fixture() {
 		seatId: "seat_c", eventName: "gongJiOrFaShu", previousActorSeatId: "seat_b", options: [optionId(1)],
 		connectionGeneration: 7, optionKinds: { [optionId(1)]: "gongJi" }, optionCardNames: { [optionId(1)]: "sha" },
 		optionTargetSeatIds: { [optionId(1)]: "seat_d" } };
-	const successorCapture = { roomId, hostSessionId, rootInstanceId, engineBuildId, nativeEventId: eventId(3),
+	const successorCapture = { roomId, hostSessionId, rootInstanceId, engineBuildId, seatIds, nativeEventId: eventId(3),
 		eventInstanceId: "event_81", parentEventInstanceId: "event_80", seatId: "seat_c", captureOrdinal: 3,
 		nativeCompletionOrdinal: 61, commitment: "f".repeat(64) };
 	const postCapture = { roomId, hostSessionId, rootInstanceId, engineBuildId, seatIds, nativeEventId: eventId(3), seatId: "seat_c",
