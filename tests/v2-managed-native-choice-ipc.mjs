@@ -2915,7 +2915,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.notEqual(successorRepeat.snapshot.commitment, successorCapture.snapshot.commitment,
 						"ordinal-scoped commitments must not be replay-identical even when the captured state is stable");
 					if (probeMode === "managed_opening_root_action_event5") {
-						assert.ok(["5", "6", "7"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT));
+						assert.ok(["5", "6", "7", "8"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT));
 						assert.ok(event5CandidateMessage, "the authenticated Chromium must expose the next-seat native action candidates");
 					assert.equal(event5CandidateMessage.nativeEventId, successorCapture.snapshot.nativeEventId);
 					assert.equal(event5CandidateMessage.eventInstanceId, successorCapture.snapshot.eventInstanceId);
