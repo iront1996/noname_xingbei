@@ -143,9 +143,14 @@ function createManagedHostProcessLauncher({
 				/^atomic_[a-f0-9]{32}$/.test(command.requestId || "") && Number.isSafeInteger(command.captureOrdinal) && command.captureOrdinal > 0 &&
 				Number.isSafeInteger(command.boundaryOrdinal) && command.boundaryOrdinal >= 1 &&
 				(command.boundaryOrdinal <= 2 && (command.boundaryOrdinal !== 2 || process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1") ||
-					command.boundaryOrdinal === 3 && bootstrap.authorityEventLimit === 6 &&
-					process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" &&
+					command.boundaryOrdinal === 3 && [6, 7].includes(bootstrap.authorityEventLimit) &&
+					process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(bootstrap.authorityEventLimit) &&
 					process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" &&
+					(bootstrap.authorityEventLimit !== 7 || process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1") &&
+					process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" ||
+					command.boundaryOrdinal === 4 && bootstrap.authorityEventLimit === 7 &&
+					process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "7" &&
+					process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1" &&
 					process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1") &&
 				command.engineBuildId === bootstrap.engineSourceManifest?.buildId &&
 				/^native_root_[A-Za-z0-9_-]{16,96}$/.test(command.rootInstanceId || "") &&
@@ -194,9 +199,10 @@ function createManagedHostProcessLauncher({
 				Array.isArray(command.seatIds) && command.seatIds.length === bootstrap.gameSetup.seats.length &&
 				command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
 				Object.keys(command).sort().join(",") === "candidateOptionIds,candidateOptionKinds,captureOrdinal,engineBuildId,eventInstanceId,kind,nativeEventId,parentEventInstanceId,previousNativeEventId,previousSeatId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type,waitingCompletionOrdinal";
-			const nativeEvent6PreActionCaptureCommand = bootstrap.authorityEventLimit === 6 &&
-				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" &&
+			const nativeEvent6PreActionCaptureCommand = [6, 7].includes(bootstrap.authorityEventLimit) &&
+				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(bootstrap.authorityEventLimit) &&
 				process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" &&
+				(bootstrap.authorityEventLimit !== 7 || process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1") &&
 				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
 				process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1" &&
 				command?.type === "host_native_event6_preaction_capture" &&
@@ -225,6 +231,27 @@ function createManagedHostProcessLauncher({
 				Array.isArray(command.seatIds) && command.seatIds.length === 4 &&
 				command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
 				Object.keys(command).sort().join(",") === "candidateOptionIds,candidateOptionKinds,captureOrdinal,engineBuildId,eventInstanceId,eventSequence,kind,nativeEventId,parentEventInstanceId,previousNativeEventId,previousSeatId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type,waitingCompletionOrdinal";
+			const nativeEvent7PreActionCaptureCommand = bootstrap.authorityEventLimit === 7 &&
+				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "7" && process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1" &&
+				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" && process.env.V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE === "1" &&
+				command?.type === "host_native_event7_preaction_capture" && command.kind === "managed_host" &&
+				command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId && command.sessionId === bootstrap.sessionId &&
+				command.secret === bootstrap.secret && command.eventSequence === 7 && /^event7pre_[a-f0-9]{32}$/.test(command.requestId || "") &&
+				Number.isSafeInteger(command.captureOrdinal) && command.captureOrdinal >= 1 && command.captureOrdinal <= 2 &&
+				/^native_event_[a-f0-9]{32}$/.test(command.nativeEventId || "") && /^event_[1-9][0-9]{0,6}$/.test(command.eventInstanceId || "") &&
+				/^event_[1-9][0-9]{0,6}$/.test(command.parentEventInstanceId || "") && Number.isSafeInteger(command.waitingCompletionOrdinal) &&
+				command.waitingCompletionOrdinal > 0 && /^native_event_[a-f0-9]{32}$/.test(command.previousNativeEventId || "") &&
+				command.previousNativeEventId !== command.nativeEventId && bootstrap.gameSetup.seats.some(seat => seat.seatId === command.seatId) &&
+				bootstrap.gameSetup.seats.some(seat => seat.seatId === command.previousSeatId) && command.previousSeatId !== command.seatId &&
+				Array.isArray(command.candidateOptionIds) && command.candidateOptionIds.length > 0 && command.candidateOptionIds.length <= 64 &&
+				new Set(command.candidateOptionIds).size === command.candidateOptionIds.length &&
+				command.candidateOptionIds.every(option => /^native_option_[a-f0-9]{32}$/.test(option)) &&
+				command.candidateOptionKinds && Object.getPrototypeOf(command.candidateOptionKinds) === Object.prototype &&
+				Object.keys(command.candidateOptionKinds).sort().join(",") === [...command.candidateOptionIds].sort().join(",") &&
+				Object.values(command.candidateOptionKinds).every(kind => kind === "gongJi" || kind === "faShu") &&
+				command.engineBuildId === bootstrap.engineSourceManifest?.buildId && /^native_root_[A-Za-z0-9_-]{16,96}$/.test(command.rootInstanceId || "") &&
+				Array.isArray(command.seatIds) && command.seatIds.length === 4 && command.seatIds.every((seatId, index) => seatId === bootstrap.gameSetup.seats[index].seatId) &&
+				Object.keys(command).sort().join(",") === "candidateOptionIds,candidateOptionKinds,captureOrdinal,engineBuildId,eventInstanceId,eventSequence,kind,nativeEventId,parentEventInstanceId,previousNativeEventId,previousSeatId,protocol,requestId,roomId,rootInstanceId,seatId,seatIds,secret,sessionId,type,waitingCompletionOrdinal";
 			const nativePhaseBoundaryReleaseCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1" && command?.type === "host_native_phase_boundary_release" &&
 				command.kind === "managed_host" && command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
@@ -234,8 +261,9 @@ function createManagedHostProcessLauncher({
 				Object.keys(command).sort().join(",") === "afterDigest,eventSequence,kind,nativeEventId,protocol,roomId,rootInstanceId,seatId,secret,sessionId,stateRevision,type";
 			const nativeEvent5PostCaptureReadyFailure = (() => {
 				if (command?.type !== "host_native_event5_post_capture_ready") return null;
-				if (![5, 6].includes(bootstrap.authorityEventLimit) || bootstrap.authorityEventLimit < 5 ||
+				if (![5, 6, 7].includes(bootstrap.authorityEventLimit) || bootstrap.authorityEventLimit < 5 ||
 					process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT !== String(bootstrap.authorityEventLimit) ||
+					(bootstrap.authorityEventLimit === 7 && (process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE !== "1" || process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE !== "1")) ||
 					process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1") return "OPT_IN";
 				if (command.kind !== "managed_host" || command.protocol !== bootstrap.protocol || command.roomId !== bootstrap.roomId ||
 					command.sessionId !== bootstrap.sessionId || command.secret !== bootstrap.secret) return "IDENTITY";
@@ -258,8 +286,9 @@ function createManagedHostProcessLauncher({
 				}
 				return null;
 			})();
-			const nativeEvent5PostCaptureReadyCommand = [5, 6].includes(bootstrap.authorityEventLimit) && bootstrap.authorityEventLimit >= 5 &&
+			const nativeEvent5PostCaptureReadyCommand = [5, 6, 7].includes(bootstrap.authorityEventLimit) && bootstrap.authorityEventLimit >= 5 &&
 				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(bootstrap.authorityEventLimit) &&
+				(bootstrap.authorityEventLimit !== 7 || (process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" && process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1")) &&
 				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" && command?.type === "host_native_event5_post_capture_ready" &&
 				command.kind === "managed_host" && command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
 				command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret && command.eventSequence === 5 &&
@@ -272,9 +301,10 @@ function createManagedHostProcessLauncher({
 				/^native_root_[A-Za-z0-9_-]{16,96}$/.test(command.rootInstanceId || "") && bootstrap.gameSetup.seats.some(seat => seat.seatId === command.seatId) &&
 				/^[a-f0-9]{64}$/.test(command.afterDigestBefore || "") &&
 				Object.keys(command).sort().join(",") === "afterDigestBefore,captureOrdinal,commitment,connectionGeneration,eventSequence,kind,nativeCompletionOrdinal,nativeEventId,phaseOverEventInstanceId,phaseOverTriggerOrdinal,protocol,roomId,rootInstanceId,seatId,secret,sessionId,stateRevision,type";
-			const nativeEvent6PostCaptureReadyCommand = bootstrap.authorityEventLimit === 6 &&
-				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" &&
+			const nativeEvent6PostCaptureReadyCommand = [6, 7].includes(bootstrap.authorityEventLimit) &&
+				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(bootstrap.authorityEventLimit) &&
 				process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" &&
+				(bootstrap.authorityEventLimit !== 7 || process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1") &&
 				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" &&
 				command?.type === "host_native_event6_post_capture_ready" && command.kind === "managed_host" &&
 				command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
@@ -291,6 +321,18 @@ function createManagedHostProcessLauncher({
 				bootstrap.gameSetup.seats.some(seat => seat.seatId === command.seatId) &&
 				/^[a-f0-9]{64}$/.test(command.afterDigestBefore || "") &&
 				Object.keys(command).sort().join(",") === "afterDigestBefore,captureOrdinal,commitment,connectionGeneration,eventSequence,kind,nativeCompletionOrdinal,nativeEventId,phaseOverEventInstanceId,phaseOverTriggerOrdinal,protocol,roomId,rootInstanceId,seatId,secret,sessionId,stateRevision,type";
+			const nativeEvent7PostCaptureReadyCommand = bootstrap.authorityEventLimit === 7 &&
+				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "7" && process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1" &&
+				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" && command?.type === "host_native_event7_post_capture_ready" &&
+				command.kind === "managed_host" && command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
+				command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret && command.eventSequence === 7 && command.stateRevision === 6 &&
+				Number.isSafeInteger(command.connectionGeneration) && command.connectionGeneration > 0 && Number.isSafeInteger(command.captureOrdinal) && command.captureOrdinal > 0 &&
+				/^[a-f0-9]{64}$/.test(command.commitment || "") && Number.isSafeInteger(command.nativeCompletionOrdinal) && command.nativeCompletionOrdinal > 0 &&
+				/^native_event_[a-f0-9]{32}$/.test(command.nativeEventId || "") && /^event_[1-9][0-9]{0,6}$/.test(command.phaseOverEventInstanceId || "") &&
+				Number.isSafeInteger(command.phaseOverTriggerOrdinal) && command.phaseOverTriggerOrdinal >= 4 &&
+				/^native_root_[A-Za-z0-9_-]{16,96}$/.test(command.rootInstanceId || "") && bootstrap.gameSetup.seats.some(seat => seat.seatId === command.seatId) &&
+				/^[a-f0-9]{64}$/.test(command.afterDigestBefore || "") &&
+				Object.keys(command).sort().join(",") === "afterDigestBefore,captureOrdinal,commitment,connectionGeneration,eventSequence,kind,nativeCompletionOrdinal,nativeEventId,phaseOverEventInstanceId,phaseOverTriggerOrdinal,protocol,roomId,rootInstanceId,seatId,secret,sessionId,stateRevision,type";
 			const inputResumeCommand = process.env.V2_NATIVE_START_DIAGNOSTICS === "1" &&
 				command?.type === "host_native_input_resume" && typeof command.nativeEventId === "string" &&
 				typeof command.seatId === "string" && typeof command.optionId === "string" &&
@@ -299,22 +341,25 @@ function createManagedHostProcessLauncher({
 				typeof command.nativeEventId === "string" && typeof command.seatId === "string" &&
 				Object.keys(command).every(key => ["type", "nativeEventId", "seatId"].includes(key));
 			if (exited || !child.connected || !command ||
-				!(diagnosticCommand || nativeSnapshotCommand || nativeCardLedgerCommand || nativeEffectStateCommand || nativeAtomicCaptureCommand || nativePreActionCaptureCommand || nativeSuccessorPreActionCaptureCommand || nativeEvent6PreActionCaptureCommand || nativePhaseBoundaryReleaseCommand || nativeEvent5PostCaptureReadyCommand || nativeEvent6PostCaptureReadyCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
+				!(diagnosticCommand || nativeSnapshotCommand || nativeCardLedgerCommand || nativeEffectStateCommand || nativeAtomicCaptureCommand || nativePreActionCaptureCommand || nativeSuccessorPreActionCaptureCommand || nativeEvent6PreActionCaptureCommand || nativeEvent7PreActionCaptureCommand || nativePhaseBoundaryReleaseCommand || nativeEvent5PostCaptureReadyCommand || nativeEvent6PostCaptureReadyCommand || nativeEvent7PostCaptureReadyCommand || inputResumeCommand || inputCancelCommand || nativeFaultReleaseCommand ||
 					(command?.type === "host_authority_event_ack" && command.kind === "managed_host" &&
 						command.accepted === true &&
 						command.protocol === bootstrap.protocol && command.roomId === bootstrap.roomId &&
 						command.sessionId === bootstrap.sessionId && command.secret === bootstrap.secret &&
 						([1, 2, 3, 4].includes(command.eventSequence) || (command.eventSequence === 5 &&
-							[5, 6].includes(bootstrap.authorityEventLimit) && bootstrap.authorityEventLimit >= command.eventSequence &&
+							[5, 6, 7].includes(bootstrap.authorityEventLimit) && bootstrap.authorityEventLimit >= command.eventSequence &&
 							process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(bootstrap.authorityEventLimit) &&
 							process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1") || (command.eventSequence === 6 &&
-							bootstrap.authorityEventLimit === 6 && process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" &&
-							process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1")) &&
+							[6, 7].includes(bootstrap.authorityEventLimit) && process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === String(bootstrap.authorityEventLimit) &&
+							process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" && (bootstrap.authorityEventLimit !== 7 || process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1") &&
+							process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1") || (command.eventSequence === 7 &&
+							bootstrap.authorityEventLimit === 7 && process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "7" &&
+							process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1" && process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1")) &&
 						command.stateRevision === command.eventSequence &&
 						/^[a-f0-9]{64}$/.test(command.afterDigest)) ||
 					["host_choice_delivery", "host_choice_cancel"].includes(command.type)) ||
 				Object.getPrototypeOf(command) !== Object.prototype) throw new Error(command?.type === "host_native_pre_action_capture"
-				? "HOST_PREACTION_CAPTURE_COMMAND_REJECTED" : command?.type === "host_native_event5_post_capture_ready" || command?.type === "host_native_event6_post_capture_ready"
+				? "HOST_PREACTION_CAPTURE_COMMAND_REJECTED" : command?.type === "host_native_event5_post_capture_ready" || command?.type === "host_native_event6_post_capture_ready" || command?.type === "host_native_event7_post_capture_ready"
 					? `HOST_EVENT5_COMMAND_REJECTED_${nativeEvent5PostCaptureReadyFailure || "UNKNOWN"}` : "HOST_COMMAND_REJECTED");
 			await new Promise((resolve, reject) => child.send(command, error => error ? reject(error) : resolve()));
 		};
