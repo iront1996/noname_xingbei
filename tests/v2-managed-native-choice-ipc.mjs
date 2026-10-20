@@ -28,7 +28,11 @@ const viewasExecutionFaultModes = ["viewas_result_assignment_throws", "viewas_us
 // engine and game readiness budgets below. It must not abort before the manager
 // can report its own bounded startup failure; these values do not extend any
 // browser, native event, IPC or player-choice deadline.
-const managedHostReadyBudgets = Object.freeze({ browserReadyTimeoutMs: 20000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000 });
+// Chromium's own DevToolsActivePort bootstrap budget is 20s. Keep the manager's
+// outer Browser Ready watchdog later so it cannot preempt the child at the same
+// deadline and erase the child's precise startup result. This margin does not
+// extend Chromium's internal boot, native-event, IPC, or player-choice deadlines.
+const managedHostReadyBudgets = Object.freeze({ browserReadyTimeoutMs: 25000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000 });
 const managedChoiceOpenObservationMs = Object.values(managedHostReadyBudgets).reduce((total, timeout) => total + timeout, 0) + 5000;
 
 async function until(check, timeoutMs = 45000, diagnostic = () => null) {
