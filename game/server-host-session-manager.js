@@ -740,7 +740,7 @@ function createHostSessionManager({
 							commitment.authoritySeedAuthorized !== false) throw new TypeError("NATIVE_ATOMIC_CAPTURE_COMMITMENT_INVALID");
 						if (!acceptedFence) record.privateAtomicCaptureFenceProofs.set(expectedBoundary, Object.freeze({
 							completion: Object.freeze({ ...envelopeProof }), phaseOver: Object.freeze({ ...envelopeFence.phaseOverCompletionEvidence }),
-							seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
+							boundaryOrdinal: envelopeFence.boundaryOrdinal, seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
 							phaseOverTriggerCount: envelopeFence.phaseOverTriggerCount }));
 						record.privateAtomicCaptureRequests.delete(message.requestId);
 						clearTimeout(pending.timer);
