@@ -3343,7 +3343,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							assert.equal(authoritySubmissions.some(entry => entry.proof.eventSequence > 8), false, "Event #9 remains closed");
 							const duplicate8 = manager.commitAuthorityEvent({ type: "host_authority_event", roomId,
 								sessionId: accepted8.sessionId, secret: sessionSecret, proof: proof8 });
-							assert.equal(duplicate8.ok, true);
+							assert.equal(duplicate8.ok, true, `exact Event #8 replay rejected: ${duplicate8.code || "unknown"}; revision=${manager.inspect(roomId)?.authorityStateRevision}; next=${manager.inspect(roomId)?.nextAuthorityEventSequence}; last=${manager.inspect(roomId)?.lastAuthorityEvent?.sequence}`);
 							assert.equal(duplicate8.idempotent, true);
 							assert.equal(manager.inspect(roomId)?.authorityStateRevision, 8,
 								"an exact Event #8 retry must not advance revision or apply the native action twice");
