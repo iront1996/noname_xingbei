@@ -2974,14 +2974,23 @@ function createHostSessionManager({
 			[8, [record?.experimentalEvent8PreActionCaptureResult, record?.experimentalEvent8PreActionCaptureEnvelope]],
 		]);
 		const [activeCapture, activeEnvelope] = captureBySequence.get(sequence) || [];
-		const activeCandidate = sequence === 5 ? record?.nativeEvent5Candidate : sequence === 6 ? record?.nativeEvent6Candidate :
+		// A native successor waiting-gate projection is read-only diagnostic data.
+		// In the ordinary Event #4 ceiling it may be published without enabling
+		// Event #5 submission; action capability remains separately opt-in below.
+		const activeCandidate = sequence === 5 ? (record?.nativeEvent5Candidate || record?.nativeNextSeatCandidate) : sequence === 6 ? record?.nativeEvent6Candidate :
 			sequence === 7 ? record?.nativeEvent7Candidate : sequence === 8 ? record?.nativeEvent8Candidate : null;
 		if (!record || record.state !== "playable_probe" || !Number.isSafeInteger(sequence) || sequence < 5 || sequence > 8 ||
-			!experimentalAuthorityEnabled(record, sequence) || record.authorityStateRevision !== sequence - 1 ||
+			(sequence !== 5 && !experimentalAuthorityEnabled(record, sequence)) || record.authorityStateRevision !== sequence - 1 ||
 			record.lastAuthorityEvent?.sequence !== sequence - 1 || !(exact(input, ["recipientSeatId", "request"]) ||
 				exact(input, ["recipientSeatId", "request", "stateSequence"])) ||
 			!SEAT_ID.test(input.recipientSeatId || "") || !record.seatIds.includes(input.recipientSeatId) ||
 			!input.request || Object.getPrototypeOf(input.request) !== Object.prototype || !activeCapture || !activeEnvelope || !activeCandidate ||
+			activeCandidate.roomId !== roomId || activeCandidate.hostSessionId !== record.sessionId ||
+			activeCandidate.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId ||
+			activeCandidate.engineBuildId !== record.engineBuildId ||
+			!Array.isArray(activeCandidate.seatIds) || activeCandidate.seatIds.length !== record.seatIds.length ||
+			activeCandidate.seatIds.some((seatId, index) => seatId !== record.seatIds[index]) ||
+			(activeCandidate.eventSequence !== undefined && activeCandidate.eventSequence !== sequence) ||
 			activeCapture.nativeEventId !== activeCandidate.nativeEventId || activeCapture.seatId !== activeCandidate.seatId ||
 			activeCapture.eventInstanceId !== activeCandidate.eventInstanceId || activeCapture.nativeCompletionOrdinal !== activeCandidate.waitingCompletionOrdinal ||
 			hasPendingManagedChoices(roomId, record.sessionId) !== false ||
