@@ -1339,8 +1339,9 @@ function createHostSessionManager({
 									nativeEventId: candidate.nativeEventId, phaseOverEventInstanceId: record.experimentalEvent8PostCapture.phaseOverEventInstanceId,
 									phaseOverTriggerOrdinal: record.experimentalEvent8PostCapture.phaseOverTriggerOrdinal,
 									rootInstanceId: candidate.rootInstanceId, seatId: candidate.seatId, stateRevision: 7 });
-							}).catch(() => {
+							}).catch(error => {
 								record.experimentalEvent8PostCapture = null;
+								record.experimentalEvent8PostCaptureFailureCode = /^[A-Z0-9_]{3,96}$/.test(error?.message || "") ? error.message : "EVENT8_POST_CAPTURE_INTERNAL_FAILURE";
 								if (record.state === "playable_probe") fail(record, "EVENT8_POST_CAPTURE_FAILED");
 								Promise.resolve(record.handle?.stop("event8_post_capture_failed")).catch(() => {});
 							});
@@ -3072,7 +3073,8 @@ function createHostSessionManager({
 			preCaptureCommitment: pre?.commitment || null, preCaptureRequestCount: record.event8PreActionCaptureRequestCount,
 			deliveryAccepted: Boolean(record.experimentalEvent8Delivery), postCaptureAccepted: Boolean(post),
 			postCaptureOrdinal: post?.captureOrdinal ?? null, postCaptureCommitment: post?.commitment || null,
-			boundaryOrdinal: post?.boundaryOrdinal ?? null, accepted: Boolean(record.experimentalEvent8AcceptedProofDigest),
+			boundaryOrdinal: post?.boundaryOrdinal ?? null, postCaptureFailureCode: record.experimentalEvent8PostCaptureFailureCode || null,
+			accepted: Boolean(record.experimentalEvent8AcceptedProofDigest),
 			checkpointAvailable: false, seedAuthorized: false });
 	}
 
