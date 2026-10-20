@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const WebSocket = require("ws");
 const { createManagedRoomSeatRegistry } = require("../game/server-managed-room-seat-registry.js");
 const { createManagedV3SeatStateWebSocketGateway } = require("../game/server-managed-v3-seat-state-websocket-gateway.js");
-const { createSeatStateMessage, validateSeatStateMessage } = require("../game/v3-seat-state-protocol.js");
+const { createSeatStateMessage, validateSeatStateMessage, createCappedReadOnlySeatState } = require("../game/v3-seat-state-protocol.js");
 
 const roomId = "gateway_room";
 const seatIds = ["seat_a", "seat_b", "seat_c", "seat_d"];
@@ -14,7 +14,7 @@ const hostSessionId = `hs_${"a".repeat(32)}`;
 const engineBuildId = "b".repeat(64);
 const rootInstanceId = `native_root_${"c".repeat(32)}`;
 
-function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {}, onSeatBound = () => true } = {}) {
+function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {}, onSeatBound = () => true, capped = false } = {}) {
 	const registry = createManagedRoomSeatRegistry();
 	assert.equal(registry.createRoom(roomId, seatIds), true);
 	const credentials = new Map(seatIds.map(seatId => [seatId, registry.issueSeat(roomId, seatId).credential]));
@@ -24,7 +24,7 @@ function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {},
 	const manager = {
 		inspect(candidateRoom) {
 			return candidateRoom === roomId ? { roomId, sessionId: hostSessionId, engineBuildId, pid: 4567,
-				state: "playable_probe", authorityStateRevision: 4, nextAuthorityEventSequence: 5, checkpointAvailable: false } : null;
+				state: "playable_probe", authorityStateRevision: capped ? 8 : 4, nextAuthorityEventSequence: capped ? 9 : 5, checkpointAvailable: false } : null;
 		},
 		subscribeLifecycle(listener) { listeners.add(listener); return () => listeners.delete(listener); },
 		createV3SeatStateForRequest(candidateRoom, input) {
@@ -43,6 +43,22 @@ function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {},
 				replayFromSequence: input.stateSequence - 1, publicState,
 				privateState: { seatId: input.recipientSeatId, handCardViewIds: [`opaque_${input.recipientSeatId}_0123456789`] }, pendingChoice: null });
 			return created.ok ? { ok: true, message: created.message } : created;
+		},
+		createV3CappedReadOnlySeatStateForRequest(candidateRoom, input) {
+			const binding = bindings.get(input.recipientSeatId), credential = credentials.get(input.recipientSeatId);
+			if (!capped || candidateRoom !== roomId || !binding || input.request.connectionId !== binding.connectionId ||
+				input.request.credential !== credential || !registry.authenticateSeat({ roomId, seatId: input.recipientSeatId,
+					connectionId: binding.connectionId, credential }, { roomId, seatId: input.recipientSeatId }))
+				return { ok: false, code: "V3_CAPPED_STATE_RECIPIENT_REJECTED" };
+			projectionCalls.push({ seatId: input.recipientSeatId, sequence: input.stateSequence, generation: binding.connectionGeneration, capped: true });
+			const created = createCappedReadOnlySeatState({ roomId, recipientSeatId: input.recipientSeatId,
+				connectionGeneration: binding.connectionGeneration, stateSequence: input.stateSequence,
+				replayFromSequence: input.stateSequence - 1, authorityRevision: 8, lastAcceptedEventSequence: 8,
+				nextAuthorityEventSequence: 9, captureOrdinal: 6, nativeCompletionOrdinal: 57,
+				nativeEventId: `native_event_${"a".repeat(32)}`, phaseOverEventInstanceId: "event_301",
+				experimentalCeilingReached: true, gameTerminal: false, gameplayEnabled: false,
+				projectionStatus: "verified_capture_payload_unavailable" });
+			return created.ok ? created : created;
 		},
 	};
 	const gateway = createManagedV3SeatStateWebSocketGateway({ WebSocketServer: WebSocket.Server, roomId, seatIds,
@@ -66,6 +82,48 @@ function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {},
 	});
 	return { registry, credentials, bindings, projectionCalls, manager, gateway, listeners };
 }
+
+test("Event 8 cap permits authenticated recipient-only final status reads while all Event 9 actions remain disabled", async t => {
+	const fixture = setupGateway({ capped: true });
+	t.after(async () => fixture.gateway.close());
+	const { url } = await fixture.gateway.listen();
+	const sockets = new Map(), views = new Map();
+	t.after(async () => Promise.all([...sockets.values()].map(closeSocket)));
+	for (const seatId of seatIds) {
+		const socket = await connect(url); sockets.set(seatId, socket);
+		assert.equal((await authenticate(socket, seatId, fixture.credentials.get(seatId)).catch(error => { throw new Error(`CAPPED_AUTH_${seatId}:${error.message}`); })).connectionGeneration, 1);
+		const view = await readState(socket, `capped_${seatId}`, 0).catch(error => { throw new Error(`CAPPED_READ_${seatId}:${error.message}`); });
+		assert.equal(view.schema, "xingbei_v3_capped_readonly_state_v1");
+		assert.equal(view.recipientSeatId, seatId);
+		assert.equal(view.authorityRevision, 8);
+		assert.equal(view.lastAcceptedEventSequence, 8);
+		assert.equal(view.nextAuthorityEventSequence, 9);
+		assert.equal(view.experimentalCeilingReached, true);
+		assert.equal(view.gameTerminal, false, "an experiment ceiling is not an in-game terminal result");
+		assert.equal(view.gameplayEnabled, false);
+		assert.equal(view.projectionStatus, "verified_capture_payload_unavailable");
+		assert.equal(JSON.stringify(view).includes("commitment"), false);
+		assert.equal(JSON.stringify(view).includes("hostSession"), false);
+		views.set(seatId, view);
+		assert.deepEqual(await ackState(socket, 1), { type: "transport_acknowledged", stateSequence: 1,
+			connectionGeneration: 1, duplicate: false });
+	}
+	assert.equal(new Set([...views.values()].map(view => view.recipientSeatId)).size, 4);
+	assert.deepEqual(await readChoice(sockets.get("seat_a"), "event9_choice"),
+		{ type: "managed_choice_unavailable", requestId: "event9_choice" });
+	for (const type of ["choice_submit", "authority_event", "native_command"]) {
+		const response = onceMessage(sockets.get("seat_a"));
+		sockets.get("seat_a").send(JSON.stringify({ type, eventSequence: 9, choiceId: "forged", optionId: "forged" }));
+		assert.deepEqual(await response, { type: "gateway_error", code: "GAMEPLAY_TRANSPORT_DISABLED" });
+	}
+	assert.equal(fixture.manager.inspect(roomId).authorityStateRevision, 8);
+	assert.equal(fixture.manager.inspect(roomId).nextAuthorityEventSequence, 9);
+	assert.equal(fixture.projectionCalls.length, 4);
+	assert.ok(fixture.projectionCalls.every(call => call.capped === true));
+	assert.equal(fixture.gateway.inspect().bufferedMessages, 4);
+	await fixture.gateway.close();
+	assert.equal(fixture.gateway.inspect().bufferedMessages, 0);
+});
 
 function onceMessage(socket) {
 	return new Promise((resolve, reject) => {

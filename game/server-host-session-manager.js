@@ -3038,6 +3038,64 @@ function createHostSessionManager({
 		return Object.freeze({ ok: true, message: projected.message });
 	}
 
+	function createV3CappedReadOnlySeatStateForRequest(roomId, input) {
+		const record = sessions.get(roomId);
+		const exact = (value, keys) => Boolean(value && Object.getPrototypeOf(value) === Object.prototype &&
+			Object.keys(value).sort().join(",") === [...keys].sort().join(","));
+		const post = record?.experimentalEvent8PostCapture;
+		const acceptedSummary = record?.authorityStateSummary;
+		if (!record || record.state !== "playable_probe" || record.authorityStateRevision !== 8 ||
+			record.nextAuthorityEventSequence !== 9 || record.lastAuthorityEvent?.sequence !== 8 ||
+			!record.experimentalEvent8AcceptedProofDigest || !post || post.roomId !== roomId || post.hostSessionId !== record.sessionId ||
+			post.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId || post.engineBuildId !== record.engineBuildId ||
+			post.boundaryOrdinal !== 5 || !DIGEST.test(post.commitment || "") ||
+			!acceptedSummary || acceptedSummary.revision !== 8 || acceptedSummary.actorSeatId !== post.seatId ||
+			acceptedSummary.nativeEventId !== post.nativeEventId || acceptedSummary.captureOrdinal !== post.captureOrdinal ||
+			acceptedSummary.captureCommitment !== post.commitment || acceptedSummary.postFenceCompletionOrdinal !== post.nativeCompletionOrdinal ||
+			acceptedSummary.phaseOverEventInstanceId !== post.phaseOverEventInstanceId ||
+			!Number.isSafeInteger(post.captureOrdinal) || post.captureOrdinal < 1 ||
+			!Number.isSafeInteger(post.nativeCompletionOrdinal) || post.nativeCompletionOrdinal < 1 ||
+			!/^native_event_[a-f0-9]{32}$/.test(post.nativeEventId || "") ||
+			!/^event_[1-9][0-9]{0,6}$/.test(post.phaseOverEventInstanceId || "") ||
+			!Array.isArray(post.seatIds) || post.seatIds.length !== record.seatIds.length ||
+			post.seatIds.some((seatId, index) => seatId !== record.seatIds[index]) ||
+			hasPendingManagedChoices(roomId, record.sessionId) !== false ||
+			!exact(input, ["recipientSeatId", "request", "stateSequence"]) ||
+			!SEAT_ID.test(input.recipientSeatId || "") || !record.seatIds.includes(input.recipientSeatId) ||
+			!Number.isSafeInteger(input.stateSequence) || input.stateSequence < 1 ||
+			!input.request || Object.getPrototypeOf(input.request) !== Object.prototype) return failure("V3_CAPPED_STATE_NOT_AVAILABLE");
+		let authorized = null, binding = null;
+		try {
+			authorized = authorizeSeatStateRequest({ roomId, recipientSeatId: input.recipientSeatId, request: input.request });
+			binding = getCurrentSeatBinding(roomId, input.recipientSeatId);
+		} catch (_) { return failure("V3_CAPPED_STATE_RECIPIENT_REJECTED"); }
+		const validBinding = value => value && Object.getPrototypeOf(value) === Object.prototype && value.roomId === roomId &&
+			value.seatId === input.recipientSeatId && value.connected === true && value.current === true &&
+			value.credentialAuthenticated === true && value.ordinaryPlayer === true &&
+			Number.isSafeInteger(value.connectionGeneration) && value.connectionGeneration > 0;
+		if (!validBinding(authorized) || !validBinding(binding)) return failure("V3_CAPPED_STATE_RECIPIENT_REJECTED");
+		if (authorized.connectionGeneration !== binding.connectionGeneration) return failure("V3_CAPPED_STATE_CONNECTION_STALE");
+		const { createCappedReadOnlySeatState } = require("./v3-seat-state-protocol.js");
+		const projection = createCappedReadOnlySeatState({ roomId, recipientSeatId: input.recipientSeatId,
+			connectionGeneration: binding.connectionGeneration, stateSequence: input.stateSequence,
+			replayFromSequence: input.stateSequence - 1, authorityRevision: 8, lastAcceptedEventSequence: 8,
+			nextAuthorityEventSequence: 9, captureOrdinal: post.captureOrdinal,
+			nativeCompletionOrdinal: post.nativeCompletionOrdinal, nativeEventId: post.nativeEventId,
+			phaseOverEventInstanceId: post.phaseOverEventInstanceId, experimentalCeilingReached: true,
+			gameTerminal: false, gameplayEnabled: false, projectionStatus: "verified_capture_payload_unavailable" });
+		let active = sessions.get(roomId), activeBinding = null, reauthorized = null;
+		try {
+			activeBinding = getCurrentSeatBinding(roomId, input.recipientSeatId);
+			reauthorized = authorizeSeatStateRequest({ roomId, recipientSeatId: input.recipientSeatId, request: input.request });
+		} catch (_) {}
+		if (!projection.ok) return failure(projection.code);
+		if (active !== record || record.state !== "playable_probe" || record.authorityStateRevision !== 8 ||
+			record.nextAuthorityEventSequence !== 9 || !validBinding(activeBinding) || !validBinding(reauthorized) ||
+			activeBinding.connectionGeneration !== binding.connectionGeneration || reauthorized.connectionGeneration !== binding.connectionGeneration)
+			return failure("V3_CAPPED_STATE_RECIPIENT_STALE_AFTER_CAPTURE");
+		return Object.freeze({ ok: true, message: projection.message });
+	}
+
 	function inspectV3ExperimentalActionCapability(roomId) {
 		const record = sessions.get(roomId);
 		const sequence = record?.nextAuthorityEventSequence;
@@ -3261,6 +3319,7 @@ function createHostSessionManager({
 		snapshotNativePreActionCapture,
 		snapshotSuccessorPreActionCapture,
 		createV3SeatStateForRequest,
+		createV3CappedReadOnlySeatStateForRequest,
 		inspectV3ExperimentalActionCapability,
 		getV3CurrentManagedChoice,
 		inspectEvent5ReviewEvidence,

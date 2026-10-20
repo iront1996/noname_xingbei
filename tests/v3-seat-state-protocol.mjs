@@ -3,7 +3,9 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const { SCHEMA, createSeatStateMessage, validateSeatStateMessage, acceptsReconnectCursor } =
+
+const { SCHEMA, CAPPED_SCHEMA, createSeatStateMessage, validateSeatStateMessage,
+	createCappedReadOnlySeatState, validateCappedReadOnlySeatState, acceptsReconnectCursor } =
 	require("../game/v3-seat-state-protocol.js");
 const { createVerifiedSeatStatePublisher, createSeatStateReceiver } = require("../game/v3-verified-seat-state.js");
 
@@ -28,6 +30,27 @@ test("V3 seat state envelope scopes private state and pending choice to one ordi
 		connectionGeneration: 2, seatIds }).ok, true);
 	assert.equal(JSON.stringify(result.message).includes("credential"), false);
 	assert.equal(JSON.stringify(result.message).includes("hostSession"), false);
+});
+
+test("Event 8 capped read-only view is recipient scoped, explicitly nonterminal and never authorizes Event 9", () => {
+	const input = { roomId: "room_v3_probe", recipientSeatId: "seat_a", connectionGeneration: 2,
+		stateSequence: 4, replayFromSequence: 3, authorityRevision: 8, lastAcceptedEventSequence: 8,
+		nextAuthorityEventSequence: 9, captureOrdinal: 6, nativeCompletionOrdinal: 57,
+		nativeEventId: `native_event_${"a".repeat(32)}`, phaseOverEventInstanceId: "event_301",
+		experimentalCeilingReached: true, gameTerminal: false, gameplayEnabled: false,
+		projectionStatus: "verified_capture_payload_unavailable" };
+	const created = createCappedReadOnlySeatState(input);
+	assert.equal(created.ok, true);
+	assert.equal(created.message.schema, CAPPED_SCHEMA);
+	assert.equal(validateCappedReadOnlySeatState(created.message, { roomId: input.roomId, seatId: input.recipientSeatId,
+		connectionGeneration: 2 }).ok, true);
+	assert.equal(created.message.gameTerminal, false);
+	assert.equal(created.message.gameplayEnabled, false);
+	assert.equal(JSON.stringify(created.message).includes("commitment"), false);
+	assert.equal(JSON.stringify(created.message).includes("cardId"), false);
+	assert.equal(validateCappedReadOnlySeatState({ ...created.message, authorityRevision: 9 }).ok, false);
+	assert.equal(validateCappedReadOnlySeatState({ ...created.message, gameplayEnabled: true }).ok, false);
+	assert.equal(validateCappedReadOnlySeatState({ ...created.message, privateState: { hand: [] } }).ok, false);
 });
 
 test("V3 seat state envelope rejects cross-seat private data and unknown secret-bearing fields", () => {

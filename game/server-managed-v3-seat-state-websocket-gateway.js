@@ -4,7 +4,7 @@
 // the HostSession manager's verified seat projection; it has no gameplay,
 // choice, native-command, or authority-event handler.
 const crypto = require("node:crypto");
-const { validateSeatStateMessage } = require("./v3-seat-state-protocol.js");
+const { CAPPED_SCHEMA, validateSeatStateMessage, validateCappedReadOnlySeatState } = require("./v3-seat-state-protocol.js");
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const CREDENTIAL = /^[a-f0-9]{64}$/;
@@ -115,7 +115,10 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 			if (closed || !live(socket)) return false;
 			if (context) await beforeSocketWrite(Object.freeze({ roomId, seatId: context.seatId,
 				connectionGeneration: context.connectionGeneration, stateSequence: payload.stateSequence || null }));
-			const hostValid = payload.type === "seat_authenticated" ? hostSessionIsCurrent() : hostIsCurrent();
+			// Delivery liveness is separate from action capability. At the Event 8
+			// ceiling the host may still authenticate/ACK/read a terminal projection,
+			// while every choice/action path continues to require hostIsCurrent().
+			const hostValid = hostSessionIsCurrent();
 			if (closed || !live(socket) || (context && (currentBySeat.get(context.seatId) !== context || !hostValid))) return false;
 			const encoded = JSON.stringify(payload);
 			if (Buffer.byteLength(encoded, "utf8") > maxMessageBytes) return false;
@@ -205,7 +208,7 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 		}
 
 	async function processMessage(context, message) {
-		if (!context.active || currentBySeat.get(context.seatId) !== context || !hostIsCurrent()) {
+		if (!context.active || currentBySeat.get(context.seatId) !== context || !hostSessionIsCurrent()) {
 			await sendError(context.socket, "SEAT_CONNECTION_STALE");
 			return;
 		}
@@ -240,23 +243,27 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 			}
 			let hostBefore;
 			try { hostBefore = hostSessionManager.inspect(roomId); } catch (_) { hostBefore = null; }
-			if (!hostIsCurrent() || hostBefore?.sessionId !== hostSessionId) {
+			if (!hostSessionIsCurrent() || hostBefore?.sessionId !== hostSessionId) {
 				await sendError(context.socket, "HOST_SESSION_UNAVAILABLE");
 				return;
 			}
 			let projected;
-			try { projected = hostSessionManager.createV3SeatStateForRequest(roomId, {
+			const projectionMethod = hostIsCurrent() ? hostSessionManager.createV3SeatStateForRequest :
+				hostSessionManager.createV3CappedReadOnlySeatStateForRequest;
+			try { projected = typeof projectionMethod === "function" ? projectionMethod.call(hostSessionManager, roomId, {
 				recipientSeatId: context.seatId, request: { connectionId: context.connectionId, credential: context.credential },
 				stateSequence: state.lastAcknowledgedSequence + 1,
-			}); } catch (_) { projected = null; }
+			}) : null; } catch (_) { projected = null; }
 			let hostAfter;
 			try { hostAfter = hostSessionManager.inspect(roomId); } catch (_) { hostAfter = null; }
-			if (!projected?.ok || !hostIsCurrent() || hostAfter?.sessionId !== hostSessionId ||
+			const capped = projected?.message?.schema === CAPPED_SCHEMA;
+			if (!projected?.ok || !(capped ? hostSessionIsCurrent() : hostIsCurrent()) || hostAfter?.sessionId !== hostSessionId ||
 				currentBySeat.get(context.seatId) !== context || !context.active) {
 				await sendError(context.socket, projected?.code || "SEAT_STATE_UNAVAILABLE");
 				return;
 			}
-			const checked = validateSeatStateMessage(projected.message, { roomId, seatId: context.seatId,
+			const checked = capped ? validateCappedReadOnlySeatState(projected.message, { roomId, seatId: context.seatId,
+				connectionGeneration: context.connectionGeneration }) : validateSeatStateMessage(projected.message, { roomId, seatId: context.seatId,
 				connectionGeneration: context.connectionGeneration, seatIds: immutableSeats });
 			if (!checked.ok || projected.message.stateSequence !== state.lastSequence + 1 ||
 				projected.message.replayFromSequence !== state.lastSequence || state.lastSequence !== state.lastAcknowledgedSequence) {

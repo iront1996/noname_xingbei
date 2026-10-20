@@ -15,7 +15,7 @@ const { createManagedRoomSeatRegistry } = require("../game/server-managed-room-s
 const { createManagedV3SeatStateWebSocketGateway } = require("../game/server-managed-v3-seat-state-websocket-gateway.js");
 const { prepareNextSeatChoice } = require("../game/server-managed-next-seat-choice-preparation.js");
 const { assessEvent5Evidence } = require("../game/server-managed-authority-event5-provenance.js");
-const { validateSeatStateMessage } = require("../game/v3-seat-state-protocol.js");
+const { validateSeatStateMessage, validateCappedReadOnlySeatState } = require("../game/v3-seat-state-protocol.js");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
@@ -90,7 +90,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1") assert.equal(process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE, "1",
 		"a held native phase boundary requires the managed native event-completion evidence source");
 	const server = await createV2NativeModuleTestServer({ root });
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_V3_SEAT_STATE_PROJECTION_PROBE", "V2_V3_SEAT_STATE_WEBSOCKET_PROBE", "V2_V3_WEBSOCKET_ACTION_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST", "V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT", "V2_NATIVE_EVENT6_CONTINUATION_PROBE", "V2_NATIVE_EVENT7_CONTINUATION_PROBE"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_V3_SEAT_STATE_PROJECTION_PROBE", "V2_V3_SEAT_STATE_WEBSOCKET_PROBE", "V2_V3_WEBSOCKET_ACTION_PROBE", "V2_V3_CAPPED_STATE_WEBSOCKET_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST", "V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT", "V2_NATIVE_EVENT6_CONTINUATION_PROBE", "V2_NATIVE_EVENT7_CONTINUATION_PROBE"].map(key => [key, process.env[key]]));
 	old.V2_NATIVE_EVENT8_CONTINUATION_PROBE = process.env.V2_NATIVE_EVENT8_CONTINUATION_PROBE;
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
@@ -1058,6 +1058,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	const actionGatewaySockets = new Map();
 	const actionGatewayStateSequences = new Map(immutableServerSeatIds.map(seatId => [seatId, 0]));
 	let actionGatewayRequestOrdinal = 0;
+	let actionGatewayContext = null;
 	async function startExperimentalActionGateway(rootInstanceId) {
 		const WebSocket = require("ws");
 		const host = manager.inspect(roomId);
@@ -1100,6 +1101,30 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			actionGatewaySockets.set(seatId, socket);
 		}
 		return Object.freeze({ address, hostSessionId: host.sessionId, chromiumPid, rootInstanceId });
+	}
+	async function reconnectDuringManagedGame(seatId) {
+		const hostBefore = manager.inspect(roomId), oldSocket = actionGatewaySockets.get(seatId);
+		const oldConnectionId = seatSockets.get(seatId), oldGeneration = seatRegistry.inspect(roomId, seatId)?.epoch;
+		assert.ok(actionGatewayContext && oldSocket && oldConnectionId && Number.isSafeInteger(oldGeneration));
+		await closeWebSocket(oldSocket);
+		actionGatewaySockets.delete(seatId);
+		await until(() => seatRegistry.inspect(roomId, seatId)?.connected === false, 3000,
+			() => ({ seatId, seat: seatRegistry.inspect(roomId, seatId) }));
+		const WebSocket = require("ws"), socket = await connectWebSocket(WebSocket, actionGatewayContext.address.url);
+		const authenticatedMessage = receiveWebSocketMessage(socket);
+		socket.send(JSON.stringify({ type: "seat_auth", roomId, seatId, credential: credentialFor(seatId) }));
+		const authenticated = await authenticatedMessage;
+		const currentGeneration = seatRegistry.inspect(roomId, seatId)?.epoch;
+		assert.deepEqual(authenticated, { type: "seat_authenticated", roomId, seatId, connectionGeneration: currentGeneration });
+		assert.equal(currentGeneration, oldGeneration + 1, "reconnect must fence the prior connection generation");
+		assert.equal(seatRegistry.authenticateSeat({ roomId, seatId, connectionId: oldConnectionId,
+			credential: credentialFor(seatId) }, { roomId, seatId }), false);
+		assert.equal(manager.inspect(roomId)?.sessionId, hostBefore.sessionId);
+		assert.equal(launchedHandles.get(hostBefore.sessionId)?.resources()[0]?.pid, actionGatewayContext.chromiumPid);
+		assert.equal(manager.inspect(roomId)?.authorityStateRevision, hostBefore.authorityStateRevision);
+		actionGatewaySockets.set(seatId, socket);
+		return Object.freeze({ seatId, oldGeneration, currentGeneration, hostSessionId: hostBefore.sessionId,
+			rootInstanceId: actionGatewayContext.rootInstanceId, chromiumPid: actionGatewayContext.chromiumPid });
 	}
 	async function readActionStateThroughGateway(seatId, expectedRevision) {
 		const actor = actionGatewaySockets.get(seatId);
@@ -2886,6 +2911,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(manager.inspect(roomId).authorityStateRevision, 4);
 						assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 5);
 						const gatewayContext = await startExperimentalActionGateway(waitingSnapshot.rootInstanceId);
+						actionGatewayContext = gatewayContext;
 						assert.equal(gatewayContext.hostSessionId, manager.inspect(roomId).sessionId);
 						assert.equal(gatewayContext.chromiumPid, launchedHandles.get(gatewayContext.hostSessionId).resources()[0].pid);
 						assert.equal(actionGatewaySockets.size, 4, "four ordinary-player WebSockets must bind before the next native candidate is created");
@@ -3440,6 +3466,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							assert.equal(manager.inspect(roomId)?.authorityStateRevision, 7);
 							assert.equal(manager.inspect(roomId)?.nextAuthorityEventSequence, 8);
 							assert.equal(controller.pendingCount(), 0);
+							if (process.env.V2_V3_CAPPED_STATE_WEBSOCKET_PROBE === "1") {
+								const reconnect = await reconnectDuringManagedGame(immutableServerSeatIds[0]);
+								assert.equal(reconnect.hostSessionId, candidate8.sessionId);
+								assert.equal(reconnect.rootInstanceId, candidate8.rootInstanceId);
+								assert.equal(manager.inspect(roomId)?.authorityStateRevision, 7,
+									"creator-seat transport loss/rebind cannot advance or reset authority state");
+								t.diagnostic(`ordinary creator seat reconnected during native successor input: ${JSON.stringify(reconnect)}`);
+							}
 							const e8CaptureFirst = await manager.snapshotEvent8PreActionCapture(roomId);
 							assert.equal(e8CaptureFirst.ok, true, `Event #8 pre-action capture rejected: ${e8CaptureFirst.code}`);
 							const e8CaptureRepeat = await manager.snapshotEvent8PreActionCapture(roomId);
@@ -3521,9 +3555,52 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 								"an exact Event #8 retry must not advance revision or apply the native action twice");
 							assert.equal(launchedHandles.get(accepted8.sessionId).resources()[0]?.pid, nativeChromiumPidAtFirstCandidate);
 							t.diagnostic(`isolated Event #8 accepted: ${JSON.stringify({ sequence: 8, revision: accepted8.authorityStateRevision,
-								seatId: proof8.event.seatId, nativeEventId: proof8.event.nativeEventId, rootInstanceId: proof8.event.rootInstanceId,
-								actionCompletionOrdinal: proof8.event.nativeCompletionOrdinal, postFenceOrdinal: proof8.afterSummary.postFenceCompletionOrdinal,
-								captureOrdinal: proof8.afterSummary.captureOrdinal, boundaryOrdinal: 5, gameMeNull: proof8.event.gameMeNull })}`);
+					seatId: proof8.event.seatId, nativeEventId: proof8.event.nativeEventId, rootInstanceId: proof8.event.rootInstanceId,
+					actionCompletionOrdinal: proof8.event.nativeCompletionOrdinal, postFenceOrdinal: proof8.afterSummary.postFenceCompletionOrdinal,
+					captureOrdinal: proof8.afterSummary.captureOrdinal, boundaryOrdinal: 5, gameMeNull: proof8.event.gameMeNull })}`);
+				if (process.env.V2_V3_CAPPED_STATE_WEBSOCKET_PROBE === "1") {
+					assert.equal(manager.inspect(roomId).authorityStateRevision, 8);
+					assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 9);
+					assert.ok(seatStateGateway && actionGatewaySockets.size === 4,
+						"the capped view must use the same loopback gateway and four ordinary-seat WebSockets");
+					for (const seatId of immutableServerSeatIds) {
+						const socket = actionGatewaySockets.get(seatId);
+						assert.ok(socket && seatRegistry.inspect(roomId, seatId).connected);
+						const sequence = actionGatewayStateSequences.get(seatId) || 0;
+						let received = receiveWebSocketMessage(socket);
+						socket.send(JSON.stringify({ type: "state_read", requestId: `cap8_${seatId}`, lastSeenSequence: sequence }));
+						const view = await received;
+						assert.equal(validateCappedReadOnlySeatState(view, { roomId, seatId,
+							connectionGeneration: seatRegistry.inspect(roomId, seatId).epoch }).ok, true,
+							`Event 8 capped state rejected for ${seatId}: ${JSON.stringify(view)}`);
+						assert.equal(view.authorityRevision, 8);
+						assert.equal(view.lastAcceptedEventSequence, 8);
+						assert.equal(view.nextAuthorityEventSequence, 9);
+						assert.equal(view.gameTerminal, false);
+						assert.equal(view.gameplayEnabled, false);
+						assert.equal(view.projectionStatus, "verified_capture_payload_unavailable");
+						for (const secret of [sessionSecret, ...seatCredentials.values()]) assert.equal(JSON.stringify(view).includes(secret), false);
+						assert.equal(JSON.stringify(view).includes(manager.inspect(roomId).sessionId), false);
+						received = receiveWebSocketMessage(socket);
+						socket.send(JSON.stringify({ type: "state_ack", stateSequence: view.stateSequence }));
+						assert.equal((await received).type, "transport_acknowledged");
+						actionGatewayStateSequences.set(seatId, view.stateSequence);
+					}
+					const actor = actionGatewaySockets.get(immutableServerSeatIds[0]);
+					let received = receiveWebSocketMessage(actor);
+					actor.send(JSON.stringify({ type: "choice_read", requestId: "cap8_no_choice" }));
+					assert.deepEqual(await received, { type: "managed_choice_unavailable", requestId: "cap8_no_choice" });
+					for (const type of ["choice_submit", "native_command", "authority_event"]) {
+						received = receiveWebSocketMessage(actor);
+						actor.send(JSON.stringify({ type, eventSequence: 9, choiceId: "forged", optionId: "forged" }));
+						assert.equal((await received).type, "gateway_error", `${type} must remain disabled beyond the Event 8 ceiling`);
+					}
+					assert.equal(authoritySubmissions.some(entry => entry.proof.eventSequence === 9), false);
+					assert.equal(manager.inspect(roomId).authorityStateRevision, 8);
+					assert.equal(manager.inspect(roomId).nextAuthorityEventSequence, 9);
+					assert.equal(manager.inspect(roomId).checkpointAvailable, false);
+					t.diagnostic("Event 8 post-phaseOver capture serves four authenticated read-only seat envelopes; Event 9 action and submission remain rejected");
+				}
 						}
 						}
 						return;
