@@ -61,14 +61,15 @@ function validateExperimentalEvent8(proof, evidence, { enabled = false } = {}) {
 		if (!exact(successorCapture, captureKeys) || successorCapture.roomId !== roomId || successorCapture.hostSessionId !== hostSessionId || successorCapture.rootInstanceId !== rootInstanceId ||
 			successorCapture.engineBuildId !== engineBuildId || canonicalize(successorCapture.seatIds) !== canonicalize(seatIds) || successorCapture.nativeEventId !== event.nativeEventId ||
 			successorCapture.eventInstanceId !== event.actionEventInstanceId || successorCapture.parentEventInstanceId !== event.actionParentEventInstanceId || successorCapture.seatId !== event.seatId ||
-			!Number.isSafeInteger(successorCapture.captureOrdinal) || successorCapture.captureOrdinal <= prior.captureOrdinal || successorCapture.nativeCompletionOrdinal !== successorCandidate.waitingCompletionOrdinal ||
+			!Number.isSafeInteger(successorCapture.captureOrdinal) || successorCapture.captureOrdinal < 1 || successorCapture.captureOrdinal > 2 ||
+			successorCapture.nativeCompletionOrdinal !== successorCandidate.waitingCompletionOrdinal || successorCapture.nativeCompletionOrdinal <= prior.postFenceCompletionOrdinal ||
 			!DIGEST.test(successorCapture.commitment || "") || event.nativeCompletionOrdinal <= successorCapture.nativeCompletionOrdinal) return reject("EVENT8_PRE_CAPTURE_REJECTED");
 		const postKeys = ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "seatIds", "nativeEventId", "seatId", "captureOrdinal", "nativeCompletionOrdinal", "boundaryOrdinal", "phaseOverTriggerOrdinal", "phaseOverSeatId", "phaseOverEventInstanceId", "commitment"];
 		if (!exact(postCapture, postKeys) || postCapture.roomId !== roomId || postCapture.hostSessionId !== hostSessionId || postCapture.rootInstanceId !== rootInstanceId || postCapture.engineBuildId !== engineBuildId ||
 			canonicalize(postCapture.seatIds) !== canonicalize(seatIds) || postCapture.nativeEventId !== event.nativeEventId || postCapture.seatId !== event.seatId || !Number.isSafeInteger(postCapture.nativeCompletionOrdinal) ||
 			postCapture.nativeCompletionOrdinal <= event.nativeCompletionOrdinal || postCapture.boundaryOrdinal !== 5 || !Number.isSafeInteger(postCapture.phaseOverTriggerOrdinal) || postCapture.phaseOverTriggerOrdinal < 5 ||
 			postCapture.phaseOverSeatId !== event.seatId || !/^event_[1-9][0-9]{0,6}$/.test(postCapture.phaseOverEventInstanceId || "") || !Number.isSafeInteger(postCapture.captureOrdinal) ||
-			postCapture.captureOrdinal <= successorCapture.captureOrdinal || !DIGEST.test(postCapture.commitment || "") || postCapture.commitment === successorCapture.commitment) return reject("EVENT8_POST_CAPTURE_REJECTED");
+			postCapture.captureOrdinal <= prior.captureOrdinal || !DIGEST.test(postCapture.commitment || "") || postCapture.commitment === successorCapture.commitment) return reject("EVENT8_POST_CAPTURE_REJECTED");
 		if (!exact(seatBinding, ["roomId", "seatId", "connected", "current", "credentialAuthenticated", "ordinaryPlayer", "connectionGeneration"]) || seatBinding.roomId !== roomId || seatBinding.seatId !== event.seatId ||
 			seatBinding.connected !== true || seatBinding.current !== true || seatBinding.credentialAuthenticated !== true || seatBinding.ordinaryPlayer !== true || seatBinding.connectionGeneration !== event.connectionGeneration) return reject("EVENT8_SEAT_BINDING_REJECTED");
 		if (!exact(actionDelivery, ["roomId", "hostSessionId", "nativeEventId", "seatId", "choiceId", "deliveryId", "optionId", "eventSequence", "resolutionKind", "connectionGeneration", "immutable"]) ||
