@@ -685,13 +685,13 @@ function createHostSessionManager({
 					const boundaryAllowed = expectedBoundary === 1
 						? !record.nativePhaseBoundaryReleaseSent && envelopeFence?.boundaryOrdinal === 1 &&
 							(!acceptedFence || proofMatches(acceptedFence, { completion: envelopeProof, phaseOver: envelopeFence.phaseOverCompletionEvidence,
-								seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
+								boundaryOrdinal: envelopeFence.boundaryOrdinal, seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
 								phaseOverTriggerCount: envelopeFence.phaseOverTriggerCount }))
 						: expectedBoundary === 2 ? process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" && record.nativePhaseBoundaryReleaseSent &&
 							record.privateAtomicCaptureCount >= 2 && envelopeFence?.boundaryOrdinal === 2 && firstFence &&
 							envelopeFence.seatId !== firstFence.seatId && envelopeProof?.completionOrdinal > firstFence.completion.completionOrdinal &&
 							(!acceptedFence || proofMatches(acceptedFence, { completion: envelopeProof, phaseOver: envelopeFence.phaseOverCompletionEvidence,
-								seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
+								boundaryOrdinal: envelopeFence.boundaryOrdinal, seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
 								phaseOverTriggerCount: envelopeFence.phaseOverTriggerCount }))
 						: expectedBoundary === 3 ? process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" &&
 							["6", "7", "8"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT) && experimentalAuthorityEnabled(record, 6) &&
@@ -701,7 +701,7 @@ function createHostSessionManager({
 							envelopeFence?.boundaryOrdinal === 3 && envelopeFence.seatId === record.nativeEvent6Candidate.seatId &&
 							envelopeFence.seatId !== secondFence.seatId && envelopeProof?.completionOrdinal > secondFence.completion.completionOrdinal &&
 							(!acceptedFence || proofMatches(acceptedFence, { completion: envelopeProof, phaseOver: envelopeFence.phaseOverCompletionEvidence,
-								seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
+								boundaryOrdinal: envelopeFence.boundaryOrdinal, seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
 								phaseOverTriggerCount: envelopeFence.phaseOverTriggerCount }))
 						: expectedBoundary === 4 ? process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" &&
 							experimentalAuthorityEnabled(record, 7) && record.authorityStateRevision === 6 &&
@@ -710,7 +710,7 @@ function createHostSessionManager({
 							envelopeFence?.boundaryOrdinal === 4 && envelopeFence.seatId === record.nativeEvent7Candidate.seatId &&
 							envelopeProof?.completionOrdinal > record.privateAtomicCaptureFenceProofs.get(3)?.completion?.completionOrdinal &&
 							(!acceptedFence || proofMatches(acceptedFence, { completion: envelopeProof, phaseOver: envelopeFence.phaseOverCompletionEvidence,
-								seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
+								boundaryOrdinal: envelopeFence.boundaryOrdinal, seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
 								phaseOverTriggerCount: envelopeFence.phaseOverTriggerCount }))
 						: expectedBoundary === 5 && process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" &&
 							experimentalAuthorityEnabled(record, 8) && record.authorityStateRevision === 7 && record.lastAuthorityEvent?.sequence === 7 &&
@@ -719,7 +719,7 @@ function createHostSessionManager({
 							envelopeFence?.boundaryOrdinal === 5 && envelopeFence.seatId === record.nativeEvent8Candidate.seatId &&
 							envelopeProof?.completionOrdinal > record.privateAtomicCaptureFenceProofs.get(4)?.completion?.completionOrdinal &&
 							(!acceptedFence || proofMatches(acceptedFence, { completion: envelopeProof, phaseOver: envelopeFence.phaseOverCompletionEvidence,
-								seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
+								boundaryOrdinal: envelopeFence.boundaryOrdinal, seatId: envelopeFence.seatId, nativeCompletionOrdinal: envelopeFence.nativeCompletionOrdinal,
 								phaseOverTriggerCount: envelopeFence.phaseOverTriggerCount }));
 					if (record.state !== "playable_probe" || !boundaryAllowed ||
 						Object.getPrototypeOf(message) !== Object.prototype || Object.keys(message).sort().join(",") !== keys ||
