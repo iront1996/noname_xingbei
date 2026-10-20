@@ -110,7 +110,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		process.stderr.write(line);
 		const diagnosticFile = process.env.V2_NATIVE_EVENT6_DIAGNOSTIC_FILE;
 		const diagnosticsRoot = path.resolve(process.env.RUNNER_TEMP && path.isAbsolute(process.env.RUNNER_TEMP) ? process.env.RUNNER_TEMP : tmpdir());
-		if (typeof diagnosticFile === "string" && path.isAbsolute(diagnosticFile) && path.dirname(path.resolve(diagnosticFile)) === diagnosticsRoot && path.basename(diagnosticFile) === "event6-progress.log") {
+		if (typeof diagnosticFile === "string" && path.isAbsolute(diagnosticFile) && path.dirname(path.resolve(diagnosticFile)) === diagnosticsRoot &&
+			["event6-progress.log", "event7-progress.log"].includes(path.basename(diagnosticFile))) {
 			appendFileSync(diagnosticFile, line, { encoding: "utf8", mode: 0o600 });
 		}
 	};
