@@ -1318,12 +1318,19 @@ function createHostSessionManager({
 									record.lastAuthorityEvent?.sequence !== 7) throw new Error(capture.code || "EVENT8_POST_CAPTURE_REJECTED");
 								const fence = record.privateAtomicCaptureFenceProofs.get(5);
 								const candidate = record.nativeEvent8Candidate;
-								if (!fence || fence.seatId !== candidate.seatId ||
-									fence.completion?.completionOrdinal <= candidate.waitingCompletionOrdinal ||
-									!record.privateAtomicCaptureFenceProofs.has(4) ||
-									fence.phaseOver?.phaseEventInstanceId !== fence.completion?.eventInstanceId ||
-									fence.boundaryOrdinal !== 5 || fence.completion?.rootInstanceId !== candidate.rootInstanceId) {
-									throw new Error("EVENT8_POST_CAPTURE_CAUSALITY_REJECTED");
+								const causalChecks = Object.freeze({
+									fencePresent: Boolean(fence),
+									seatMatches: Boolean(fence && candidate && fence.seatId === candidate.seatId),
+									completionAfterWaiting: Boolean(fence && candidate && Number.isSafeInteger(fence.completion?.completionOrdinal) &&
+										fence.completion.completionOrdinal > candidate.waitingCompletionOrdinal),
+									priorBoundaryFourPresent: record.privateAtomicCaptureFenceProofs.has(4),
+									phaseMatchesCompletion: Boolean(fence && fence.phaseOver?.phaseEventInstanceId === fence.completion?.eventInstanceId),
+									boundaryIsFive: fence?.boundaryOrdinal === 5,
+									rootMatchesCandidate: Boolean(fence && candidate && fence.completion?.rootInstanceId === candidate.rootInstanceId),
+								});
+								const failedCausalChecks = Object.keys(causalChecks).filter(key => causalChecks[key] !== true);
+								if (failedCausalChecks.length) {
+									throw Object.assign(new Error("EVENT8_POST_CAPTURE_CAUSALITY_REJECTED"), { failedChecks: failedCausalChecks });
 								}
 								record.experimentalEvent8PostCapture = Object.freeze({ roomId: record.roomId, hostSessionId: record.sessionId,
 									rootInstanceId: record.xingbeiAuthorityContext.rootInstanceId, engineBuildId: record.engineBuildId,
@@ -1342,6 +1349,10 @@ function createHostSessionManager({
 							}).catch(error => {
 								record.experimentalEvent8PostCapture = null;
 								record.experimentalEvent8PostCaptureFailureCode = /^[A-Z0-9_]{3,96}$/.test(error?.message || "") ? error.message : "EVENT8_POST_CAPTURE_INTERNAL_FAILURE";
+								const allowedChecks = new Set(["fencePresent", "seatMatches", "completionAfterWaiting", "priorBoundaryFourPresent",
+									"phaseMatchesCompletion", "boundaryIsFive", "rootMatchesCandidate"]);
+								record.experimentalEvent8PostCaptureFailedChecks = Array.isArray(error?.failedChecks) && error.failedChecks.length <= allowedChecks.size &&
+									error.failedChecks.every(key => allowedChecks.has(key)) ? Object.freeze([...error.failedChecks]) : null;
 								if (record.state === "playable_probe") fail(record, "EVENT8_POST_CAPTURE_FAILED");
 								Promise.resolve(record.handle?.stop("event8_post_capture_failed")).catch(() => {});
 							});
@@ -3074,6 +3085,7 @@ function createHostSessionManager({
 			deliveryAccepted: Boolean(record.experimentalEvent8Delivery), postCaptureAccepted: Boolean(post),
 			postCaptureOrdinal: post?.captureOrdinal ?? null, postCaptureCommitment: post?.commitment || null,
 			boundaryOrdinal: post?.boundaryOrdinal ?? null, postCaptureFailureCode: record.experimentalEvent8PostCaptureFailureCode || null,
+			postCaptureFailedChecks: record.experimentalEvent8PostCaptureFailedChecks || null,
 			accepted: Boolean(record.experimentalEvent8AcceptedProofDigest),
 			checkpointAvailable: false, seedAuthorized: false });
 	}
