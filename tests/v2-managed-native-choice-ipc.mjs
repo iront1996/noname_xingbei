@@ -208,7 +208,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			handle.on("message", message => {
 				if (message?.type === "host_engine_ready") engineReadyProof = message.proof;
 				if (message?.type === "host_authority_event") {
-					authoritySubmissions.push({ roomId: message.roomId, sessionId: message.sessionId, proof: message.proof,
+					// Preserve the exact proof as received from the supervised IPC boundary.
+					// Later test assertions/replays must not retain a mutable alias to the
+					// message object shared with other in-process listeners.
+					authoritySubmissions.push({ roomId: message.roomId, sessionId: message.sessionId, proof: structuredClone(message.proof),
 						resourcePids: handle.resources().map(resource => resource.pid) });
 				}
 				if (message?.type === "host_authority_event" && message.proof?.event?.kind === "xingbei_opening_draw_v1") event3Proof = message.proof;
@@ -3347,7 +3350,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							assert.equal(accepted8.checkpointAvailable, false);
 							assert.equal(accepted8.seedAuthorized, false);
 							assert.equal(authoritySubmissions.some(entry => entry.proof.eventSequence > 8), false, "Event #9 remains closed");
-							const duplicate8 = manager.commitAuthorityEvent({ type: "host_authority_event", roomId,
+							const duplicate8 = manager.commitAuthorityEvent({ type: "host_authority_event", kind: "managed_host", protocol: 1, roomId,
 								sessionId: accepted8.sessionId, secret: sessionSecret, proof: proof8 });
 							assert.equal(duplicate8.ok, true, `exact Event #8 replay rejected: ${duplicate8.code || "unknown"}; revision=${manager.inspect(roomId)?.authorityStateRevision}; next=${manager.inspect(roomId)?.nextAuthorityEventSequence}; last=${manager.inspect(roomId)?.lastAuthorityEvent?.sequence}`);
 							assert.equal(duplicate8.idempotent, true);
