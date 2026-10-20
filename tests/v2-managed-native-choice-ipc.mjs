@@ -281,7 +281,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			try {
 		if (type === "host_native_action_candidates" && message?.eventSequence === 6) {
 			assert.equal(process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE, "1");
-			assert.ok(["6", "7"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT));
+			assert.ok(["6", "7", "8"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT));
 				assert.equal(process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK, "1");
 				assert.equal(manager.inspect(roomId)?.authorityStateRevision, 5);
 				assert.equal(manager.inspect(roomId)?.nextAuthorityEventSequence, 6);
@@ -3005,7 +3005,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					captureOrdinal: event5Proof.afterSummary.captureOrdinal, gameMeNull: event5Proof.event.gameMeNull,
 					checkpointAvailable: acceptedEvent5Session.checkpointAvailable })}`);
 					if (process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1") {
-						assert.ok(["6", "7"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT));
+						assert.ok(["6", "7", "8"].includes(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT));
 						event6LogStage("event5-accepted-await-candidate");
 						const candidate = await until(() => event6CandidateMessage, 15000, () => ({
 							session: manager.inspect(roomId), stages: nativeDiagnostic.slice(-24).map(entry => entry?.stage || entry?.observed?.stage),
