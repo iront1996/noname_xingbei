@@ -6,8 +6,10 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createV2NativeModuleTestServer } from "./fixtures/v2-native-module-test-server.mjs";
+import { startV3TestUiServer, launchV3TestUiBrowser } from "./fixtures/v3-test-ui-browser.mjs";
 
 const require = createRequire(import.meta.url);
+const { randomBytes } = require("node:crypto");
 const { createHostSessionManager } = require("../game/server-host-session-manager.js");
 const { createManagedHostProcessLauncher } = require("../game/server-managed-host-launcher.js");
 const { createManagedChoiceController } = require("../game/server-managed-choice-controller.js");
@@ -23,6 +25,7 @@ const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(pr
 let roomId = "native_choice_room";
 let setup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({ length: 4 }, (_, position) => ({ seatId: `native_seat_${position + 1}`, position })) };
 let immutableServerSeatIds = Object.freeze(setup.seats.map(({ seatId }) => seatId));
+let playerUiBrowser = null, playerUiServer = null;
 const viewasRevalidationFaultModes = ["viewas_material_removed_before_revalidation", "viewas_skill_removed_before_revalidation", "viewas_condition_invalid_before_revalidation"];
 const viewasExecutionFaultModes = ["viewas_result_assignment_throws", "viewas_useCard_child_throws", "viewas_partial_effect_throws", "viewas_partial_effect_stop"];
 // Keep this observation window aligned with the manager's independent browser,
@@ -47,17 +50,34 @@ async function until(check, timeoutMs = 45000, diagnostic = () => null) {
 }
 
 function receiveWebSocketMessage(socket, timeoutMs = 5000) {
+	const callsite = new Error().stack?.split("\n").slice(2, 5).join(" | ") || "unknown";
 	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => { socket.off("message", onMessage); reject(new Error("V3_SEAT_WS_MESSAGE_TIMEOUT")); }, timeoutMs);
+		const timer = setTimeout(() => { socket.off("message", onMessage); reject(new Error(`V3_SEAT_WS_MESSAGE_TIMEOUT:${callsite}`)); }, timeoutMs);
 		const onMessage = data => { clearTimeout(timer); socket.off("message", onMessage); resolve(JSON.parse(data.toString("utf8"))); };
 		socket.on("message", onMessage);
 	});
 }
 
-async function connectWebSocket(WebSocket, url) {
+async function connectWebSocket(WebSocket, url, seatId = null) {
+	if (playerUiBrowser && seatId) return playerUiBrowser.createPeer(url, seatId);
 	const socket = new WebSocket(url);
 	await new Promise((resolve, reject) => { socket.once("open", resolve); socket.once("error", reject); });
 	return socket;
+}
+
+async function authenticatePlayerSocket(socket, { roomId, seatId, credential }) {
+	const response = receiveWebSocketMessage(socket);
+	if (playerUiBrowser) {
+		const deadline = Date.now() + 10000;
+		while (Date.now() < deadline) {
+			const page = await playerUiBrowser.inspectPage(seatId);
+			if (page.lobbyRoom?.state === "running" && page.lobbyRoom?.connectedSeatIds?.includes(seatId)) break;
+			await new Promise(resolve => setTimeout(resolve, 20));
+		}
+		await playerUiBrowser.clickControl(seatId, "connectGame");
+	}
+	else socket.send(JSON.stringify({ type: "seat_auth", roomId, seatId, credential }));
+	return response;
 }
 
 async function closeWebSocket(socket) {
@@ -1104,15 +1124,28 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		const address = lifecycleGatewayAddress || await seatStateGateway.listen();
 		assert.equal(address.host, "127.0.0.1", "experimental player action gateway must bind to loopback");
 		for (const seatId of immutableServerSeatIds) {
-			const socket = await connectWebSocket(WebSocket, address.url);
-			const response = receiveWebSocketMessage(socket);
-			socket.send(JSON.stringify({ type: "seat_auth", roomId, seatId, credential: credentialFor(seatId) }));
-			const authenticated = await response;
+			const socket = await connectWebSocket(WebSocket, address.url, playerUiBrowser ? seatId : null);
+			let authenticated;
+			if (playerUiBrowser) {
+				authenticated = await authenticatePlayerSocket(socket, { roomId, seatId, credential: credentialFor(seatId) });
+				assert.equal(authenticated.type, "seat_authenticated");
+				const pageState = await playerUiBrowser.inspectPeer(socket);
+				assert.equal(pageState.connected, true);
+				assert.equal(pageState.seatId, seatId);
+				assert.equal(pageState.generation, seatRegistry.inspect(roomId, seatId).epoch);
+				actionGatewayStateSequences.set(seatId, pageState.lastSequence);
+			} else {
+				const response = receiveWebSocketMessage(socket);
+				socket.send(JSON.stringify({ type: "seat_auth", roomId, seatId, credential: credentialFor(seatId) }));
+				authenticated = await response;
+			}
 			assert.equal(authenticated.type, "seat_authenticated");
 			assert.equal(authenticated.seatId, seatId);
 			assert.equal(authenticated.connectionGeneration, seatRegistry.inspect(roomId, seatId).epoch);
 			actionGatewaySockets.set(seatId, socket);
 		}
+		if (playerUiBrowser) assert.deepEqual(playerUiBrowser.inspect(), { pageCount: 4, contextCount: 4, closed: false },
+			"four ordinary seats must use four isolated, live browser contexts");
 		const context = Object.freeze({ address, hostSessionId: host.sessionId, chromiumPid, rootInstanceId });
 		actionGatewayContext = context;
 		if (lifecycleCoordinator) {
@@ -1154,12 +1187,18 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		actionGatewaySockets.delete(seatId);
 		await until(() => seatRegistry.inspect(roomId, seatId)?.connected === false, 3000,
 			() => ({ seatId, seat: seatRegistry.inspect(roomId, seatId) }));
-		const WebSocket = require("ws"), socket = await connectWebSocket(WebSocket, actionGatewayContext.address.url);
-		const authenticatedMessage = receiveWebSocketMessage(socket);
-		socket.send(JSON.stringify({ type: "seat_auth", roomId, seatId, credential: credentialFor(seatId) }));
-		const authenticated = await authenticatedMessage;
+		const WebSocket = require("ws"), socket = await connectWebSocket(WebSocket, actionGatewayContext.address.url, playerUiBrowser ? seatId : null);
+		let authenticated;
+		if (playerUiBrowser) {
+		authenticated = await authenticatePlayerSocket(socket, { roomId, seatId, credential: credentialFor(seatId) });
+		} else {
+			const authenticatedMessage = receiveWebSocketMessage(socket);
+			socket.send(JSON.stringify({ type: "seat_auth", roomId, seatId, credential: credentialFor(seatId) }));
+			authenticated = await authenticatedMessage;
+		}
 		const currentGeneration = seatRegistry.inspect(roomId, seatId)?.epoch;
-		assert.deepEqual(authenticated, { type: "seat_authenticated", roomId, seatId, connectionGeneration: currentGeneration });
+		assert.deepEqual(authenticated, { type: "seat_authenticated", roomId, seatId, connectionGeneration: currentGeneration,
+			lastAcknowledgedSequence: actionGatewayStateSequences.get(seatId) || 0 });
 		assert.equal(currentGeneration, oldGeneration + 1, "reconnect must fence the prior connection generation");
 		assert.equal(seatRegistry.authenticateSeat({ roomId, seatId, connectionId: oldConnectionId,
 			credential: credentialFor(seatId) }, { roomId, seatId }), false);
@@ -1167,6 +1206,10 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal(launchedHandles.get(hostBefore.sessionId)?.resources()[0]?.pid, actionGatewayContext.chromiumPid);
 		assert.equal(manager.inspect(roomId)?.authorityStateRevision, hostBefore.authorityStateRevision);
 		actionGatewaySockets.set(seatId, socket);
+		if (playerUiBrowser) {
+			const pageState = await playerUiBrowser.inspectPeer(socket);
+			actionGatewayStateSequences.set(seatId, pageState.lastSequence);
+		}
 		return Object.freeze({ seatId, oldGeneration, currentGeneration, hostSessionId: hostBefore.sessionId,
 			rootInstanceId: actionGatewayContext.rootInstanceId, chromiumPid: actionGatewayContext.chromiumPid });
 	}
@@ -1190,7 +1233,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal(JSON.stringify(view).includes(host.sessionId), false);
 		const nextSequence = view.stateSequence;
 		received = receiveWebSocketMessage(actor);
-		actor.send(JSON.stringify({ type: "state_ack", stateSequence: nextSequence }));
+		if (!playerUiBrowser) actor.send(JSON.stringify({ type: "state_ack", stateSequence: nextSequence }));
 		const transportAck = await received;
 		assert.equal(transportAck.type, "transport_acknowledged");
 		assert.equal(transportAck.stateSequence, nextSequence);
@@ -1241,6 +1284,12 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal(duplicateAck.choiceId, choice.choiceId);
 		assert.equal(duplicateAck.duplicate, true, "same transport submission is idempotent");
 		assert.equal(duplicateAck.stage, "controller");
+		if (playerUiBrowser) {
+			const ui = await playerUiBrowser.inspectPeer(actor);
+			assert.match(ui.controllerText, /Controller 已接受/);
+			assert.match(ui.nativeText, /不可把 Controller ACK 當作原生完成/);
+			assert.match(ui.authorityText, /不可把 Transport ACK 當作權威接受/);
+		}
 		return Object.freeze({ publicChoice, choiceAck, duplicateAck, stateSequence: actionGatewayStateSequences.get(seatId) });
 	}
 	t.after(async () => {
@@ -1266,10 +1315,26 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(manager.inspect(roomId)?.state, "stopped");
 				}
 			} finally {
-				event6LogStage("server-close-start");
-				try {
-					await server.close();
-					event6LogStage("server-closed");
+					event6LogStage("server-close-start");
+					try {
+						const browser = playerUiBrowser;
+						let browserCloseError = null;
+						if (browser) event6LogStage("player-ui-browser-close-start");
+						try { await browser?.close(); } catch (error) { browserCloseError = error; }
+						if (browser) event6LogStage("player-ui-browser-close-finished");
+						const browserCleanup = browser?.cleanupStatus();
+						if (browserCleanup) event6LogStage("player-ui-browser-cleanup-verified");
+						playerUiBrowser = null;
+						if (playerUiServer) event6LogStage("player-ui-server-close-start");
+						await playerUiServer?.close();
+						playerUiServer = null;
+						event6LogStage("origin-server-close-start");
+						await server.close();
+						event6LogStage("server-closed");
+						if (browserCloseError) throw browserCloseError;
+						if (browser) assert.deepEqual(browserCleanup, { closed: true, processExited: true,
+							contextCount: 0, peerCount: 0, timerCount: 0, profileRemoved: true },
+							"the four-page test Chromium, browser contexts, polling timers and isolated profile must be fully removed");
 				} finally {
 					for (const [key, value] of Object.entries(old)) value === undefined ? delete process.env[key] : process.env[key] = value;
 				}
@@ -1323,25 +1388,143 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			},
 			cleanupManagedChoices: candidateRoom => controller.cleanupRoom(candidateRoom),
 		});
-		const created = await lifecycleCoordinator.createRoom({ config: { mode: "xingBei", playerCount: 4 } });
-		assert.equal(created.ok, true, `room creation rejected: ${created.code || "unknown"}`);
-		roomId = created.room.roomId;
+		const uiLobbyE2E = process.env.V3_TEST_UI_BROWSER_E2E === "1";
+		if (uiLobbyE2E) {
+			const identities = new Map();
+			for (const [index, seatId] of ["seat_a", "seat_b", "seat_c", "seat_d"].entries()) {
+				const capability = randomBytes(32).toString("hex"); identities.set(capability, { seatId, roomId: null, joined: false });
+			}
+			playerUiServer = await startV3TestUiServer({ handleApiRequest: async ({ route, capability, body, roomId: requestedRoomId }) => {
+				const identity = identities.get(capability);
+				if (!identity) return { ok: false, code: "LOBBY_CAPABILITY_REJECTED" };
+				const exactKeys = (value, keys) => value && Object.getPrototypeOf(value) === Object.prototype &&
+					Object.keys(value).sort().join(",") === [...keys].sort().join(",");
+				const ownRoom = requestedRoomId || body.roomId;
+				if (route === "create-room") {
+					if (identity.seatId !== "seat_a" || identity.roomId || !exactKeys(body, ["config"]) ||
+						!exactKeys(body.config, ["mode", "playerCount"]) || body.config.mode !== "xingBei" || body.config.playerCount !== 4)
+						return { ok: false, code: "LOBBY_CREATE_REJECTED" };
+					const created = await lifecycleCoordinator.createRoom({ config: body.config });
+					if (!created.ok) return created;
+					for (const item of identities.values()) item.roomId = created.room.roomId;
+					roomId = created.room.roomId;
+					return { ok: true, room: created.room };
+				}
+				if (!identity.roomId || ownRoom !== identity.roomId) return { ok: false, code: "LOBBY_ROOM_SCOPE_REJECTED" };
+				if (route === "room") {
+					if (!exactKeys(body, [])) return { ok: false, code: "LOBBY_ROOM_QUERY_REJECTED" };
+					const room = lifecycleCoordinator.inspect(identity.roomId);
+					return room ? { ok: true, room } : { ok: false, code: "LOBBY_ROOM_NOT_FOUND" };
+				}
+				if (route === "join") {
+					if (!exactKeys(body, ["roomId"])) return { ok: false, code: "LOBBY_JOIN_REJECTED" };
+					const credential = seatCredentials.get(identity.seatId);
+					const connectionId = `ui_${capability.slice(0, 32)}`;
+					const result = lifecycleCoordinator.joinSeat({ roomId: identity.roomId, seatId: identity.seatId, credential,
+						connectionId, principal: { kind: "ordinary_player" } });
+					if (result.ok) identity.joined = true;
+					return result.ok ? { ok: true, room: result.room } : result;
+				}
+				if (route === "ready" || route === "unready") {
+					if (!exactKeys(body, ["roomId"]) || !identity.joined) return { ok: false, code: "LOBBY_READY_REJECTED" };
+					const input = { roomId: identity.roomId, seatId: identity.seatId, credential: seatCredentials.get(identity.seatId),
+						connectionId: `ui_${capability.slice(0, 32)}`, principal: { kind: "ordinary_player" } };
+					const result = route === "ready" ? lifecycleCoordinator.markSeatReady(input) : lifecycleCoordinator.markSeatUnready(input);
+					if (!result.ok) return result;
+					if (route === "ready" && result.room.state === "ready") {
+						const started = await lifecycleCoordinator.startRoom({ roomId: identity.roomId });
+						return started.ok ? { ok: true, room: started.room } : started;
+					}
+					return { ok: true, room: result.room };
+				}
+				if (route === "seat-credential") {
+					if (!exactKeys(body, ["roomId"]) || !identity.joined || lifecycleCoordinator.inspect(identity.roomId)?.state !== "running")
+						return { ok: false, code: "LOBBY_CREDENTIAL_NOT_AVAILABLE" };
+					return { ok: true, credential: seatCredentials.get(identity.seatId) };
+				}
+				if (route === "gateway") {
+					if (requestedRoomId !== identity.roomId || !identity.joined || lifecycleCoordinator.inspect(identity.roomId)?.state !== "running" ||
+						!lifecycleGatewayAddress?.url) return { ok: false, code: "LOBBY_GATEWAY_NOT_READY" };
+					return { ok: true, url: lifecycleGatewayAddress.url };
+				}
+				return { ok: false, code: "LOBBY_OPERATION_REJECTED" };
+			} });
+			playerUiBrowser = await launchV3TestUiBrowser({ executable: process.env.V3_TEST_UI_CHROMIUM || process.env.V2_CHROMIUM,
+				origin: playerUiServer.origin });
+			for (const [index, [capability, identity]] of [...identities].entries())
+				await playerUiBrowser.createPage({ seatId: identity.seatId, capability });
+			const waitUi = async (seatId, predicate, label, timeoutMs = 30000) => {
+				const deadline = Date.now() + timeoutMs; let last = null;
+				while (Date.now() < deadline) { last = await playerUiBrowser.inspectPage(seatId); if (predicate(last)) return last;
+					await new Promise(resolve => setTimeout(resolve, 30)); }
+				throw new Error(`LOBBY_UI_${label}_TIMEOUT:${JSON.stringify({ seatId, state: last?.lobbyRoom?.state,
+					roomId: last?.lobbyRoomId, status: last?.lobbyStatus, room: last?.lobbyRoom })}`);
+			};
+			await playerUiBrowser.clickControl("seat_a", "createRoom");
+			const creatorPage = await waitUi("seat_a", value => Boolean(value.lobbyRoomId && value.lobbyRoom?.connectedSeatIds?.includes("seat_a")), "CREATE");
+			roomId = creatorPage.lobbyRoomId;
+			event6LogStage("browser-lobby-created");
+			await playerUiBrowser.configureRoom("seat_a", roomId);
+			setup = { mode: "xingBei", config: { playerCount: 4 }, seats: ["seat_a", "seat_b", "seat_c", "seat_d"].map((seatId, position) => ({ seatId, position })) };
+			immutableServerSeatIds = Object.freeze(setup.seats.map(({ seatId }) => seatId));
+			actionGatewayStateSequences = new Map(immutableServerSeatIds.map(seatId => [seatId, 0]));
+			for (const seatId of ["seat_b", "seat_c", "seat_d"]) {
+				await playerUiBrowser.configureRoom(seatId, roomId);
+				await waitUi(seatId, value => value.lobbyRoom?.state === "waiting_for_players", "ROOM_VIEW");
+				await playerUiBrowser.clickControl(seatId, "joinRoom");
+				const joinedPage = await waitUi(seatId, value => value.lobbyRoom?.connectedSeatIds?.includes(seatId), "JOIN");
+				assert.equal(joinedPage.seatId, seatId);
+				assert.equal(JSON.stringify(joinedPage).includes(seatCredentials.get(seatId)), false,
+					"a player-facing page state must not disclose its seat credential");
+			}
+			event6LogStage("browser-lobby-joined-four-seats");
+			for (const [index, seatId] of immutableServerSeatIds.entries()) {
+				await playerUiBrowser.clickControl(seatId, "ready");
+				if (index < immutableServerSeatIds.length - 1) {
+					await waitUi(seatId, value => value.lobbyRoom?.readySeatIds?.includes(seatId), "READY");
+					assert.notEqual(lifecycleCoordinator.inspect(roomId)?.state, "running",
+						"the server must not start until every ordinary seat has prepared");
+				} else {
+					// The final ready request awaits server-side managed-host startup.
+					// Observe the coordinator while startup is pending, then await the
+					// browser response under the startup budget rather than the UI poll budget.
+					event6LogStage("browser-lobby-final-ready-startup-pending");
+					await until(() => lifecycleCoordinator.inspect(roomId)?.state === "running", 90000,
+						() => ({ state: lifecycleCoordinator.inspect(roomId)?.state, host: manager.inspect(roomId)?.state }));
+					await waitUi(seatId, value => value.lobbyRoom?.state === "running", "READY_RUNNING", 90000);
+				}
+			}
+			event6LogStage("browser-lobby-ready-four-seats");
+			event6LogStage("browser-lobby-server-started");
+			await playerUiBrowser.reloadPage("seat_a");
+			await waitUi("seat_a", value => value.lobbyRoom?.state === "running" && value.lobbyRoom?.connectedSeatIds?.includes("seat_a"), "CREATOR_REFRESH");
+			event6LogStage("browser-lobby-creator-refresh-restored");
+			for (const seatId of immutableServerSeatIds) {
+				await playerUiBrowser.clickControl(seatId, "refreshRoom");
+				await waitUi(seatId, value => value.lobbyRoom?.state === "running", "RUNNING");
+			}
+			assert.equal(seatCredentials.size, 4, "server retains four private per-seat credentials, never returned as a bundle");
+			assert.equal(identities.size, 4);
+		} else {
+			const created = await lifecycleCoordinator.createRoom({ config: { mode: "xingBei", playerCount: 4 } });
+			assert.equal(created.ok, true, `room creation rejected: ${created.code || "unknown"}`);
+			roomId = created.room.roomId;
+			for (const credential of seatCredentials.values()) assert.equal(JSON.stringify(created.room).includes(credential), false);
+			for (const seatId of immutableServerSeatIds) {
+				const joined = lifecycleCoordinator.joinSeat({ roomId, seatId, credential: credentialFor(seatId),
+					connectionId: `conn_${seatId}`, principal: { kind: "ordinary_player" } });
+				assert.equal(joined.ok, true);
+				assert.equal(lifecycleCoordinator.markSeatReady({ roomId, seatId, credential: credentialFor(seatId),
+					connectionId: `conn_${seatId}`, principal: { kind: "ordinary_player" } }).ok, true);
+			}
+			assert.equal(lifecycleCoordinator.inspect(roomId).state, "ready");
+			startResult = await lifecycleCoordinator.startRoom({ roomId });
+		}
 		setup = { mode: "xingBei", config: { playerCount: 4 }, seats: ["seat_a", "seat_b", "seat_c", "seat_d"].map((seatId, position) => ({ seatId, position })) };
 		immutableServerSeatIds = Object.freeze(setup.seats.map(({ seatId }) => seatId));
 		actionGatewayStateSequences = new Map(immutableServerSeatIds.map(seatId => [seatId, 0]));
-		assert.equal(Object.hasOwn(created.room, "credentials"), false);
-		for (const credential of seatCredentials.values()) assert.equal(JSON.stringify(created.room).includes(credential), false,
-			"the server-generated public room descriptor must not expose any per-seat credential");
 		assert.equal(seatCredentials.size, 4, "the server-only delivery callback receives one credential per immutable seat");
-		for (const seatId of immutableServerSeatIds) {
-			const joined = lifecycleCoordinator.joinSeat({ roomId, seatId, credential: credentialFor(seatId),
-				connectionId: `conn_${seatId}`, principal: { kind: "ordinary_player" } });
-			assert.equal(joined.ok, true);
-			assert.equal(lifecycleCoordinator.markSeatReady({ roomId, seatId, credential: credentialFor(seatId),
-				connectionId: `conn_${seatId}`, principal: { kind: "ordinary_player" } }).ok, true);
-		}
-		assert.equal(lifecycleCoordinator.inspect(roomId).state, "ready");
-		startResult = await lifecycleCoordinator.startRoom({ roomId });
+		if (!startResult) startResult = { ok: true, room: lifecycleCoordinator.inspect(roomId) };
 		assert.equal(startResult.ok, true, `Coordinator did not start the managed room: ${startResult.code || "unknown"}`);
 		assert.equal(startResult.room.state, "running");
 		event6LogStage("room-coordinator-running");
@@ -3714,9 +3897,15 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(view.projectionStatus, "verified_capture_payload_unavailable");
 						for (const secret of [sessionSecret, ...seatCredentials.values()]) assert.equal(JSON.stringify(view).includes(secret), false);
 						assert.equal(JSON.stringify(view).includes(manager.inspect(roomId).sessionId), false);
-						received = receiveWebSocketMessage(socket);
-						socket.send(JSON.stringify({ type: "state_ack", stateSequence: view.stateSequence }));
+			received = receiveWebSocketMessage(socket);
+			if (!playerUiBrowser) socket.send(JSON.stringify({ type: "state_ack", stateSequence: view.stateSequence }));
 						assert.equal((await received).type, "transport_acknowledged");
+						if (playerUiBrowser) {
+							const ui = await playerUiBrowser.inspectPeer(socket);
+						assert.equal(ui.capped, true, "real browser must render the Event 8 capped read-only boundary");
+						assert.equal(ui.choiceVisible, false, "capped UI must not expose a stale choice");
+						assert.equal(ui.lastSequence, sequence, "capped reads must not fabricate a player state sequence");
+						}
 						actionGatewayStateSequences.set(seatId, view.stateSequence);
 					}
 					const actor = actionGatewaySockets.get(immutableServerSeatIds[0]);
@@ -3849,13 +4038,14 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.match(gatewayAddress.url, /^ws:\/\/127\.0\.0\.1:\d+$/);
 					const sockets = new Map(), views = new Map(), generations = new Map();
 					for (const seatId of immutableServerSeatIds) {
-						const socket = await connectWebSocket(WebSocket, gatewayAddress.url);
+						const socket = await connectWebSocket(WebSocket, gatewayAddress.url, playerUiBrowser ? seatId : null);
 						sockets.set(seatId, socket);
 						const authenticated = receiveWebSocketMessage(socket);
 						socket.send(JSON.stringify({ type: "seat_auth", roomId, seatId, credential: credentialFor(seatId) }));
 						const auth = await authenticated;
 						const currentGeneration = seatRegistry.inspect(roomId, seatId).epoch;
-						assert.deepEqual(auth, { type: "seat_authenticated", roomId, seatId, connectionGeneration: currentGeneration });
+						assert.deepEqual(auth, { type: "seat_authenticated", roomId, seatId, connectionGeneration: currentGeneration,
+							lastAcknowledgedSequence: 0 });
 						generations.set(seatId, currentGeneration);
 						const response = receiveWebSocketMessage(socket);
 						socket.send(JSON.stringify({ type: "state_read", requestId: `initial_${seatId}`, lastSeenSequence: 0 }));
@@ -3915,7 +4105,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						await closeWebSocket(oldSocket);
 						await until(() => seatRegistry.inspect(roomId, seatId).connected === false, 3000,
 							() => ({ seatId, registry: seatRegistry.inspect(roomId, seatId) }));
-						const rebound = await connectWebSocket(WebSocket, gatewayAddress.url);
+						const rebound = await connectWebSocket(WebSocket, gatewayAddress.url, playerUiBrowser ? seatId : null);
 						sockets.set(seatId, rebound);
 						const reboundAuth = receiveWebSocketMessage(rebound);
 						rebound.send(JSON.stringify({ type: "seat_auth", roomId, seatId, credential: credentialFor(seatId) }));

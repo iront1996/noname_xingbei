@@ -215,7 +215,8 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 		state.lastSequence = state.lastAcknowledgedSequence;
 		try { onAuthenticated(context); } catch (_) {}
 		await send(socket, Object.freeze({ type: "seat_authenticated", roomId, seatId: context.seatId,
-			connectionGeneration: context.connectionGeneration }));
+			connectionGeneration: context.connectionGeneration,
+			lastAcknowledgedSequence: state.lastAcknowledgedSequence }));
 		}
 
 	async function processMessage(context, message) {

@@ -186,6 +186,20 @@ function createManagedV3RoomLifecycleCoordinator({ hostSessionManager, seatRegis
 		return Object.freeze({ ok: true, room: publicRoom(record), seatId: input.seatId });
 	}
 
+	function markSeatUnready(input) {
+		if (stopped || !exact(input, ["roomId", "seatId", "credential", "connectionId", "principal"]))
+			return fail("V3_SEAT_UNREADY_REJECTED");
+		const record = rooms.get(input.roomId);
+		if (!record || !["waiting_for_players", "ready"].includes(record.state) || !SEATS.includes(input.seatId) ||
+			record.connections.get(input.seatId) !== input.connectionId || !/^[a-f0-9]{64}$/.test(input.credential || "") ||
+			!CONNECTION.test(input.connectionId || "") || !exact(input.principal, ["kind"]) || input.principal.kind !== "ordinary_player" ||
+			!seatRegistry.authenticateSeat({ roomId: input.roomId, seatId: input.seatId, connectionId: input.connectionId,
+				credential: input.credential }, { roomId: input.roomId, seatId: input.seatId })) return fail("V3_SEAT_UNREADY_REJECTED");
+		record.readySeats.delete(input.seatId);
+		if (record.state === "ready") transition(record, "waiting_for_players");
+		return Object.freeze({ ok: true, room: publicRoom(record), seatId: input.seatId });
+	}
+
 	function disconnectSeat({ roomId, seatId, connectionId } = {}) {
 		const record = rooms.get(roomId);
 		if (!record || !SEATS.includes(seatId) || record.connections.get(seatId) !== connectionId ||
@@ -281,7 +295,7 @@ function createManagedV3RoomLifecycleCoordinator({ hostSessionManager, seatRegis
 		try { unsubscribeLifecycle(); } catch (_) {}
 		await Promise.all([...rooms.keys()].map(roomId => stopRoom(roomId, "coordinator_shutdown")));
 	}
-	return Object.freeze({ createRoom, joinSeat, bindGatewaySeat, markSeatReady, disconnectSeat, startRoom, stopRoom, inspect, close });
+	return Object.freeze({ createRoom, joinSeat, bindGatewaySeat, markSeatReady, markSeatUnready, disconnectSeat, startRoom, stopRoom, inspect, close });
 }
 
 module.exports = { createManagedV3RoomLifecycleCoordinator };

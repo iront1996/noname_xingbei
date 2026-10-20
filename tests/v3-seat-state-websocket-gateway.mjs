@@ -191,7 +191,7 @@ test("loopback seat gateway serves four isolated views and rebinds uniformly wit
 	for (const [index, seatId] of seatIds.entries()) {
 		const socket = await connect(url); clients.set(seatId, socket);
 		const auth = await authenticate(socket, seatId, fixture.credentials.get(seatId));
-		assert.deepEqual(auth, { type: "seat_authenticated", roomId, seatId, connectionGeneration: 1 });
+		assert.deepEqual(auth, { type: "seat_authenticated", roomId, seatId, connectionGeneration: 1, lastAcknowledgedSequence: 0 });
 		const view = await readState(socket, `initial_${seatId}`, 0);
 		assert.equal(validateSeatStateMessage(view, { roomId, seatId, connectionGeneration: 1, seatIds }).ok, true);
 		assert.equal(view.stateSequence, 1);
@@ -236,7 +236,8 @@ test("loopback seat gateway serves four isolated views and rebinds uniformly wit
 		assert.equal(fixture.registry.inspect(roomId, seatId).connected, false);
 		const rebound = await connect(url); clients.set(seatId, rebound);
 		const auth = await authenticate(rebound, seatId, fixture.credentials.get(seatId));
-		assert.deepEqual(auth, { type: "seat_authenticated", roomId, seatId, connectionGeneration: priorGeneration + 1 });
+		assert.deepEqual(auth, { type: "seat_authenticated", roomId, seatId, connectionGeneration: priorGeneration + 1,
+			lastAcknowledgedSequence: 1 });
 		const fresh = await readState(rebound, `rebound_${seatId}`, 1);
 		assert.equal(validateSeatStateMessage(fresh, { roomId, seatId, connectionGeneration: priorGeneration + 1, seatIds }).ok, true);
 		assert.equal(fresh.stateSequence, 2);

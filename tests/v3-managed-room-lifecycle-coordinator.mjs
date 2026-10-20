@@ -83,6 +83,15 @@ test("server-owned lifecycle treats creator as ordinary seat and player disconne
 	}
 	assert.equal(f.coordinator.inspect(roomId).state, "ready");
 	assert.deepEqual(f.coordinator.inspect(roomId).readySeatIds, seatIds);
+	const unready = f.coordinator.markSeatUnready({ roomId, seatId: "seat_d", credential: f.credentials.get(`${roomId}:seat_d`),
+		connectionId: "socket_3", principal: { kind: "ordinary_player" } });
+	assert.equal(unready.ok, true);
+	assert.equal(unready.room.state, "waiting_for_players");
+	assert.equal(unready.room.readySeatIds.includes("seat_d"), false);
+	assert.equal(f.coordinator.markSeatUnready({ roomId, seatId: "seat_d", credential: f.credentials.get(`${roomId}:seat_a`),
+		connectionId: "socket_3", principal: { kind: "ordinary_player" } }).code, "V3_SEAT_UNREADY_REJECTED");
+	assert.equal(f.coordinator.markSeatReady({ roomId, seatId: "seat_d", credential: f.credentials.get(`${roomId}:seat_d`),
+		connectionId: "socket_3", principal: { kind: "ordinary_player" } }).room.state, "ready");
 	assert.equal(f.coordinator.disconnectSeat({ roomId, seatId: "seat_c", connectionId: "socket_2" }).ok, true);
 	assert.equal(f.coordinator.inspect(roomId).state, "waiting_for_players");
 	assert.equal(f.coordinator.inspect(roomId).readySeatIds.includes("seat_c"), false,
@@ -114,7 +123,7 @@ test("server-owned lifecycle treats creator as ordinary seat and player disconne
 		credential: f.credentials.get(`${roomId}:seat_a`) }, { roomId, seatId: "seat_a" }), false);
 	assert.equal(f.coordinator.inspect(roomId).hostPid, initialHost.hostPid);
 	assert.equal(f.coordinator.inspect(roomId).transitions.join(","),
-		"created,waiting_for_players,ready,waiting_for_players,ready,starting,running");
+		"created,waiting_for_players,ready,waiting_for_players,ready,waiting_for_players,ready,starting,running");
 	const stopped = await f.coordinator.stopRoom(roomId);
 	assert.equal(stopped.ok, true);
 	assert.equal(stopped.room.state, "closed");
