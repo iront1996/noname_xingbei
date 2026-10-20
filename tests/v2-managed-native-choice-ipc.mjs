@@ -24,6 +24,12 @@ const setup = { mode: "xingBei", config: { playerCount: 4 }, seats: Array.from({
 const immutableServerSeatIds = Object.freeze(setup.seats.map(({ seatId }) => seatId));
 const viewasRevalidationFaultModes = ["viewas_material_removed_before_revalidation", "viewas_skill_removed_before_revalidation", "viewas_condition_invalid_before_revalidation"];
 const viewasExecutionFaultModes = ["viewas_result_assignment_throws", "viewas_useCard_child_throws", "viewas_partial_effect_throws", "viewas_partial_effect_stop"];
+// Keep this observation window aligned with the manager's independent browser,
+// engine and game readiness budgets below. It must not abort before the manager
+// can report its own bounded startup failure; these values do not extend any
+// browser, native event, IPC or player-choice deadline.
+const managedHostReadyBudgets = Object.freeze({ browserReadyTimeoutMs: 20000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000 });
+const managedChoiceOpenObservationMs = Object.values(managedHostReadyBudgets).reduce((total, timeout) => total + timeout, 0) + 5000;
 
 async function until(check, timeoutMs = 45000, diagnostic = () => null) {
 	const deadline = Date.now() + timeoutMs;
@@ -273,7 +279,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			};
 			return handle;
 		},
-		browserReadyTimeoutMs: 20000, engineReadyTimeoutMs: 30000, gameReadyTimeoutMs: 30000,
+		...managedHostReadyBudgets,
 		onSessionEnd: event => { sessionEnds.push({ roomId: event.roomId, sessionId: event.sessionId, state: event.state, code: event.code });
 			controller.cleanupHostSession(event.roomId, event.sessionId); },
 		onManagedChoiceMessage: async ({ type, message }) => {
@@ -1215,7 +1221,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 			hostResources: launchedHandles.get(current.sessionId)?.resources().length ?? null,
 		})}`);
 		return opened.length === 4;
-	}, 15000, () => ({ session: manager.inspect(roomId), openedCount: opened.length,
+	}, managedChoiceOpenObservationMs, () => ({ session: manager.inspect(roomId), openedCount: opened.length,
 		characterCandidateCount: candidatesSeen?.length || 0, nativeDiagnostic: nativeDiagnostic.slice(-12),
 		handlerFailures: managedChoiceHandlerFailures.slice(-4) }));
 	assert.ok(candidatesSeen.every(choice => choice.options.length >= 2));
