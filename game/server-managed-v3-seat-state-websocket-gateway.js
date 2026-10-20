@@ -190,11 +190,22 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 			submissions: new Map() };
 		const prior = currentBySeat.get(context.seatId);
 		if (prior) {
-			context.active = false;
-			try { disconnectSeat({ roomId, seatId: context.seatId, connectionId }); } catch (_) {}
-			await sendError(socket, "SEAT_ALREADY_CONNECTED");
-			try { socket.close(1008, "seat already connected"); } catch (_) {}
-			return;
+			// A successful bind above proves that the trusted binding callback has
+			// already advanced the Seat Registry to this connection. Supersede the
+			// old peer without disconnecting the new generation; its delayed close is
+			// fenced by both this map check and the registry's exact connection ID.
+			if (prior.connectionId === context.connectionId || !seatRegistry.authorizeSeatBinding(binding)) {
+				context.active = false;
+				try { disconnectSeat({ roomId, seatId: context.seatId, connectionId }); } catch (_) {}
+				await sendError(socket, "SEAT_ALREADY_CONNECTED");
+				try { socket.close(1008, "seat already connected"); } catch (_) {}
+				return;
+			}
+			prior.active = false;
+			prior.submissions.clear();
+			clients.delete(prior);
+			currentBySeat.delete(context.seatId);
+			try { prior.socket.close(4001, "seat connection replaced"); } catch (_) {}
 		}
 		currentBySeat.set(context.seatId, context);
 		clients.add(context);

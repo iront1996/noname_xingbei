@@ -14,6 +14,13 @@ function fixture(overrides = {}) {
 	const hostState = new Map();
 	const manager = {
 		inspect(roomId) { return hostState.get(roomId) || null; },
+		inspectManagedHostTransportContext(roomId) {
+			const host = hostState.get(roomId);
+			return host?.state === "playable_probe" ? { roomId, hostSessionId: host.sessionId,
+				engineBuildId: host.engineBuildId, rootInstanceId: `native_root_${"e".repeat(32)}`,
+				hostPid: host.pid, authorityStateRevision: 4, nextAuthorityEventSequence: 5,
+				seatIds: [...seatIds], checkpointAvailable: false } : null;
+		},
 		async stop(roomId, reason) { stopped.push({ roomId, reason }); const state = hostState.get(roomId); if (state) state.state = "stopped"; return { ok: true }; },
 		subscribeLifecycle() { return () => {}; },
 	};
@@ -53,8 +60,13 @@ test("server-owned lifecycle treats creator as ordinary seat and player disconne
 	assert.equal(created.room.state, "waiting_for_players");
 	assert.deepEqual(created.room.seatIds, seatIds);
 	assert.equal(Object.hasOwn(created.room, "credentials"), false);
+	assert.equal(JSON.stringify(created.room).includes(f.credentials.get(`${roomId}:seat_b`)), false,
+		"the public room descriptor must not expose another seat's credential");
 	assert.equal(f.coordinator.joinSeat({ roomId, seatId: "seat_a", credential: f.credentials.get(`${roomId}:seat_a`),
 		connectionId: "admin_attempt", principal: { kind: "administrator" } }).code, "V3_SEAT_JOIN_REJECTED");
+	assert.equal(f.coordinator.joinSeat({ roomId, seatId: "seat_b", credential: f.credentials.get(`${roomId}:seat_a`),
+		connectionId: "cross_seat_attempt", principal: { kind: "ordinary_player" } }).code, "V3_SEAT_JOIN_REJECTED",
+		"a valid credential is bound to exactly one immutable seat");
 	for (const [index, seatId] of seatIds.entries()) {
 		const joined = f.coordinator.joinSeat({ roomId, seatId, credential: f.credentials.get(`${roomId}:${seatId}`),
 			connectionId: `socket_${index}`, principal: { kind: "ordinary_player" } });
@@ -125,6 +137,42 @@ test("room lifecycle bounds rooms, isolates parallel rooms and rolls failed cred
 	assert.equal(rolledBack.ok, false);
 	assert.equal(rolledBack.code, "V3_ROOM_CREATION_ROLLED_BACK");
 	assert.equal(bad.coordinator.inspect(rolledBack.roomId || "room_missing"), null);
+});
+
+test("coordinator and gateway share one atomic seat binding; retries are idempotent and stale disconnects are fenced", async t => {
+	const bound = [];
+	const f = fixture({ onSeatBound(binding) { bound.push(binding); } }); t.after(() => f.coordinator.close());
+	const created = await f.coordinator.createRoom({ config: { mode: "xingBei", playerCount: 4 } });
+	const { roomId } = created.room;
+	for (const [index, seatId] of seatIds.entries()) {
+		assert.equal(f.coordinator.joinSeat({ roomId, seatId, credential: f.credentials.get(`${roomId}:${seatId}`),
+			connectionId: `lobby_${index}`, principal: { kind: "ordinary_player" } }).ok, true);
+	}
+	for (const [index, seatId] of seatIds.entries()) assert.equal(f.coordinator.markSeatReady({ roomId, seatId,
+		credential: f.credentials.get(`${roomId}:${seatId}`), connectionId: `lobby_${index}`,
+		principal: { kind: "ordinary_player" } }).ok, true);
+	assert.equal((await f.coordinator.startRoom({ roomId })).ok, true);
+	const oldEpoch = f.registry.inspect(roomId, "seat_a").epoch;
+	const gatewayBind = f.coordinator.bindGatewaySeat({ roomId, seatId: "seat_a",
+		credential: f.credentials.get(`${roomId}:seat_a`), connectionId: "ws_generation_2" });
+	assert.equal(gatewayBind.ok, true);
+	assert.equal(f.registry.inspect(roomId, "seat_a").epoch, oldEpoch + 1,
+		"replacing a lobby binding with its authenticated socket advances exactly one generation");
+	assert.equal(f.coordinator.inspect(roomId).connectedSeatIds.includes("seat_a"), true);
+	assert.equal(f.coordinator.disconnectSeat({ roomId, seatId: "seat_a", connectionId: "lobby_0" }).code,
+		"V3_SEAT_DISCONNECT_REJECTED", "late close from the old connection must not clear the new binding");
+	const duplicate = f.coordinator.bindGatewaySeat({ roomId, seatId: "seat_a",
+		credential: f.credentials.get(`${roomId}:seat_a`), connectionId: "ws_generation_2" });
+	assert.equal(duplicate.ok, true); assert.equal(duplicate.idempotent, true);
+	assert.equal(f.registry.inspect(roomId, "seat_a").epoch, oldEpoch + 1, "same-generation retry must not increment the epoch");
+	assert.equal(f.coordinator.bindGatewaySeat({ roomId, seatId: "seat_a", credential: "f".repeat(64),
+		connectionId: "ws_forged" }).code, "V3_GATEWAY_SEAT_AUTH_REJECTED");
+	assert.equal(f.registry.inspect(roomId, "seat_a").epoch, oldEpoch + 1);
+	assert.equal(f.coordinator.disconnectSeat({ roomId, seatId: "seat_a", connectionId: "ws_generation_2" }).ok, true);
+	assert.equal(f.coordinator.inspect(roomId).state, "running");
+	assert.equal(f.hostState.get(roomId).state, "playable_probe");
+	assert.deepEqual(f.stopped, [], "socket loss remains separate from managed-host lifecycle");
+	assert.equal(bound.length, 5);
 });
 
 test("room close racing a pending host bootstrap stops the late managed session", async t => {

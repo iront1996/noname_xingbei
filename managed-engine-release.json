@@ -1,1 +1,5 @@
-{"schema":"xingbei_managed_engine_release_lock_v1","schemaVersion":1,"buildId":"42c0bd447b3c4726f6491cf89735a8e7ef93de90ea0411d3eb2c9d56b9c878d4"}
+{
+  "schema": "xingbei_managed_engine_release_lock_v1",
+  "schemaVersion": 1,
+  "buildId": "afb6e78629ab056abfe58cd0df09125a5bcc98756b60a192f57cc77797c36020"
+}

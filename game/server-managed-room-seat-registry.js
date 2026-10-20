@@ -42,6 +42,10 @@ function createManagedRoomSeatRegistry({ randomBytes = crypto.randomBytes, grace
 		record.digest = tokenDigest(credential);
 		return Object.freeze({ roomId, seatId, credential });
 	}
+	function verifySeatCredential({ roomId, seatId, credential } = {}) {
+		const record = roomSeats(roomId)?.get(seatId);
+		return Boolean(record && !record.revoked && sameDigest(record.digest, credential));
+	}
 	function bindConnection({ roomId, seatId, credential, socket }) {
 		const record = roomSeats(roomId)?.get(seatId);
 		if (!record || record.revoked || !sameDigest(record.digest, credential) || !socket || socket.kind !== "player" ||
@@ -82,7 +86,7 @@ function createManagedRoomSeatRegistry({ randomBytes = crypto.randomBytes, grace
 		const record = roomSeats(roomId)?.get(seatId);
 		return record ? Object.freeze({ roomId, seatId, issued: Boolean(record.digest), connected: Boolean(record.current), epoch: record.epoch, revoked: record.revoked }) : null;
 	}
-	return Object.freeze({ createRoom, issueSeat, bindConnection, disconnect, authenticateSeat, authorizeSeatBinding, revoke, clearRoom, inspect });
+	return Object.freeze({ createRoom, issueSeat, verifySeatCredential, bindConnection, disconnect, authenticateSeat, authorizeSeatBinding, revoke, clearRoom, inspect });
 }
 
 module.exports = { createManagedRoomSeatRegistry };

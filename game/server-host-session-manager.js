@@ -121,6 +121,7 @@ function createHostSessionManager({
 	hasPendingManagedChoices = () => false,
 	getManagedChoice = () => null,
 	getCurrentSeatBinding = () => null,
+	authorizeSeatBinding = () => false,
 	authorizeSeatStateRequest = () => null,
 	onSessionEnd = () => {},
 	experimentalAuthorityEventLimit = 4,
@@ -132,7 +133,8 @@ function createHostSessionManager({
 		!Number.isSafeInteger(gameReadyTimeoutMs) || gameReadyTimeoutMs < 100 || gameReadyTimeoutMs > 60000 ||
 		typeof onAuthoritativeResult !== "function" || typeof onManagedChoiceMessage !== "function" ||
 		typeof isManagedChoicePending !== "function" || typeof hasPendingManagedChoices !== "function" || typeof getManagedChoice !== "function" ||
-		typeof getCurrentSeatBinding !== "function" || typeof authorizeSeatStateRequest !== "function" || typeof onSessionEnd !== "function" ||
+		typeof getCurrentSeatBinding !== "function" || typeof authorizeSeatBinding !== "function" ||
+		typeof authorizeSeatStateRequest !== "function" || typeof onSessionEnd !== "function" ||
 		![4, 5, 6, 7, 8].includes(experimentalAuthorityEventLimit) || (experimentalAuthorityEventLimit > 4 &&
 			(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT !== String(experimentalAuthorityEventLimit) ||
 				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK !== "1" || experimentalAuthorityEventLimit === 8 &&
@@ -972,7 +974,8 @@ function createHostSessionManager({
 						const accepted = Object.freeze({ roomId: record.roomId, hostSessionId: record.sessionId,
 							rootInstanceId: record.xingbeiAuthorityContext.rootInstanceId, engineBuildId: record.engineBuildId,
 							seatIds: Object.freeze([...record.seatIds]), nativeEventId: result.nativeEventId, eventInstanceId: result.eventInstanceId,
-							parentEventInstanceId: result.parentEventInstanceId, seatId: result.seatId, captureOrdinal: result.captureOrdinal,
+							parentEventInstanceId: result.parentEventInstanceId, seatId: result.seatId, connectionGeneration: result.connectionGeneration,
+							captureOrdinal: result.captureOrdinal,
 							nativeCompletionOrdinal: result.nativeCompletionOrdinal, commitment: result.commitment });
 						record.event8PreActionCaptureRequests.delete(message.requestId);
 						clearTimeout(pending.timer);
@@ -3122,6 +3125,51 @@ function createHostSessionManager({
 			authorityCeiling: record.experimentalAuthorityEventLimit, activeSeatId: candidate.seatId, captureVerified: true });
 	}
 
+	// A trusted server-side Seat Registry rebind may advance the active actor's
+	// connection generation while the native input event is still waiting. This
+	// refreshes only that server-owned candidate binding; native event identity,
+	// options and authority sequence remain immutable. Never expose this as a
+	// player/administrator command.
+	function refreshV3ExperimentalActionSeatBinding(roomId, binding) {
+		const record = sessions.get(roomId);
+		if (!binding || Object.getPrototypeOf(binding) !== Object.prototype ||
+			Object.keys(binding).sort().join(",") !== "connectionId,roomId,seatId,serverProof" || binding.roomId !== roomId ||
+			!SEAT_ID.test(binding.seatId || "") || typeof binding.connectionId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(binding.connectionId) ||
+			!SECRET.test(binding.serverProof || "")) return failure("V3_ACTION_BINDING_REJECTED");
+		let authorized = false, current = null;
+		try {
+			authorized = authorizeSeatBinding(binding) === true;
+			current = getCurrentSeatBinding(roomId, binding.seatId);
+		} catch (_) { return failure("V3_ACTION_BINDING_REJECTED"); }
+		if (!authorized || !current || current.roomId !== roomId || current.seatId !== binding.seatId ||
+			current.connected !== true || current.current !== true || current.credentialAuthenticated !== true || current.ordinaryPlayer !== true ||
+			!Number.isSafeInteger(current.connectionGeneration) || current.connectionGeneration < 1) return failure("V3_ACTION_BINDING_REJECTED");
+		if (!record || record.state !== "playable_probe") return Object.freeze({ ok: true, updated: false, reason: "NO_PLAYABLE_HOST" });
+		const sequence = record.nextAuthorityEventSequence;
+		const candidate = sequence === 5 ? record.nativeEvent5Candidate : sequence === 6 ? record.nativeEvent6Candidate :
+			sequence === 7 ? record.nativeEvent7Candidate : sequence === 8 ? record.nativeEvent8Candidate : null;
+		const capture = sequence === 5 ? record.successorPreActionCaptureResult : sequence === 6 ? record.event6PreActionCaptureResult :
+			sequence === 7 ? record.experimentalEvent7PreActionCaptureResult : sequence === 8 ? record.experimentalEvent8PreActionCaptureResult : null;
+		if (!candidate || candidate.seatId !== binding.seatId) return Object.freeze({ ok: true, updated: false, reason: "NO_ACTIVE_SEAT_ACTION" });
+		const captureCount = sequence === 5 ? record.successorPreActionCaptureRequestCount : sequence === 6 ? record.event6PreActionCaptureRequestCount :
+			sequence === 7 ? record.event7PreActionCaptureRequestCount : record.event8PreActionCaptureRequestCount;
+		const captureRequests = sequence === 5 ? record.successorPreActionCaptureRequests : sequence === 6 ? record.event6PreActionCaptureRequests :
+			sequence === 7 ? record.event7PreActionCaptureRequests : record.event8PreActionCaptureRequests;
+		if (candidate.roomId !== roomId ||
+			candidate.hostSessionId !== record.sessionId || candidate.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId ||
+			candidate.connectionGeneration > current.connectionGeneration || candidate.deliveryId || capture || captureCount !== 0 ||
+			captureRequests?.size !== 0) return failure("V3_ACTION_BINDING_REFRESH_NOT_ALLOWED");
+		if (candidate.connectionGeneration === current.connectionGeneration) return Object.freeze({ ok: true, updated: false,
+			idempotent: true, nativeEventId: candidate.nativeEventId, connectionGeneration: current.connectionGeneration });
+		const replacement = Object.freeze({ ...candidate, connectionGeneration: current.connectionGeneration });
+		if (sequence === 5) record.nativeEvent5Candidate = replacement;
+		else if (sequence === 6) record.nativeEvent6Candidate = replacement;
+		else if (sequence === 7) record.nativeEvent7Candidate = replacement;
+		else record.nativeEvent8Candidate = replacement;
+		return Object.freeze({ ok: true, roomId, hostSessionId: record.sessionId, seatId: binding.seatId,
+			nativeEventId: candidate.nativeEventId, eventSequence: sequence, connectionGeneration: current.connectionGeneration });
+	}
+
 	function getV3CurrentManagedChoice({ roomId, hostSessionId, eventSequence, seatId } = {}) {
 		const capability = inspectV3ExperimentalActionCapability(roomId);
 		const record = sessions.get(roomId);
@@ -3300,6 +3348,22 @@ function createHostSessionManager({
 		} catch (_) { return failure("NATIVE_INPUT_CANCEL_REJECTED"); }
 	}
 
+	// Server-internal transport adapter identity. This deliberately excludes the
+	// managed-host secret and native private state; consumers still validate the
+	// tuple against inspect() and the exact active session.
+	function inspectManagedHostTransportContext(roomId) {
+		const record = sessions.get(roomId);
+		const rootInstanceId = record?.xingbeiAuthorityContext?.rootInstanceId;
+		if (!record || record.state !== "playable_probe" || !record.handle || !Number.isSafeInteger(record.pid) || record.pid < 1 ||
+			!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(rootInstanceId || "") ||
+			!Number.isSafeInteger(record.authorityStateRevision) || record.authorityStateRevision < 1 ||
+			!record.seatIds || record.seatIds.length !== 4) return null;
+		return Object.freeze({ roomId: record.roomId, hostSessionId: record.sessionId, engineBuildId: record.engineBuildId,
+			rootInstanceId, hostPid: record.pid, seatIds: Object.freeze([...record.seatIds]),
+			authorityStateRevision: record.authorityStateRevision, nextAuthorityEventSequence: record.nextAuthorityEventSequence,
+			checkpointAvailable: false });
+	}
+
 	return Object.freeze({
 		start,
 		markBrowserReady,
@@ -3321,6 +3385,7 @@ function createHostSessionManager({
 		createV3SeatStateForRequest,
 		createV3CappedReadOnlySeatStateForRequest,
 		inspectV3ExperimentalActionCapability,
+		refreshV3ExperimentalActionSeatBinding,
 		getV3CurrentManagedChoice,
 		inspectEvent5ReviewEvidence,
 		inspectEvent5CaptureProgress,
@@ -3330,6 +3395,7 @@ function createHostSessionManager({
 		releaseNativePhaseBoundary,
 		resumeNativeInput,
 		cancelNativeInput,
+		inspectManagedHostTransportContext,
 		subscribeSessionEnd,
 		subscribeLifecycle,
 		stop,

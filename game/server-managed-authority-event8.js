@@ -57,13 +57,19 @@ function validateExperimentalEvent8(proof, evidence, { enabled = false } = {}) {
 			successorCandidate.previousActorSeatId !== prior.actorSeatId || !Number.isSafeInteger(successorCandidate.waitingCompletionOrdinal) || successorCandidate.waitingCompletionOrdinal <= prior.postFenceCompletionOrdinal ||
 			!Array.isArray(successorCandidate.options) || !successorCandidate.options.includes(event.optionId) || successorCandidate.optionKinds?.[event.optionId] !== event.cardKind ||
 			successorCandidate.optionCardNames?.[event.optionId] !== event.cardName || successorCandidate.optionTargetSeatIds?.[event.optionId] !== event.targetSeatId || successorCandidate.connectionGeneration !== event.connectionGeneration) return reject("EVENT8_CANDIDATE_REJECTED");
-		const captureKeys = ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "seatIds", "nativeEventId", "eventInstanceId", "parentEventInstanceId", "seatId", "captureOrdinal", "nativeCompletionOrdinal", "commitment"];
-		if (!exact(successorCapture, captureKeys) || successorCapture.roomId !== roomId || successorCapture.hostSessionId !== hostSessionId || successorCapture.rootInstanceId !== rootInstanceId ||
-			successorCapture.engineBuildId !== engineBuildId || canonicalize(successorCapture.seatIds) !== canonicalize(seatIds) || successorCapture.nativeEventId !== event.nativeEventId ||
-			successorCapture.eventInstanceId !== event.actionEventInstanceId || successorCapture.parentEventInstanceId !== event.actionParentEventInstanceId || successorCapture.seatId !== event.seatId ||
-			!Number.isSafeInteger(successorCapture.captureOrdinal) || successorCapture.captureOrdinal < 1 || successorCapture.captureOrdinal > 2 ||
-			successorCapture.nativeCompletionOrdinal !== successorCandidate.waitingCompletionOrdinal || successorCapture.nativeCompletionOrdinal <= prior.postFenceCompletionOrdinal ||
-			!DIGEST.test(successorCapture.commitment || "") || event.nativeCompletionOrdinal <= successorCapture.nativeCompletionOrdinal) return reject("EVENT8_PRE_CAPTURE_REJECTED");
+		const captureKeys = ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "seatIds", "nativeEventId", "eventInstanceId", "parentEventInstanceId", "seatId", "connectionGeneration", "captureOrdinal", "nativeCompletionOrdinal", "commitment"];
+		if (!exact(successorCapture, captureKeys)) return reject("EVENT8_PRE_CAPTURE_SCHEMA_REJECTED");
+		if (successorCapture.roomId !== roomId || successorCapture.hostSessionId !== hostSessionId || successorCapture.rootInstanceId !== rootInstanceId ||
+			successorCapture.engineBuildId !== engineBuildId || canonicalize(successorCapture.seatIds) !== canonicalize(seatIds)) return reject("EVENT8_PRE_CAPTURE_SCOPE_REJECTED");
+		if (successorCapture.nativeEventId !== event.nativeEventId || successorCapture.eventInstanceId !== event.actionEventInstanceId ||
+			successorCapture.parentEventInstanceId !== event.actionParentEventInstanceId || successorCapture.seatId !== event.seatId ||
+			successorCapture.connectionGeneration !== successorCandidate.connectionGeneration || successorCapture.connectionGeneration !== event.connectionGeneration)
+			return reject("EVENT8_PRE_CAPTURE_EVENT_BINDING_REJECTED");
+		if (!Number.isSafeInteger(successorCapture.captureOrdinal) || successorCapture.captureOrdinal < 1 || successorCapture.captureOrdinal > 2) return reject("EVENT8_PRE_CAPTURE_ORDINAL_REJECTED");
+		if (successorCapture.nativeCompletionOrdinal !== successorCandidate.waitingCompletionOrdinal) return reject("EVENT8_PRE_CAPTURE_COMPLETION_MISMATCH");
+		if (successorCapture.nativeCompletionOrdinal <= prior.postFenceCompletionOrdinal) return reject("EVENT8_PRE_CAPTURE_NOT_AFTER_PREDECESSOR");
+		if (!DIGEST.test(successorCapture.commitment || "")) return reject("EVENT8_PRE_CAPTURE_COMMITMENT_INVALID");
+		if (event.nativeCompletionOrdinal <= successorCapture.nativeCompletionOrdinal) return reject("EVENT8_ACTION_NOT_AFTER_PRE_CAPTURE");
 		const postKeys = ["roomId", "hostSessionId", "rootInstanceId", "engineBuildId", "seatIds", "nativeEventId", "seatId", "captureOrdinal", "nativeCompletionOrdinal", "boundaryOrdinal", "phaseOverTriggerOrdinal", "phaseOverSeatId", "phaseOverEventInstanceId", "commitment"];
 		if (!exact(postCapture, postKeys) || postCapture.roomId !== roomId || postCapture.hostSessionId !== hostSessionId || postCapture.rootInstanceId !== rootInstanceId || postCapture.engineBuildId !== engineBuildId ||
 			canonicalize(postCapture.seatIds) !== canonicalize(seatIds) || postCapture.nativeEventId !== event.nativeEventId || postCapture.seatId !== event.seatId || !Number.isSafeInteger(postCapture.nativeCompletionOrdinal) ||

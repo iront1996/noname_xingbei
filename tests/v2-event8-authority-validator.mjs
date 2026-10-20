@@ -20,7 +20,7 @@ function fixture() {
 		eventInstanceId: "event_81", parentEventInstanceId: "event_80", waitingCompletionOrdinal: 72, eventName: "gongJiOrFaShu", seatId: "seat_b",
 		options: [option], optionKinds: { [option]: "gongJi" }, optionCardNames: { [option]: "sha" }, optionTargetSeatIds: { [option]: "seat_c" }, previousActorSeatId: "seat_a", connectionGeneration: 4 };
 	const successorCapture = { roomId, hostSessionId, rootInstanceId, engineBuildId, seatIds, nativeEventId: id("8"), eventInstanceId: "event_81",
-		parentEventInstanceId: "event_80", seatId: "seat_b", captureOrdinal: 2, nativeCompletionOrdinal: 72, commitment: "8".repeat(64) };
+		parentEventInstanceId: "event_80", seatId: "seat_b", connectionGeneration: 4, captureOrdinal: 2, nativeCompletionOrdinal: 72, commitment: "8".repeat(64) };
 	const postCapture = { roomId, hostSessionId, rootInstanceId, engineBuildId, seatIds, nativeEventId: id("8"), seatId: "seat_b", captureOrdinal: 8,
 		nativeCompletionOrdinal: 78, boundaryOrdinal: 5, phaseOverTriggerOrdinal: 5, phaseOverSeatId: "seat_b", phaseOverEventInstanceId: "event_79", commitment: "9".repeat(64) };
 	const event = { kind: "xingbei_native_successor_card_action_v4", name: "gongJiOrFaShu", nativeEventName: "gongJiOrFaShu", nativeEventId: id("8"), rootInstanceId,
@@ -48,6 +48,7 @@ test("Event #8 requires opt-in and a contiguous accepted Event #7 predecessor", 
 		({ proof }) => { proof.eventSequence = 9; }, ({ proof }) => { proof.stateRevisionBefore = 6; },
 		({ evidence }) => { evidence.predecessor.eventSequence = 6; }, ({ evidence }) => { evidence.predecessor.summary.revision = 6; },
 		({ evidence }) => { evidence.successorCandidate.eventSequence = 7; }, ({ evidence }) => { evidence.successorCapture.nativeCompletionOrdinal--; },
+		({ evidence }) => { evidence.successorCapture.connectionGeneration++; },
 		({ evidence }) => { evidence.successorCapture.captureOrdinal = 3; },
 		({ evidence }) => { evidence.postCapture.boundaryOrdinal = 4; }, ({ evidence }) => { evidence.postCapture.nativeCompletionOrdinal = 77; },
 		({ evidence }) => { evidence.postCapture.captureOrdinal = 7; }, ({ evidence }) => { evidence.seatBinding.connectionGeneration++; },
