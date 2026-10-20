@@ -575,7 +575,7 @@ function createHostSessionManager({
 				else if (message?.type === "host_game_ready") markGameReady(message);
 				else if (message?.type === "host_authority_event") {
 					const committed = commitAuthorityEvent(message);
-					if (["xingbei_side_assignment_v1", "xingbei_character_selection_v1", "xingbei_opening_draw_v1", "xingbei_native_card_action_v1", "xingbei_native_skill_action_v1", "xingbei_native_successor_card_action_v1", "xingbei_native_successor_card_action_v2", "xingbei_native_successor_card_action_v3"].includes(message.proof?.event?.kind)) {
+					if (["xingbei_side_assignment_v1", "xingbei_character_selection_v1", "xingbei_opening_draw_v1", "xingbei_native_card_action_v1", "xingbei_native_skill_action_v1", "xingbei_native_successor_card_action_v1", "xingbei_native_successor_card_action_v2", "xingbei_native_successor_card_action_v3", "xingbei_native_successor_card_action_v4"].includes(message.proof?.event?.kind)) {
 						if (!committed.ok) {
 							fail(record, committed.code);
 							Promise.resolve(record.handle?.stop("authority_event_rejected")).catch(() => {});
