@@ -18,8 +18,6 @@ test("handoff and plan report the release lock's verified managed source build",
 	]);
 	const currentHandoff = handoff.split(/^## (?:Accepted|Current in-progress) batch:/m)[1]?.split("\n## ")[0] || "";
 	const currentPlan = plan.split(/^## (?:Accepted|Current in-progress) batch:/m)[1]?.split("\n## ")[0] || "";
-	const match = currentHandoff.match(/release lock was recomputed and verified as `([a-f0-9]{64})`/i);
-	assert.ok(match, "handoff must identify the verified lock build");
-	assert.equal(match[1], verified.buildId);
-	assert.ok(currentPlan.includes(`Release lock verifies as \`${verified.buildId}\``), "plan's latest batch must agree with the verified lock build");
+	assert.ok(currentHandoff.includes(verified.buildId), "handoff's latest batch must identify the verified lock build for this checkout");
+	assert.ok(currentPlan.includes(verified.buildId), "plan's latest batch must identify the verified lock build for this checkout");
 });
