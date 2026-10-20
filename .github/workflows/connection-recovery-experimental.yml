@@ -67,6 +67,8 @@ jobs:
         run: node --test tests/v2-event6-authority-validator.mjs
       - name: V3 isolated opt-in Event 7 authority proof contract (submission only in required real-Chromium job)
         run: node --test tests/v2-event7-authority-validator.mjs
+      - name: V3 isolated opt-in Event 8 authority proof contract (submission only in required real-Chromium job)
+        run: node --test tests/v2-event8-authority-validator.mjs
       - name: V3 isolated per-seat state-sync protocol contract
         env:
           NODE_PATH: ${{ runner.temp }}/xingbei-ws/node_modules
@@ -783,6 +785,54 @@ jobs:
             for marker in manager-stopped server-closed cleanup-finished; do
               if ! grep -Fq ":$marker" "$diagnostic_file"; then
                 echo "::error::Event #7 passed without required cleanup checkpoint: $marker"
+                exit 1
+              fi
+            done
+          fi
+          exit "$test_status"
+
+  event8-native-authority-linux:
+    needs: event7-native-authority-linux
+    runs-on: ubuntu-latest
+    # Event #8 is a separate required real-Chromium job. It is intentionally
+    # bounded to the isolated experimental ceiling and never opens Event #9.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install isolated WebSocket test dependency
+        run: npm install --prefix "$RUNNER_TEMP/xingbei-ws" --ignore-scripts --no-save ws@8.18.3
+      - name: V3 required real Chromium Event 8 native action and authority acceptance
+        shell: bash
+        env:
+          NODE_PATH: ${{ runner.temp }}/xingbei-ws/node_modules
+        run: |
+          browser=""
+          for candidate in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$candidate" ]; then browser="$candidate"; break; fi
+          done
+          test -n "$browser"
+          diagnostic_file="$RUNNER_TEMP/event8-progress.log"
+          test_output="$RUNNER_TEMP/event8-node-test.log"
+          : > "$diagnostic_file"
+          chmod 600 "$diagnostic_file"
+          tail -n +1 -F "$diagnostic_file" &
+          tail_pid=$!
+          trap 'kill "$tail_pid" 2>/dev/null || true; wait "$tail_pid" 2>/dev/null || true' EXIT
+          set +e
+          env V2_CHROMIUM="$browser" V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT=8 V2_NATIVE_EVENT6_CONTINUATION_PROBE=1 V2_NATIVE_EVENT7_CONTINUATION_PROBE=1 V2_NATIVE_EVENT8_CONTINUATION_PROBE=1 V2_NATIVE_EVENT6_DIAGNOSTIC_FILE="$diagnostic_file" V2_TEST_BLOCK_EXTERNAL_NETWORK=1 V2_NATIVE_ACTION_KIND=gongJi V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE=1 V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_EVENT_COMPLETION_SEQUENCE=1 V2_NATIVE_C3_UNIFIED_ROOT=1 V2_NATIVE_C3_FULL_CHAIN=1 V2_NATIVE_OPENING_DRAW_EVENT3=1 V2_NATIVE_START_DIAGNOSTICS=1 V2_NATIVE_PARENT_FENCE_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_AUDIT=1 V2_NATIVE_PHASE_BOUNDARY_FENCE=1 V2_NATIVE_PARENT_FENCE=1 V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE=0 V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_ATOMIC_CAPTURE_PROBE=1 V2_NATIVE_MANAGED_RESPONSE=1 V2_NATIVE_START_PROBE_MODE=managed_opening_root_action_event5 V2_NATIVE_TEST_RANDOM_SEED=1 V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT=0 node --test --test-concurrency=1 tests/v2-managed-native-choice-ipc.mjs > "$test_output" 2>&1
+          test_status=$?
+          set -e
+          kill "$tail_pid" 2>/dev/null || true
+          wait "$tail_pid" 2>/dev/null || true
+          trap - EXIT
+          cat "$test_output"
+          if [ "$test_status" -eq 0 ]; then
+            for marker in manager-stopped server-closed cleanup-finished; do
+              if ! grep -Fq ":$marker" "$diagnostic_file"; then
+                echo "::error::Event #8 passed without required cleanup checkpoint: $marker"
                 exit 1
               fi
             done
