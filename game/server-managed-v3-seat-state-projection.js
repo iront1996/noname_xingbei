@@ -23,15 +23,16 @@ function createManagedV3SeatStateProjection({ key } = {}) {
 		if (destroyed) return reject("V3_SEAT_PROJECTION_DESTROYED");
 		if (!envelope || Object.getPrototypeOf(envelope) !== Object.prototype || envelope.schema !== SCHEMA ||
 			envelope.roomId !== roomId || envelope.hostSessionId !== hostSessionId || envelope.engineBuildId !== engineBuildId ||
-			envelope.rootInstanceId !== rootInstanceId || !same(envelope.seatIds, seatIds) || !capture ||
-			capture.schema !== "xingbei_native_private_successor_preaction_commitment_v1" || capture.roomId !== roomId ||
-			capture.hostSessionId !== hostSessionId || capture.engineBuildId !== engineBuildId || capture.rootInstanceId !== rootInstanceId ||
-			!same(capture.seatIds, seatIds) || capture.nativeEventId !== envelope.fence?.nativeEventId ||
-			capture.eventInstanceId !== envelope.fence?.eventInstanceId || capture.seatId !== envelope.fence?.seatId ||
-			capture.nativeCompletionOrdinal !== envelope.fence?.nativeCompletionOrdinal || capture.captureOrdinal !== envelope.captureOrdinal ||
-			!seatIds?.includes(recipientSeatId) ||
-			!Number.isSafeInteger(connectionGeneration) || connectionGeneration < 1 ||
-			!Number.isSafeInteger(stateSequence) || stateSequence < 1) return reject("V3_SEAT_PROJECTION_BINDING_REJECTED");
+			envelope.rootInstanceId !== rootInstanceId || !same(envelope.seatIds, seatIds)) return reject("V3_SEAT_PROJECTION_ENVELOPE_BINDING_REJECTED");
+		if (!capture || capture.schema !== "xingbei_native_private_successor_preaction_commitment_v1") return reject("V3_SEAT_PROJECTION_CAPTURE_SCHEMA_REJECTED");
+		if (capture.roomId !== roomId || capture.hostSessionId !== hostSessionId || capture.engineBuildId !== engineBuildId ||
+			capture.rootInstanceId !== rootInstanceId) return reject("V3_SEAT_PROJECTION_CAPTURE_SCOPE_REJECTED");
+		if (!same(capture.seatIds, seatIds)) return reject("V3_SEAT_PROJECTION_CAPTURE_SEATS_REJECTED");
+		if (capture.nativeEventId !== envelope.fence?.nativeEventId || capture.eventInstanceId !== envelope.fence?.eventInstanceId ||
+			capture.seatId !== envelope.fence?.seatId || capture.nativeCompletionOrdinal !== envelope.fence?.nativeCompletionOrdinal ||
+			capture.captureOrdinal !== envelope.captureOrdinal) return reject("V3_SEAT_PROJECTION_FENCE_BINDING_REJECTED");
+		if (!seatIds?.includes(recipientSeatId) || !Number.isSafeInteger(connectionGeneration) || connectionGeneration < 1 ||
+			!Number.isSafeInteger(stateSequence) || stateSequence < 1) return reject("V3_SEAT_PROJECTION_RECIPIENT_BINDING_REJECTED");
 		let cards, effect, turn;
 		try {
 			cards = validateNativeCardLedgerSnapshot(envelope.cardLedger, seatIds);

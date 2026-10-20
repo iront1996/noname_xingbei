@@ -14,7 +14,7 @@ const hostSessionId = `hs_${"a".repeat(32)}`;
 const engineBuildId = "b".repeat(64);
 const rootInstanceId = `native_root_${"c".repeat(32)}`;
 
-function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {} } = {}) {
+function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {}, onSeatBound = () => true } = {}) {
 	const registry = createManagedRoomSeatRegistry();
 	assert.equal(registry.createRoom(roomId, seatIds), true);
 	const credentials = new Map(seatIds.map(seatId => [seatId, registry.issueSeat(roomId, seatId).credential]));
@@ -54,6 +54,7 @@ function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {} 
 			const connectionGeneration = registry.inspect(candidateRoom, seatId).epoch;
 			const binding = Object.freeze({ ...proof, connectionGeneration });
 			bindings.set(seatId, { connectionId, connectionGeneration });
+			if (!onSeatBound({ roomId: candidateRoom, seatId, connectionId, credential, connectionGeneration, binding })) return null;
 			return binding;
 		},
 		disconnectSeat({ roomId: candidateRoom, seatId, connectionId }) {
@@ -101,6 +102,12 @@ async function authenticate(socket, seatId, credential) {
 async function readState(socket, requestId, lastSeenSequence) {
 	const response = onceMessage(socket);
 	socket.send(JSON.stringify({ type: "state_read", requestId, lastSeenSequence }));
+	return response;
+}
+
+async function readChoice(socket, requestId) {
+	const response = onceMessage(socket);
+	socket.send(JSON.stringify({ type: "choice_read", requestId }));
 	return response;
 }
 
@@ -285,4 +292,86 @@ test("gateway applies deterministic per-socket rate limits and malformed input r
 	assert.equal(fixture.gateway.inspect().clientCount, 0);
 	clock += 1000;
 	assert.equal(clock, 2000);
+});
+
+test("experimental choice submission is capability-scoped, actor-only, controller-validated and request-idempotent", async t => {
+	const { createManagedChoiceController } = require("../game/server-managed-choice-controller.js");
+	const optionIds = [`native_option_${"1".repeat(32)}`, `native_option_${"2".repeat(32)}`];
+	const delivered = [];
+	const connections = new Map();
+	const choiceLookups = [];
+	const controller = createManagedChoiceController({
+		isHostSessionActive: (candidateRoom, candidateSession) => candidateRoom === roomId && candidateSession === hostSessionId,
+		authorizeManagedHost: () => true,
+		authorizeSeatBinding: () => true,
+		authenticateSeat: request => {
+			const current = connections.get(request.seatId);
+			return Boolean(current && current.connectionId === request.connectionId && current.credential === request.credential &&
+				request.connectionGeneration === current.connectionGeneration);
+		},
+		onResolved: choice => { delivered.push(choice); return undefined; },
+		deliveryRetryMs: 60000,
+	});
+	const capability = Object.freeze({ schema: "xingbei_v3_managed_action_capability_v1", roomId, hostSessionId,
+		engineBuildId, rootInstanceId, hostPid: 4567, authorityRevision: 4, nextAuthorityEventSequence: 5,
+		authorityCeiling: 8, activeSeatId: "seat_a", captureVerified: true });
+	const fixture = setupGateway({
+		onSeatBound: ({ roomId: candidateRoom, seatId, connectionId, credential, connectionGeneration }) => {
+			connections.set(seatId, { connectionId, credential, connectionGeneration });
+			return controller.bindSeatConnection({ roomId: candidateRoom, seatId, connectionId }).ok;
+		},
+		gatewayOptions: {
+			getExperimentalActionCapability: () => capability,
+			getCurrentManagedChoice: scope => {
+				choiceLookups.push({ seatId: scope.seatId, eventSequence: scope.eventSequence });
+				const choice = controller.findPendingChoice(scope);
+				return choice ? { roomId: choice.roomId, hostSessionId: choice.hostSessionId, seatId: choice.seatId,
+					choiceId: choice.choiceId, nativeEventId: choice.nativeEventId, eventSequence: choice.eventSequence,
+					options: choice.options, deadlineAt: choice.deadlineAt, state: choice.state } : null;
+			},
+			submitManagedChoice: message => controller.submitChoice(message),
+		},
+	});
+	t.after(async () => { await fixture.gateway.close(); controller.cleanupHostSession(roomId, hostSessionId); });
+	const opened = controller.openChoice({ protocol: 1, roomId, hostSessionId, seatId: "seat_a",
+		nativeEventId: `native_event_${"a".repeat(32)}`, eventSequence: 5, options: optionIds,
+		trusteeOption: optionIds[0], deadlineAt: Date.now() + 60000, kind: "managed_host", hostProof: "trusted-test" });
+	assert.equal(opened.ok, true);
+	const { url } = await fixture.gateway.listen();
+	const clients = new Map();
+	t.after(async () => Promise.all([...clients.values()].map(closeSocket)));
+	for (const seatId of seatIds) {
+		const socket = await connect(url); clients.set(seatId, socket);
+		const auth = await authenticate(socket, seatId, fixture.credentials.get(seatId));
+		assert.equal(auth.type, "seat_authenticated");
+		if (seatId === "seat_a") {
+			let choice;
+			try { choice = await readChoice(socket, "choice_read_actor"); } catch (error) {
+				assert.fail(`${error.message}; choiceLookups=${JSON.stringify(choiceLookups)}; gateway=${JSON.stringify(fixture.gateway.inspect())}; choiceState=${JSON.stringify(controller.inspect(roomId, opened.choice.choiceId)?.state)}`);
+			}
+			assert.deepEqual(choice, { type: "managed_choice", requestId: "choice_read_actor", roomId, seatId, choiceId: opened.choice.choiceId,
+				eventSequence: 5, deadlineAt: opened.choice.deadlineAt, optionIds });
+		} else {
+			assert.deepEqual(await readChoice(socket, `choice_read_${seatId}`), { type: "managed_choice_unavailable", requestId: `choice_read_${seatId}` });
+			const spoofed = onceMessage(socket);
+			socket.send(JSON.stringify({ type: "choice_submit", requestId: `spoof_${seatId}`,
+				choiceId: opened.choice.choiceId, optionId: optionIds[0] }));
+			assert.deepEqual(await spoofed, { type: "gateway_error", code: "MANAGED_CHOICE_SUBMISSION_REJECTED" });
+		}
+	}
+	const submit = { type: "choice_submit", requestId: "actor_submit_1", choiceId: opened.choice.choiceId, optionId: optionIds[1] };
+	const firstAck = onceMessage(clients.get("seat_a"));
+	clients.get("seat_a").send(JSON.stringify(submit));
+	assert.deepEqual(await firstAck, { type: "choice_submission_ack", requestId: "actor_submit_1",
+		choiceId: opened.choice.choiceId, accepted: true, stage: "controller", duplicate: false });
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId).state, "delivery_pending");
+	assert.equal(delivered.length, 1);
+	const retryAck = onceMessage(clients.get("seat_a"));
+	clients.get("seat_a").send(JSON.stringify(submit));
+	assert.deepEqual(await retryAck, { type: "choice_submission_ack", requestId: "actor_submit_1",
+		choiceId: opened.choice.choiceId, accepted: true, stage: "controller", duplicate: true });
+	assert.equal(delivered.length, 1, "a transport retry must not invoke controller resolution twice");
+	assert.equal(fixture.manager.inspect(roomId).authorityStateRevision, 4, "transport/controller acceptance is not authority acceptance");
+	assert.equal(fixture.manager.inspect(roomId).nextAuthorityEventSequence, 5);
+	assert.equal(fixture.gateway.inspect().closed, false);
 });

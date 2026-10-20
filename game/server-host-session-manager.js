@@ -12,6 +12,7 @@ const { validateExperimentalEvent5 } = require("./server-managed-authority-event
 const { validateExperimentalEvent6 } = require("./server-managed-authority-event6.js");
 const { validateExperimentalEvent7 } = require("./server-managed-authority-event7.js");
 const { validateExperimentalEvent8 } = require("./server-managed-authority-event8.js");
+const { prepareManagedAuthorityAction } = require("./server-managed-authority-action-coordinator.js");
 
 const PROTOCOL = 1;
 const ROOM_ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -118,6 +119,7 @@ function createHostSessionManager({
 	onManagedChoiceMessage = () => {},
 	isManagedChoicePending = () => false,
 	hasPendingManagedChoices = () => false,
+	getManagedChoice = () => null,
 	getCurrentSeatBinding = () => null,
 	authorizeSeatStateRequest = () => null,
 	onSessionEnd = () => {},
@@ -129,7 +131,7 @@ function createHostSessionManager({
 		!Number.isSafeInteger(engineReadyTimeoutMs) || engineReadyTimeoutMs < 100 || engineReadyTimeoutMs > 60000 ||
 		!Number.isSafeInteger(gameReadyTimeoutMs) || gameReadyTimeoutMs < 100 || gameReadyTimeoutMs > 60000 ||
 		typeof onAuthoritativeResult !== "function" || typeof onManagedChoiceMessage !== "function" ||
-		typeof isManagedChoicePending !== "function" || typeof hasPendingManagedChoices !== "function" ||
+		typeof isManagedChoicePending !== "function" || typeof hasPendingManagedChoices !== "function" || typeof getManagedChoice !== "function" ||
 		typeof getCurrentSeatBinding !== "function" || typeof authorizeSeatStateRequest !== "function" || typeof onSessionEnd !== "function" ||
 		![4, 5, 6, 7, 8].includes(experimentalAuthorityEventLimit) || (experimentalAuthorityEventLimit > 4 &&
 			(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT !== String(experimentalAuthorityEventLimit) ||
@@ -254,6 +256,9 @@ function createHostSessionManager({
 		record.event7PreActionCaptureRequests?.clear();
 		try { record.event7PreActionCapture?.destroy(); } catch (_) {}
 		record.event7PreActionCapture = null;
+		record.experimentalEvent7PreActionCapture = null;
+		record.experimentalEvent7PreActionCaptureResult = null;
+		record.experimentalEvent7PreActionCaptureEnvelope = null;
 		for (const pending of record.event8PreActionCaptureRequests?.values() || []) {
 			clearTimeout(pending.timer);
 			pending.resolve(failure("EVENT8_PREACTION_SESSION_ENDED"));
@@ -261,6 +266,8 @@ function createHostSessionManager({
 		record.event8PreActionCaptureRequests?.clear();
 		try { record.event8PreActionCapture?.destroy(); } catch (_) {}
 		record.event8PreActionCapture = null;
+		record.experimentalEvent8PreActionCaptureResult = null;
+		record.experimentalEvent8PreActionCaptureEnvelope = null;
 		record.v3SeatStateProjection?.destroy();
 		record.v3SeatStateProjection = null;
 		record.v3SeatStateSequences?.clear();
@@ -529,9 +536,11 @@ function createHostSessionManager({
 			event7PreActionCaptureRequests: new Map(),
 			event7PreActionCaptureRequestCount: 0,
 			event7PreActionCapture: null,
+			experimentalEvent7PreActionCaptureEnvelope: null,
 			event8PreActionCaptureRequests: new Map(),
 			event8PreActionCaptureRequestCount: 0,
 			event8PreActionCapture: null,
+			experimentalEvent8PreActionCaptureEnvelope: null,
 			experimentalEvent8PreActionCapture: null,
 			experimentalEvent8PostCapture: null,
 			experimentalEvent8PostCaptureStarted: false,
@@ -846,7 +855,7 @@ function createHostSessionManager({
 							commitment: result.commitment });
 						record.event6PreActionCaptureRequests.delete(message.requestId);
 						clearTimeout(pending.timer);
-						record.event6PreActionCaptureResult = Object.freeze({ ...accepted,
+						record.event6PreActionCaptureResult = Object.freeze({ ...accepted, schema: result.schema, schemaVersion: result.schemaVersion,
 							stateDigest: result.stateDigest, stableWithPrevious: result.stableWithPrevious,
 							choiceAllocated: false, nativeDeliveryAllowed: false, authoritySubmissionAllowed: false,
 							authorityRevision: 5, nextAuthorityEventSequence: 6, checkpointAvailable: false });
@@ -908,7 +917,8 @@ function createHostSessionManager({
 						record.event7PreActionCaptureRequests.delete(message.requestId);
 						clearTimeout(pending.timer);
 						record.experimentalEvent7PreActionCapture = accepted;
-						record.experimentalEvent7PreActionCaptureResult = Object.freeze({ ...accepted, stateDigest: result.stateDigest,
+						record.experimentalEvent7PreActionCaptureEnvelope = structuredClone(message.envelope);
+						record.experimentalEvent7PreActionCaptureResult = Object.freeze({ ...accepted, schema: result.schema, schemaVersion: result.schemaVersion, stateDigest: result.stateDigest,
 							stableWithPrevious: result.stableWithPrevious, choiceAllocated: false, nativeDeliveryAllowed: false,
 							authoritySubmissionAllowed: false, authorityRevision: 6, nextAuthorityEventSequence: 7, checkpointAvailable: false });
 						queueMicrotask(() => pending.resolve(record.state === "playable_probe" && record.authorityStateRevision === 6
@@ -967,7 +977,8 @@ function createHostSessionManager({
 						record.event8PreActionCaptureRequests.delete(message.requestId);
 						clearTimeout(pending.timer);
 						record.experimentalEvent8PreActionCapture = accepted;
-						record.experimentalEvent8PreActionCaptureResult = Object.freeze({ ...accepted, stateDigest: result.stateDigest,
+						record.experimentalEvent8PreActionCaptureEnvelope = structuredClone(message.envelope);
+						record.experimentalEvent8PreActionCaptureResult = Object.freeze({ ...accepted, schema: result.schema, schemaVersion: result.schemaVersion, stateDigest: result.stateDigest,
 							stableWithPrevious: result.stableWithPrevious, choiceAllocated: false, nativeDeliveryAllowed: false,
 							authoritySubmissionAllowed: false, authorityRevision: 7, nextAuthorityEventSequence: 8, checkpointAvailable: false });
 						queueMicrotask(() => pending.resolve(record.state === "playable_probe" && record.authorityStateRevision === 7
@@ -1965,6 +1976,20 @@ function createHostSessionManager({
 				return failure(`EVENT7_AUTHORITY_PRECHECK_${precheckFailure}`);
 			}
 		}
+		if (["xingbei_native_successor_card_action_v1", "xingbei_native_successor_card_action_v2",
+			"xingbei_native_successor_card_action_v3", "xingbei_native_successor_card_action_v4"].includes(proof?.event?.kind) &&
+			experimentalAuthorityEnabled(record, proof.eventSequence)) {
+			const actionContext = prepareManagedAuthorityAction({ record, proof,
+				authenticated: authenticate(record, message),
+				experimentalEnabled: experimentalAuthorityEnabled(record, proof.eventSequence) });
+			if (!actionContext.ok) {
+				const eventPrefix = `EVENT${proof?.event?.kind?.match(/_v([1-4])$/)?.[1] === "1" ? 5 :
+					proof?.event?.kind?.match(/_v([1-4])$/)?.[1] === "2" ? 6 :
+					proof?.event?.kind?.match(/_v([1-4])$/)?.[1] === "3" ? 7 : 8}`;
+				if (record) record.authorityFailureReason = `${eventPrefix}_${actionContext.code}`;
+				return failure(`${eventPrefix}_AUTHORITY_ACTION_${actionContext.code}`);
+			}
+		}
 		if (message?.type !== "host_authority_event" || !authenticate(record, message) ||
 			!['game_ready', 'playable_probe'].includes(record.state) || !proof ||
 			proof.kind !== "native_authority_event_v1" || proof.checkpoint !== null ||
@@ -2941,12 +2966,25 @@ function createHostSessionManager({
 		const record = sessions.get(roomId);
 		const exact = (value, keys) => Boolean(value && Object.getPrototypeOf(value) === Object.prototype &&
 			Object.keys(value).sort().join(",") === [...keys].sort().join(","));
-		if (!record || record.state !== "playable_probe" || record.authorityStateRevision !== 4 || record.nextAuthorityEventSequence !== 5 ||
-			record.lastAuthorityEvent?.sequence !== 4 || !(exact(input, ["recipientSeatId", "request"]) ||
+		const sequence = record?.nextAuthorityEventSequence;
+		const captureBySequence = new Map([
+			[5, [record?.successorPreActionCaptureResult, record?.successorPreActionCaptureEnvelope]],
+			[6, [record?.event6PreActionCaptureResult, record?.event6PreActionCaptureEnvelope]],
+			[7, [record?.experimentalEvent7PreActionCaptureResult, record?.experimentalEvent7PreActionCaptureEnvelope]],
+			[8, [record?.experimentalEvent8PreActionCaptureResult, record?.experimentalEvent8PreActionCaptureEnvelope]],
+		]);
+		const [activeCapture, activeEnvelope] = captureBySequence.get(sequence) || [];
+		const activeCandidate = sequence === 5 ? record?.nativeEvent5Candidate : sequence === 6 ? record?.nativeEvent6Candidate :
+			sequence === 7 ? record?.nativeEvent7Candidate : sequence === 8 ? record?.nativeEvent8Candidate : null;
+		if (!record || record.state !== "playable_probe" || !Number.isSafeInteger(sequence) || sequence < 5 || sequence > 8 ||
+			!experimentalAuthorityEnabled(record, sequence) || record.authorityStateRevision !== sequence - 1 ||
+			record.lastAuthorityEvent?.sequence !== sequence - 1 || !(exact(input, ["recipientSeatId", "request"]) ||
 				exact(input, ["recipientSeatId", "request", "stateSequence"])) ||
 			!SEAT_ID.test(input.recipientSeatId || "") || !record.seatIds.includes(input.recipientSeatId) ||
-			!input.request || Object.getPrototypeOf(input.request) !== Object.prototype || !record.successorPreActionCaptureResult ||
-			!record.successorPreActionCaptureEnvelope || hasPendingManagedChoices(roomId, record.sessionId) !== false ||
+			!input.request || Object.getPrototypeOf(input.request) !== Object.prototype || !activeCapture || !activeEnvelope || !activeCandidate ||
+			activeCapture.nativeEventId !== activeCandidate.nativeEventId || activeCapture.seatId !== activeCandidate.seatId ||
+			activeCapture.eventInstanceId !== activeCandidate.eventInstanceId || activeCapture.nativeCompletionOrdinal !== activeCandidate.waitingCompletionOrdinal ||
+			hasPendingManagedChoices(roomId, record.sessionId) !== false ||
 			(input.stateSequence !== undefined && (!Number.isSafeInteger(input.stateSequence) || input.stateSequence < 1))) return failure("V3_SEAT_STATE_NOT_AVAILABLE");
 		let authorized = null, binding = null;
 		try {
@@ -2957,9 +2995,9 @@ function createHostSessionManager({
 			value.seatId === input.recipientSeatId && value.connected === true && value.current === true &&
 			value.credentialAuthenticated === true && value.ordinaryPlayer === true && Number.isSafeInteger(value.connectionGeneration) &&
 			value.connectionGeneration > 0;
-		if (!validBinding(authorized) || !validBinding(binding) || authorized.connectionGeneration !== binding.connectionGeneration) {
-			return failure("V3_SEAT_STATE_RECIPIENT_REJECTED");
-		}
+		if (!validBinding(authorized)) return failure("V3_SEAT_STATE_RECIPIENT_REJECTED");
+		if (!validBinding(binding)) return failure("V3_SEAT_STATE_BINDING_UNAVAILABLE");
+		if (authorized.connectionGeneration !== binding.connectionGeneration) return failure("V3_SEAT_STATE_CONNECTION_GENERATION_STALE");
 		if (!record.v3SeatStateProjection) {
 			const key = randomBytes(32);
 			if (!Buffer.isBuffer(key) || key.length !== 32) return failure("V3_SEAT_STATE_KEY_UNAVAILABLE");
@@ -2973,8 +3011,8 @@ function createHostSessionManager({
 		const isNextLogicalState = nextSequence === previousSequence + 1;
 		const isFreshGenerationProjection = nextSequence === previousSequence && binding.connectionGeneration > previousGeneration;
 		if (!isNextLogicalState && !isFreshGenerationProjection) return failure("V3_SEAT_STATE_SEQUENCE_REJECTED");
-		const projected = record.v3SeatStateProjection.project({ envelope: record.successorPreActionCaptureEnvelope,
-			capture: record.successorPreActionCaptureResult, roomId, hostSessionId: record.sessionId, engineBuildId: record.engineBuildId,
+		const projected = record.v3SeatStateProjection.project({ envelope: activeEnvelope,
+			capture: activeCapture, roomId, hostSessionId: record.sessionId, engineBuildId: record.engineBuildId,
 			rootInstanceId: record.xingbeiAuthorityContext?.rootInstanceId, seatIds: record.seatIds,
 			recipientSeatId: input.recipientSeatId, connectionGeneration: binding.connectionGeneration, stateSequence: nextSequence });
 		let activeBinding = null, active = sessions.get(roomId), reauthorized = null;
@@ -2982,12 +3020,60 @@ function createHostSessionManager({
 			activeBinding = getCurrentSeatBinding(roomId, input.recipientSeatId);
 			reauthorized = authorizeSeatStateRequest({ roomId, recipientSeatId: input.recipientSeatId, request: input.request });
 		} catch (_) {}
-		if (!projected.ok || active !== record || record.state !== "playable_probe" || !validBinding(activeBinding) ||
+		if (!projected.ok) return failure(projected.code || "V3_SEAT_STATE_SOURCE_STALE");
+		if (active !== record || record.state !== "playable_probe" || !validBinding(activeBinding) ||
 			!validBinding(reauthorized) || activeBinding.connectionGeneration !== binding.connectionGeneration ||
-			reauthorized.connectionGeneration !== binding.connectionGeneration) return failure(projected.code || "V3_SEAT_STATE_SOURCE_STALE");
+			reauthorized.connectionGeneration !== binding.connectionGeneration) return failure("V3_SEAT_STATE_RECIPIENT_STALE_AFTER_CAPTURE");
 		record.v3SeatStateSequences.set(input.recipientSeatId, Math.max(previousSequence, nextSequence));
 		record.v3SeatStateGenerations.set(input.recipientSeatId, binding.connectionGeneration);
 		return Object.freeze({ ok: true, message: projected.message });
+	}
+
+	function inspectV3ExperimentalActionCapability(roomId) {
+		const record = sessions.get(roomId);
+		const sequence = record?.nextAuthorityEventSequence;
+		const candidate = sequence === 5 ? record?.nativeEvent5Candidate : sequence === 6 ? record?.nativeEvent6Candidate :
+			sequence === 7 ? record?.nativeEvent7Candidate : sequence === 8 ? record?.nativeEvent8Candidate : null;
+		const capture = sequence === 5 ? record?.successorPreActionCaptureResult : sequence === 6 ? record?.event6PreActionCaptureResult :
+			sequence === 7 ? record?.experimentalEvent7PreActionCaptureResult : sequence === 8 ? record?.experimentalEvent8PreActionCaptureResult : null;
+		if (!record || record.state !== "playable_probe" || !Number.isSafeInteger(sequence) || sequence < 5 || sequence > 8 ||
+			!experimentalAuthorityEnabled(record, sequence) || record.authorityStateRevision !== sequence - 1 ||
+			record.lastAuthorityEvent?.sequence !== sequence - 1 || !candidate || !capture ||
+			candidate.roomId !== roomId || candidate.hostSessionId !== record.sessionId || candidate.rootInstanceId !== record.xingbeiAuthorityContext?.rootInstanceId ||
+			candidate.engineBuildId !== record.engineBuildId || candidate.eventSequence !== sequence ||
+			candidate.nativeEventId !== capture.nativeEventId || candidate.eventInstanceId !== capture.eventInstanceId ||
+			candidate.seatId !== capture.seatId || candidate.waitingCompletionOrdinal !== capture.nativeCompletionOrdinal ||
+			!Array.isArray(candidate.options) || !candidate.options.length) return null;
+		let binding;
+		try { binding = getCurrentSeatBinding(roomId, candidate.seatId); } catch (_) { return null; }
+		if (!binding || binding.roomId !== roomId || binding.seatId !== candidate.seatId || binding.connected !== true || binding.current !== true ||
+			binding.credentialAuthenticated !== true || binding.ordinaryPlayer !== true || !Number.isSafeInteger(binding.connectionGeneration) ||
+			binding.connectionGeneration < 1 || binding.connectionGeneration !== candidate.connectionGeneration) return null;
+		return Object.freeze({ schema: "xingbei_v3_managed_action_capability_v1", roomId, hostSessionId: record.sessionId,
+			engineBuildId: record.engineBuildId, rootInstanceId: record.xingbeiAuthorityContext.rootInstanceId, hostPid: record.pid,
+			authorityRevision: record.authorityStateRevision, nextAuthorityEventSequence: sequence,
+			authorityCeiling: record.experimentalAuthorityEventLimit, activeSeatId: candidate.seatId, captureVerified: true });
+	}
+
+	function getV3CurrentManagedChoice({ roomId, hostSessionId, eventSequence, seatId } = {}) {
+		const capability = inspectV3ExperimentalActionCapability(roomId);
+		const record = sessions.get(roomId);
+		if (!capability || capability.hostSessionId !== hostSessionId || capability.nextAuthorityEventSequence !== eventSequence ||
+			capability.activeSeatId !== seatId || !record) return null;
+		let candidate = null, choice = null;
+		try {
+			candidate = eventSequence === 5 ? record.nativeEvent5Candidate : eventSequence === 6 ? record.nativeEvent6Candidate :
+				eventSequence === 7 ? record.nativeEvent7Candidate : record.nativeEvent8Candidate;
+			choice = getManagedChoice({ roomId, hostSessionId, eventSequence, seatId });
+		} catch (_) { return null; }
+		if (!candidate || !choice || Object.getPrototypeOf(choice) !== Object.prototype || choice.state !== "pending" ||
+			choice.roomId !== roomId || choice.hostSessionId !== hostSessionId || choice.eventSequence !== eventSequence ||
+			choice.seatId !== seatId || choice.nativeEventId !== candidate.nativeEventId ||
+			!/^choice_[A-Za-z0-9_-]{16,64}$/.test(choice.choiceId || "") || !Number.isSafeInteger(choice.deadlineAt) ||
+			!Array.isArray(choice.options) || choice.options.length < 1 || choice.options.length > 64 ||
+			choice.options.length !== candidate.options.length || choice.options.some((option, index) => option !== candidate.options[index])) return null;
+		return Object.freeze({ roomId, hostSessionId, seatId, choiceId: choice.choiceId, nativeEventId: choice.nativeEventId,
+			eventSequence, deadlineAt: choice.deadlineAt, options: Object.freeze([...choice.options]), state: "pending" });
 	}
 
 	// Read-only review evidence assembled from already accepted manager state.
@@ -3166,6 +3252,8 @@ function createHostSessionManager({
 		snapshotNativePreActionCapture,
 		snapshotSuccessorPreActionCapture,
 		createV3SeatStateForRequest,
+		inspectV3ExperimentalActionCapability,
+		getV3CurrentManagedChoice,
 		inspectEvent5ReviewEvidence,
 		inspectEvent5CaptureProgress,
 		inspectEvent6CaptureProgress,

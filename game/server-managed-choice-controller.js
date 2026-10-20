@@ -327,6 +327,13 @@ function createManagedChoiceController({
 		acknowledgeDelivery,
 		pendingCount: () => [...choices.values()].filter(choice => choice.state === "pending").length,
 		inspect: (roomId, choiceId) => publicChoice(choices.get(key(roomId, choiceId))),
+		findPendingChoice: ({ roomId, hostSessionId, seatId, eventSequence } = {}) => {
+			if (!ROOM_ID.test(roomId || "") || !SESSION_ID.test(hostSessionId || "") || !SEAT_ID.test(seatId || "") ||
+				!Number.isSafeInteger(eventSequence) || eventSequence < 5 || eventSequence > 8) return null;
+			const matches = [...choices.values()].filter(record => record.roomId === roomId && record.hostSessionId === hostSessionId &&
+				record.seatId === seatId && record.eventSequence === eventSequence && record.state === "pending");
+			return matches.length === 1 ? publicChoice(matches[0]) : null;
+		},
 	});
 }
 
