@@ -4537,10 +4537,14 @@ async function snapshotNativeAtomicCapture(message) {
 		!(message.boundaryOrdinal <= 2 && (message.boundaryOrdinal !== 2 || process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1") ||
 			message.boundaryOrdinal === 3 && process.env.V2_NATIVE_EVENT6_CONTINUATION_PROBE === "1" &&
 			(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "6" ||
-				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "7" && process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1") &&
+				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "7" && process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1" ||
+				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "8" && process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1" &&
+				process.env.V2_NATIVE_EVENT8_CONTINUATION_PROBE === "1") &&
 			process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1" ||
 			message.boundaryOrdinal === 4 && process.env.V2_NATIVE_EVENT7_CONTINUATION_PROBE === "1" &&
-			process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "7" && process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1") ||
+			(process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "7" ||
+				process.env.V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT === "8" && process.env.V2_NATIVE_EVENT8_CONTINUATION_PROBE === "1") &&
+			process.env.V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE === "1") ||
 		message.engineBuildId !== managedEngineBuildId || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(message.rootInstanceId || "") ||
 		!Array.isArray(message.seatIds) || message.seatIds.length !== 4 || JSON.stringify(message.seatIds) !== JSON.stringify(managedSeatIds) || !cdp) {
 		throw new Error("NATIVE_ATOMIC_CAPTURE_COMMAND_REJECTED");
