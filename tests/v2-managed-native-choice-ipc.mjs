@@ -4042,6 +4042,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					assert.equal(gatewayAddress.host, "127.0.0.1", "test gateway must bind loopback only");
 					assert.match(gatewayAddress.url, /^ws:\/\/127\.0\.0\.1:\d+$/);
 					const sockets = new Map(), views = new Map(), generations = new Map();
+					const displayEnabled = process.env.V3_PRIVATE_HAND_DISPLAY_EXPERIMENT === "1";
 					for (const seatId of immutableServerSeatIds) {
 						const socket = await connectWebSocket(WebSocket, gatewayAddress.url, playerUiBrowser ? seatId : null);
 						sockets.set(seatId, socket);
@@ -4055,7 +4056,6 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						const response = receiveWebSocketMessage(socket);
 						socket.send(JSON.stringify({ type: "state_read", requestId: `initial_${seatId}`, lastSeenSequence: 0 }));
 						const view = await response;
-						const displayEnabled = process.env.V3_PRIVATE_HAND_DISPLAY_EXPERIMENT === "1";
 						const viewValidation = displayEnabled
 							? validateSeatStateDisplayMessage(view, { roomId, seatId, connectionGeneration: currentGeneration, seatIds: immutableServerSeatIds })
 							: validateSeatStateMessage(view, { roomId, seatId, connectionGeneration: currentGeneration, seatIds: immutableServerSeatIds });
@@ -4074,8 +4074,8 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							assert.equal(view.privateState.cards.length, ownHandCount);
 							assert.ok(view.privateState.cards.every((card, index) => card.position === index && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(card.name) && /^[A-Za-z0-9_-]{16,96}$/.test(card.viewId) && ["an", "huo", "di", "feng", "lei", "shui", "guang", "none"].includes(card.xiBie)));
 							assert.equal(JSON.stringify(view).includes('"cardId"'), false);
-							assert.equal(JSON.stringify(view).includes('"name":"gongJi"'), true,
-								"the recipient receives the actual native card name only in the opt-in v3 hand view");
+							assert.ok(view.privateState.cards.every(card => card.name !== card.viewId),
+								"the recipient receives source-validated native card names instead of only opaque identifiers");
 						} else {
 						assert.equal(view.privateState.handCardViewIds.length, ownHandCount,
 							"private opaque hand IDs must match only this recipient's public hand count");
