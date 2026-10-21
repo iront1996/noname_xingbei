@@ -8,12 +8,13 @@
 	"checkpointAvailable": false,
 	"unknownStatePolicy": "fail_closed",
 	"v3RecipientNativeHandDisplay": {
-		"status": "limited_local_real_chromium_fixture_passed_linux_ci_pending",
+		"status": "limited_real_linux_chromium_fixture_passed",
 		"schema": "xingbei_v3_private_hand_display_v1",
 		"sourceBoundary": "same accepted successor atomic capture and validated physical Card Ledger as the recipient-scoped public view",
 		"fields": ["recipient-owned physical hand opaque HMAC view ID", "ordered native card name", "finite source-reviewed xiBie enum"],
 		"evidenceScope": "four-seat managed Chromium successor pre-action wait-gate fixture; per-seat projection and UI rendering are checked against the same server projection",
-		"limitations": ["not complete physical-card family support", "not arbitrary card attributes", "not valid for Event 8 capped post-phaseOver state", "no other-seat hand data", "Linux CI for this batch pending"]
+		"evidence": ["Linux CI 39561744885 for commit 84bcf069e2efe8a4d93474872a273313d5a9adaa passed the required Event 8 real Chromium four-page hand-display and authority test; Node job 336/336 and Event 6/7/8 jobs 1/1 each, zero failures/skips/cancellations"],
+		"limitations": ["not complete physical-card family support", "not arbitrary card attributes", "not valid for Event 8 capped post-phaseOver state", "no other-seat hand data"]
 	},
 	"m2RealtimeContinuityProbe": {
 		"status": "linux_real_chromium_passed_limited_disconnect_trustee_rebind_fixture",
