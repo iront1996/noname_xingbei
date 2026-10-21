@@ -1,5 +1,12 @@
 # V2 Codex engineering handoff
 
+## Current local batch: T3-B2-C limited effect-state rejection composition (Linux CI not run)
+
+- Starting HEAD: `1bb07da1c1a3ae888a558c923d4791245b5c4657` on `codex/v2-server-authority-m1`; the worktree was clean before this batch. The reviewed, supported effect slice remains limited to native `Player.hasSkill("yinYangZhanHuan")` presence and bounded `Player.countZhiShiWu("guiHuo")` values (0–3), captured through the existing authenticated, same-root atomic envelope.
+- Added a composition-level Node regression proving that an unknown skill, arbitrary storage field, out-of-range `guiHuo`, or incomplete seat projection is rejected before any atomic commitment/ordinal is consumed. A subsequent valid envelope still receives capture ordinal 1 with all three projections accepted. Existing native extraction, canonical representation, and Linux acceptance claims were not broadened.
+- Local Node result: effect-state, atomic-capture, coverage-manifest and handoff/release-consistency tests passed 17/17, zero failures/skips. The existing controlled real managed-Chromium YinYang effect-state probe also passed 1/1 with zero skips (same native fixture; this does not exercise the new negative envelope cases). Managed release lock still verifies as `cbaefd2e6a7f171e89cd87491612fd3c7c31d91de73ac71bc37373ea86ecc12e` (225 sources / 19,537,729 bytes), since no managed source changed. No commit, push, CI, or deployment was performed.
+- Unsupported: unknown/dynamic skills, arbitrary storage, temporary/additional skill lifecycles, closures, general marks/effects, and complete canonical state. Preserve revision 4, `fullCanonicalStateEligible=false`, `seedAuthorized=false`, `event5Enabled=false`, Event #9 rejected, and `checkpointAvailable=false`.
+
 ## Current in-progress batch: `choice_read` response delivery and same-capture card link (local Chromium passed; Linux pending)
 
 - Starting isolated branch/HEAD: `codex/v2-server-authority-m1` / `53aedef3f6bcb611f02522942948b7f66c4414b4`; all pre-existing worktree changes were preserved. Cloudflare `xingbei-play` saved Branch Controls were freshly reloaded and read-only checked in Chrome: Production `feature/auto-lobby`, automatic deployments enabled, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`; no setting was changed. The experiment workflow was adjusted only to add this branch to `push.branches`; remote push and Linux CI are pending this commit.

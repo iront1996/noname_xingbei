@@ -76,6 +76,34 @@ test("atomic capture is fail-closed and a rejected projection consumes no ordina
 	capture.destroy();
 });
 
+test("atomic capture rejects unsupported effect state without committing a partial private snapshot", () => {
+	const invalidCases = [
+		{ code: "NATIVE_EFFECT_STATE_SKILL_UNSUPPORTED", mutate: value => {
+			value.effectState.seats[0].skills = [{ id: "unreviewedSkill", present: true, source: "native_hasSkill" }];
+		} },
+		{ code: "NATIVE_EFFECT_STATE_SEAT_INVALID", mutate: value => {
+			value.effectState.seats[0].storage = { unreviewed: true };
+		} },
+		{ code: "NATIVE_EFFECT_STATE_SEAT_INVALID", mutate: value => {
+			value.effectState.seats[0].guiHuo = 4;
+		} },
+		{ code: "NATIVE_EFFECT_STATE_SNAPSHOT_INVALID", mutate: value => {
+			value.effectState.seats.pop();
+		} },
+	];
+	for (const { code, mutate } of invalidCases) {
+		const capture = coordinator();
+		const invalid = envelope();
+		mutate(invalid);
+		assert.throws(() => capture.commit(invalid), { message: code });
+		const accepted = capture.commit(envelope());
+		assert.equal(accepted.captureOrdinal, 1,
+			"a rejected effect projection must not consume an ordinal or expose a partial commitment");
+		assert.equal(accepted.projectionCount, 3);
+		capture.destroy();
+	}
+});
+
 test("atomic capture rejects projection boundary drift, replay and post-destroy use", () => {
 	const capture = coordinator();
 	const drift = envelope();

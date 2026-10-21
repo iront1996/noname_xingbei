@@ -1,5 +1,12 @@
 # V2 server-authority plan and evidence
 
+## Current local batch: T3-B2-C limited effect-state rejection composition (Linux CI not run)
+
+- Starting HEAD: `1bb07da1c1a3ae888a558c923d4791245b5c4657`; the initial worktree was clean. This batch adds only a Node regression at the atomic-envelope boundary for the already reviewed `yinYangZhanHuan` presence / `guiHuo` count projection.
+- The test rejects an unknown skill, unreviewed storage, `guiHuo` outside 0–3, and an incomplete seat projection; each rejection leaves the next accepted atomic envelope at capture ordinal 1 and requires all three projections. This is contract-composition evidence, not new native-rule or real-Chromium coverage.
+- Effect-state, atomic-capture, coverage-manifest and handoff/release-consistency tests: 17/17 pass, zero failures/skips. The existing controlled real managed-Chromium YinYang effect-state probe passed 1/1, zero skips; it confirms only the already documented native fixture, not the new malformed-envelope cases. Release lock remains `cbaefd2e6a7f171e89cd87491612fd3c7c31d91de73ac71bc37373ea86ecc12e` (225 managed sources; unchanged). No commit, push, CI, or deployment.
+- Coverage stays partial; arbitrary storage, unknown/dynamic effects and skill lifecycles remain unsupported and fail closed. All authority/seed/checkpoint/Event #9 gates remain closed.
+
 ## Current in-progress batch: `choice_read` transport repair and same-capture hand/card link (local evidence; Linux pending)
 
 - Starting baseline: `53aedef3f6bcb611f02522942948b7f66c4414b4` on isolated `codex/v2-server-authority-m1`; all existing local work was preserved. Cloudflare `xingbei-play` saved Branch Controls were freshly reloaded and read-only checked in Chrome: Production `feature/auto-lobby`, automatic deployments enabled, Preview Custom, Include `*`, Exclude `codex/v2-server-authority-m1`; no setting was changed. The experiment workflow was adjusted only to add this branch to `push.branches`; remote push and Linux CI are pending this commit.

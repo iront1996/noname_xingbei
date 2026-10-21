@@ -337,6 +337,12 @@
 			"status": "partial",
 			"nativeSources": ["Player.hasSkill(yinYangZhanHuan)", "Player.countZhiShiWu(guiHuo)"],
 			"supportedBoundary": "limited yinYangZhanHuan presence and guiHuo count projection",
+			"localContractEvidence": {
+				"startingHead": "1bb07da1c1a3ae888a558c923d4791245b5c4657",
+				"test": "tests/v2-managed-native-atomic-capture.mjs: atomic capture rejects unsupported effect state without committing a partial private snapshot",
+				"result": "17/17 effect-state, atomic-capture, manifest and handoff Node tests passed locally; existing controlled managed-Chromium YinYang effect probe passed 1/1; no Linux CI in this batch",
+				"scope": "unknown skills, arbitrary storage, out-of-range guiHuo and incomplete seat projection reject without consuming the atomic capture ordinal"
+			},
 			"unsupported": ["unknown skills", "dynamic effects", "arbitrary storage", "temporary and additional skill lifecycle", "unknown marks"]
 		},
 		{
