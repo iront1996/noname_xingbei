@@ -2,12 +2,14 @@
 (() => {
 	const $ = id => document.getElementById(id);
 	const state = { socket: null, credential: null, roomId: null, seatId: null, generation: null, lastSequence: 0,
-		requestNo: 0, nextRequestId: null, pending: new Map(), currentChoice: null, closed: false, messages: [], lastErrorCode: null,
+		requestNo: 0, nextRequestId: null, pending: new Map(), currentChoice: null, currentChoiceDisplay: null, selectedHandViewId: null,
+		privateHandCards: null,
+		closed: false, messages: [], lastErrorCode: null,
 		testCapability: null, controlUrl: null, lobbyRoomId: null, lobbyRoom: null };
 	function text(id, value) { $(id).textContent = String(value); }
 	function verifiedChoiceDisplay(message) {
 		const display = message?.display, labels = { gongJi: "攻擊", faShu: "法術", unsupported: "合法操作（語意未驗證）" };
-		if (!display || display.schema !== "xingbei_v3_managed_choice_display_v1" || display.roomId !== state.roomId ||
+		if (!display || !["xingbei_v3_managed_choice_display_v1", "xingbei_v3_managed_choice_display_v2", "xingbei_v3_managed_choice_display_v3"].includes(display.schema) || display.roomId !== state.roomId ||
 			display.actingSeatId !== state.seatId || display.choiceId !== message.choiceId || display.eventSequence !== message.eventSequence ||
 			display.connectionGeneration !== state.generation || display.connectionGeneration !== message.connectionGeneration ||
 			!/^hs_[a-f0-9]{32}$/.test(display.hostSessionId || "") || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(display.rootInstanceId || "") ||
@@ -18,9 +20,15 @@
 			!Array.isArray(display.optionItems) || display.optionItems.length !== message.optionIds.length) return null;
 		for (let i = 0; i < display.optionItems.length; i++) {
 			const item = display.optionItems[i];
-			if (!item || Object.getPrototypeOf(item) !== Object.prototype || Object.keys(item).sort().join(",") !==
-				"cardViewId,completeness,label,operationKind,optionId,targetSeatId" || item.optionId !== message.optionIds[i] ||
-				!Object.hasOwn(labels, item.operationKind) || item.label !== labels[item.operationKind] || item.cardViewId !== null ||
+			const v2 = display.schema === "xingbei_v3_managed_choice_display_v2";
+			const v3 = display.schema === "xingbei_v3_managed_choice_display_v3";
+		if (!item || Object.getPrototypeOf(item) !== Object.prototype || Object.keys(item).sort().join(",") !==
+			(v3 ? "cardViewId,completeness,index,operationKind,targetSeatId" :
+				(v2 ? "cardLinkStatus,cardViewId,completeness,label,operationKind,optionId,targetSeatId" :
+				"cardViewId,completeness,label,operationKind,optionId,targetSeatId")) || (v3 && item.index !== i) || (!v3 && item.optionId !== message.optionIds[i]) ||
+			!Object.hasOwn(labels, item.operationKind) || (!v3 && item.label !== labels[item.operationKind]) ||
+				(item.cardViewId !== null && (!(v2 || v3) || !/^[A-Za-z0-9_-]{16,96}$/.test(item.cardViewId || ""))) ||
+				(v2 && item.cardLinkStatus !== (item.cardViewId === null ? "unavailable" : "verified_physical_hand_v1")) ||
 				!((item.completeness === "partial" && item.operationKind !== "unsupported") ||
 					(item.completeness === "opaque" && item.operationKind === "unsupported")) ||
 				(item.targetSeatId !== null && !/^seat_[a-d]$/.test(item.targetSeatId))) return null;
@@ -28,6 +36,35 @@
 		return display;
 	}
 	function lobbyStatus(value) { text("lobby-status", value); }
+	function renderOwnCards() {
+		if (!Array.isArray(state.privateHandCards)) return;
+		const linked = ["xingbei_v3_managed_choice_display_v2", "xingbei_v3_managed_choice_display_v3"].includes(state.currentChoiceDisplay?.schema)
+			? state.currentChoiceDisplay.optionItems : [];
+		const items = state.privateHandCards.map(card => {
+			const item = document.createElement("article"); item.className = "player hand-card";
+			item.textContent = `${card.name} · ${card.xiBie}`; item.dataset.viewId = card.viewId;
+			item.dataset.cardName = card.name; item.dataset.xiBie = card.xiBie;
+			const linkedItems = linked.filter(option => option.cardViewId === card.viewId);
+			if (linkedItems.length) {
+				item.dataset.usable = "true"; item.tabIndex = 0; item.setAttribute("role", "button");
+				const mark = document.createElement("span"); mark.textContent = "｜可用"; item.append(mark);
+				const select = () => {
+					state.selectedHandViewId = state.selectedHandViewId === card.viewId ? null : card.viewId;
+					for (const button of $("options").querySelectorAll("button")) {
+						button.hidden = Boolean(state.selectedHandViewId && button.dataset.cardViewId !== state.selectedHandViewId);
+					}
+					text("choice-status", state.selectedHandViewId ? "已依同一受驗證擷取篩選本席卡牌操作" :
+						`事件 ${state.currentChoice?.eventSequence ?? "?"} 的本席合法操作`);
+				};
+				item.addEventListener("click", select); item.addEventListener("keydown", event => {
+					if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); }
+				});
+			}
+			return item;
+		});
+		$("own-cards").replaceChildren(...items);
+		text("private-view", `本席已驗證實體手牌（${items.length} 張；有序展示）`);
+	}
 	async function api(route, { method = "GET", body, roomId } = {}) {
 		if (!state.controlUrl || !state.testCapability) throw new Error("LOBBY_TEST_IDENTITY_UNAVAILABLE");
 		const url = new URL(`${state.controlUrl}/${route}`);
@@ -102,7 +139,8 @@
 		return new Promise((resolve, reject) => {
 			const timer = setTimeout(() => { state.pending.delete(requestId); reject(new Error("REQUEST_TIMEOUT")); }, 8000);
 			state.pending.set(requestId, { resolve, reject, timer, type });
-			send({ type, requestId, ...fields });
+			try { send({ type, requestId, ...fields }); }
+			catch (_) { settle(requestId, { code: "REQUEST_SEND_FAILED" }, true); }
 		});
 	}
 	function receive(message) {
@@ -112,7 +150,8 @@
 			if (message.roomId !== state.roomId || message.seatId !== state.seatId || !Number.isSafeInteger(message.connectionGeneration) ||
 				!Number.isSafeInteger(message.lastAcknowledgedSequence) || message.lastAcknowledgedSequence < 0) return;
 			if (state.generation !== message.connectionGeneration) {
-				state.currentChoice = null; $("options").replaceChildren(); text("choice-status", "連線世代已更新；請重新查詢合法操作");
+				state.currentChoice = null; state.currentChoiceDisplay = null; state.selectedHandViewId = null;
+				$("options").replaceChildren(); renderOwnCards(); text("choice-status", "連線世代已更新；請重新查詢合法操作");
 			}
 			state.generation = message.connectionGeneration;
 			state.lastSequence = message.lastAcknowledgedSequence; state.resumeSequence = message.lastAcknowledgedSequence;
@@ -139,20 +178,37 @@
 			return;
 		}
 		if (message.type === "managed_choice_unavailable") {
-			state.currentChoice = null; $("options").replaceChildren(); text("choice-status", "目前沒有提供給本席的合法操作");
+			state.currentChoice = null; state.currentChoiceDisplay = null; state.selectedHandViewId = null;
+			$("options").replaceChildren(); renderOwnCards(); text("choice-status", "目前沒有提供給本席的合法操作");
 			settle(message.requestId, message); return;
 		}
 		if (message.type === "managed_choice") {
 			if (message.seatId !== state.seatId || message.roomId !== state.roomId || message.connectionGeneration !== state.generation ||
 				!Array.isArray(message.optionIds) || !message.optionIds.length) return;
 			const display = verifiedChoiceDisplay(message);
-			state.currentChoice = message;
+			const linkedCardIds = display?.optionItems?.map(item => item.cardViewId).filter(Boolean) || [];
+			if (linkedCardIds.length) {
+				const hand = message.privateHandDisplay;
+				if (!hand || hand.schema !== "xingbei_v3_private_hand_display_v3" || hand.seatId !== state.seatId ||
+					!Array.isArray(hand.cards) || hand.cards.length > 200 ||
+					hand.cards.some(card => !Array.isArray(card) || card.length !== 3 || !/^[A-Za-z0-9_-]{16,96}$/.test(card[0] || "") ||
+						typeof card[1] !== "string" || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(card[1]) ||
+						!['an', 'huo', 'di', 'feng', 'lei', 'shui', 'guang', 'none'].includes(card[2])) ||
+					new Set(hand.cards.map(card => card[0])).size !== hand.cards.length ||
+					linkedCardIds.some(id => !hand.cards.some(card => card[0] === id))) return;
+				state.privateHandCards = hand.cards.map((card, position) => ({ viewId: card[0], name: card[1], xiBie: card[2], position }));
+			}
+			state.currentChoice = message; state.currentChoiceDisplay = display; state.selectedHandViewId = null;
+			renderOwnCards();
 			text("choice-status", `事件 ${message.eventSequence} 的本席合法操作（截止 ${new Date(message.deadlineAt).toLocaleTimeString()}）`);
 			const buttons = message.optionIds.map((optionId, index) => {
 				const item = display?.optionItems[index];
 				const button = document.createElement("button"); button.type = "button";
-				button.textContent = item ? `${item.label}${item.targetSeatId ? `｜目標 ${item.targetSeatId}` : ""}` : `合法操作 ${index + 1}（語意未驗證）`;
-				button.dataset.optionId = optionId; button.addEventListener("click", () => void submitChoice(optionId)); return button;
+				const label = item ? (item.label || { gongJi: "攻擊", faShu: "法術", unsupported: "合法操作（語意未驗證）" }[item.operationKind]) : null;
+				button.textContent = item ? `${label}${item.targetSeatId ? `｜目標 ${item.targetSeatId}` : ""}` : `合法操作 ${index + 1}（語意未驗證）`;
+				button.dataset.optionId = optionId;
+				button.dataset.cardViewId = item?.cardViewId || "";
+				button.addEventListener("click", () => void submitChoice(optionId)); return button;
 			});
 			$("options").replaceChildren(...buttons); settle(message.requestId, message); return;
 		}
@@ -165,16 +221,13 @@
 			text("phase", message.publicState?.phase ?? "目前狀態投影尚未提供");
 			text("authority-revision", "此投影尚未提供（state sequence 不是 authority revision）");
 			const displayCards = message.schema === "xingbei_v3_seat_state_v3" &&
-				message.privateState?.schema === "xingbei_v3_private_hand_display_v1" && message.privateState.seatId === state.seatId;
+				["xingbei_v3_private_hand_display_v1", "xingbei_v3_private_hand_display_v2"].includes(message.privateState?.schema) &&
+				message.privateState.seatId === state.seatId;
 			if (displayCards) {
-				const items = message.privateState.cards.map(card => {
-					const item = document.createElement("article"); item.className = "player hand-card";
-					item.textContent = `${card.name} · ${card.xiBie}`; item.dataset.viewId = card.viewId;
-					item.dataset.cardName = card.name; item.dataset.xiBie = card.xiBie; return item;
-				});
-				$("own-cards").replaceChildren(...items);
-				text("private-view", `本席已驗證實體手牌（${items.length} 張；有序展示）`);
+				state.privateHandCards = message.privateState.cards;
+				renderOwnCards();
 			} else {
+				state.privateHandCards = null;
 				const cards = message.privateState.handCardViewIds;
 				text("private-view", `本席卡牌展示資料未提供；opaque hand-view IDs（共 ${cards.length} 個）`);
 				$("own-cards").replaceChildren();
@@ -193,6 +246,8 @@
 		if (message.schema === "xingbei_v3_capped_readonly_state_v1" && message.recipientSeatId === state.seatId &&
 			message.roomId === state.roomId && message.connectionGeneration === state.generation) {
 			state.currentChoice = null;
+			state.currentChoiceDisplay = null; state.selectedHandViewId = null; state.privateHandCards = null;
+			$("own-cards").replaceChildren(); text("private-view", "遊戲已達實驗事件上限；目前手牌不再作為可操作資料展示");
 			text("room-view", message.roomId); text("authority-revision", message.authorityRevision);
 			$("capped-notice").hidden = false; $("read-choice").disabled = true; $("options").replaceChildren();
 			text("choice-status", "實驗事件上限已達；只允許唯讀同步");
@@ -226,7 +281,8 @@
 	function connect(url, roomId, seatId, credential) {
 		if (!/^ws:\/\/127\.0\.0\.1:\d+$/.test(url) || !/^[A-Za-z0-9_-]{1,64}$/.test(roomId) ||
 			!/^seat_[a-d]$/.test(seatId) || !/^[a-f0-9]{64}$/.test(credential)) throw new Error("GAME_CONNECTION_INPUT_REJECTED");
-		state.currentChoice = null; $("options").replaceChildren();
+		state.currentChoice = null; state.currentChoiceDisplay = null; state.selectedHandViewId = null; $("options").replaceChildren(); renderOwnCards();
+		for (const requestId of [...state.pending.keys()]) settle(requestId, { code: "REQUEST_CONNECTION_REPLACED" }, true);
 		state.roomId = roomId; state.seatId = seatId; state.credential = credential;
 		$("gateway-url").value = url; $("room-id").value = roomId; $("seat-id").value = seatId; $("seat-credential").value = "";
 		text("connection-status", "連線中…");
@@ -234,7 +290,12 @@
 		const socket = new WebSocket(url); state.socket = socket;
 		socket.addEventListener("open", () => socket.send(JSON.stringify({ type: "seat_auth", roomId, seatId, credential: state.credential })));
 		socket.addEventListener("message", event => { try { receive(JSON.parse(event.data)); } catch (_) { text("connection-status", "收到無法解讀的訊息"); } });
-		socket.addEventListener("close", () => { if (state.socket === socket) { text("connection-status", "已中斷；重新認證本席可重連"); $("read-choice").disabled = true; } });
+		socket.addEventListener("close", () => { if (state.socket === socket) {
+			state.currentChoice = null; state.currentChoiceDisplay = null; state.selectedHandViewId = null;
+			$("options").replaceChildren(); renderOwnCards();
+			for (const requestId of [...state.pending.keys()]) settle(requestId, { code: "REQUEST_SOCKET_CLOSED" }, true);
+			text("connection-status", "已中斷；重新認證本席可重連"); $("read-choice").disabled = true;
+		} });
 		socket.addEventListener("error", () => text("connection-status", "WebSocket 連線錯誤"));
 		return true;
 	}
@@ -274,7 +335,7 @@
 			return true;
 		},
 		configureRoom(roomId) { if (!/^room_[a-f0-9]{32}$/.test(roomId || "")) throw new Error("LOBBY_ROOM_ID_INVALID"); state.lobbyRoomId = roomId; $("lobby-room-id").value = roomId; void refreshRoom().catch(error => lobbyStatus(`房間同步未確認：${error.message}`)); return true; },
-		clickControl(control) { const ids = { createRoom: "create-room", joinRoom: "join-room", ready: "ready", unready: "unready", refreshRoom: "refresh-room", connectGame: "connect-game" }; const id = ids[control]; if (!id || $(id).disabled) throw new Error("LOBBY_CONTROL_NOT_AVAILABLE"); $(id).click(); return true; },
+		clickControl(control) { const ids = { createRoom: "create-room", joinRoom: "join-room", ready: "ready", unready: "unready", refreshRoom: "refresh-room", connectGame: "connect-game", readChoice: "read-choice" }; const id = ids[control]; if (!id || $(id).disabled) throw new Error("LOBBY_CONTROL_NOT_AVAILABLE"); $(id).click(); return true; },
 		connectGame,
 		connect({ url, roomId, seatId, credential }) {
 			return connect(url, roomId, seatId, credential);
@@ -289,17 +350,30 @@
 			}
 			send(message); return true;
 		},
+		selectHandCard(viewId) {
+			if (typeof viewId !== "string") return false;
+			const card = [...$("own-cards").children].find(item => item.dataset.viewId === viewId && item.dataset.usable === "true");
+			if (!card) return false;
+			card.click(); return true;
+		},
 		sendProtocol(message) { send(message); return true; },
 		drainMessages() { const batch = state.messages; state.messages = []; return batch; },
 		state() { return { seatId: state.seatId, generation: state.generation, lastSequence: state.lastSequence, resumeSequence: state.resumeSequence ?? 0,
-			connected: state.socket?.readyState === WebSocket.OPEN, choiceVisible: Boolean(state.currentChoice),
+		connected: state.socket?.readyState === WebSocket.OPEN, choiceVisible: Boolean(state.currentChoice),
+		choiceStatus: $("choice-status").textContent, pendingRequestTypes: [...state.pending.values()].map(item => item.type),
 			lobbyRoomId: state.lobbyRoomId, lobbyStatus: $("lobby-status").textContent, lobbyRoom: state.lobbyRoom,
 		ownCardNames: [...$("own-cards").children].map(item => item.dataset.cardName),
+		ownCardViewIds: [...$("own-cards").children].map(item => item.dataset.viewId),
+		usableHandViewIds: [...$("own-cards").children].filter(item => item.dataset.usable === "true").map(item => item.dataset.viewId),
 		ownCardXiBie: [...$("own-cards").children].map(item => item.dataset.xiBie),
 		ownCardLabels: [...$("own-cards").children].map(item => item.textContent),
 		choiceLabels: [...$("options").querySelectorAll("button")].map(item => item.textContent),
 		choiceOptionIds: [...$("options").querySelectorAll("button")].map(item => item.dataset.optionId),
+		visibleChoiceOptionIds: [...$("options").querySelectorAll("button")].filter(item => !item.hidden).map(item => item.dataset.optionId),
+		choiceCardViewIds: state.currentChoiceDisplay?.optionItems?.map(item => item.cardViewId) || [],
+		selectedHandViewId: state.selectedHandViewId,
 		choiceDisplaySchema: state.currentChoice?.display?.schema || null,
+		recentMessageTypes: state.messages.slice(-8).map(message => typeof message?.type === "string" ? message.type : "unknown"),
 		publicActiveSeat: $("active-seat").textContent, publicPhase: $("phase").textContent,
 		publicResources: $("resources").textContent, publicPlayers: [...$("players").children].map(item => item.textContent),
 			controllerText: $("controller-stage").textContent, nativeText: $("native-stage").textContent,

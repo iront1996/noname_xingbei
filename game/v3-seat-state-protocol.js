@@ -4,11 +4,16 @@
 // it does not extract native state, authenticate sockets, or publish messages.
 const SCHEMA = "xingbei_v3_seat_state_v2";
 const HAND_DISPLAY_SCHEMA = "xingbei_v3_private_hand_display_v1";
+const HAND_DISPLAY_SCHEMA_V2 = "xingbei_v3_private_hand_display_v2";
+const HAND_DISPLAY_SCHEMA_V3 = "xingbei_v3_private_hand_display_v3";
 const DISPLAY_SCHEMA = "xingbei_v3_seat_state_v3";
 const CAPPED_SCHEMA = "xingbei_v3_capped_readonly_state_v1";
 const MANAGED_CHOICE_DISPLAY_SCHEMA = "xingbei_v3_managed_choice_display_v1";
+const MANAGED_CHOICE_DISPLAY_SCHEMA_V2 = "xingbei_v3_managed_choice_display_v2";
+const MANAGED_CHOICE_DISPLAY_SCHEMA_V3 = "xingbei_v3_managed_choice_display_v3";
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const OPAQUE = /^[A-Za-z0-9_-]{16,96}$/;
+const HAND_VIEW = /^(?!native_card_|card_|secret|proof|hmac)[A-Za-z0-9_-]{16,96}$/;
 const MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
 
 function reject(code) { return Object.freeze({ ok: false, code }); }
@@ -40,7 +45,7 @@ function validPrivateState(value, recipientSeatId) {
 	return exact(value, ["handCardViewIds", "seatId"]) && value.seatId === recipientSeatId && safeOpaqueList(value.handCardViewIds, 200);
 }
 function validHandDisplay(value, recipientSeatId, handCount) {
-	if (!exact(value, ["schema", "seatId", "cards"]) || value.schema !== HAND_DISPLAY_SCHEMA || value.seatId !== recipientSeatId ||
+	if (!exact(value, ["schema", "seatId", "cards"]) || ![HAND_DISPLAY_SCHEMA, HAND_DISPLAY_SCHEMA_V2].includes(value.schema) || value.seatId !== recipientSeatId ||
 		!Array.isArray(value.cards) || value.cards.length > 200 || value.cards.length !== handCount) return false;
 	const ids = new Set();
 	for (let index = 0; index < value.cards.length; index++) {
@@ -51,6 +56,23 @@ function validHandDisplay(value, recipientSeatId, handCount) {
 		ids.add(card.viewId);
 	}
 	return true;
+}
+function validatePrivateHandDisplay(value, recipientSeatId) {
+	return plain(value) && value.schema === HAND_DISPLAY_SCHEMA_V2 && Array.isArray(value.cards) &&
+		validHandDisplay(value, recipientSeatId, value.cards.length);
+}
+function createCompactPrivateHandDisplay(value, recipientSeatId) {
+	if (!validatePrivateHandDisplay(value, recipientSeatId)) return reject("V3_PRIVATE_HAND_DISPLAY_INVALID");
+	return Object.freeze({ ok: true, message: Object.freeze({ schema: HAND_DISPLAY_SCHEMA_V3, seatId: recipientSeatId,
+		cards: Object.freeze(value.cards.map(card => Object.freeze([card.viewId, card.name, card.xiBie]))) }) });
+}
+function validateCompactPrivateHandDisplay(value, recipientSeatId) {
+	if (!exact(value, ["schema", "seatId", "cards"]) || value.schema !== HAND_DISPLAY_SCHEMA_V3 || value.seatId !== recipientSeatId ||
+		!Array.isArray(value.cards) || value.cards.length > 200) return false;
+	const ids = new Set();
+	return value.cards.every(card => Array.isArray(card) && card.length === 3 && OPAQUE.test(card[0] || "") && !ids.has(card[0]) &&
+		(typeof card[1] === "string" && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(card[1])) &&
+		["an", "huo", "di", "feng", "lei", "shui", "guang", "none"].includes(card[2]) && Boolean(ids.add(card[0])));
 }
 function validPendingChoice(value, recipientSeatId, sequence) {
 	if (value === null) return true;
@@ -63,9 +85,44 @@ function validPendingChoice(value, recipientSeatId, sequence) {
 
 const OPERATION_LABELS = Object.freeze({ gongJi: "攻擊", faShu: "法術", unsupported: "合法操作（語意未驗證）" });
 function validManagedChoiceDisplay(value, expected = {}) {
+	if (value?.schema === MANAGED_CHOICE_DISPLAY_SCHEMA_V3) {
+		if (!exact(value, ["schema", "roomId", "hostSessionId", "rootInstanceId", "nativeEventId", "eventInstanceId",
+			"parentEventInstanceId", "eventSequence", "choiceId", "actingSeatId", "connectionGeneration", "captureOrdinal",
+			"nativeCompletionOrdinal", "optionItems"]) || !ID.test(value.roomId || "") ||
+			!/^hs_[a-f0-9]{32}$/.test(value.hostSessionId || "") || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(value.rootInstanceId || "") ||
+			!/^native_event_[a-f0-9]{32}$/.test(value.nativeEventId || "") || !/^event_[1-9][0-9]{0,6}$/.test(value.eventInstanceId || "") ||
+			!/^event_[1-9][0-9]{0,6}$/.test(value.parentEventInstanceId || "") || !Number.isSafeInteger(value.eventSequence) || value.eventSequence < 5 || value.eventSequence > 8 ||
+			!/^choice_[A-Za-z0-9_-]{16,64}$/.test(value.choiceId || "") || !ID.test(value.actingSeatId || "") ||
+			!Number.isSafeInteger(value.connectionGeneration) || value.connectionGeneration < 1 || !Number.isSafeInteger(value.captureOrdinal) || value.captureOrdinal < 1 ||
+			!Number.isSafeInteger(value.nativeCompletionOrdinal) || value.nativeCompletionOrdinal < 1 || !Array.isArray(value.optionItems) ||
+			value.optionItems.length < 1 || value.optionItems.length > 64 ||
+			(expected.optionIds && value.optionItems.length !== expected.optionIds.length) ||
+			(expected.roomId !== undefined && value.roomId !== expected.roomId) ||
+			(expected.hostSessionId !== undefined && value.hostSessionId !== expected.hostSessionId) ||
+			(expected.rootInstanceId !== undefined && value.rootInstanceId !== expected.rootInstanceId) ||
+			(expected.eventSequence !== undefined && value.eventSequence !== expected.eventSequence) ||
+			(expected.choiceId !== undefined && value.choiceId !== expected.choiceId) ||
+			(expected.seatId !== undefined && value.actingSeatId !== expected.seatId) ||
+			(expected.nativeEventId !== undefined && value.nativeEventId !== expected.nativeEventId) ||
+			(expected.connectionGeneration !== undefined && value.connectionGeneration !== expected.connectionGeneration) ||
+			(expected.captureOrdinal !== undefined && value.captureOrdinal !== expected.captureOrdinal) ||
+			(expected.nativeCompletionOrdinal !== undefined && value.nativeCompletionOrdinal !== expected.nativeCompletionOrdinal) ||
+			(expected.seatIds && !expected.seatIds.includes(value.actingSeatId))) return false;
+		for (const [index, item] of value.optionItems.entries()) {
+			if (!exact(item, ["index", "operationKind", "targetSeatId", "cardViewId", "completeness"]) || item.index !== index ||
+				!Object.hasOwn(OPERATION_LABELS, item.operationKind) ||
+				(item.targetSeatId !== null && (!ID.test(item.targetSeatId) || (expected.seatIds && !expected.seatIds.includes(item.targetSeatId)))) ||
+				(item.cardViewId !== null && !HAND_VIEW.test(item.cardViewId || "")) ||
+				!(["partial", "opaque"].includes(item.completeness)) ||
+				(item.operationKind === "unsupported" ? item.completeness !== "opaque" : item.completeness !== "partial")) return false;
+		}
+		return true;
+	}
+	const v2 = value?.schema === MANAGED_CHOICE_DISPLAY_SCHEMA_V2;
 	if (!exact(value, ["schema", "roomId", "hostSessionId", "rootInstanceId", "nativeEventId", "eventInstanceId",
 		"parentEventInstanceId", "eventSequence", "choiceId", "actingSeatId", "connectionGeneration", "captureOrdinal",
-		"nativeCompletionOrdinal", "optionItems"]) || value.schema !== MANAGED_CHOICE_DISPLAY_SCHEMA ||
+		"nativeCompletionOrdinal", "optionItems"]) ||
+		(!v2 && value.schema !== MANAGED_CHOICE_DISPLAY_SCHEMA) ||
 		!ID.test(value.roomId || "") || !/^hs_[a-f0-9]{32}$/.test(value.hostSessionId || "") ||
 		!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(value.rootInstanceId || "") ||
 		!/^native_event_[a-f0-9]{32}$/.test(value.nativeEventId || "") ||
@@ -92,36 +149,57 @@ function validManagedChoiceDisplay(value, expected = {}) {
 		value.optionItems.some((item, index) => item?.optionId !== expected.optionIds[index]))) return false;
 	if (expected.seatIds && (!Array.isArray(expected.seatIds) || !expected.seatIds.includes(value.actingSeatId))) return false;
 	for (const item of value.optionItems) {
-		if (!exact(item, ["optionId", "operationKind", "label", "targetSeatId", "cardViewId", "completeness"]) ||
+		if (!exact(item, v2 ? ["optionId", "operationKind", "label", "targetSeatId", "cardViewId", "cardLinkStatus", "completeness"] :
+			["optionId", "operationKind", "label", "targetSeatId", "cardViewId", "completeness"]) ||
 			!/^native_option_[a-f0-9]{32}$/.test(item.optionId || "") ||
 			!Object.hasOwn(OPERATION_LABELS, item.operationKind) || item.label !== OPERATION_LABELS[item.operationKind] ||
 			(item.targetSeatId !== null && (!ID.test(item.targetSeatId) || (expected.seatIds && !expected.seatIds.includes(item.targetSeatId)))) ||
-			item.cardViewId !== null || !["partial", "opaque"].includes(item.completeness) ||
+			(item.cardViewId !== null && (!v2 || !HAND_VIEW.test(item.cardViewId || ""))) ||
+			(v2 && item.cardLinkStatus !== (item.cardViewId === null ? "unavailable" : "verified_physical_hand_v1")) ||
+			!["partial", "opaque"].includes(item.completeness) ||
 			(item.operationKind === "unsupported" ? item.completeness !== "opaque" : item.completeness !== "partial")) return false;
 	}
 	return true;
+}
+
+function createCompactManagedChoiceDisplay(display, expected = {}) {
+	if (!validManagedChoiceDisplay(display, expected) || display.schema === MANAGED_CHOICE_DISPLAY_SCHEMA_V3) return reject("V3_MANAGED_CHOICE_DISPLAY_REJECTED");
+	const message = Object.freeze({ ...display, schema: MANAGED_CHOICE_DISPLAY_SCHEMA_V3,
+		optionItems: Object.freeze(display.optionItems.map((item, index) => Object.freeze({ index, operationKind: item.operationKind,
+			targetSeatId: item.targetSeatId, cardViewId: item.cardViewId, completeness: item.completeness }))) });
+	if (!validManagedChoiceDisplay(message, expected)) return reject("V3_MANAGED_CHOICE_DISPLAY_REJECTED");
+	return Object.freeze({ ok: true, message });
 }
 
 // Display labels are derived only from the authenticated native candidate kind.
 // Physical card identity is deliberately omitted until a same-capture provenance
 // link to this option is available; names and ordering are not sufficient proof.
 function createManagedChoiceDisplay(input) {
-	if (!exact(input, ["roomId", "hostSessionId", "rootInstanceId", "nativeEventId", "eventInstanceId", "parentEventInstanceId",
+	const hasCardLink = Object.hasOwn(input || {}, "optionCardViewIds");
+	if (!exact(input, hasCardLink ? ["roomId", "hostSessionId", "rootInstanceId", "nativeEventId", "eventInstanceId", "parentEventInstanceId",
+		"eventSequence", "choiceId", "actingSeatId", "connectionGeneration", "captureOrdinal", "nativeCompletionOrdinal",
+		"seatIds", "optionIds", "optionKinds", "optionTargetSeatIds", "optionCardViewIds"] :
+		["roomId", "hostSessionId", "rootInstanceId", "nativeEventId", "eventInstanceId", "parentEventInstanceId",
 		"eventSequence", "choiceId", "actingSeatId", "connectionGeneration", "captureOrdinal", "nativeCompletionOrdinal",
 		"seatIds", "optionIds", "optionKinds", "optionTargetSeatIds"]) || !Array.isArray(input.seatIds) ||
 		!Array.isArray(input.optionIds) || !input.optionKinds || Object.getPrototypeOf(input.optionKinds) !== Object.prototype ||
 		!input.optionTargetSeatIds || Object.getPrototypeOf(input.optionTargetSeatIds) !== Object.prototype ||
 		Object.keys(input.optionKinds).sort().join(",") !== [...input.optionIds].sort().join(",") ||
-		Object.keys(input.optionTargetSeatIds).sort().join(",") !== [...input.optionIds].sort().join(",")) return reject("V3_MANAGED_CHOICE_DISPLAY_REJECTED");
+		Object.keys(input.optionTargetSeatIds).sort().join(",") !== [...input.optionIds].sort().join(",") ||
+		(hasCardLink && (!input.optionCardViewIds || Object.getPrototypeOf(input.optionCardViewIds) !== Object.prototype ||
+			Object.keys(input.optionCardViewIds).sort().join(",") !== [...input.optionIds].sort().join(",") ||
+			input.optionIds.some(id => input.optionCardViewIds[id] !== null && !HAND_VIEW.test(input.optionCardViewIds[id] || ""))))) return reject("V3_MANAGED_CHOICE_DISPLAY_REJECTED");
 	const optionItems = input.optionIds.map(optionId => {
 		const kind = input.optionKinds[optionId];
 		const operationKind = kind === "gongJi" || kind === "faShu" ? kind : "unsupported";
 		const targetSeatId = input.optionTargetSeatIds[optionId];
+		const cardViewId = hasCardLink ? input.optionCardViewIds[optionId] : null;
 		return Object.freeze({ optionId, operationKind, label: OPERATION_LABELS[operationKind],
 			targetSeatId: input.seatIds.includes(targetSeatId) ? targetSeatId : null,
-			cardViewId: null, completeness: operationKind === "unsupported" ? "opaque" : "partial" });
+			cardViewId, ...(hasCardLink ? { cardLinkStatus: cardViewId === null ? "unavailable" : "verified_physical_hand_v1" } : {}),
+			completeness: operationKind === "unsupported" ? "opaque" : "partial" });
 	});
-	const message = Object.freeze({ schema: MANAGED_CHOICE_DISPLAY_SCHEMA, roomId: input.roomId, hostSessionId: input.hostSessionId,
+	const message = Object.freeze({ schema: hasCardLink ? MANAGED_CHOICE_DISPLAY_SCHEMA_V2 : MANAGED_CHOICE_DISPLAY_SCHEMA, roomId: input.roomId, hostSessionId: input.hostSessionId,
 		rootInstanceId: input.rootInstanceId, nativeEventId: input.nativeEventId, eventInstanceId: input.eventInstanceId,
 		parentEventInstanceId: input.parentEventInstanceId, eventSequence: input.eventSequence, choiceId: input.choiceId,
 		actingSeatId: input.actingSeatId, connectionGeneration: input.connectionGeneration, captureOrdinal: input.captureOrdinal,
@@ -189,7 +267,7 @@ function createSeatStateDisplayMessage(input) {
 		stateSequence: input.stateSequence, stateVersion: input.stateVersion, replayFromSequence: input.replayFromSequence,
 		publicState: Object.freeze({ ...input.publicState, resources: Object.freeze({ ...input.publicState.resources }),
 			players: Object.freeze(input.publicState.players.map(player => Object.freeze({ ...player }))) }),
-		privateState: Object.freeze({ schema: HAND_DISPLAY_SCHEMA, seatId: input.recipientSeatId,
+		privateState: Object.freeze({ schema: input.privateState.schema, seatId: input.recipientSeatId,
 			cards: Object.freeze(input.privateState.cards.map(card => Object.freeze({ ...card }))) }),
 		pendingChoice: input.pendingChoice === null ? null : Object.freeze({ ...input.pendingChoice,
 			optionIds: Object.freeze([...input.pendingChoice.optionIds]) }) }) });
@@ -266,5 +344,7 @@ function validateCappedReadOnlySeatState(message, expected = {}) {
 
 module.exports = { SCHEMA, CAPPED_SCHEMA, HAND_DISPLAY_SCHEMA, DISPLAY_SCHEMA, createSeatStateMessage, validateSeatStateMessage,
 	createSeatStateDisplayMessage, validateSeatStateDisplayMessage,
-	MANAGED_CHOICE_DISPLAY_SCHEMA, createManagedChoiceDisplay, validateManagedChoiceDisplay,
+	HAND_DISPLAY_SCHEMA_V2, HAND_DISPLAY_SCHEMA_V3, validatePrivateHandDisplay, createCompactPrivateHandDisplay, validateCompactPrivateHandDisplay,
+	MANAGED_CHOICE_DISPLAY_SCHEMA, MANAGED_CHOICE_DISPLAY_SCHEMA_V2, MANAGED_CHOICE_DISPLAY_SCHEMA_V3, createManagedChoiceDisplay,
+	createCompactManagedChoiceDisplay, validateManagedChoiceDisplay,
 	createCappedReadOnlySeatState, validateCappedReadOnlySeatState, acceptsReconnectCursor };

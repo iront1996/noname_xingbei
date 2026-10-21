@@ -5,6 +5,8 @@
 // choice, native-command, or authority-event handler.
 const crypto = require("node:crypto");
 const { CAPPED_SCHEMA, DISPLAY_SCHEMA, validateSeatStateMessage, validateSeatStateDisplayMessage, validateManagedChoiceDisplay,
+	createCompactManagedChoiceDisplay, validatePrivateHandDisplay,
+	createCompactPrivateHandDisplay,
 	validateCappedReadOnlySeatState } = require("./v3-seat-state-protocol.js");
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -31,7 +33,7 @@ function same(a, b) { return a === b; }
 function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, seatIds, hostSessionId,
 	engineBuildId, rootInstanceId, hostPid, hostSessionManager, seatRegistry, bindSeat, disconnectSeat,
 	getExperimentalActionCapability = null, getCurrentManagedChoice = null, submitManagedChoice = null,
-	beforeSocketWrite = async () => {}, randomBytes = crypto.randomBytes, maxReplayMessages = 8,
+	beforeSocketWrite = async () => {}, onDiagnostic = null, randomBytes = crypto.randomBytes, maxReplayMessages = 8,
 	maxMessageBytes = MAX_MESSAGE_BYTES, maxConnections = DEFAULT_MAX_CONNECTIONS,
 	maxMessagesPerWindow = DEFAULT_MAX_MESSAGES_PER_WINDOW, now = Date.now } = {}) {
 	if (typeof WebSocketServer !== "function" || !ID.test(roomId || "") || !Array.isArray(seatIds) ||
@@ -42,7 +44,8 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 		typeof hostSessionManager.inspect !== "function" || typeof hostSessionManager.subscribeLifecycle !== "function" ||
 		!seatRegistry || typeof seatRegistry.bindConnection !== "function" || typeof seatRegistry.disconnect !== "function" ||
 		typeof seatRegistry.authorizeSeatBinding !== "function" || typeof bindSeat !== "function" ||
-		typeof disconnectSeat !== "function" || typeof beforeSocketWrite !== "function" || typeof randomBytes !== "function" ||
+		typeof disconnectSeat !== "function" || typeof beforeSocketWrite !== "function" ||
+		(onDiagnostic !== null && typeof onDiagnostic !== "function") || typeof randomBytes !== "function" ||
 		(getExperimentalActionCapability !== null && typeof getExperimentalActionCapability !== "function") ||
 		(getCurrentManagedChoice !== null && typeof getCurrentManagedChoice !== "function") ||
 		(submitManagedChoice !== null && typeof submitManagedChoice !== "function") ||
@@ -56,6 +59,13 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 		throw new TypeError("V3_SEAT_STATE_GATEWAY_CONFIG_INVALID");
 	}
 	const immutableSeats = Object.freeze([...seatIds]);
+	function diagnostic(stage, requestId = null, details = {}) {
+		if (!onDiagnostic) return;
+		const safeDetails = {};
+		for (const key of ["reason", "valid", "byteLength", "originalByteLength", "maxMessageBytes", "optionCount", "schemaValid", "callbackOk"])
+			if (Object.hasOwn(details, key) && (typeof details[key] === "string" || typeof details[key] === "boolean" || Number.isSafeInteger(details[key]))) safeDetails[key] = details[key];
+		try { onDiagnostic(Object.freeze({ stage, requestId, ...safeDetails })); } catch (_) {}
+	}
 	const server = new WebSocketServer({ host: "127.0.0.1", port: 0, maxPayload: maxMessageBytes, perMessageDeflate: false });
 	const clients = new Set();
 	const peers = new Set();
@@ -95,13 +105,18 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 			current.checkpointAvailable === false;
 	}
 
-	function currentChoiceFor(context) {
-		if (!getCurrentManagedChoice || !hostIsCurrent()) return null;
+	function currentChoiceFor(context, requestId = null) {
+		if (!getCurrentManagedChoice || !hostIsCurrent()) { diagnostic("choice_lookup_rejected", requestId, { reason: "host_unavailable" }); return null; }
 		let capability, choice;
-		try { capability = getExperimentalActionCapability(roomId); choice = getCurrentManagedChoice({ roomId, hostSessionId,
-			eventSequence: capability.nextAuthorityEventSequence, seatId: context.seatId }); } catch (_) { return null; }
+		try {
+			capability = getExperimentalActionCapability(roomId);
+			diagnostic("choice_lookup_started", requestId);
+			choice = getCurrentManagedChoice({ roomId, hostSessionId,
+				eventSequence: capability.nextAuthorityEventSequence, seatId: context.seatId });
+		} catch (_) { diagnostic("choice_lookup_rejected", requestId, { reason: "lookup_exception" }); return null; }
+		diagnostic("choice_lookup_completed", requestId, { valid: Boolean(choice), optionCount: Array.isArray(choice?.options) ? choice.options.length : 0 });
 		if (!choice || Object.getPrototypeOf(choice) !== Object.prototype ||
-			Object.keys(choice).sort().join(",") !== "choiceId,connectionGeneration,deadlineAt,display,eventSequence,hostSessionId,nativeEventId,options,roomId,seatId,state" ||
+			Object.keys(choice).sort().join(",") !== "choiceId,connectionGeneration,deadlineAt,display,eventSequence,hostSessionId,nativeEventId,options,ownHandDisplay,roomId,seatId,state" ||
 			choice.roomId !== roomId || choice.hostSessionId !== hostSessionId || choice.seatId !== context.seatId ||
 			choice.seatId !== capability.activeSeatId || choice.eventSequence !== capability.nextAuthorityEventSequence ||
 			choice.connectionGeneration !== context.connectionGeneration ||
@@ -111,24 +126,57 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 			choice.options.some(optionId => !/^native_option_[a-f0-9]{32}$/.test(optionId)) || new Set(choice.options).size !== choice.options.length ||
 			!validateManagedChoiceDisplay(choice.display, { roomId, hostSessionId, rootInstanceId, eventSequence: choice.eventSequence,
 				choiceId: choice.choiceId, seatId: context.seatId, nativeEventId: choice.nativeEventId,
-				connectionGeneration: context.connectionGeneration, optionIds: choice.options, seatIds: immutableSeats })) return null;
+				connectionGeneration: context.connectionGeneration, optionIds: choice.options, seatIds: immutableSeats })) {
+			diagnostic("choice_validation_rejected", requestId, { reason: "identity_or_display_schema" }); return null;
+		}
+		const displayItems = choice.display.optionItems;
+		const linkedCardViewIds = displayItems.map((item, index) => choice.display.schema === "xingbei_v3_managed_choice_display_v3"
+			? item.cardViewId : item.cardViewId);
+		if ((choice.ownHandDisplay !== null && !validatePrivateHandDisplay(choice.ownHandDisplay, context.seatId)) ||
+			(linkedCardViewIds.some(id => id !== null) && (!choice.ownHandDisplay ||
+				linkedCardViewIds.some(id => id !== null && !choice.ownHandDisplay.cards.some(card => card.viewId === id))))) {
+			diagnostic("choice_validation_rejected", requestId, { reason: "private_hand_display_binding" }); return null;
+		}
+		diagnostic("choice_validation_completed", requestId, { valid: true, schemaValid: true, optionCount: choice.options.length });
 		return choice;
 	}
 
-	function send(socket, payload, context = null) {
+	function send(socket, payload, context = null, requestId = null, diagnosticType = null) {
 		return Promise.resolve().then(async () => {
-			if (closed || !live(socket)) return false;
-			if (context) await beforeSocketWrite(Object.freeze({ roomId, seatId: context.seatId,
-				connectionGeneration: context.connectionGeneration, stateSequence: payload.stateSequence || null }));
+			if (closed || !live(socket)) { diagnostic("socket_write_rejected", requestId, { reason: "socket_not_live" }); return false; }
+			if (context) {
+				try { await beforeSocketWrite(Object.freeze({ roomId, seatId: context.seatId,
+					connectionGeneration: context.connectionGeneration, stateSequence: payload.stateSequence || null })); }
+				catch (_) { diagnostic("before_socket_write_failed", requestId, { reason: "write_guard_failed" }); throw _; }
+			}
+			if (diagnosticType) diagnostic("before_socket_write_completed", requestId);
 			// Delivery liveness is separate from action capability. At the Event 8
 			// ceiling the host may still authenticate/ACK/read a terminal projection,
 			// while every choice/action path continues to require hostIsCurrent().
 			const hostValid = hostSessionIsCurrent();
 			if (closed || !live(socket) || (context && (currentBySeat.get(context.seatId) !== context || !hostValid))) return false;
-			const encoded = JSON.stringify(payload);
-			if (Buffer.byteLength(encoded, "utf8") > maxMessageBytes) return false;
+			let encoded;
+			try { encoded = JSON.stringify(payload); }
+			catch (_) { diagnostic("serialization_failed", requestId, { reason: "json_serialization_failed" }); return false; }
+			const byteLength = Buffer.byteLength(encoded, "utf8");
+			if (diagnosticType) diagnostic("serialization_completed", requestId, { byteLength, maxMessageBytes });
+			if (byteLength > maxMessageBytes) {
+				diagnostic("message_size_rejected", requestId, { reason: "message_too_large", byteLength, maxMessageBytes });
+				return false;
+			}
 			const delivered = await new Promise(resolve => {
-				try { socket.send(encoded, error => resolve(!error)); } catch (_) { resolve(false); }
+				try {
+					if (diagnosticType) diagnostic("socket_send_called", requestId, { byteLength, maxMessageBytes });
+					socket.send(encoded, error => {
+						if (diagnosticType) diagnostic("socket_send_callback", requestId, { callbackOk: !error,
+							reason: error ? "websocket_callback_error" : "ok", byteLength, maxMessageBytes });
+						resolve(!error);
+					});
+				} catch (_) {
+					if (diagnosticType) diagnostic("socket_send_callback", requestId, { callbackOk: false,
+						reason: "websocket_send_threw", byteLength, maxMessageBytes });
+					resolve(false);
+				}
 			});
 			if (!delivered && live(socket)) { try { socket.close(1011, "send failed"); } catch (_) {} }
 			return delivered;
@@ -316,15 +364,54 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 			return;
 		}
 		if (exact(message, ["type", "requestId"]) && message.type === "choice_read" && REQUEST.test(message.requestId || "")) {
-			const choice = currentChoiceFor(context);
+			diagnostic("choice_read_received", message.requestId);
+			const sendChoiceReply = async payload => {
+				const delivered = await send(context.socket, payload, context, message.requestId,
+					payload.type === "gateway_error" ? "choice_read_error" : "choice_read");
+				if (!delivered && live(context.socket)) {
+					try { context.socket.close(1011, "choice read delivery failed"); } catch (_) {}
+				}
+				return delivered;
+			};
+			const choice = currentChoiceFor(context, message.requestId);
 			if (!choice) {
-				await send(context.socket, Object.freeze({ type: "managed_choice_unavailable", requestId: message.requestId }), context);
+				await sendChoiceReply(Object.freeze({ type: "managed_choice_unavailable", requestId: message.requestId }));
 				return;
 			}
-			await send(context.socket, Object.freeze({ type: "managed_choice", requestId: message.requestId, roomId,
+			const compactHand = choice.ownHandDisplay ? createCompactPrivateHandDisplay(choice.ownHandDisplay, context.seatId) : null;
+			if (choice.ownHandDisplay && !compactHand?.ok) {
+				await sendChoiceReply(Object.freeze({ type: "gateway_error", code: "CHOICE_PRIVATE_HAND_INVALID", requestId: message.requestId }));
+				return;
+			}
+			let payload = Object.freeze({ type: "managed_choice", requestId: message.requestId, roomId,
 				seatId: context.seatId, choiceId: choice.choiceId, eventSequence: choice.eventSequence,
 				connectionGeneration: context.connectionGeneration, deadlineAt: choice.deadlineAt,
-				optionIds: Object.freeze([...choice.options]), display: choice.display }), context);
+				optionIds: Object.freeze([...choice.options]), display: choice.display, privateHandDisplay: compactHand?.message || null });
+			try {
+				const originalByteLength = Buffer.byteLength(JSON.stringify(payload), "utf8");
+				diagnostic("choice_response_prepared", message.requestId, { byteLength: originalByteLength, originalByteLength,
+					maxMessageBytes, optionCount: choice.options.length });
+				if (originalByteLength > maxMessageBytes) {
+					const compact = createCompactManagedChoiceDisplay(choice.display, { roomId, hostSessionId, rootInstanceId,
+						eventSequence: choice.eventSequence, choiceId: choice.choiceId, seatId: context.seatId,
+						nativeEventId: choice.nativeEventId, connectionGeneration: context.connectionGeneration,
+						optionIds: choice.options, seatIds: immutableSeats });
+					if (compact.ok) payload = Object.freeze({ ...payload, display: compact.message });
+					const compactByteLength = Buffer.byteLength(JSON.stringify(payload), "utf8");
+					diagnostic("choice_response_compaction_completed", message.requestId, { valid: compact.ok,
+						byteLength: compactByteLength, originalByteLength, maxMessageBytes });
+					if (!compact.ok || compactByteLength > maxMessageBytes) {
+						const error = Object.freeze({ type: "gateway_error", code: "CHOICE_RESPONSE_TOO_LARGE", requestId: message.requestId });
+						await sendChoiceReply(error);
+						return;
+					}
+				}
+			} catch (_) {
+				diagnostic("choice_response_preparation_failed", message.requestId, { reason: "json_serialization_failed" });
+				await sendChoiceReply(Object.freeze({ type: "gateway_error", code: "CHOICE_RESPONSE_INVALID", requestId: message.requestId }));
+				return;
+			}
+			await sendChoiceReply(payload);
 			return;
 		}
 		if (exact(message, ["type", "requestId", "choiceId", "optionId"]) && message.type === "choice_submit" &&

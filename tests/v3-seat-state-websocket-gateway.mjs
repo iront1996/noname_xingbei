@@ -14,7 +14,7 @@ const hostSessionId = `hs_${"a".repeat(32)}`;
 const engineBuildId = "b".repeat(64);
 const rootInstanceId = `native_root_${"c".repeat(32)}`;
 
-function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {}, onSeatBound = () => true, capped = false } = {}) {
+function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {}, onSeatBound = () => true, capped = false, onDiagnostic = null } = {}) {
 	const registry = createManagedRoomSeatRegistry();
 	assert.equal(registry.createRoom(roomId, seatIds), true);
 	const credentials = new Map(seatIds.map(seatId => [seatId, registry.issueSeat(roomId, seatId).credential]));
@@ -78,6 +78,7 @@ function setupGateway({ beforeSocketWrite = async () => {}, gatewayOptions = {},
 			if (bindings.get(seatId)?.connectionId === connectionId) bindings.delete(seatId);
 		},
 		beforeSocketWrite,
+		onDiagnostic,
 		...gatewayOptions,
 	});
 	return { registry, credentials, bindings, projectionCalls, manager, gateway, listeners };
@@ -165,6 +166,23 @@ async function readState(socket, requestId, lastSeenSequence) {
 
 async function readChoice(socket, requestId) {
 	const response = onceMessage(socket);
+	socket.send(JSON.stringify({ type: "choice_read", requestId }));
+	return response;
+}
+
+async function readChoiceWithWireLength(socket, requestId) {
+	const response = new Promise((resolve, reject) => {
+		const cleanup = () => { clearTimeout(timer); socket.off("message", onMessage); socket.off("close", onClose); };
+		const timer = setTimeout(() => { cleanup(); reject(new Error("WS_CHOICE_READ_PENDING_TIMEOUT")); }, 3000);
+		const onClose = () => { cleanup(); reject(new Error("WS_SOCKET_CLOSED")); };
+		const onMessage = data => {
+			const raw = data.toString("utf8");
+			cleanup();
+			resolve({ message: JSON.parse(raw), byteLength: Buffer.byteLength(raw, "utf8") });
+		};
+		socket.on("message", onMessage);
+		socket.once("close", onClose);
+	});
 	socket.send(JSON.stringify({ type: "choice_read", requestId }));
 	return response;
 }
@@ -396,7 +414,7 @@ test("experimental choice submission is capability-scoped, actor-only, controlle
 				return display.ok ? { roomId: choice.roomId, hostSessionId: choice.hostSessionId, seatId: choice.seatId,
 					choiceId: choice.choiceId, nativeEventId: choice.nativeEventId, eventSequence: choice.eventSequence,
 					connectionGeneration: generation, display: display.message,
-					options: choice.options, deadlineAt: choice.deadlineAt, state: choice.state } : null;
+					options: choice.options, deadlineAt: choice.deadlineAt, ownHandDisplay: null, state: choice.state } : null;
 			},
 			submitManagedChoice: message => controller.submitChoice(message),
 		},
@@ -426,7 +444,7 @@ test("experimental choice submission is capability-scoped, actor-only, controlle
 					captureOrdinal: 2, nativeCompletionOrdinal: 10, optionItems: [
 						{ optionId: optionIds[0], operationKind: "gongJi", label: "攻擊", targetSeatId: "seat_b", cardViewId: null, completeness: "partial" },
 						{ optionId: optionIds[1], operationKind: "faShu", label: "法術", targetSeatId: "seat_c", cardViewId: null, completeness: "partial" },
-					] } });
+					] }, privateHandDisplay: null });
 		} else {
 			assert.deepEqual(await readChoice(socket, `choice_read_${seatId}`), { type: "managed_choice_unavailable", requestId: `choice_read_${seatId}` });
 			const spoofed = onceMessage(socket);
@@ -450,4 +468,110 @@ test("experimental choice submission is capability-scoped, actor-only, controlle
 	assert.equal(fixture.manager.inspect(roomId).authorityStateRevision, 4, "transport/controller acceptance is not authority acceptance");
 	assert.equal(fixture.manager.inspect(roomId).nextAuthorityEventSequence, 5);
 	assert.equal(fixture.gateway.inspect().closed, false);
+});
+
+function setupChoiceReadFixture({ optionCount, rootInstanceId: captureRootInstanceId, maxMessageBytes, diagnostics }) {
+	const { createManagedChoiceController } = require("../game/server-managed-choice-controller.js");
+	const optionIds = Array.from({ length: optionCount }, (_, index) => `native_option_${index.toString(16).padStart(32, "0")}`);
+	const controller = createManagedChoiceController({ isHostSessionActive: () => true, authorizeManagedHost: () => true,
+		authorizeSeatBinding: () => true, authenticateSeat: () => true, onResolved: () => true, deliveryRetryMs: 60000 });
+	const capability = Object.freeze({ schema: "xingbei_v3_managed_action_capability_v1", roomId, hostSessionId,
+		engineBuildId, rootInstanceId: captureRootInstanceId, hostPid: 4567, authorityRevision: 4, nextAuthorityEventSequence: 5,
+		authorityCeiling: 8, activeSeatId: "seat_a", captureVerified: true });
+	const fixture = setupGateway({ onDiagnostic: entry => diagnostics.push(entry), gatewayOptions: { maxMessageBytes,
+		rootInstanceId: captureRootInstanceId, getExperimentalActionCapability: () => capability,
+		getCurrentManagedChoice: () => {
+			const choice = controller.findPendingChoice({ roomId, hostSessionId, eventSequence: 5, seatId: "seat_a" });
+			if (!choice) return null;
+			const optionKinds = Object.fromEntries(optionIds.map((optionId, index) => [optionId, index % 2 ? "faShu" : "gongJi"]));
+			const optionTargetSeatIds = Object.fromEntries(optionIds.map((optionId, index) => [optionId, seatIds[index % 3 + 1]]));
+			const display = createManagedChoiceDisplay({ roomId, hostSessionId, rootInstanceId: captureRootInstanceId,
+				nativeEventId: choice.nativeEventId, eventInstanceId: "event_41", parentEventInstanceId: "event_40",
+				eventSequence: 5, choiceId: choice.choiceId, actingSeatId: "seat_a", connectionGeneration: 1,
+				captureOrdinal: 2, nativeCompletionOrdinal: 10, seatIds, optionIds, optionKinds, optionTargetSeatIds });
+			return display.ok ? { roomId, hostSessionId, seatId: "seat_a", choiceId: choice.choiceId,
+				nativeEventId: choice.nativeEventId, eventSequence: 5, connectionGeneration: 1,
+				display: display.message, options: optionIds, deadlineAt: choice.deadlineAt,
+				ownHandDisplay: null, state: choice.state } : null;
+		}, submitManagedChoice: () => true,
+	} });
+	const opened = controller.openChoice({ protocol: 1, roomId, hostSessionId, seatId: "seat_a",
+		nativeEventId: `native_event_${"d".repeat(32)}`, eventSequence: 5, options: optionIds,
+		trusteeOption: optionIds[0], deadlineAt: Date.now() + 60000, kind: "managed_host", hostProof: "trusted-test" });
+	assert.equal(opened.ok, true);
+	return { controller, fixture, opened, optionIds };
+}
+
+test("choice_read response exactly at the 4096-byte UTF-8 limit reaches and settles the matching pending read", async t => {
+	const requestId = "q".repeat(60);
+	const diagnostics = [];
+	const { controller, fixture, opened, optionIds } = setupChoiceReadFixture({ optionCount: 15,
+		rootInstanceId: `native_root_${"r".repeat(16)}`, maxMessageBytes: 4096, diagnostics });
+	t.after(async () => { await fixture.gateway.close(); controller.cleanupHostSession(roomId, hostSessionId); });
+	const { url } = await fixture.gateway.listen();
+	const socket = await connect(url);
+	t.after(() => closeSocket(socket));
+	assert.equal((await authenticate(socket, "seat_a", fixture.credentials.get("seat_a"))).type, "seat_authenticated");
+	const choice = controller.findPendingChoice({ roomId, hostSessionId, eventSequence: 5, seatId: "seat_a" });
+	const display = createManagedChoiceDisplay({ roomId, hostSessionId, rootInstanceId: `native_root_${"r".repeat(16)}`,
+		nativeEventId: choice.nativeEventId, eventInstanceId: "event_41", parentEventInstanceId: "event_40",
+		eventSequence: 5, choiceId: opened.choice.choiceId, actingSeatId: "seat_a", connectionGeneration: 1,
+		captureOrdinal: 2, nativeCompletionOrdinal: 10, seatIds, optionIds,
+		optionKinds: Object.fromEntries(optionIds.map((optionId, index) => [optionId, index % 2 ? "faShu" : "gongJi"])),
+		optionTargetSeatIds: Object.fromEntries(optionIds.map((optionId, index) => [optionId, seatIds[index % 3 + 1]])) });
+	assert.equal(display.ok, true);
+	const payload = { type: "managed_choice", requestId, roomId, seatId: "seat_a", choiceId: opened.choice.choiceId,
+		eventSequence: 5, connectionGeneration: 1, deadlineAt: opened.choice.deadlineAt, optionIds,
+		display: display.message, privateHandDisplay: null };
+	const serialized = JSON.stringify(payload);
+	assert.equal(Buffer.byteLength(serialized, "utf8"), 4096, "the valid response must be exactly at the configured byte limit");
+	assert.ok(serialized.length < 4096, "multibyte labels prove UTF-8 byte count, not JavaScript string length, defines the cap");
+	const received = await readChoiceWithWireLength(socket, requestId);
+	assert.equal(received.message.type, "managed_choice");
+	assert.equal(received.message.requestId, requestId);
+	assert.equal(received.byteLength, 4096, "the exact-boundary response must reach the WebSocket client");
+	const requestEvents = diagnostics.filter(entry => entry.requestId === requestId);
+	assert.ok(requestEvents.some(entry => entry.stage === "choice_response_prepared" && entry.byteLength === 4096));
+	assert.ok(requestEvents.some(entry => entry.stage === "serialization_completed" && entry.byteLength === 4096 && entry.maxMessageBytes === 4096));
+	assert.ok(requestEvents.some(entry => entry.stage === "socket_send_callback" && entry.callbackOk === true));
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId).state, "pending", "a read does not resolve or consume the game choice");
+	assert.equal(fixture.gateway.inspect().closed, false);
+});
+
+test("choice_read one UTF-8 byte over the real 4096-byte cap returns a bounded correlated error and settles", async t => {
+	const requestId = "q".repeat(64);
+	const diagnostics = [];
+	const { controller, fixture, opened } = setupChoiceReadFixture({ optionCount: 21,
+		rootInstanceId: `native_root_${"r".repeat(92)}`, maxMessageBytes: 4096, diagnostics });
+	t.after(async () => { await fixture.gateway.close(); controller.cleanupHostSession(roomId, hostSessionId); });
+	const { url } = await fixture.gateway.listen();
+	const socket = await connect(url);
+	t.after(() => closeSocket(socket));
+	assert.equal((await authenticate(socket, "seat_a", fixture.credentials.get("seat_a"))).type, "seat_authenticated");
+	const reply = await readChoiceWithWireLength(socket, requestId);
+	assert.deepEqual(reply.message, { type: "gateway_error", code: "CHOICE_RESPONSE_TOO_LARGE", requestId });
+	assert.ok(reply.byteLength <= 4096, "the explicit error packet itself must fit the configured limit");
+	const responseEvents = diagnostics.filter(entry => entry.requestId === requestId);
+	assert.ok(responseEvents.some(entry => entry.stage === "choice_response_prepared" && entry.byteLength > 4096));
+	assert.ok(responseEvents.some(entry => entry.stage === "choice_response_compaction_completed" && entry.valid === true && entry.byteLength === 4097),
+		"the compact valid representation is exactly one UTF-8 byte over the production cap and must be rejected");
+	assert.ok(responseEvents.some(entry => entry.stage === "choice_response_compaction_completed" && entry.byteLength === 4097 && entry.maxMessageBytes === 4096));
+	assert.ok(responseEvents.some(entry => entry.stage === "serialization_completed" && entry.byteLength === reply.byteLength && entry.maxMessageBytes === 4096));
+	assert.equal(responseEvents.find(entry => entry.stage === "socket_send_callback")?.callbackOk, true);
+	assert.equal(controller.inspect(roomId, opened.choice.choiceId).state, "pending", "the failed display read settles explicitly without resolving or consuming the native choice");
+	assert.equal(fixture.gateway.inspect().closed, false, "a bounded request error must preserve the healthy peer");
+});
+
+test("choice_read write failure closes the peer so its pending request can terminate instead of hanging", async t => {
+	const fixture = setupGateway({ beforeSocketWrite: async () => { throw Error("TEST_WRITE_GUARD_FAILURE"); } });
+	t.after(async () => fixture.gateway.close());
+	const { url } = await fixture.gateway.listen();
+	const socket = await connect(url);
+	t.after(() => closeSocket(socket));
+	assert.equal((await authenticate(socket, "seat_a", fixture.credentials.get("seat_a"))).type, "seat_authenticated");
+	const closed = new Promise(resolve => socket.once("close", (code, reason) => resolve({ code, reason: reason.toString() })));
+	socket.send(JSON.stringify({ type: "choice_read", requestId: "write_failure_request" }));
+	const result = await closed;
+	assert.equal(result.code, 1011);
+	assert.equal(fixture.gateway.inspect().clientCount, 0);
 });

@@ -10,7 +10,7 @@ const observation = () => ({ schema: "managed_event5_review_observation_v1", rev
 	submissionEnabled: false, authorityRevision: 4, nextAuthorityEventSequence: 5, seedAuthorized: false, checkpointAvailable: false,
 	roomId: "room_a", hostSessionId: `hs_${"a".repeat(32)}`, engineBuildId: digest("b"), rootInstanceId: `native_root_${"c".repeat(32)}`,
 	seatIds: ["seat_a", "seat_b", "seat_c", "seat_d"], predecessorDigest: digest("d"), predecessorDigestDomain: "xingbei_authority_state_v2",
-	successorCaptureSchema: "xingbei_native_private_successor_preaction_commitment_v1", phaseBoundaryReleased: true,
+	successorCaptureSchema: "xingbei_native_private_successor_preaction_commitment_v2", phaseBoundaryReleased: true,
 	phaseOverCompleted: true, phaseOverCompletionOrdinal: 40, priorSeatId: "seat_a", nextSeatId: "seat_b", successorNativeEventId: event(1),
 	nativeCompletionOrdinal: 45, preActionCaptureOrdinal: 1, nextInputWaiting: true, choiceAllocated: false,
 	nativeDeliveryAllowed: false, authoritySubmissionAllowed: false, connectionGeneration: 3, connectionAuthenticated: true,
@@ -28,7 +28,7 @@ test("Event #5 review provenance independently supports only manager-observed pr
 	}
 	assert.equal(result.classifications.phaseOver.status, "manager_scoped_review_candidate", "only validated atomic phaseOver evidence may support this field");
 	assert.equal(result.digestDomains.authorityPredecessor.value, "xingbei_authority_state_v2");
-	assert.equal(result.digestDomains.privateSuccessorCapture.value, "xingbei_native_private_successor_preaction_commitment_v1");
+	assert.equal(result.digestDomains.privateSuccessorCapture.value, "xingbei_native_private_successor_preaction_commitment_v2");
 	assert.equal(result.digestDomains.crossDomainEquality.status, "unavailable");
 	assert.equal(result.digestDomains.bridgeFromEvent4ToSuccessor.status, "unavailable");
 	for (const field of ["choice", "delivery", "nativeSettlement", "postStateFence"]) {

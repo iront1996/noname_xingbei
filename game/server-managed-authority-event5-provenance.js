@@ -27,7 +27,7 @@ function assessEvent5Evidence(proposal, managerObservation) {
 		Number.isSafeInteger(managerObservation.nativeCompletionOrdinal) && Number.isSafeInteger(managerObservation.phaseOverCompletionOrdinal) &&
 		managerObservation.phaseOverCompletionOrdinal > 0 && managerObservation.nativeCompletionOrdinal > managerObservation.phaseOverCompletionOrdinal &&
 		managerObservation.predecessorDigestDomain === "xingbei_authority_state_v2" &&
-		managerObservation.successorCaptureSchema === "xingbei_native_private_successor_preaction_commitment_v1" &&
+		managerObservation.successorCaptureSchema === "xingbei_native_private_successor_preaction_commitment_v2" &&
 		managerObservation.preActionCaptureOrdinal === 1 && managerObservation.phaseBoundaryReleased === true && managerObservation.phaseOverCompleted === true &&
 		managerObservation.nextInputWaiting === true && managerObservation.choiceAllocated === false &&
 		managerObservation.authoritySubmissionAllowed === false && managerObservation.nativeDeliveryAllowed === false &&

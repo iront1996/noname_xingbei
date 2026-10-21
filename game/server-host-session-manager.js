@@ -3191,18 +3191,42 @@ function createHostSessionManager({
 			choice.options.length !== candidate.options.length || choice.options.some((option, index) => option !== candidate.options[index])) return null;
 		const capture = eventSequence === 5 ? record.successorPreActionCaptureResult : eventSequence === 6 ? record.event6PreActionCaptureResult :
 			eventSequence === 7 ? record.experimentalEvent7PreActionCaptureResult : record.experimentalEvent8PreActionCaptureResult;
+		const envelope = eventSequence === 5 ? record.successorPreActionCaptureEnvelope : eventSequence === 6 ? record.event6PreActionCaptureEnvelope :
+			eventSequence === 7 ? record.experimentalEvent7PreActionCaptureEnvelope : record.experimentalEvent8PreActionCaptureEnvelope;
+		let optionCardViewIds, ownHandDisplay = null;
+		if (envelope && capture?.commitment && envelope.fence?.candidateOptionCardIds) {
+			if (!record.v3SeatStateProjection) {
+				const key = randomBytes(32);
+				if (Buffer.isBuffer(key) && key.length === 32) {
+					try { record.v3SeatStateProjection = createManagedV3SeatStateProjection({ key }); }
+					catch (_) { record.v3SeatStateProjection = null; }
+					finally { key.fill(0); }
+				}
+			}
+			const linked = record.v3SeatStateProjection?.projectChoiceCardViewIds({ envelope, capture, roomId,
+				hostSessionId: record.sessionId, engineBuildId: record.engineBuildId,
+				rootInstanceId: record.xingbeiAuthorityContext?.rootInstanceId, seatIds: record.seatIds,
+				recipientSeatId: seatId, nativeEventId: candidate.nativeEventId, eventInstanceId: candidate.eventInstanceId,
+				parentEventInstanceId: candidate.parentEventInstanceId, optionIds: choice.options });
+			if (linked?.ok === true && Object.values(linked.optionCardViewIds).some(cardViewId => cardViewId !== null)) {
+				optionCardViewIds = linked.optionCardViewIds;
+				ownHandDisplay = linked.privateHandDisplay;
+			}
+		}
 		const { createManagedChoiceDisplay } = require("./v3-seat-state-protocol.js");
-		const display = createManagedChoiceDisplay({ roomId, hostSessionId: record.sessionId,
+		const displayInput = { roomId, hostSessionId: record.sessionId,
 			rootInstanceId: record.xingbeiAuthorityContext.rootInstanceId, nativeEventId: candidate.nativeEventId,
 			eventInstanceId: candidate.eventInstanceId, parentEventInstanceId: candidate.parentEventInstanceId,
 			eventSequence, choiceId: choice.choiceId, actingSeatId: seatId, connectionGeneration: candidate.connectionGeneration,
 			captureOrdinal: capture?.captureOrdinal, nativeCompletionOrdinal: capture?.nativeCompletionOrdinal,
 			seatIds: record.seatIds, optionIds: choice.options, optionKinds: candidate.optionKinds,
-			optionTargetSeatIds: candidate.optionTargetSeatIds });
+			optionTargetSeatIds: candidate.optionTargetSeatIds };
+		if (optionCardViewIds) displayInput.optionCardViewIds = optionCardViewIds;
+		const display = createManagedChoiceDisplay(displayInput);
 		if (!display.ok) return null;
 		return Object.freeze({ roomId, hostSessionId, seatId, choiceId: choice.choiceId, nativeEventId: choice.nativeEventId,
 			eventSequence, deadlineAt: choice.deadlineAt, connectionGeneration: candidate.connectionGeneration,
-			options: Object.freeze([...choice.options]), display: display.message, state: "pending" });
+			options: Object.freeze([...choice.options]), display: display.message, ownHandDisplay, state: "pending" });
 	}
 
 	// Read-only review evidence assembled from already accepted manager state.

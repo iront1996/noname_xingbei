@@ -137,7 +137,7 @@ export async function launchV3TestUiBrowser({executable,origin,startupTimeoutMs=
    const info=await page();await configure(info,{seatId,capability:existing.capability,roomId:existing.roomId});return info;
   }
   async function clickControl(seatId,control){
-   const allowed=new Set(['createRoom','joinRoom','ready','unready','connectGame','refreshRoom']);
+   const allowed=new Set(['createRoom','joinRoom','ready','unready','connectGame','refreshRoom','readChoice']);
    if(!allowed.has(control))throw Error('V3_UI_CONTROL_NOT_ALLOWED');
    const info=await pageForSeat(seatId);
    await evaluate(info.session,`window.v3TestClient.clickControl(${JSON.stringify(control)})`);
@@ -159,10 +159,13 @@ export async function launchV3TestUiBrowser({executable,origin,startupTimeoutMs=
    return Object.freeze({seatId});
   }
   async function inspectPage(seatId){const info=await pageForSeat(seatId);return await evaluate(info.session,'window.v3TestClient?.state()||null');}
+  async function selectHandCard(seatId,viewId){if(typeof viewId!=="string"||!/^[A-Za-z0-9_-]{16,96}$/.test(viewId))throw Error('V3_UI_HAND_VIEW_ID_INVALID');
+   const info=await pageForSeat(seatId);return await evaluate(info.session,`window.v3TestClient?.selectHandCard(${JSON.stringify(viewId)})===true`);}
   function peerFor(pageInfo){
-   const emitter=new EventEmitter();let readyState=0,dead=false,queue=[],polling=false,authStarted=false,wasConnected=false;
+   const emitter=new EventEmitter();let readyState=0,dead=false,queue=[],polling=false,authStarted=false,wasConnected=false,observedMessageTypes=[];
    const peer={
     get readyState(){return readyState;},
+    get observedMessageTypes(){return [...observedMessageTypes];},
     on(event,fn){emitter.on(event,fn);if(event==='message'&&queue.length)queue.splice(0).forEach(value=>queueMicrotask(()=>emitter.emit('message',value)));if(event==='open'&&readyState===1)queueMicrotask(()=>emitter.emit('open'));return peer;},
     once(event,fn){emitter.once(event,fn);if(event==='message'&&queue.length){const value=queue.shift();queueMicrotask(()=>emitter.emit('message',value));}if(event==='open'&&readyState===1)queueMicrotask(()=>emitter.emit('open'));return peer;},
     off(event,fn){emitter.off(event,fn);return peer;},
@@ -192,7 +195,8 @@ export async function launchV3TestUiBrowser({executable,origin,startupTimeoutMs=
    function stopPolling(){if(polling){polling=false;pollers.delete(timer);clearInterval(timer);}}
    const timer=setInterval(async()=>{if(dead||polling)return;polling=true;try{
     const messages=await evaluate(pageInfo.session,'window.v3TestClient?.drainMessages()||[]');
-    for(const message of messages||[]){const data=Buffer.from(JSON.stringify(message));if(emitter.listenerCount('message'))emitter.emit('message',data);else queue.push(data);}
+    for(const message of messages||[]){if(typeof message?.type==='string'){observedMessageTypes.push(message.type);if(observedMessageTypes.length>16)observedMessageTypes.shift();}
+     const data=Buffer.from(JSON.stringify(message));if(emitter.listenerCount('message'))emitter.emit('message',data);else queue.push(data);}
     const connected=await evaluate(pageInfo.session,'window.v3TestClient?.state().connected===true');
     if(connected)wasConnected=true;
     if(!connected&&authStarted&&wasConnected&&readyState===1){readyState=3;emitter.emit('close');}
@@ -209,11 +213,11 @@ export async function launchV3TestUiBrowser({executable,origin,startupTimeoutMs=
    const pageInfo=peerPages.get(peer);if(!pageInfo)throw Error('V3_UI_PEER_NOT_FOUND');
    const end=Date.now()+5000;let state=null;
    while(Date.now()<end){state=await evaluate(pageInfo.session,'window.v3TestClient?.state()||null');
-    if(state?.connected&&state.generation)return state;
+    if(state?.connected&&state.generation)return {...state,peerMessageTypes:peer.observedMessageTypes};
     await new Promise(r=>setTimeout(r,20));}
    throw Error(`V3_UI_BROWSER_AUTH_TIMEOUT:${state?.lastErrorCode||'NO_GATEWAY_ERROR'}:${state?.connected?'connected':'disconnected'}`);
   }
-  return Object.freeze({createPeer,createPage,configureRoom,reloadPage,clickControl,inspectPage,inspectPeer,origin,
+  return Object.freeze({createPeer,createPage,configureRoom,reloadPage,clickControl,inspectPage,selectHandCard,inspectPeer,origin,
    inspect:()=>Object.freeze({pageCount:contexts.size,contextCount:contexts.size,closed}),
    cleanupStatus:()=>Object.freeze({closed,processExited,contextCount:contexts.size,peerCount:peers.size,
     timerCount:pollers.size,profileRemoved}),close(){

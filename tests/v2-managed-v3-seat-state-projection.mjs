@@ -5,6 +5,7 @@ import test from "node:test";
 const require = createRequire(import.meta.url);
 const { createManagedV3SeatStateProjection } = require("../game/server-managed-v3-seat-state-projection.js");
 const { createManagedSuccessorPreActionCapture } = require("../game/server-managed-successor-preaction-capture.js");
+const { createManagedChoiceDisplay, validateManagedChoiceDisplay } = require("../game/v3-seat-state-protocol.js");
 const seats = ["seat_a", "seat_b", "seat_c", "seat_d"];
 const scope = { roomId: "room_v3", hostSessionId: `hs_${"a".repeat(32)}`, engineBuildId: "b".repeat(64),
 	rootInstanceId: `native_root_${"c".repeat(32)}` };
@@ -24,8 +25,9 @@ function envelope() {
 		{ cardId: "secret-card-d", zone: "hand", ownerSeatId: "seat_d", position: 0 },
 		{ cardId: "draw-card", zone: "draw", ownerSeatId: null, position: 0 },
 	].map((card, index) => ({ ...card, duYou: null, kind: "physical_dom_card_v1", mingGe: "red", name: "gongJi", xiBie: "huo" }));
-	return { schema: "xingbei_native_private_successor_preaction_capture_v1", captureOrdinal: 1, ...scope,
+	return { schema: "xingbei_native_private_successor_preaction_capture_v2", captureOrdinal: 1, ...scope,
 		seatIds: [...seats], fence: { captureLockKind: "successor_native_gate_v1", candidateOptionIds: [option], candidateOptionKinds: { [option]: "gongJi" },
+			candidateOptionCardIds: { [option]: null },
 			choiceAllocated: false, controllerStatus: "not_allocated", deliveryCount: 0, eventInstanceId: "event_5", eventName: "gongJiOrFaShu",
 			eventStep: 2, eventStackConsistent: true, gamePaused: true, inputWaiting: true, nativeCompletionOrdinal: 12,
 			nativeEventId: `native_event_${"2".repeat(32)}`, parentChain, pendingInputCount: 1, previousNativeEventId: previous.nativeEventId,
@@ -104,7 +106,7 @@ test("opt-in v3 hand display binds ordered real ledger names to this seat's opaq
 	for (let index = 0; index < seats.length; index++) {
 		const message = messages[index].message;
 		assert.equal(message.schema, "xingbei_v3_seat_state_v3");
-		assert.equal(message.privateState.schema, "xingbei_v3_private_hand_display_v1");
+		assert.equal(message.privateState.schema, "xingbei_v3_private_hand_display_v2");
 		assert.equal(message.privateState.seatId, seats[index]);
 		assert.deepEqual(message.privateState.cards, [{ viewId: message.privateState.cards[0].viewId, name: "gongJi", position: 0, xiBie: "huo" }]);
 		assert.equal(message.privateState.cards[0].viewId, messages[index].message.privateState.cards[0].viewId);
@@ -117,4 +119,46 @@ test("opt-in v3 hand display binds ordered real ledger names to this seat's opaq
 	}
 	assert.deepEqual(messages.map(item => item.message.publicState), messages.map(item => messages[0].message.publicState));
 	projection.destroy();
+});
+
+test("choice-to-physical-card link is derived from the same accepted capture and exact recipient hand row", () => {
+	const native = envelope(), option = native.fence.candidateOptionIds[0];
+	native.fence.candidateOptionCardIds[option] = "secret-card-b";
+	native.cardLedger.cards.push({ cardId: "secret-card-b2", zone: "hand", ownerSeatId: "seat_b", position: 1,
+		duYou: null, kind: "physical_dom_card_v1", mingGe: "red", name: "gongJi", xiBie: "huo" });
+	const captureManager = createManagedSuccessorPreActionCapture({ ...scope, seatIds: seats, sessionId: scope.hostSessionId,
+		previousCapture: previous, previousActorSeatId: "seat_a", seatBinding: binding, key: Buffer.alloc(32, 7) });
+	const accepted = captureManager.commit(native, { nativeEventId: native.fence.nativeEventId, seatId: "seat_b" });
+	const projection = createManagedV3SeatStateProjection({ key: Buffer.alloc(32, 8) });
+	const ownHand = projection.project({ envelope: native, capture: accepted, ...scope, seatIds: seats, recipientSeatId: "seat_b",
+		connectionGeneration: 1, stateSequence: 1, includeOwnCardDisplay: true }).message.privateState.cards;
+	const linked = projection.projectChoiceCardViewIds({ envelope: native, capture: accepted, ...scope, seatIds: seats,
+		recipientSeatId: "seat_b", nativeEventId: accepted.nativeEventId, eventInstanceId: accepted.eventInstanceId,
+		parentEventInstanceId: accepted.parentEventInstanceId, optionIds: [option] });
+	assert.equal(linked.ok, true);
+	assert.equal(linked.optionCardViewIds[option], ownHand[0].viewId);
+	assert.notEqual(linked.optionCardViewIds[option], ownHand[1].viewId, "same-name physical cards remain distinct identities");
+	assert.deepEqual(linked.privateHandDisplay.cards.map(card => card.viewId), ownHand.map(card => card.viewId),
+		"choice links and the private hand display derive from the same accepted native capture");
+	assert.equal(linked.privateHandDisplay.seatId, "seat_b");
+	const display = createManagedChoiceDisplay({ roomId: scope.roomId, hostSessionId: scope.hostSessionId, rootInstanceId: scope.rootInstanceId,
+		nativeEventId: accepted.nativeEventId, eventInstanceId: accepted.eventInstanceId, parentEventInstanceId: accepted.parentEventInstanceId,
+		eventSequence: 5, choiceId: "choice_0123456789abcdef", actingSeatId: "seat_b", connectionGeneration: 1,
+		captureOrdinal: accepted.captureOrdinal, nativeCompletionOrdinal: accepted.nativeCompletionOrdinal, seatIds: seats,
+		optionIds: [option], optionKinds: { [option]: "gongJi" }, optionTargetSeatIds: { [option]: "seat_c" },
+		optionCardViewIds: linked.optionCardViewIds });
+	assert.equal(display.ok, true);
+	assert.equal(display.message.schema, "xingbei_v3_managed_choice_display_v2");
+	assert.equal(display.message.optionItems[0].cardLinkStatus, "verified_physical_hand_v1");
+	assert.equal(display.message.optionItems[0].cardViewId, ownHand[0].viewId);
+	assert.equal(JSON.stringify(display.message).includes("secret-card-b"), false);
+	assert.equal(validateManagedChoiceDisplay(display.message, { seatIds: seats, optionIds: [option], seatId: "seat_b" }), true);
+	const forged = structuredClone(native); forged.fence.candidateOptionCardIds[option] = "secret-card-a";
+	assert.equal(projection.projectChoiceCardViewIds({ envelope: forged, capture: accepted, ...scope, seatIds: seats,
+		recipientSeatId: "seat_b", nativeEventId: accepted.nativeEventId, eventInstanceId: accepted.eventInstanceId,
+		parentEventInstanceId: accepted.parentEventInstanceId, optionIds: [option] }).ok, false,
+		"another player's physical card cannot be linked to this actor's option");
+	const virtual = structuredClone(native); virtual.fence.candidateOptionCardIds[option] = null;
+	assert.equal(virtual.fence.candidateOptionCardIds[option], null, "virtual/viewAs options remain explicitly unlinked");
+	projection.destroy(); captureManager.destroy();
 });

@@ -4726,7 +4726,7 @@ async function snapshotNativePreActionCapture(message, successor = false) {
 	try {
 		const result = await cdp.send("Runtime.evaluate", { expression: `(()=>{
 			const command=${JSON.stringify(command)},event6Successor=${JSON.stringify(event6Successor)},event7Successor=${JSON.stringify(event7Successor)},event8Successor=${JSON.stringify(event8Successor)},state=window.__v2NativeStartDiagnosticState,managed=window.__v2ManagedEngine,
-				core=managed?.core,game=core?.game,status=core?._status,manager=status?.eventManager,gate=state?.nativeInputResumeGate,
+				core=managed?.core,get=core?.get,game=core?.game,status=core?._status,manager=status?.eventManager,gate=state?.nativeInputResumeGate,
 				event=gate?.event,ledger=state?.nativeEventCompletionLedger;
 			if(!state||!game||!status||!manager||manager.rootEvent!==state.root||manager.rootEvent?.name!=='game'||game.me!==null||
 				state.rootInstanceId!==command.rootInstanceId||!Array.isArray(game.players)||game.players.length!==4||game.players.some(player=>player.ws)||
@@ -4816,7 +4816,36 @@ async function snapshotNativePreActionCapture(message, successor = false) {
 				if(typeof player.name1!=='string'||typeof player.side!=='boolean'||!Number.isSafeInteger(player.hp)||!Number.isSafeInteger(player.maxHp)||!Number.isSafeInteger(player.zhiLiao)||
 					typeof player.isDead!=='function'||!Number.isSafeInteger(limit)||!Number.isSafeInteger(baoShi)||!Number.isSafeInteger(shuiJing))throw Error('NATIVE_PREACTION_CAPTURE_PLAYER_SOURCE_UNSUPPORTED');
 				return {seatId,position,character:player.name1,side:player.side,alive:!player.isDead(),hp:player.hp,maxHp:player.maxHp,zhiLiao:player.zhiLiao,hujiaSupported:false,nengLiang:{baoShi,shuiJing,effectiveLimit:limit}}});
-			const fence=command.successor?{captureLockKind:'successor_native_gate_v1',candidateOptionIds:[...command.candidateOptionIds],
+			const candidateOptionCardIds={};
+			if(command.successor){
+				const actionOptions=window.__v2ManagedNativeActionOptions,gate=state.nativeInputResumeGate;
+				if(!actionOptions||gate?.event!==event||gate?.nativeEventId!==command.nativeEventId||gate?.seatId!==command.seatId||
+					!Array.isArray(command.candidateOptionIds)||!Array.isArray(actor.getCards('h'))||
+					get.select(event.selectCard)?.[0]!==1||get.select(event.selectCard)?.[1]!==1||
+					get.select(event.selectTarget)?.[0]!==1||get.select(event.selectTarget)?.[1]!==1)
+					throw Error('NATIVE_PREACTION_CAPTURE_OPTION_CARD_SOURCE_UNSUPPORTED');
+				const ledgerIdByCard=new Map();
+				for(const card of actor.getCards('h')){const cardId=sidecar.ids.get(card),row=cards.find(item=>item.cardId===cardId);
+					if(!cardId||!row||row.zone!=='hand'||row.ownerSeatId!==actor.playerid)throw Error('NATIVE_PREACTION_CAPTURE_OPTION_CARD_LEDGER_MISMATCH');
+					ledgerIdByCard.set(card,cardId)}
+				const nativeCandidates=new Map((state.nativeInputGate?.candidates||[])
+					.filter(item=>typeof item?.targetSeatId==='string'&&item.targetSeatId!==actor.playerid)
+					.map(item=>[item.optionId,item]));
+				if(nativeCandidates.size!==command.candidateOptionIds.length||command.candidateOptionIds.some(optionId=>!nativeCandidates.has(optionId)))
+					throw Error('NATIVE_PREACTION_CAPTURE_OPTION_CARD_CANDIDATE_SET_MISMATCH');
+				for(const optionId of command.candidateOptionIds){
+					const source=actionOptions.get(optionId),candidate=nativeCandidates.get(optionId);let cardId=null;
+					if(source&&candidate&&source.event===event&&source.seatId===actor.playerid&&source.kind===undefined&&
+						!Object.hasOwn(source,'material')&&!Object.hasOwn(source,'skillId')&&source.card instanceof Element&&source.card.classList?.contains('card')&&
+						actor.getCards('h').includes(source.card)&&game.players.includes(source.target)&&candidate.targetSeatId===source.target.playerid&&
+						candidate.cardName===source.card.name&&candidate.cardType===get.type(source.card,actor)){
+						cardId=ledgerIdByCard.get(source.card)||null;
+						if(!cardId)throw Error('NATIVE_PREACTION_CAPTURE_OPTION_CARD_ID_MISSING')
+					}
+					candidateOptionCardIds[optionId]=cardId;
+				}
+			}
+			const fence=command.successor?{candidateOptionCardIds,captureLockKind:'successor_native_gate_v1',candidateOptionIds:[...command.candidateOptionIds],
 				candidateOptionKinds:{...command.candidateOptionKinds},choiceAllocated:false,controllerStatus:'not_allocated',deliveryCount:0,
 				eventInstanceId:ids[4],eventName:event.name,eventStep:event.step,eventStackConsistent:true,gamePaused:true,inputWaiting:true,
 				nativeCompletionOrdinal:ledger.completionOrdinal,nativeEventId:command.nativeEventId,parentChain,pendingInputCount:1,
@@ -4826,21 +4855,24 @@ async function snapshotNativePreActionCapture(message, successor = false) {
 				eventStackConsistent:true,gamePaused:true,inputWaiting:true,nativeCompletionOrdinal:ledger.completionOrdinal,nativeEventId:command.nativeEventId,
 				parentChain,pendingInputCount:1,rootEventInstanceId:ids[0],rootMatches:true,runnableDescendantCount:0,resultPresent:false,seatId:command.seatId,
 				useCardChildCount:0,useResultCount:0};
-			return {schema:command.successor?'xingbei_native_private_successor_preaction_capture_v1':'xingbei_native_private_pre_action_capture_v1',captureOrdinal:command.captureOrdinal,roomId:command.roomId,hostSessionId:command.hostSessionId,
-				engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,fence:{...fence},cardLedger:{schema:'xingbei_native_private_card_ledger_v1',rootInstanceId:command.rootInstanceId,seatIds,cards},
+			return {schema:command.successor?'xingbei_native_private_successor_preaction_capture_v2':'xingbei_native_private_pre_action_capture_v1',captureOrdinal:command.captureOrdinal,roomId:command.roomId,hostSessionId:command.hostSessionId,
+			engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,fence:{...fence},cardLedger:{schema:'xingbei_native_private_card_ledger_v1',rootInstanceId:command.rootInstanceId,seatIds,cards},
 				effectState:{schema:'xingbei_native_private_effect_state_v1',rootInstanceId:command.rootInstanceId,seatIds,seats:effectSeats},
 				turnResource:{schema:'xingbei_native_private_turn_resource_state_v2',roomId:command.roomId,hostSessionId:command.hostSessionId,
 					engineBuildId:command.engineBuildId,rootInstanceId:command.rootInstanceId,seatIds,fence:{kind:'managed_native_input_waiting_fence_v1',
 						rootMatches:true,eventStackConsistent:true,allChildrenCompleted:false,pendingChildCount:1,captureLocked:true,nativeCompletionOrdinal:ledger.completionOrdinal},
 					turn:{phase:'xingDong',actorSeatId:actor.playerid,phaseLoopSeatId:loopActor.playerid,currentPhaseSeatId:status.currentPhase.playerid,
-						gamePhaseNumber:game.phaseNumber,playerPhaseNumber:actor.phaseNumber,quotas:{gongJiOrFaShu:quotas.gongJiOrFaShu,faShu:quotas.faShu,gongJi:quotas.gongJi},extraActionQueueEmpty:true},resources,seats}}})();`, returnByValue: true }, 5000);
+					gamePhaseNumber:game.phaseNumber,playerPhaseNumber:actor.phaseNumber,quotas:{gongJiOrFaShu:quotas.gongJiOrFaShu,faShu:quotas.faShu,gongJi:quotas.gongJi},extraActionQueueEmpty:true},resources,seats}}})();`, returnByValue: true }, 5000);
 		const envelope = result.result?.value;
 		if (result.exceptionDetails) {
 			const detail = `${result.exceptionDetails.text || ""} ${result.exceptionDetails.exception?.description || ""}`;
 			const code = detail.match(/\b(NATIVE_PREACTION_CAPTURE_[A-Z0-9_]{1,80})\b/)?.[1];
-			throw new Error(code || "NATIVE_PREACTION_CAPTURE_NATIVE_EXTRACTION_REJECTED");
+			const missing = detail.match(/ReferenceError:\s*([A-Za-z_$][\w$]{0,63})\s+is not defined/)?.[1];
+			const safeMissing = new Set(["Element", "get", "window", "core", "game", "state", "manager", "event", "ledger", "command", "actor", "status", "sidecar", "cards", "card", "source", "candidate", "actionOptions", "nativeCandidates", "candidateOptionCardIds"]);
+			const kind = String(result.exceptionDetails.exception?.className || "Error").toUpperCase().replace(/[^A-Z0-9_]/g, "").slice(0, 24) || "ERROR";
+			throw new Error(code || (missing && safeMissing.has(missing) ? `NATIVE_PREACTION_CAPTURE_MISSING_${missing.toUpperCase()}` : `NATIVE_PREACTION_CAPTURE_RUNTIME_${kind}`));
 		}
-		if (!envelope || envelope.schema !== (successor ? "xingbei_native_private_successor_preaction_capture_v1" : "xingbei_native_private_pre_action_capture_v1") || envelope.captureOrdinal !== command.captureOrdinal)
+		if (!envelope || envelope.schema !== (successor ? "xingbei_native_private_successor_preaction_capture_v2" : "xingbei_native_private_pre_action_capture_v1") || envelope.captureOrdinal !== command.captureOrdinal)
 			throw new Error("NATIVE_PREACTION_CAPTURE_NATIVE_EXTRACTION_INVALID");
 		process.send?.({ ...identity, type: event8Successor ? "host_private_event8_preaction_capture" : event7Successor ? "host_private_event7_preaction_capture" : event6Successor ? "host_private_event6_preaction_capture" :
 			successor ? "host_private_successor_preaction_capture" : "host_private_pre_action_capture", requestId: message.requestId, envelope });

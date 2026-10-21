@@ -5,6 +5,7 @@ on:
     branches:
       - feature/connection-health-recovery
       - feature/v2-connection-stability
+      - codex/v2-server-authority-m1
   pull_request:
     branches:
       - feature/v2-connection-stability

@@ -23,9 +23,10 @@ function envelope(captureOrdinal = 1) {
 	const resourceSeats = seats.map((seatId, position) => ({ seatId, position, character: `character_${position}`,
 		side: position < 2, alive: true, hp: 4, maxHp: 4, zhiLiao: 0, hujiaSupported: false,
 		nengLiang: { baoShi: 0, shuiJing: 0, effectiveLimit: 3 } }));
-	return { schema: "xingbei_native_private_successor_preaction_capture_v1", captureOrdinal, roomId: "room_a", hostSessionId: session,
+	return { schema: "xingbei_native_private_successor_preaction_capture_v2", captureOrdinal, roomId: "room_a", hostSessionId: session,
 		engineBuildId: build, rootInstanceId: root, seatIds: [...seats],
 		fence: { captureLockKind: "successor_native_gate_v1", candidateOptionIds: [option], candidateOptionKinds: { [option]: "gongJi" },
+			candidateOptionCardIds: { [option]: null },
 			choiceAllocated: false, controllerStatus: "not_allocated", deliveryCount: 0, eventInstanceId: "event_5", eventName: "gongJiOrFaShu",
 			eventStep: 2, eventStackConsistent: true, gamePaused: true, inputWaiting: true, nativeCompletionOrdinal: 12,
 			nativeEventId: `native_event_${"2".repeat(32)}`, parentChain, pendingInputCount: 1, previousNativeEventId: previous.nativeEventId,
@@ -86,6 +87,8 @@ test("successor gate capture rejects caller claims, stale identities, cross-seat
 		e => { e.fence.runnableDescendantCount = 1; },
 		e => { e.turnResource.turn.actorSeatId = "seat_a"; },
 		e => { e.fence.candidateOptionKinds[Object.keys(e.fence.candidateOptionKinds)[0]] = "arbitrary"; },
+		e => { e.fence.candidateOptionCardIds[Object.keys(e.fence.candidateOptionCardIds)[0]] = "card_1"; },
+		e => { e.fence.candidateOptionCardIds.extra_option = null; },
 	];
 	for (const mutate of mutations) {
 		const capture = createCapture();

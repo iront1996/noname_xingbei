@@ -5,7 +5,7 @@ const { validateNativeCardLedgerSnapshot } = require("./server-managed-native-ca
 const { validateManagedNativeEffectStateSnapshot } = require("./server-managed-native-effect-state.js");
 const { validateNativeTurnResourceProjectionV2 } = require("./server-managed-native-turn-resource-state-v2.js");
 
-const SCHEMA = "xingbei_native_private_successor_preaction_capture_v1";
+const SCHEMA = "xingbei_native_private_successor_preaction_capture_v2";
 const ROOT = /^native_root_[A-Za-z0-9_-]{16,96}$/;
 const EVENT = /^native_event_[a-f0-9]{32}$/;
 const INSTANCE = /^event_[1-9][0-9]{0,6}$/;
@@ -63,7 +63,7 @@ function createManagedSuccessorPreActionCapture({ roomId, sessionId, engineBuild
 				reject("SUCCESSOR_PREACTION_BINDING_INVALID");
 			}
 			const fence = envelope.fence;
-			const fenceKeys = "captureLockKind,candidateOptionIds,candidateOptionKinds,choiceAllocated,controllerStatus,deliveryCount,eventInstanceId,eventName,eventStackConsistent,eventStep,gamePaused,inputWaiting,nativeCompletionOrdinal,nativeEventId,parentChain,pendingInputCount,previousNativeEventId,previousSeatId,rootEventInstanceId,rootMatches,runnableDescendantCount,seatId,useCardChildCount,useResultCount";
+			const fenceKeys = "candidateOptionCardIds,captureLockKind,candidateOptionIds,candidateOptionKinds,choiceAllocated,controllerStatus,deliveryCount,eventInstanceId,eventName,eventStackConsistent,eventStep,gamePaused,inputWaiting,nativeCompletionOrdinal,nativeEventId,parentChain,pendingInputCount,previousNativeEventId,previousSeatId,rootEventInstanceId,rootMatches,runnableDescendantCount,seatId,useCardChildCount,useResultCount";
 			if (!plain(fence) || Object.keys(fence).sort().join(",") !== fenceKeys.split(",").sort().join(",") || fence.captureLockKind !== "successor_native_gate_v1" ||
 				fence.choiceAllocated !== false || fence.controllerStatus !== "not_allocated" || fence.deliveryCount !== 0 ||
 				fence.eventName !== "gongJiOrFaShu" || fence.nativeEventId === previousCapture.nativeEventId || !EVENT.test(fence.nativeEventId || "") ||
@@ -75,7 +75,11 @@ function createManagedSuccessorPreActionCapture({ roomId, sessionId, engineBuild
 				!Number.isSafeInteger(fence.nativeCompletionOrdinal) || fence.nativeCompletionOrdinal <= previousCapture.nativeCompletionOrdinal ||
 				!Array.isArray(fence.parentChain) || fence.parentChain.length !== 5 || !Array.isArray(fence.candidateOptionIds) ||
 				fence.candidateOptionIds.length < 1 || fence.candidateOptionIds.length > 64 || new Set(fence.candidateOptionIds).size !== fence.candidateOptionIds.length ||
-				fence.candidateOptionIds.some(option => !OPTION.test(option)) || !plain(fence.candidateOptionKinds) ||
+				fence.candidateOptionIds.some(option => !OPTION.test(option)) || !plain(fence.candidateOptionCardIds) ||
+				Object.keys(fence.candidateOptionCardIds).sort().join(",") !== [...fence.candidateOptionIds].sort().join(",") ||
+				fence.candidateOptionIds.some(option => fence.candidateOptionCardIds[option] !== null &&
+					(typeof fence.candidateOptionCardIds[option] !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(fence.candidateOptionCardIds[option]))) ||
+				!plain(fence.candidateOptionKinds) ||
 				Object.keys(fence.candidateOptionKinds).sort().join(",") !== [...fence.candidateOptionIds].sort().join(",") ||
 				Object.values(fence.candidateOptionKinds).some(kind => kind !== "gongJi" && kind !== "faShu")) reject("SUCCESSOR_PREACTION_FENCE_INVALID");
 			if (ordinal === 1 && fence.nativeCompletionOrdinal <= previousCapture.nativeCompletionOrdinal || ordinal === 2 &&
@@ -101,6 +105,11 @@ function createManagedSuccessorPreActionCapture({ roomId, sessionId, engineBuild
 				reject("SUCCESSOR_PREACTION_EVENT_BINDING_INVALID");
 			const bindings = { roomId, hostSessionId: sessionId, engineBuildId, rootInstanceId, seatIds };
 			const cardRows = validateNativeCardLedgerSnapshot(envelope.cardLedger, seatIds);
+			for (const optionId of fence.candidateOptionIds) {
+				const cardId = fence.candidateOptionCardIds[optionId];
+				if (cardId !== null && cardRows.filter(row => row.cardId === cardId && row.zone === "hand" && row.ownerSeatId === fence.seatId).length !== 1)
+					reject("SUCCESSOR_PREACTION_OPTION_CARD_PROVENANCE_INVALID");
+			}
 			const effect = validateManagedNativeEffectStateSnapshot(envelope.effectState, bindings);
 			const turn = validateNativeTurnResourceProjectionV2(envelope.turnResource, bindings);
 			if (!cardRows.length || envelope.cardLedger.rootInstanceId !== rootInstanceId || envelope.effectState.rootInstanceId !== rootInstanceId ||
@@ -114,7 +123,7 @@ function createManagedSuccessorPreActionCapture({ roomId, sessionId, engineBuild
 			const stateDigest = crypto.createHash("sha256").update(canonicalize({ scope, fence, cardLedger: envelope.cardLedger,
 				effectState: envelope.effectState, turnResource: turn.canonical }), "utf8").digest("hex");
 			if (ordinal === 1 && stateDigest !== previousStateDigest) reject("SUCCESSOR_PREACTION_REPEAT_STATE_CHANGED");
-			const result = Object.freeze({ schema: "xingbei_native_private_successor_preaction_commitment_v1", schemaVersion: 1,
+			const result = Object.freeze({ schema: "xingbei_native_private_successor_preaction_commitment_v2", schemaVersion: 2,
 				roomId, hostSessionId: sessionId, rootInstanceId, engineBuildId, seatIds: Object.freeze([...seatIds]),
 				captureOrdinal: envelope.captureOrdinal, nativeCompletionOrdinal: fence.nativeCompletionOrdinal, nativeEventId: fence.nativeEventId,
 				eventInstanceId: fence.eventInstanceId, parentEventInstanceId: fence.parentChain[3].eventInstanceId,

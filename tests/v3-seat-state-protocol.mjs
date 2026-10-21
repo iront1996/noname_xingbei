@@ -7,7 +7,8 @@ const require = createRequire(import.meta.url);
 
 const { SCHEMA, CAPPED_SCHEMA, DISPLAY_SCHEMA, HAND_DISPLAY_SCHEMA, createSeatStateMessage, validateSeatStateMessage,
 	createSeatStateDisplayMessage, validateSeatStateDisplayMessage,
-	MANAGED_CHOICE_DISPLAY_SCHEMA, createManagedChoiceDisplay, validateManagedChoiceDisplay,
+	MANAGED_CHOICE_DISPLAY_SCHEMA, createManagedChoiceDisplay, createCompactManagedChoiceDisplay, validateManagedChoiceDisplay,
+	createCompactPrivateHandDisplay, validateCompactPrivateHandDisplay,
 	createCappedReadOnlySeatState, validateCappedReadOnlySeatState, acceptsReconnectCursor } =
 	require("../game/v3-seat-state-protocol.js");
 const { createVerifiedSeatStatePublisher, createSeatStateReceiver } = require("../game/v3-verified-seat-state.js");
@@ -124,6 +125,76 @@ test("managed choice display preserves native option identity and only emits evi
 	assert.equal(JSON.stringify(created.message).includes("secret"), false);
 	assert.equal(createManagedChoiceDisplay({ ...input, optionCardNames: Object.fromEntries(optionIds.map(id => [id, "gongJi"])) }).ok, false,
 		"unreviewed candidate metadata such as card names must not enter the public display contract");
+});
+
+test("choice display v2 accepts only optional recipient-scoped opaque physical hand links", () => {
+	const optionIds = [`native_option_${"1".repeat(32)}`, `native_option_${"2".repeat(32)}`];
+	const input = { roomId: "room_v3_probe", hostSessionId: `hs_${"3".repeat(32)}`, rootInstanceId: `native_root_${"4".repeat(32)}`,
+		nativeEventId: `native_event_${"5".repeat(32)}`, eventInstanceId: "event_30", parentEventInstanceId: "event_29",
+		eventSequence: 5, choiceId: "choice_0123456789abcdef", actingSeatId: "seat_b", connectionGeneration: 2,
+		captureOrdinal: 3, nativeCompletionOrdinal: 19, seatIds, optionIds,
+		optionKinds: { [optionIds[0]]: "gongJi", [optionIds[1]]: "faShu" },
+		optionTargetSeatIds: { [optionIds[0]]: "seat_c", [optionIds[1]]: "seat_d" },
+		optionCardViewIds: { [optionIds[0]]: "view_0123456789abcdef0123456789abcdef0123456789", [optionIds[1]]: null } };
+	const created = createManagedChoiceDisplay(input);
+	assert.equal(created.ok, true);
+	assert.equal(created.message.schema, "xingbei_v3_managed_choice_display_v2");
+	assert.equal(created.message.optionItems[0].cardLinkStatus, "verified_physical_hand_v1");
+	assert.equal(created.message.optionItems[1].cardLinkStatus, "unavailable");
+	assert.equal(validateManagedChoiceDisplay(created.message, { optionIds, seatIds, seatId: "seat_b", connectionGeneration: 2 }), true);
+	const rawId = structuredClone(created.message); rawId.optionItems[0].cardViewId = "native_card_secret_123";
+	assert.equal(validateManagedChoiceDisplay(rawId, { seatIds }), false);
+	const falseLink = structuredClone(created.message); falseLink.optionItems[1].cardLinkStatus = "verified_physical_hand_v1";
+	assert.equal(validateManagedChoiceDisplay(falseLink, { seatIds }), false);
+	const cardlessV1 = createManagedChoiceDisplay({ ...input, optionCardViewIds: undefined });
+	assert.equal(cardlessV1.ok, false, "an explicitly malformed optional capability is not silently downgraded");
+	assert.equal(JSON.stringify(created.message).includes("cardId"), false);
+	assert.equal(JSON.stringify(created.message).includes("proof"), false);
+});
+
+test("compact choice display v3 preserves option-index bindings and only removes redundant wire metadata", () => {
+	const optionIds = Array.from({ length: 12 }, (_, i) => `native_option_${(i + 1).toString(16).padStart(32, "0")}`);
+	const input = { roomId: "room_v3_probe", hostSessionId: `hs_${"3".repeat(32)}`, rootInstanceId: `native_root_${"4".repeat(32)}`,
+		nativeEventId: `native_event_${"5".repeat(32)}`, eventInstanceId: "event_30", parentEventInstanceId: "event_29",
+		eventSequence: 5, choiceId: "choice_0123456789abcdef", actingSeatId: "seat_b", connectionGeneration: 2,
+		captureOrdinal: 3, nativeCompletionOrdinal: 19, seatIds, optionIds,
+		optionKinds: Object.fromEntries(optionIds.map((id, i) => [id, i % 2 ? "faShu" : "gongJi"])),
+		optionTargetSeatIds: Object.fromEntries(optionIds.map((id, i) => [id, seatIds[i % seatIds.length]])),
+		optionCardViewIds: Object.fromEntries(optionIds.map((id, i) => [id, i === 0 ? "view_0123456789abcdef0123456789abcdef" : null])) };
+	const full = createManagedChoiceDisplay(input);
+	assert.equal(full.ok, true);
+	const expected = { roomId: input.roomId, hostSessionId: input.hostSessionId, rootInstanceId: input.rootInstanceId,
+		nativeEventId: input.nativeEventId, eventSequence: input.eventSequence, choiceId: input.choiceId,
+		seatId: input.actingSeatId, connectionGeneration: input.connectionGeneration, captureOrdinal: input.captureOrdinal,
+		nativeCompletionOrdinal: input.nativeCompletionOrdinal, optionIds, seatIds };
+	const compact = createCompactManagedChoiceDisplay(full.message, expected);
+	assert.equal(compact.ok, true);
+	assert.equal(compact.message.schema, "xingbei_v3_managed_choice_display_v3");
+	assert.ok(Buffer.byteLength(JSON.stringify(compact.message)) < Buffer.byteLength(JSON.stringify(full.message)));
+	assert.equal(compact.message.optionItems.length, optionIds.length);
+	assert.deepEqual(compact.message.optionItems.map(item => item.index), optionIds.map((_, index) => index));
+	assert.equal(compact.message.optionItems[0].cardViewId, input.optionCardViewIds[optionIds[0]]);
+	assert.equal(Object.hasOwn(compact.message.optionItems[0], "optionId"), false);
+	assert.equal(Object.hasOwn(compact.message.optionItems[0], "label"), false);
+	assert.equal(validateManagedChoiceDisplay(compact.message, expected), true);
+	const reordered = structuredClone(compact.message); [reordered.optionItems[0], reordered.optionItems[1]] = [reordered.optionItems[1], reordered.optionItems[0]];
+	assert.equal(validateManagedChoiceDisplay(reordered, expected), false, "item order is explicitly bound to the outer opaque option list");
+	const wrongIndex = structuredClone(compact.message); wrongIndex.optionItems[0].index = 1;
+	assert.equal(validateManagedChoiceDisplay(wrongIndex, expected), false);
+});
+
+test("compact private hand wire view preserves recipient-owned card identity and order", () => {
+	const source = { schema: "xingbei_v3_private_hand_display_v2", seatId: "seat_b", cards: [
+		{ viewId: "opaque_view_id_0000000000000001", name: "gongJi", xiBie: "huo", position: 0 },
+		{ viewId: "opaque_view_id_0000000000000002", name: "faShu", xiBie: "shui", position: 1 },
+	] };
+	const compact = createCompactPrivateHandDisplay(source, "seat_b");
+	assert.equal(compact.ok, true);
+	assert.equal(validateCompactPrivateHandDisplay(compact.message, "seat_b"), true);
+	assert.deepEqual(compact.message.cards, source.cards.map(card => [card.viewId, card.name, card.xiBie]));
+	assert.ok(Buffer.byteLength(JSON.stringify(compact.message)) < Buffer.byteLength(JSON.stringify(source)));
+	assert.equal(validateCompactPrivateHandDisplay(compact.message, "seat_c"), false);
+	assert.equal(validateCompactPrivateHandDisplay({ ...compact.message, cards: [["bad"], ...compact.message.cards.slice(1)] }, "seat_b"), false);
 });
 
 test("V3 reconnect cursor fences stale generations and rejects gaps outside the requested replay base", () => {
