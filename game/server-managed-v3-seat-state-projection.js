@@ -3,7 +3,7 @@
 // Isolated V3 projection from one already-accepted successor pre-action
 // envelope. This is not HALL transport and does not authorize a native action.
 const crypto = require("node:crypto");
-const { createSeatStateMessage } = require("./v3-seat-state-protocol.js");
+const { createSeatStateMessage, createSeatStateDisplayMessage } = require("./v3-seat-state-protocol.js");
 const { validateNativeCardLedgerSnapshot } = require("./server-managed-native-card-ledger.js");
 const { validateManagedNativeEffectStateSnapshot } = require("./server-managed-native-effect-state.js");
 const { validateNativeTurnResourceProjectionV2 } = require("./server-managed-native-turn-resource-state-v2.js");
@@ -19,7 +19,7 @@ function createManagedV3SeatStateProjection({ key } = {}) {
 	const privateKey = Buffer.from(key);
 	let destroyed = false;
 	function project({ envelope, capture, roomId, hostSessionId, engineBuildId, rootInstanceId, seatIds,
-	recipientSeatId, connectionGeneration, stateSequence } = {}) {
+	recipientSeatId, connectionGeneration, stateSequence, includeOwnCardDisplay = false } = {}) {
 		if (destroyed) return reject("V3_SEAT_PROJECTION_DESTROYED");
 		if (!envelope || Object.getPrototypeOf(envelope) !== Object.prototype || envelope.schema !== SCHEMA ||
 			envelope.roomId !== roomId || envelope.hostSessionId !== hostSessionId || envelope.engineBuildId !== engineBuildId ||
@@ -67,9 +67,17 @@ function createManagedV3SeatStateProjection({ key } = {}) {
 			.update("xingbei-v3-seat-card-view-v1\0", "utf8")
 			.update(`${roomId}\0${hostSessionId}\0${rootInstanceId}\0${capture.captureOrdinal}\0${recipientSeatId}\0${card.cardId}`, "utf8")
 			.digest("base64url"));
-		const created = createSeatStateMessage({ roomId, seatIds, recipientSeatId, connectionGeneration,
-			stateSequence, stateVersion: stateSequence, replayFromSequence: stateSequence - 1,
-			publicState, privateState: { seatId: recipientSeatId, handCardViewIds }, pendingChoice: null });
+		const privateState = includeOwnCardDisplay === true
+			? { schema: "xingbei_v3_private_hand_display_v1", seatId: recipientSeatId,
+				cards: hand.map((card, index) => ({ viewId: handCardViewIds[index], name: card.name, xiBie: card.xiBie, position: index })) }
+			: { seatId: recipientSeatId, handCardViewIds };
+		const created = includeOwnCardDisplay === true
+			? createSeatStateDisplayMessage({ roomId, seatIds, recipientSeatId, connectionGeneration,
+				stateSequence, stateVersion: stateSequence, replayFromSequence: stateSequence - 1,
+				publicState, privateState, pendingChoice: null })
+			: createSeatStateMessage({ roomId, seatIds, recipientSeatId, connectionGeneration,
+				stateSequence, stateVersion: stateSequence, replayFromSequence: stateSequence - 1,
+				publicState, privateState, pendingChoice: null });
 		if (!created.ok) return reject(created.code);
 		return Object.freeze({ ok: true, message: created.message, source: Object.freeze({ captureOrdinal: capture.captureOrdinal,
 			nativeCompletionOrdinal: capture.nativeCompletionOrdinal, nativeEventId: capture.nativeEventId,

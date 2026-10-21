@@ -3,6 +3,8 @@
 // V3 integration preparation only. This module defines a transport envelope;
 // it does not extract native state, authenticate sockets, or publish messages.
 const SCHEMA = "xingbei_v3_seat_state_v2";
+const HAND_DISPLAY_SCHEMA = "xingbei_v3_private_hand_display_v1";
+const DISPLAY_SCHEMA = "xingbei_v3_seat_state_v3";
 const CAPPED_SCHEMA = "xingbei_v3_capped_readonly_state_v1";
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const OPAQUE = /^[A-Za-z0-9_-]{16,96}$/;
@@ -35,6 +37,19 @@ function validPublicState(value, seatIds) {
 }
 function validPrivateState(value, recipientSeatId) {
 	return exact(value, ["handCardViewIds", "seatId"]) && value.seatId === recipientSeatId && safeOpaqueList(value.handCardViewIds, 200);
+}
+function validHandDisplay(value, recipientSeatId, handCount) {
+	if (!exact(value, ["schema", "seatId", "cards"]) || value.schema !== HAND_DISPLAY_SCHEMA || value.seatId !== recipientSeatId ||
+		!Array.isArray(value.cards) || value.cards.length > 200 || value.cards.length !== handCount) return false;
+	const ids = new Set();
+	for (let index = 0; index < value.cards.length; index++) {
+		const card = value.cards[index];
+		if (!exact(card, ["viewId", "name", "position", "xiBie"]) || !OPAQUE.test(card.viewId || "") || ids.has(card.viewId) ||
+			typeof card.name !== "string" || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(card.name) ||
+			!['an', 'huo', 'di', 'feng', 'lei', 'shui', 'guang', 'none'].includes(card.xiBie) || card.position !== index) return false;
+		ids.add(card.viewId);
+	}
+	return true;
 }
 function validPendingChoice(value, recipientSeatId, sequence) {
 	if (value === null) return true;
@@ -80,6 +95,48 @@ function validateSeatStateMessage(message, expected = {}) {
 		!plain(message.publicState) || !Array.isArray(expected.seatIds) || !validPublicState(message.publicState, expected.seatIds) ||
 		message.publicState.stateVersion !== message.stateVersion || !validPrivateState(message.privateState, message.recipientSeatId) ||
 		!validPendingChoice(message.pendingChoice, message.recipientSeatId, message.stateSequence)) return reject("V3_SEAT_STATE_MESSAGE_REJECTED");
+	return Object.freeze({ ok: true, message });
+}
+
+// Opt-in v3 adds only a recipient's ordered physical card display. Existing v2
+// messages remain byte/schema compatible and continue to carry opaque IDs only.
+function createSeatStateDisplayMessage(input) {
+	if (!plain(input) || !Array.isArray(input.seatIds) || input.seatIds.length < 2 || input.seatIds.length > 8 ||
+		input.seatIds.some(seatId => !ID.test(seatId)) || new Set(input.seatIds).size !== input.seatIds.length ||
+		!ID.test(input.roomId || "") || !ID.test(input.recipientSeatId || "") || !input.seatIds.includes(input.recipientSeatId) ||
+		!Number.isSafeInteger(input.connectionGeneration) || input.connectionGeneration < 1 ||
+		!Number.isSafeInteger(input.stateSequence) || input.stateSequence < 1 || input.stateSequence > MAX_SEQUENCE ||
+		!Number.isSafeInteger(input.stateVersion) || input.stateVersion < 1 || input.stateVersion > MAX_SEQUENCE ||
+		input.replayFromSequence !== input.stateSequence - 1 || !validPublicState(input.publicState, input.seatIds) ||
+		input.publicState.stateVersion !== input.stateVersion || !validHandDisplay(input.privateState, input.recipientSeatId,
+			input.publicState.players.find(player => player.seatId === input.recipientSeatId)?.handCount) ||
+		!validPendingChoice(input.pendingChoice, input.recipientSeatId, input.stateSequence)) return reject("V3_SEAT_DISPLAY_ENVELOPE_REJECTED");
+	return Object.freeze({ ok: true, message: Object.freeze({ schema: DISPLAY_SCHEMA, roomId: input.roomId,
+		recipientSeatId: input.recipientSeatId, connectionGeneration: input.connectionGeneration,
+		stateSequence: input.stateSequence, stateVersion: input.stateVersion, replayFromSequence: input.replayFromSequence,
+		publicState: Object.freeze({ ...input.publicState, resources: Object.freeze({ ...input.publicState.resources }),
+			players: Object.freeze(input.publicState.players.map(player => Object.freeze({ ...player }))) }),
+		privateState: Object.freeze({ schema: HAND_DISPLAY_SCHEMA, seatId: input.recipientSeatId,
+			cards: Object.freeze(input.privateState.cards.map(card => Object.freeze({ ...card }))) }),
+		pendingChoice: input.pendingChoice === null ? null : Object.freeze({ ...input.pendingChoice,
+			optionIds: Object.freeze([...input.pendingChoice.optionIds]) }) }) });
+}
+
+function validateSeatStateDisplayMessage(message, expected = {}) {
+	if (!exact(message, ["schema", "roomId", "recipientSeatId", "connectionGeneration", "stateSequence", "stateVersion",
+		"replayFromSequence", "publicState", "privateState", "pendingChoice"]) || message.schema !== DISPLAY_SCHEMA ||
+		(expected.roomId !== undefined && message.roomId !== expected.roomId) ||
+		(expected.seatId !== undefined && message.recipientSeatId !== expected.seatId) ||
+		(expected.connectionGeneration !== undefined && message.connectionGeneration !== expected.connectionGeneration) ||
+		!ID.test(message.roomId || "") || !ID.test(message.recipientSeatId || "") ||
+		!Number.isSafeInteger(message.connectionGeneration) || message.connectionGeneration < 1 ||
+		!Number.isSafeInteger(message.stateSequence) || message.stateSequence < 1 ||
+		!Number.isSafeInteger(message.stateVersion) || message.stateVersion < 1 ||
+		message.replayFromSequence !== message.stateSequence - 1 || !Array.isArray(expected.seatIds) ||
+		!validPublicState(message.publicState, expected.seatIds) || message.publicState.stateVersion !== message.stateVersion ||
+		!validHandDisplay(message.privateState, message.recipientSeatId,
+			message.publicState.players.find(player => player.seatId === message.recipientSeatId)?.handCount) ||
+		!validPendingChoice(message.pendingChoice, message.recipientSeatId, message.stateSequence)) return reject("V3_SEAT_DISPLAY_MESSAGE_REJECTED");
 	return Object.freeze({ ok: true, message });
 }
 
@@ -134,5 +191,6 @@ function validateCappedReadOnlySeatState(message, expected = {}) {
 	return Object.freeze({ ok: true, message });
 }
 
-module.exports = { SCHEMA, CAPPED_SCHEMA, createSeatStateMessage, validateSeatStateMessage,
+module.exports = { SCHEMA, CAPPED_SCHEMA, HAND_DISPLAY_SCHEMA, DISPLAY_SCHEMA, createSeatStateMessage, validateSeatStateMessage,
+	createSeatStateDisplayMessage, validateSeatStateDisplayMessage,
 	createCappedReadOnlySeatState, validateCappedReadOnlySeatState, acceptsReconnectCursor };

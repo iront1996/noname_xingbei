@@ -23,7 +23,7 @@ function envelope() {
 		{ cardId: "secret-card-c", zone: "hand", ownerSeatId: "seat_c", position: 0 },
 		{ cardId: "secret-card-d", zone: "hand", ownerSeatId: "seat_d", position: 0 },
 		{ cardId: "draw-card", zone: "draw", ownerSeatId: null, position: 0 },
-	].map((card, index) => ({ ...card, duYou: null, kind: "physical_dom_card_v1", mingGe: "red", name: "gongJi", xiBie: "fire" }));
+	].map((card, index) => ({ ...card, duYou: null, kind: "physical_dom_card_v1", mingGe: "red", name: "gongJi", xiBie: "huo" }));
 	return { schema: "xingbei_native_private_successor_preaction_capture_v1", captureOrdinal: 1, ...scope,
 		seatIds: [...seats], fence: { captureLockKind: "successor_native_gate_v1", candidateOptionIds: [option], candidateOptionKinds: { [option]: "gongJi" },
 			choiceAllocated: false, controllerStatus: "not_allocated", deliveryCount: 0, eventInstanceId: "event_5", eventName: "gongJiOrFaShu",
@@ -93,4 +93,28 @@ test("projection rejects cross-seat, stale capture identity, wrong actor, and us
 	projection.destroy();
 	assert.equal(projection.project({ envelope: native, capture: accepted, ...scope, seatIds: seats, recipientSeatId: "seat_b",
 		connectionGeneration: 1, stateSequence: 1 }).code, "V3_SEAT_PROJECTION_DESTROYED");
+});
+
+test("opt-in v3 hand display binds ordered real ledger names to this seat's opaque physical-card view IDs", () => {
+	const { native, accepted } = committed();
+	const projection = createManagedV3SeatStateProjection({ key: Buffer.alloc(32, 10) });
+	const messages = seats.map((recipientSeatId, index) => projection.project({ envelope: native, capture: accepted, ...scope,
+		seatIds: seats, recipientSeatId, connectionGeneration: index + 1, stateSequence: 1, includeOwnCardDisplay: true }));
+	assert.ok(messages.every(item => item.ok), JSON.stringify(messages.map(item => item.code)));
+	for (let index = 0; index < seats.length; index++) {
+		const message = messages[index].message;
+		assert.equal(message.schema, "xingbei_v3_seat_state_v3");
+		assert.equal(message.privateState.schema, "xingbei_v3_private_hand_display_v1");
+		assert.equal(message.privateState.seatId, seats[index]);
+		assert.deepEqual(message.privateState.cards, [{ viewId: message.privateState.cards[0].viewId, name: "gongJi", position: 0, xiBie: "huo" }]);
+		assert.equal(message.privateState.cards[0].viewId, messages[index].message.privateState.cards[0].viewId);
+		assert.equal(JSON.stringify(message).includes(`secret-card-${String.fromCharCode(97 + index)}`), false);
+		assert.equal(JSON.stringify(message).includes('"cardId"'), false);
+		assert.equal(JSON.stringify(message).includes(scope.hostSessionId), false);
+		assert.equal(JSON.stringify(message).includes(accepted.stateDigest), false);
+		for (const otherIndex of seats.keys()) if (otherIndex !== index)
+			assert.equal(JSON.stringify(message).includes(`secret-card-${String.fromCharCode(97 + otherIndex)}`), false);
+	}
+	assert.deepEqual(messages.map(item => item.message.publicState), messages.map(item => messages[0].message.publicState));
+	projection.destroy();
 });

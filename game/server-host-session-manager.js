@@ -3026,7 +3026,9 @@ function createHostSessionManager({
 		const projected = record.v3SeatStateProjection.project({ envelope: activeEnvelope,
 			capture: activeCapture, roomId, hostSessionId: record.sessionId, engineBuildId: record.engineBuildId,
 			rootInstanceId: record.xingbeiAuthorityContext?.rootInstanceId, seatIds: record.seatIds,
-			recipientSeatId: input.recipientSeatId, connectionGeneration: binding.connectionGeneration, stateSequence: nextSequence });
+			recipientSeatId: input.recipientSeatId, connectionGeneration: binding.connectionGeneration, stateSequence: nextSequence,
+			includeOwnCardDisplay: process.env.V3_PRIVATE_HAND_DISPLAY_EXPERIMENT === "1" &&
+				process.env.V2_TEST_BLOCK_EXTERNAL_NETWORK === "1" && process.env.V2_V3_SEAT_STATE_WEBSOCKET_PROBE === "1" });
 		let activeBinding = null, active = sessions.get(roomId), reauthorized = null;
 		try {
 			activeBinding = getCurrentSeatBinding(roomId, input.recipientSeatId);

@@ -4,7 +4,9 @@ import test from "node:test";
 
 const require = createRequire(import.meta.url);
 
-const { SCHEMA, CAPPED_SCHEMA, createSeatStateMessage, validateSeatStateMessage,
+
+const { SCHEMA, CAPPED_SCHEMA, DISPLAY_SCHEMA, HAND_DISPLAY_SCHEMA, createSeatStateMessage, validateSeatStateMessage,
+	createSeatStateDisplayMessage, validateSeatStateDisplayMessage,
 	createCappedReadOnlySeatState, validateCappedReadOnlySeatState, acceptsReconnectCursor } =
 	require("../game/v3-seat-state-protocol.js");
 const { createVerifiedSeatStatePublisher, createSeatStateReceiver } = require("../game/v3-verified-seat-state.js");
@@ -60,6 +62,32 @@ test("V3 seat state envelope rejects cross-seat private data and unknown secret-
 	const injected = createSeatStateMessage(base()).message;
 	assert.equal(validateSeatStateMessage({ ...injected, hostSessionSecret: "not-allowed" }, { seatIds }).ok, false);
 	assert.equal(validateSeatStateMessage({ ...injected, privateState: { ...injected.privateState, otherSeatHand: [] } }, { seatIds }).ok, false);
+});
+
+test("versioned hand display accepts only bounded recipient-owned names and ordered opaque IDs", () => {
+	const input = base();
+	input.privateState = { schema: HAND_DISPLAY_SCHEMA, seatId: "seat_a", cards: [
+		{ viewId: "view_000000000000001", name: "gongJi", position: 0, xiBie: "huo" },
+		{ viewId: "view_000000000000002", name: "shengGuang", position: 1, xiBie: "guang" },
+		{ viewId: "view_000000000000003", name: "anMie", position: 2, xiBie: "an" },
+		{ viewId: "view_000000000000004", name: "faShu", position: 3, xiBie: "none" },
+	] };
+	const created = createSeatStateDisplayMessage(input);
+	assert.equal(created.ok, true);
+	assert.equal(created.message.schema, DISPLAY_SCHEMA);
+	assert.equal(validateSeatStateDisplayMessage(created.message, { roomId: input.roomId, seatId: "seat_a",
+		connectionGeneration: 2, seatIds }).ok, true);
+	assert.equal(validateSeatStateMessage(created.message, { seatIds }).ok, false, "the new version is not silently accepted as v2");
+	const wrongSeat = structuredClone(created.message); wrongSeat.privateState.seatId = "seat_b";
+	assert.equal(validateSeatStateDisplayMessage(wrongSeat, { seatIds }).ok, false);
+	const rawId = structuredClone(created.message); rawId.privateState.cards[0].cardId = "native-card-id";
+	assert.equal(validateSeatStateDisplayMessage(rawId, { seatIds }).ok, false);
+	const badOrder = structuredClone(created.message); badOrder.privateState.cards[1].position = 0;
+	assert.equal(validateSeatStateDisplayMessage(badOrder, { seatIds }).ok, false);
+	const unknownField = structuredClone(created.message); unknownField.privateState.cards[0].name = "<img src=x>";
+	assert.equal(validateSeatStateDisplayMessage(unknownField, { seatIds }).ok, false);
+	const missingHand = structuredClone(created.message); missingHand.privateState.cards.pop();
+	assert.equal(validateSeatStateDisplayMessage(missingHand, { seatIds }).ok, false);
 });
 
 test("V3 reconnect cursor fences stale generations and rejects gaps outside the requested replay base", () => {

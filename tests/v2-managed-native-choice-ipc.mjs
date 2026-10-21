@@ -18,7 +18,7 @@ const { createManagedV3SeatStateWebSocketGateway } = require("../game/server-man
 const { createManagedV3RoomLifecycleCoordinator } = require("../game/server-managed-v3-room-lifecycle-coordinator.js");
 const { prepareNextSeatChoice } = require("../game/server-managed-next-seat-choice-preparation.js");
 const { assessEvent5Evidence } = require("../game/server-managed-authority-event5-provenance.js");
-const { validateSeatStateMessage, validateCappedReadOnlySeatState } = require("../game/v3-seat-state-protocol.js");
+const { validateSeatStateMessage, validateSeatStateDisplayMessage, validateCappedReadOnlySeatState } = require("../game/v3-seat-state-protocol.js");
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const script = path.join(root, "game/v2-managed-chromium-host.mjs");
 const active = typeof process.env.V2_CHROMIUM === "string" && path.isAbsolute(process.env.V2_CHROMIUM);
@@ -111,7 +111,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 	if (process.env.V2_NATIVE_PHASE_BOUNDARY_FENCE === "1") assert.equal(process.env.V2_NATIVE_EVENT_COMPLETION_SEQUENCE, "1",
 		"a held native phase boundary requires the managed native event-completion evidence source");
 	const server = await createV2NativeModuleTestServer({ root });
-	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_V3_SEAT_STATE_PROJECTION_PROBE", "V2_V3_SEAT_STATE_WEBSOCKET_PROBE", "V2_V3_WEBSOCKET_ACTION_PROBE", "V2_V3_CAPPED_STATE_WEBSOCKET_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST", "V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT", "V2_NATIVE_EVENT6_CONTINUATION_PROBE", "V2_NATIVE_EVENT7_CONTINUATION_PROBE"].map(key => [key, process.env[key]]));
+	const old = Object.fromEntries(["V2_GAME_ORIGIN", "V2_PLAYABLE_PROOF", "V2_MANAGED_CHOICE_IPC", "V2_NATIVE_START_DIAGNOSTICS", "V2_NATIVE_PARENT_FENCE_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_AUDIT", "V2_NATIVE_PHASE_BOUNDARY_FENCE", "V2_NATIVE_PHASE_BOUNDARY_STOP_AT_WAIT", "V2_NATIVE_PARENT_FENCE", "V2_NATIVE_REJECT_PARENT_FENCE_EVENT4", "V2_MANAGED_NATIVE_FAULT_INJECTION", "V2_NATIVE_OPENING_DRAW_EVENT3", "V2_NATIVE_REJECT_OPENING_DRAW_EVENT3", "V2_NATIVE_C3_UNIFIED_ROOT", "V2_NATIVE_TEST_RANDOM_SEED", "V2_NATIVE_ACTION_KIND", "V2_NATIVE_YINYANG_FIXTURE", "V2_NATIVE_RESOURCE_SHENGJI_FIXTURE", "V2_NATIVE_JIRIMO_FIXTURE", "V2_NATIVE_JIRIMO_ACTION_PROBE", "V2_NATIVE_JIRIMO_EVENT4_ATOMIC_PAIR", "V2_NATIVE_PREACTION_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_YINYANG_VIEWAS_PROBE", "V2_NATIVE_MANAGED_YINYANG", "V2_NATIVE_RESPONSE_TARGETLESS_FIXTURE", "V2_NATIVE_CARD_LEDGER_PROBE", "V2_NATIVE_EFFECT_STOP_BARRIER", "V2_NATIVE_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_ATOMIC_CAPTURE_PROBE", "V2_NATIVE_MULTI_TURN_INPUT_GATE_PROBE", "V2_NATIVE_EVENT_COMPLETION_SEQUENCE", "V2_NATIVE_MULTI_TURN_COMPLETION_SEQUENCE", "V2_NATIVE_QUOTA_RESET_AUDIT", "V2_NATIVE_DISCONNECT_ACTION_TO_TRUSTEE", "V2_V3_SEAT_STATE_PROJECTION_PROBE", "V2_V3_SEAT_STATE_WEBSOCKET_PROBE", "V2_V3_WEBSOCKET_ACTION_PROBE", "V2_V3_CAPPED_STATE_WEBSOCKET_PROBE", "V2_TEST_BLOCK_EXTERNAL_NETWORK", "V2_TEST_MATCH_RECORD_POST", "V2_EXPERIMENTAL_AUTHORITY_EVENT_LIMIT", "V2_NATIVE_EVENT6_CONTINUATION_PROBE", "V2_NATIVE_EVENT7_CONTINUATION_PROBE", "V3_PRIVATE_HAND_DISPLAY_EXPERIMENT"].map(key => [key, process.env[key]]));
 	old.V2_NATIVE_EVENT8_CONTINUATION_PROBE = process.env.V2_NATIVE_EVENT8_CONTINUATION_PROBE;
 	Object.assign(process.env, { V2_GAME_ORIGIN: server.origin, V2_PLAYABLE_PROOF: "1", V2_MANAGED_CHOICE_IPC: "1", V2_TEST_BLOCK_EXTERNAL_NETWORK: "1" });
 	if (process.env.V2_NATIVE_START_PROBE_MODE === "managed_input_controller_fault_before_apply") process.env.V2_MANAGED_NATIVE_FAULT_INJECTION = "before_native_apply";
@@ -1489,8 +1489,13 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					// Observe the coordinator while startup is pending, then await the
 					// browser response under the startup budget rather than the UI poll budget.
 					event6LogStage("browser-lobby-final-ready-startup-pending");
-					await until(() => lifecycleCoordinator.inspect(roomId)?.state === "running", 90000,
-						() => ({ state: lifecycleCoordinator.inspect(roomId)?.state, host: manager.inspect(roomId)?.state }));
+					const startupState = await until(() => {
+						const roomState = lifecycleCoordinator.inspect(roomId)?.state;
+						return roomState === "running" || roomState === "failed" ? roomState : null;
+					}, 90000, () => ({ state: lifecycleCoordinator.inspect(roomId)?.state,
+						host: manager.inspect(roomId)?.state, failureCode: manager.inspect(roomId)?.failureCode }));
+					assert.equal(startupState, "running", `managed Chromium startup failed: ${JSON.stringify({
+						room: lifecycleCoordinator.inspect(roomId), host: manager.inspect(roomId) })}`);
 					await waitUi(seatId, value => value.lobbyRoom?.state === "running", "READY_RUNNING", 90000);
 				}
 			}
@@ -4050,8 +4055,11 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						const response = receiveWebSocketMessage(socket);
 						socket.send(JSON.stringify({ type: "state_read", requestId: `initial_${seatId}`, lastSeenSequence: 0 }));
 						const view = await response;
-						assert.equal(validateSeatStateMessage(view, { roomId, seatId, connectionGeneration: currentGeneration,
-							seatIds: immutableServerSeatIds }).ok, true);
+						const displayEnabled = process.env.V3_PRIVATE_HAND_DISPLAY_EXPERIMENT === "1";
+						const viewValidation = displayEnabled
+							? validateSeatStateDisplayMessage(view, { roomId, seatId, connectionGeneration: currentGeneration, seatIds: immutableServerSeatIds })
+							: validateSeatStateMessage(view, { roomId, seatId, connectionGeneration: currentGeneration, seatIds: immutableServerSeatIds });
+						assert.equal(viewValidation.ok, true, `seat view protocol rejected: ${viewValidation.code}`);
 						assert.equal(view.stateSequence, 1);
 						assert.equal(view.replayFromSequence, 0);
 						assert.equal(view.pendingChoice, null, "the second-seat diagnostic waiting gate is not a managed choice");
@@ -4059,16 +4067,27 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						assert.equal(view.publicState.phase, "xingDong");
 						assert.deepEqual(view.publicState.players.map(player => player.seatId), immutableServerSeatIds);
 						assert.equal(view.privateState.seatId, seatId);
-						assert.equal(view.privateState.handCardViewIds.length,
-							view.publicState.players.find(player => player.seatId === seatId).handCount,
+						const ownHandCount = view.publicState.players.find(player => player.seatId === seatId).handCount;
+						if (displayEnabled) {
+							assert.equal(view.schema, "xingbei_v3_seat_state_v3");
+							assert.equal(view.privateState.schema, "xingbei_v3_private_hand_display_v1");
+							assert.equal(view.privateState.cards.length, ownHandCount);
+							assert.ok(view.privateState.cards.every((card, index) => card.position === index && /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(card.name) && /^[A-Za-z0-9_-]{16,96}$/.test(card.viewId) && ["an", "huo", "di", "feng", "lei", "shui", "guang", "none"].includes(card.xiBie)));
+							assert.equal(JSON.stringify(view).includes('"cardId"'), false);
+							assert.equal(JSON.stringify(view).includes('"name":"gongJi"'), true,
+								"the recipient receives the actual native card name only in the opt-in v3 hand view");
+						} else {
+						assert.equal(view.privateState.handCardViewIds.length, ownHandCount,
 							"private opaque hand IDs must match only this recipient's public hand count");
 						assert.ok(view.privateState.handCardViewIds.every(id => /^[A-Za-z0-9_-]{16,96}$/.test(id)));
+						assert.equal(JSON.stringify(view).includes('"name":"gongJi"'), false);
+					}
 						const encoded = JSON.stringify(view);
 						for (const secret of [sessionSecret, ...seatCredentials.values()]) assert.equal(encoded.includes(secret), false);
 						assert.equal(encoded.includes(gatewayHost.sessionId), false);
 						assert.equal(encoded.includes(successorCapture.snapshot.stateDigest), false);
 						assert.equal(encoded.includes('"cardId"'), false);
-						assert.equal(encoded.includes('"name":"gongJi"'), false);
+						if (!displayEnabled) assert.equal(encoded.includes('"name":"gongJi"'), false);
 						views.set(seatId, view);
 						const ack = receiveWebSocketMessage(socket);
 						socket.send(JSON.stringify({ type: "state_ack", stateSequence: 1 }));
@@ -4078,12 +4097,31 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					for (const seatId of immutableServerSeatIds) {
 						for (const otherSeatId of immutableServerSeatIds.filter(other => other !== seatId)) {
 							assert.equal(JSON.stringify(views.get(seatId)).includes(`opaque_${otherSeatId}_`), false);
-							for (const privateId of views.get(otherSeatId).privateState.handCardViewIds) {
-								assert.equal(views.get(seatId).privateState.handCardViewIds.includes(privateId), false,
-									"opaque private hand identifiers must be recipient-scoped");
-							}
+							const ownIds = views.get(seatId).schema === "xingbei_v3_seat_state_v3"
+								? views.get(seatId).privateState.cards.map(card => card.viewId) : views.get(seatId).privateState.handCardViewIds;
+							const otherIds = views.get(otherSeatId).schema === "xingbei_v3_seat_state_v3"
+								? views.get(otherSeatId).privateState.cards.map(card => card.viewId) : views.get(otherSeatId).privateState.handCardViewIds;
+							for (const privateId of otherIds) assert.equal(ownIds.includes(privateId), false,
+								"opaque private hand identifiers must be recipient-scoped");
 						}
 						assert.equal(views.get(seatId).privateState.seatId, seatId);
+						if (displayEnabled && playerUiBrowser) {
+							const browserState = await playerUiBrowser.inspectPage(seatId);
+						assert.deepEqual(browserState.ownCardNames, views.get(seatId).privateState.cards.map(card => card.name),
+							"real player page renders only the names from its authenticated private native-card projection");
+						assert.deepEqual(browserState.ownCardXiBie, views.get(seatId).privateState.cards.map(card => card.xiBie),
+							"real player page renders only the finite source-reviewed XiBie values from that projection");
+						assert.deepEqual(browserState.ownCardLabels, views.get(seatId).privateState.cards.map(card => `${card.name} · ${card.xiBie}`),
+							"the visible hand labels match the authenticated server projection exactly");
+						const publicState = views.get(seatId).publicState;
+						assert.equal(browserState.publicActiveSeat, publicState.activeSeatId);
+						assert.equal(browserState.publicPhase, publicState.phase);
+						assert.deepEqual(browserState.publicPlayers, publicState.players.map(player =>
+							`${player.seatId}｜${player.characterId ?? "角色投影未提供"}｜${player.side === null ? "陣營未提供" : player.side ? "紅方" : "藍方"}｜手牌數 ${player.handCount}`));
+						const resource = publicState.resources;
+						assert.equal(browserState.publicResources, `公共資源（已驗證投影）：紅方士氣 ${resource.hongShiQi}／星杯 ${resource.hongXingBei}／寶石 ${resource.hongBaoShiCount}／水晶 ${resource.hongShuiJingCount}；藍方士氣 ${resource.lanShiQi}／星杯 ${resource.lanXingBei}／寶石 ${resource.lanBaoShiCount}／水晶 ${resource.lanShuiJingCount}`);
+							assert.equal(browserState.ownCardNames.length, views.get(seatId).privateState.cards.length);
+						}
 					}
 					const firstHostState = manager.inspect(roomId);
 					const firstHostHandle = launchedHandles.get(firstHostState.sessionId);
@@ -4116,11 +4154,20 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						const freshRead = receiveWebSocketMessage(rebound);
 						rebound.send(JSON.stringify({ type: "state_read", requestId: `rebound_${seatId}`, lastSeenSequence: 1 }));
 						const fresh = await freshRead;
-						assert.equal(validateSeatStateMessage(fresh, { roomId, seatId, connectionGeneration: nextGeneration,
-							seatIds: immutableServerSeatIds }).ok, true);
+						assert.equal((displayEnabled ? validateSeatStateDisplayMessage(fresh, { roomId, seatId, connectionGeneration: nextGeneration,
+							seatIds: immutableServerSeatIds }) : validateSeatStateMessage(fresh, { roomId, seatId, connectionGeneration: nextGeneration,
+							seatIds: immutableServerSeatIds })).ok, true);
 						assert.equal(fresh.stateSequence, 2);
 						assert.equal(fresh.replayFromSequence, 1);
-					assert.equal(fresh.privateState.handCardViewIds.length,
+					if (displayEnabled) {
+						assert.equal(fresh.privateState.cards.length, fresh.publicState.players.find(player => player.seatId === seatId).handCount);
+						const reboundPage = await playerUiBrowser.inspectPage(seatId);
+						assert.deepEqual(reboundPage.ownCardNames, fresh.privateState.cards.map(card => card.name));
+						assert.deepEqual(reboundPage.ownCardXiBie, fresh.privateState.cards.map(card => card.xiBie));
+						assert.deepEqual(reboundPage.ownCardLabels, fresh.privateState.cards.map(card => `${card.name} · ${card.xiBie}`));
+						assert.equal(reboundPage.publicActiveSeat, fresh.publicState.activeSeatId);
+						assert.equal(reboundPage.publicPhase, fresh.publicState.phase);
+					} else assert.equal(fresh.privateState.handCardViewIds.length,
 						fresh.publicState.players.find(player => player.seatId === seatId).handCount);
 						assert.notDeepEqual(fresh, views.get(seatId), "rebind must create a new current-generation projection, not replay private bytes from the old socket");
 						const freshAck = receiveWebSocketMessage(rebound);

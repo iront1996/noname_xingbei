@@ -4,7 +4,8 @@
 // the HostSession manager's verified seat projection; it has no gameplay,
 // choice, native-command, or authority-event handler.
 const crypto = require("node:crypto");
-const { CAPPED_SCHEMA, validateSeatStateMessage, validateCappedReadOnlySeatState } = require("./v3-seat-state-protocol.js");
+const { CAPPED_SCHEMA, DISPLAY_SCHEMA, validateSeatStateMessage, validateSeatStateDisplayMessage,
+	validateCappedReadOnlySeatState } = require("./v3-seat-state-protocol.js");
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const CREDENTIAL = /^[a-f0-9]{64}$/;
@@ -275,8 +276,11 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 				return;
 			}
 			const checked = capped ? validateCappedReadOnlySeatState(projected.message, { roomId, seatId: context.seatId,
-				connectionGeneration: context.connectionGeneration }) : validateSeatStateMessage(projected.message, { roomId, seatId: context.seatId,
-				connectionGeneration: context.connectionGeneration, seatIds: immutableSeats });
+				connectionGeneration: context.connectionGeneration }) : projected.message?.schema === DISPLAY_SCHEMA
+				? validateSeatStateDisplayMessage(projected.message, { roomId, seatId: context.seatId,
+					connectionGeneration: context.connectionGeneration, seatIds: immutableSeats })
+				: validateSeatStateMessage(projected.message, { roomId, seatId: context.seatId,
+					connectionGeneration: context.connectionGeneration, seatIds: immutableSeats });
 			if (!checked.ok || projected.message.stateSequence !== state.lastSequence + 1 ||
 				projected.message.replayFromSequence !== state.lastSequence || state.lastSequence !== state.lastAcknowledgedSequence) {
 				await sendError(context.socket, "SEAT_STATE_SEQUENCE_REJECTED");

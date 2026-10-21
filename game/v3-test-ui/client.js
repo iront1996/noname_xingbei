@@ -127,7 +127,7 @@
 			});
 			$("options").replaceChildren(...buttons); settle(message.requestId, message); return;
 		}
-		if (message.schema === "xingbei_v3_seat_state_v2" && message.recipientSeatId === state.seatId &&
+		if (["xingbei_v3_seat_state_v2", "xingbei_v3_seat_state_v3"].includes(message.schema) && message.recipientSeatId === state.seatId &&
 			message.roomId === state.roomId && message.connectionGeneration === state.generation &&
 			Number.isSafeInteger(message.stateSequence) && message.stateSequence > state.lastSequence &&
 			message.privateState?.seatId === state.seatId) {
@@ -135,11 +135,26 @@
 			text("room-view", message.roomId); text("active-seat", message.publicState?.activeSeatId ?? "目前狀態投影尚未提供");
 			text("phase", message.publicState?.phase ?? "目前狀態投影尚未提供");
 			text("authority-revision", "此投影尚未提供（state sequence 不是 authority revision）");
-			const cards = message.privateState.handCardViewIds;
-			text("private-view", `本席 opaque hand-view IDs（共 ${cards.length} 個）：${cards.join("、") || "目前無"}`);
+			const displayCards = message.schema === "xingbei_v3_seat_state_v3" &&
+				message.privateState?.schema === "xingbei_v3_private_hand_display_v1" && message.privateState.seatId === state.seatId;
+			if (displayCards) {
+				const items = message.privateState.cards.map(card => {
+					const item = document.createElement("article"); item.className = "player hand-card";
+					item.textContent = `${card.name} · ${card.xiBie}`; item.dataset.viewId = card.viewId;
+					item.dataset.cardName = card.name; item.dataset.xiBie = card.xiBie; return item;
+				});
+				$("own-cards").replaceChildren(...items);
+				text("private-view", `本席已驗證實體手牌（${items.length} 張；有序展示）`);
+			} else {
+				const cards = message.privateState.handCardViewIds;
+				text("private-view", `本席卡牌展示資料未提供；opaque hand-view IDs（共 ${cards.length} 個）`);
+				$("own-cards").replaceChildren();
+			}
+			const resources = message.publicState.resources;
+			text("resources", `公共資源（已驗證投影）：紅方士氣 ${resources.hongShiQi}／星杯 ${resources.hongXingBei}／寶石 ${resources.hongBaoShiCount}／水晶 ${resources.hongShuiJingCount}；藍方士氣 ${resources.lanShiQi}／星杯 ${resources.lanXingBei}／寶石 ${resources.lanBaoShiCount}／水晶 ${resources.lanShuiJingCount}`);
 			const players = (message.publicState.players || []).map(player => {
 				const card = document.createElement("article"); card.className = "player";
-				card.textContent = `${player.seatId}｜${player.characterId ?? "角色投影未提供"}｜手牌數 ${player.handCount}`; return card;
+				card.textContent = `${player.seatId}｜${player.characterId ?? "角色投影未提供"}｜${player.side === null ? "陣營未提供" : player.side ? "紅方" : "藍方"}｜手牌數 ${player.handCount}`; return card;
 			});
 			$("players").replaceChildren(...players);
 			$("capped-notice").hidden = true;
@@ -249,6 +264,11 @@
 		state() { return { seatId: state.seatId, generation: state.generation, lastSequence: state.lastSequence, resumeSequence: state.resumeSequence ?? 0,
 			connected: state.socket?.readyState === WebSocket.OPEN, choiceVisible: Boolean(state.currentChoice),
 			lobbyRoomId: state.lobbyRoomId, lobbyStatus: $("lobby-status").textContent, lobbyRoom: state.lobbyRoom,
+		ownCardNames: [...$("own-cards").children].map(item => item.dataset.cardName),
+		ownCardXiBie: [...$("own-cards").children].map(item => item.dataset.xiBie),
+		ownCardLabels: [...$("own-cards").children].map(item => item.textContent),
+		publicActiveSeat: $("active-seat").textContent, publicPhase: $("phase").textContent,
+		publicResources: $("resources").textContent, publicPlayers: [...$("players").children].map(item => item.textContent),
 			controllerText: $("controller-stage").textContent, nativeText: $("native-stage").textContent,
 			authorityText: $("authority-stage").textContent, capped: !$("capped-notice").hidden, lastErrorCode: state.lastErrorCode }; },
 	});
