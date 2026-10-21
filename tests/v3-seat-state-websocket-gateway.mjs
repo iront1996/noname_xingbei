@@ -573,5 +573,16 @@ test("choice_read write failure closes the peer so its pending request can termi
 	socket.send(JSON.stringify({ type: "choice_read", requestId: "write_failure_request" }));
 	const result = await closed;
 	assert.equal(result.code, 1011);
-	assert.equal(fixture.gateway.inspect().clientCount, 0);
+	await waitFor(() => {
+		const gateway = fixture.gateway.inspect();
+		const seat = fixture.registry.inspect(roomId, "seat_a");
+		return gateway.clientCount === 0 && gateway.connectionCount === 0 && seat?.connected === false &&
+			!fixture.bindings.has("seat_a");
+	}, "WS_CHOICE_READ_SERVER_CLEANUP_TIMEOUT");
+	const gateway = fixture.gateway.inspect();
+	assert.equal(gateway.clientCount, 0, "server close handler removed the authenticated client");
+	assert.equal(gateway.connectionCount, 0, "server close handler removed the peer");
+	assert.equal(fixture.registry.inspect(roomId, "seat_a")?.connected, false, "Seat Registry binding was disconnected");
+	assert.equal(fixture.bindings.has("seat_a"), false, "the fixture's current seat binding was removed");
+	assert.equal(gateway.bufferedMessages, 0, "no replay state remains after close; this fixture has no managed-choice submit capability");
 });
