@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const WebSocket = require("ws");
 const { createManagedRoomSeatRegistry } = require("../game/server-managed-room-seat-registry.js");
 const { createManagedV3SeatStateWebSocketGateway } = require("../game/server-managed-v3-seat-state-websocket-gateway.js");
-const { createSeatStateMessage, validateSeatStateMessage, createCappedReadOnlySeatState } = require("../game/v3-seat-state-protocol.js");
+const { createSeatStateMessage, validateSeatStateMessage, createCappedReadOnlySeatState, createManagedChoiceDisplay } = require("../game/v3-seat-state-protocol.js");
 
 const roomId = "gateway_room";
 const seatIds = ["seat_a", "seat_b", "seat_c", "seat_d"];
@@ -384,8 +384,18 @@ test("experimental choice submission is capability-scoped, actor-only, controlle
 			getCurrentManagedChoice: scope => {
 				choiceLookups.push({ seatId: scope.seatId, eventSequence: scope.eventSequence });
 				const choice = controller.findPendingChoice(scope);
-				return choice ? { roomId: choice.roomId, hostSessionId: choice.hostSessionId, seatId: choice.seatId,
+				if (!choice) return null;
+				const generation = fixture.bindings.get(choice.seatId)?.connectionGeneration;
+				const ids = choice.options;
+				const display = createManagedChoiceDisplay({ roomId, hostSessionId,
+					rootInstanceId, nativeEventId: choice.nativeEventId, eventInstanceId: "event_41", parentEventInstanceId: "event_40",
+					eventSequence: choice.eventSequence, choiceId: choice.choiceId, actingSeatId: choice.seatId,
+					connectionGeneration: generation, captureOrdinal: 2, nativeCompletionOrdinal: 10, seatIds, optionIds: ids,
+					optionKinds: { [ids[0]]: "gongJi", [ids[1]]: "faShu" },
+					optionTargetSeatIds: { [ids[0]]: "seat_b", [ids[1]]: "seat_c" } });
+				return display.ok ? { roomId: choice.roomId, hostSessionId: choice.hostSessionId, seatId: choice.seatId,
 					choiceId: choice.choiceId, nativeEventId: choice.nativeEventId, eventSequence: choice.eventSequence,
+					connectionGeneration: generation, display: display.message,
 					options: choice.options, deadlineAt: choice.deadlineAt, state: choice.state } : null;
 			},
 			submitManagedChoice: message => controller.submitChoice(message),
@@ -409,7 +419,14 @@ test("experimental choice submission is capability-scoped, actor-only, controlle
 				assert.fail(`${error.message}; choiceLookups=${JSON.stringify(choiceLookups)}; gateway=${JSON.stringify(fixture.gateway.inspect())}; choiceState=${JSON.stringify(controller.inspect(roomId, opened.choice.choiceId)?.state)}`);
 			}
 			assert.deepEqual(choice, { type: "managed_choice", requestId: "choice_read_actor", roomId, seatId, choiceId: opened.choice.choiceId,
-				eventSequence: 5, deadlineAt: opened.choice.deadlineAt, optionIds });
+				eventSequence: 5, connectionGeneration: 1, deadlineAt: opened.choice.deadlineAt, optionIds,
+				display: { schema: "xingbei_v3_managed_choice_display_v1", roomId, hostSessionId, rootInstanceId,
+					nativeEventId: opened.choice.nativeEventId, eventInstanceId: "event_41", parentEventInstanceId: "event_40",
+					eventSequence: 5, choiceId: opened.choice.choiceId, actingSeatId: "seat_a", connectionGeneration: 1,
+					captureOrdinal: 2, nativeCompletionOrdinal: 10, optionItems: [
+						{ optionId: optionIds[0], operationKind: "gongJi", label: "攻擊", targetSeatId: "seat_b", cardViewId: null, completeness: "partial" },
+						{ optionId: optionIds[1], operationKind: "faShu", label: "法術", targetSeatId: "seat_c", cardViewId: null, completeness: "partial" },
+					] } });
 		} else {
 			assert.deepEqual(await readChoice(socket, `choice_read_${seatId}`), { type: "managed_choice_unavailable", requestId: `choice_read_${seatId}` });
 			const spoofed = onceMessage(socket);

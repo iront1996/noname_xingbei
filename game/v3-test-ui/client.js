@@ -5,6 +5,28 @@
 		requestNo: 0, nextRequestId: null, pending: new Map(), currentChoice: null, closed: false, messages: [], lastErrorCode: null,
 		testCapability: null, controlUrl: null, lobbyRoomId: null, lobbyRoom: null };
 	function text(id, value) { $(id).textContent = String(value); }
+	function verifiedChoiceDisplay(message) {
+		const display = message?.display, labels = { gongJi: "攻擊", faShu: "法術", unsupported: "合法操作（語意未驗證）" };
+		if (!display || display.schema !== "xingbei_v3_managed_choice_display_v1" || display.roomId !== state.roomId ||
+			display.actingSeatId !== state.seatId || display.choiceId !== message.choiceId || display.eventSequence !== message.eventSequence ||
+			display.connectionGeneration !== state.generation || display.connectionGeneration !== message.connectionGeneration ||
+			!/^hs_[a-f0-9]{32}$/.test(display.hostSessionId || "") || !/^native_root_[A-Za-z0-9_-]{16,96}$/.test(display.rootInstanceId || "") ||
+			!/^native_event_[a-f0-9]{32}$/.test(display.nativeEventId || "") ||
+			!/^event_[1-9][0-9]{0,6}$/.test(display.eventInstanceId || "") || !/^event_[1-9][0-9]{0,6}$/.test(display.parentEventInstanceId || "") ||
+			!Number.isSafeInteger(display.captureOrdinal) || display.captureOrdinal < 1 ||
+			!Number.isSafeInteger(display.nativeCompletionOrdinal) || display.nativeCompletionOrdinal < 1 ||
+			!Array.isArray(display.optionItems) || display.optionItems.length !== message.optionIds.length) return null;
+		for (let i = 0; i < display.optionItems.length; i++) {
+			const item = display.optionItems[i];
+			if (!item || Object.getPrototypeOf(item) !== Object.prototype || Object.keys(item).sort().join(",") !==
+				"cardViewId,completeness,label,operationKind,optionId,targetSeatId" || item.optionId !== message.optionIds[i] ||
+				!Object.hasOwn(labels, item.operationKind) || item.label !== labels[item.operationKind] || item.cardViewId !== null ||
+				!((item.completeness === "partial" && item.operationKind !== "unsupported") ||
+					(item.completeness === "opaque" && item.operationKind === "unsupported")) ||
+				(item.targetSeatId !== null && !/^seat_[a-d]$/.test(item.targetSeatId))) return null;
+		}
+		return display;
+	}
 	function lobbyStatus(value) { text("lobby-status", value); }
 	async function api(route, { method = "GET", body, roomId } = {}) {
 		if (!state.controlUrl || !state.testCapability) throw new Error("LOBBY_TEST_IDENTITY_UNAVAILABLE");
@@ -89,6 +111,9 @@
 		if (message.type === "seat_authenticated") {
 			if (message.roomId !== state.roomId || message.seatId !== state.seatId || !Number.isSafeInteger(message.connectionGeneration) ||
 				!Number.isSafeInteger(message.lastAcknowledgedSequence) || message.lastAcknowledgedSequence < 0) return;
+			if (state.generation !== message.connectionGeneration) {
+				state.currentChoice = null; $("options").replaceChildren(); text("choice-status", "連線世代已更新；請重新查詢合法操作");
+			}
 			state.generation = message.connectionGeneration;
 			state.lastSequence = message.lastAcknowledgedSequence; state.resumeSequence = message.lastAcknowledgedSequence;
 			text("generation", state.generation); text("connection-status", "已驗證普通玩家席位");
@@ -118,11 +143,15 @@
 			settle(message.requestId, message); return;
 		}
 		if (message.type === "managed_choice") {
-			if (message.seatId !== state.seatId || message.roomId !== state.roomId || !Array.isArray(message.optionIds)) return;
+			if (message.seatId !== state.seatId || message.roomId !== state.roomId || message.connectionGeneration !== state.generation ||
+				!Array.isArray(message.optionIds) || !message.optionIds.length) return;
+			const display = verifiedChoiceDisplay(message);
 			state.currentChoice = message;
-			text("choice-status", `事件 ${message.eventSequence} 的本席候選（截止 ${new Date(message.deadlineAt).toLocaleTimeString()}）`);
-			const buttons = message.optionIds.map(optionId => {
-				const button = document.createElement("button"); button.type = "button"; button.textContent = `提交 opaque 選項 ${optionId}`;
+			text("choice-status", `事件 ${message.eventSequence} 的本席合法操作（截止 ${new Date(message.deadlineAt).toLocaleTimeString()}）`);
+			const buttons = message.optionIds.map((optionId, index) => {
+				const item = display?.optionItems[index];
+				const button = document.createElement("button"); button.type = "button";
+				button.textContent = item ? `${item.label}${item.targetSeatId ? `｜目標 ${item.targetSeatId}` : ""}` : `合法操作 ${index + 1}（語意未驗證）`;
 				button.dataset.optionId = optionId; button.addEventListener("click", () => void submitChoice(optionId)); return button;
 			});
 			$("options").replaceChildren(...buttons); settle(message.requestId, message); return;
@@ -197,6 +226,7 @@
 	function connect(url, roomId, seatId, credential) {
 		if (!/^ws:\/\/127\.0\.0\.1:\d+$/.test(url) || !/^[A-Za-z0-9_-]{1,64}$/.test(roomId) ||
 			!/^seat_[a-d]$/.test(seatId) || !/^[a-f0-9]{64}$/.test(credential)) throw new Error("GAME_CONNECTION_INPUT_REJECTED");
+		state.currentChoice = null; $("options").replaceChildren();
 		state.roomId = roomId; state.seatId = seatId; state.credential = credential;
 		$("gateway-url").value = url; $("room-id").value = roomId; $("seat-id").value = seatId; $("seat-credential").value = "";
 		text("connection-status", "連線中…");
@@ -267,6 +297,9 @@
 		ownCardNames: [...$("own-cards").children].map(item => item.dataset.cardName),
 		ownCardXiBie: [...$("own-cards").children].map(item => item.dataset.xiBie),
 		ownCardLabels: [...$("own-cards").children].map(item => item.textContent),
+		choiceLabels: [...$("options").querySelectorAll("button")].map(item => item.textContent),
+		choiceOptionIds: [...$("options").querySelectorAll("button")].map(item => item.dataset.optionId),
+		choiceDisplaySchema: state.currentChoice?.display?.schema || null,
 		publicActiveSeat: $("active-seat").textContent, publicPhase: $("phase").textContent,
 		publicResources: $("resources").textContent, publicPlayers: [...$("players").children].map(item => item.textContent),
 			controllerText: $("controller-stage").textContent, nativeText: $("native-stage").textContent,

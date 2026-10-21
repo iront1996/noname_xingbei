@@ -16,6 +16,16 @@
 		"evidence": ["Linux CI 39561744885 for commit 84bcf069e2efe8a4d93474872a273313d5a9adaa passed the required Event 8 real Chromium four-page hand-display and authority test; Node job 336/336 and Event 6/7/8 jobs 1/1 each, zero failures/skips/cancellations"],
 		"limitations": ["not complete physical-card family support", "not arbitrary card attributes", "not valid for Event 8 capped post-phaseOver state", "no other-seat hand data"]
 	},
+	"v3ManagedChoiceDisplay": {
+		"status": "local_real_chromium_four_page_passed_linux_pending",
+		"schema": "xingbei_v3_managed_choice_display_v1",
+		"sourceBoundary": "authenticated host-native action candidate plus the exact accepted sequence-specific pre-action capture; HostSession revalidates candidate/capture identity and current ordinary-seat connection generation before Gateway projection",
+		"fields": ["opaque native option ID preserved in native order", "native candidate cardType mapped to 攻擊 or 法術", "native-filtered target seat ID when validated against immutable seats", "capture/event/choice/seat/connection-generation binding", "partial or opaque completeness marker"],
+		"evidenceScope": "isolated four-page real Chromium Event #5-#8 browser-driven flow; display item IDs/kinds/targets are compared to authenticated native candidate evidence and the same page renders labels while submission continues to use the original opaque option ID",
+		"evidence": ["Local Windows Chrome Event #5-#8 browser flow passed 1/1 with zero skips after adding display source assertions; full Linux CI pending for this batch"],
+		"physicalCardOptionAssociation": "unsupported: optionCardNames is not a unique physical-card provenance link; cardViewId is always null and no card name is rendered as the selected action",
+		"limitations": ["not a full description of card or skill effects", "does not predict action outcomes, damage, or game results", "unknown semantics remain opaque fallback", "does not add, remove, merge, reorder, or authorize native options", "Event #8 cap remains read-only and Event #9 remains rejected"]
+	},
 	"m2RealtimeContinuityProbe": {
 		"status": "linux_real_chromium_passed_limited_disconnect_trustee_rebind_fixture",
 		"scope": "isolated_four_seat_event4_disconnect_to_trustee_probe",

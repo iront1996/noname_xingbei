@@ -3189,8 +3189,20 @@ function createHostSessionManager({
 			!/^choice_[A-Za-z0-9_-]{16,64}$/.test(choice.choiceId || "") || !Number.isSafeInteger(choice.deadlineAt) ||
 			!Array.isArray(choice.options) || choice.options.length < 1 || choice.options.length > 64 ||
 			choice.options.length !== candidate.options.length || choice.options.some((option, index) => option !== candidate.options[index])) return null;
+		const capture = eventSequence === 5 ? record.successorPreActionCaptureResult : eventSequence === 6 ? record.event6PreActionCaptureResult :
+			eventSequence === 7 ? record.experimentalEvent7PreActionCaptureResult : record.experimentalEvent8PreActionCaptureResult;
+		const { createManagedChoiceDisplay } = require("./v3-seat-state-protocol.js");
+		const display = createManagedChoiceDisplay({ roomId, hostSessionId: record.sessionId,
+			rootInstanceId: record.xingbeiAuthorityContext.rootInstanceId, nativeEventId: candidate.nativeEventId,
+			eventInstanceId: candidate.eventInstanceId, parentEventInstanceId: candidate.parentEventInstanceId,
+			eventSequence, choiceId: choice.choiceId, actingSeatId: seatId, connectionGeneration: candidate.connectionGeneration,
+			captureOrdinal: capture?.captureOrdinal, nativeCompletionOrdinal: capture?.nativeCompletionOrdinal,
+			seatIds: record.seatIds, optionIds: choice.options, optionKinds: candidate.optionKinds,
+			optionTargetSeatIds: candidate.optionTargetSeatIds });
+		if (!display.ok) return null;
 		return Object.freeze({ roomId, hostSessionId, seatId, choiceId: choice.choiceId, nativeEventId: choice.nativeEventId,
-			eventSequence, deadlineAt: choice.deadlineAt, options: Object.freeze([...choice.options]), state: "pending" });
+			eventSequence, deadlineAt: choice.deadlineAt, connectionGeneration: candidate.connectionGeneration,
+			options: Object.freeze([...choice.options]), display: display.message, state: "pending" });
 	}
 
 	// Read-only review evidence assembled from already accepted manager state.

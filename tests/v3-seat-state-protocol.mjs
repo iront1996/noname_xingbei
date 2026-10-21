@@ -7,6 +7,7 @@ const require = createRequire(import.meta.url);
 
 const { SCHEMA, CAPPED_SCHEMA, DISPLAY_SCHEMA, HAND_DISPLAY_SCHEMA, createSeatStateMessage, validateSeatStateMessage,
 	createSeatStateDisplayMessage, validateSeatStateDisplayMessage,
+	MANAGED_CHOICE_DISPLAY_SCHEMA, createManagedChoiceDisplay, validateManagedChoiceDisplay,
 	createCappedReadOnlySeatState, validateCappedReadOnlySeatState, acceptsReconnectCursor } =
 	require("../game/v3-seat-state-protocol.js");
 const { createVerifiedSeatStatePublisher, createSeatStateReceiver } = require("../game/v3-verified-seat-state.js");
@@ -88,6 +89,41 @@ test("versioned hand display accepts only bounded recipient-owned names and orde
 	assert.equal(validateSeatStateDisplayMessage(unknownField, { seatIds }).ok, false);
 	const missingHand = structuredClone(created.message); missingHand.privateState.cards.pop();
 	assert.equal(validateSeatStateDisplayMessage(missingHand, { seatIds }).ok, false);
+});
+
+test("managed choice display preserves native option identity and only emits evidence-backed operation and target labels", () => {
+	const optionIds = [`native_option_${"a".repeat(32)}`, `native_option_${"b".repeat(32)}`, `native_option_${"c".repeat(32)}`];
+	const input = { roomId: "room_v3_probe", hostSessionId: `hs_${"d".repeat(32)}`, rootInstanceId: `native_root_${"e".repeat(32)}`,
+		nativeEventId: `native_event_${"f".repeat(32)}`, eventInstanceId: "event_20", parentEventInstanceId: "event_19",
+		eventSequence: 5, choiceId: "choice_0000000000000001", actingSeatId: "seat_a", connectionGeneration: 4,
+		captureOrdinal: 9, nativeCompletionOrdinal: 31, seatIds, optionIds,
+		optionKinds: { [optionIds[0]]: "gongJi", [optionIds[1]]: "faShu", [optionIds[2]]: "future_kind" },
+		optionTargetSeatIds: { [optionIds[0]]: "seat_b", [optionIds[1]]: "seat_a", [optionIds[2]]: "seat_d" } };
+	const created = createManagedChoiceDisplay(input);
+	assert.equal(created.ok, true);
+	assert.equal(created.message.schema, MANAGED_CHOICE_DISPLAY_SCHEMA);
+	assert.deepEqual(created.message.optionItems.map(item => [item.optionId, item.label, item.targetSeatId, item.completeness]), [
+		[optionIds[0], "攻擊", "seat_b", "partial"], [optionIds[1], "法術", "seat_a", "partial"],
+		[optionIds[2], "合法操作（語意未驗證）", "seat_d", "opaque"],
+	]);
+	assert.equal(validateManagedChoiceDisplay(created.message, { roomId: input.roomId, hostSessionId: input.hostSessionId,
+		rootInstanceId: input.rootInstanceId, eventSequence: 5, choiceId: input.choiceId, seatId: "seat_a",
+		nativeEventId: input.nativeEventId, connectionGeneration: 4, captureOrdinal: 9, nativeCompletionOrdinal: 31,
+		optionIds, seatIds }), true);
+	assert.equal(validateManagedChoiceDisplay(created.message, { optionIds: [...optionIds].reverse(), seatIds }), false);
+	assert.equal(validateManagedChoiceDisplay({ ...created.message, nativeEventId: `native_event_${"0".repeat(32)}` },
+		{ nativeEventId: input.nativeEventId, seatIds }), false);
+	const stale = { ...created.message, connectionGeneration: 3 };
+	assert.equal(validateManagedChoiceDisplay(stale, { connectionGeneration: 4, seatIds }), false);
+	const targetTamper = structuredClone(created.message); targetTamper.optionItems[0].targetSeatId = "seat_z";
+	assert.equal(validateManagedChoiceDisplay(targetTamper, { seatIds }), false);
+	const labelTamper = structuredClone(created.message); labelTamper.optionItems[0].label = "一定擊中";
+	assert.equal(validateManagedChoiceDisplay(labelTamper, { seatIds }), false);
+	assert.equal(JSON.stringify(created.message).includes("cardId"), false);
+	assert.equal(JSON.stringify(created.message).includes("commitment"), false);
+	assert.equal(JSON.stringify(created.message).includes("secret"), false);
+	assert.equal(createManagedChoiceDisplay({ ...input, optionCardNames: Object.fromEntries(optionIds.map(id => [id, "gongJi"])) }).ok, false,
+		"unreviewed candidate metadata such as card names must not enter the public display contract");
 });
 
 test("V3 reconnect cursor fences stale generations and rejects gaps outside the requested replay base", () => {

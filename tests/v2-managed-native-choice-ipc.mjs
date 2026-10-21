@@ -1240,7 +1240,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		actionGatewayStateSequences.set(seatId, nextSequence);
 		return view;
 	}
-	async function submitActionThroughGateway({ seatId, choice, option, expectedRevision }) {
+	async function submitActionThroughGateway({ seatId, choice, option, expectedRevision, nativeCandidate }) {
 		const actor = actionGatewaySockets.get(seatId);
 		let received;
 		assert.ok(actor, "active native actor must be connected through its ordinary-player WebSocket");
@@ -1261,7 +1261,36 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 		assert.equal(publicChoice.roomId, roomId);
 		assert.equal(publicChoice.seatId, seatId);
 		assert.equal(publicChoice.choiceId, choice.choiceId);
+		const currentGeneration = seatRegistry.inspect(roomId, seatId).epoch;
+		assert.equal(publicChoice.connectionGeneration, currentGeneration);
 		assert.ok(publicChoice.optionIds.includes(option));
+		assert.equal(publicChoice.display?.schema, "xingbei_v3_managed_choice_display_v1");
+		assert.equal(publicChoice.display.roomId, roomId);
+		assert.equal(publicChoice.display.actingSeatId, seatId);
+		assert.equal(publicChoice.display.choiceId, choice.choiceId);
+		assert.equal(publicChoice.display.nativeEventId, choice.nativeEventId);
+		assert.equal(publicChoice.display.eventSequence, choice.eventSequence);
+		assert.equal(publicChoice.display.connectionGeneration, currentGeneration);
+		assert.equal(publicChoice.display.eventInstanceId, nativeCandidate.eventInstanceId);
+		assert.equal(publicChoice.display.parentEventInstanceId, nativeCandidate.parentEventInstanceId);
+		assert.equal(publicChoice.display.nativeCompletionOrdinal, nativeCandidate.waitingCompletionOrdinal);
+		assert.deepEqual(publicChoice.display.optionItems.map(item => item.optionId), publicChoice.optionIds,
+			"display projection must preserve every native option identity and order");
+		for (const item of publicChoice.display.optionItems) {
+			const nativeKind = nativeCandidate.optionKinds[item.optionId];
+			assert.equal(item.operationKind, nativeKind === "gongJi" || nativeKind === "faShu" ? nativeKind : "unsupported");
+			assert.equal(item.targetSeatId, nativeCandidate.optionTargetSeatIds[item.optionId]);
+		}
+		assert.ok(publicChoice.display.optionItems.every(item => ["攻擊", "法術", "合法操作（語意未驗證）"].includes(item.label)));
+		assert.ok(publicChoice.display.optionItems.every(item => item.cardViewId === null),
+			"do not infer a physical hand-card association from candidate names or ordering");
+		if (playerUiBrowser) {
+			const ui = await playerUiBrowser.inspectPage(seatId);
+			assert.equal(ui.choiceDisplaySchema, "xingbei_v3_managed_choice_display_v1");
+			assert.deepEqual(ui.choiceOptionIds, publicChoice.optionIds);
+			assert.deepEqual(ui.choiceLabels, publicChoice.display.optionItems.map(item =>
+				`${item.label}${item.targetSeatId ? `｜目標 ${item.targetSeatId}` : ""}`));
+		}
 		for (const otherSeatId of immutableServerSeatIds.filter(id => id !== seatId)) {
 			const other = actionGatewaySockets.get(otherSeatId);
 			received = receiveWebSocketMessage(other);
@@ -3416,7 +3445,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 					const event5AckBaseline = event5NativeActionAckCount;
 					const submittedEvent5 = process.env.V2_V3_WEBSOCKET_ACTION_PROBE === "1" ?
 						await submitActionThroughGateway({ seatId: event5CandidateMessage.seatId, choice: event5Choice,
-							option: selectedEvent5Option, expectedRevision: 4 }).then(() => ({ ok: true })) :
+							option: selectedEvent5Option, expectedRevision: 4, nativeCandidate: event5CandidateMessage }).then(() => ({ ok: true })) :
 						controller.submitChoice({ protocol: 1, roomId, hostSessionId: event5CandidateMessage.sessionId,
 							nativeEventId: event5CandidateMessage.nativeEventId, seatId: event5CandidateMessage.seatId, eventSequence: 5,
 							choiceId: event5Choice.choiceId, connectionId: actorConnectionId, credential: credentialFor(event5CandidateMessage.seatId),
@@ -3589,7 +3618,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 						const event6AckBaseline = event6NativeActionAckCount;
 						event6LogStage("choice-submit-start");
 						const submitted6 = process.env.V2_V3_WEBSOCKET_ACTION_PROBE === "1" ?
-							await submitActionThroughGateway({ seatId: candidate.seatId, choice: event6Choice, option, expectedRevision: 5 }).then(() => ({ ok: true })) :
+							await submitActionThroughGateway({ seatId: candidate.seatId, choice: event6Choice, option, expectedRevision: 5, nativeCandidate: candidate }).then(() => ({ ok: true })) :
 							controller.submitChoice({ protocol: 1, roomId, hostSessionId: candidate.sessionId,
 								nativeEventId: candidate.nativeEventId, seatId: candidate.seatId, eventSequence: 6,
 								choiceId: event6Choice.choiceId, connectionId: e6Connection, credential: credentialFor(candidate.seatId), option });
@@ -3711,7 +3740,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							option: "forged_native_option" }).code, "MANAGED_CHOICE_SUBMIT_REJECTED");
 						const e7AckBaseline = event7NativeActionAckCount;
 						const submitted7 = process.env.V2_V3_WEBSOCKET_ACTION_PROBE === "1" ?
-							await submitActionThroughGateway({ seatId: candidate7.seatId, choice: event7Choice, option: e7Option, expectedRevision: 6 }).then(() => ({ ok: true })) :
+							await submitActionThroughGateway({ seatId: candidate7.seatId, choice: event7Choice, option: e7Option, expectedRevision: 6, nativeCandidate: candidate7 }).then(() => ({ ok: true })) :
 							controller.submitChoice({ protocol: 1, roomId, hostSessionId: candidate7.sessionId,
 								nativeEventId: candidate7.nativeEventId, seatId: candidate7.seatId, eventSequence: 7,
 								choiceId: event7Choice.choiceId, connectionId: e7Connection, credential: credentialFor(candidate7.seatId), option: e7Option });
@@ -3815,7 +3844,7 @@ test("managed Chromium applies four native Xingbei choices through authenticated
 							event8Choice = opened8.choice;
 							const e8AckBaseline = event8NativeActionAckCount;
 							const submitted8 = process.env.V2_V3_WEBSOCKET_ACTION_PROBE === "1" ?
-								await submitActionThroughGateway({ seatId: candidate8.seatId, choice: event8Choice, option: e8Option, expectedRevision: 7 }).then(() => ({ ok: true })) :
+								await submitActionThroughGateway({ seatId: candidate8.seatId, choice: event8Choice, option: e8Option, expectedRevision: 7, nativeCandidate: candidate8 }).then(() => ({ ok: true })) :
 								controller.submitChoice({ protocol: 1, roomId, hostSessionId: candidate8.sessionId,
 									nativeEventId: candidate8.nativeEventId, seatId: candidate8.seatId, eventSequence: 8,
 									choiceId: event8Choice.choiceId, connectionId: e8Connection, credential: credentialFor(candidate8.seatId), option: e8Option });

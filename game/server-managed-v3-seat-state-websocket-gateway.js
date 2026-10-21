@@ -4,7 +4,7 @@
 // the HostSession manager's verified seat projection; it has no gameplay,
 // choice, native-command, or authority-event handler.
 const crypto = require("node:crypto");
-const { CAPPED_SCHEMA, DISPLAY_SCHEMA, validateSeatStateMessage, validateSeatStateDisplayMessage,
+const { CAPPED_SCHEMA, DISPLAY_SCHEMA, validateSeatStateMessage, validateSeatStateDisplayMessage, validateManagedChoiceDisplay,
 	validateCappedReadOnlySeatState } = require("./v3-seat-state-protocol.js");
 
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
@@ -101,13 +101,17 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 		try { capability = getExperimentalActionCapability(roomId); choice = getCurrentManagedChoice({ roomId, hostSessionId,
 			eventSequence: capability.nextAuthorityEventSequence, seatId: context.seatId }); } catch (_) { return null; }
 		if (!choice || Object.getPrototypeOf(choice) !== Object.prototype ||
-			Object.keys(choice).sort().join(",") !== "choiceId,deadlineAt,eventSequence,hostSessionId,nativeEventId,options,roomId,seatId,state" ||
+			Object.keys(choice).sort().join(",") !== "choiceId,connectionGeneration,deadlineAt,display,eventSequence,hostSessionId,nativeEventId,options,roomId,seatId,state" ||
 			choice.roomId !== roomId || choice.hostSessionId !== hostSessionId || choice.seatId !== context.seatId ||
 			choice.seatId !== capability.activeSeatId || choice.eventSequence !== capability.nextAuthorityEventSequence ||
+			choice.connectionGeneration !== context.connectionGeneration ||
 			choice.state !== "pending" || !/^choice_[A-Za-z0-9_-]{16,64}$/.test(choice.choiceId || "") ||
 			!/^native_[A-Za-z0-9_-]{16,96}$/.test(choice.nativeEventId || "") || !Number.isSafeInteger(choice.deadlineAt) ||
 			!Array.isArray(choice.options) || choice.options.length < 1 || choice.options.length > 64 ||
-			choice.options.some(optionId => !/^native_option_[a-f0-9]{32}$/.test(optionId)) || new Set(choice.options).size !== choice.options.length) return null;
+			choice.options.some(optionId => !/^native_option_[a-f0-9]{32}$/.test(optionId)) || new Set(choice.options).size !== choice.options.length ||
+			!validateManagedChoiceDisplay(choice.display, { roomId, hostSessionId, rootInstanceId, eventSequence: choice.eventSequence,
+				choiceId: choice.choiceId, seatId: context.seatId, nativeEventId: choice.nativeEventId,
+				connectionGeneration: context.connectionGeneration, optionIds: choice.options, seatIds: immutableSeats })) return null;
 		return choice;
 	}
 
@@ -319,7 +323,8 @@ function createManagedV3SeatStateWebSocketGateway({ WebSocketServer, roomId, sea
 			}
 			await send(context.socket, Object.freeze({ type: "managed_choice", requestId: message.requestId, roomId,
 				seatId: context.seatId, choiceId: choice.choiceId, eventSequence: choice.eventSequence,
-				deadlineAt: choice.deadlineAt, optionIds: Object.freeze([...choice.options]) }), context);
+				connectionGeneration: context.connectionGeneration, deadlineAt: choice.deadlineAt,
+				optionIds: Object.freeze([...choice.options]), display: choice.display }), context);
 			return;
 		}
 		if (exact(message, ["type", "requestId", "choiceId", "optionId"]) && message.type === "choice_submit" &&

@@ -6,6 +6,7 @@ const SCHEMA = "xingbei_v3_seat_state_v2";
 const HAND_DISPLAY_SCHEMA = "xingbei_v3_private_hand_display_v1";
 const DISPLAY_SCHEMA = "xingbei_v3_seat_state_v3";
 const CAPPED_SCHEMA = "xingbei_v3_capped_readonly_state_v1";
+const MANAGED_CHOICE_DISPLAY_SCHEMA = "xingbei_v3_managed_choice_display_v1";
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const OPAQUE = /^[A-Za-z0-9_-]{16,96}$/;
 const MAX_SEQUENCE = Number.MAX_SAFE_INTEGER;
@@ -58,6 +59,78 @@ function validPendingChoice(value, recipientSeatId, sequence) {
 		value.eventSequence >= 1 && value.eventSequence <= sequence && Number.isSafeInteger(value.deadlineAt) &&
 		value.deadlineAt > 0 && ["pending", "delivery_pending", "applying"].includes(value.status) &&
 		safeOpaqueList(value.optionIds, 64) && value.optionIds.length > 0;
+}
+
+const OPERATION_LABELS = Object.freeze({ gongJi: "攻擊", faShu: "法術", unsupported: "合法操作（語意未驗證）" });
+function validManagedChoiceDisplay(value, expected = {}) {
+	if (!exact(value, ["schema", "roomId", "hostSessionId", "rootInstanceId", "nativeEventId", "eventInstanceId",
+		"parentEventInstanceId", "eventSequence", "choiceId", "actingSeatId", "connectionGeneration", "captureOrdinal",
+		"nativeCompletionOrdinal", "optionItems"]) || value.schema !== MANAGED_CHOICE_DISPLAY_SCHEMA ||
+		!ID.test(value.roomId || "") || !/^hs_[a-f0-9]{32}$/.test(value.hostSessionId || "") ||
+		!/^native_root_[A-Za-z0-9_-]{16,96}$/.test(value.rootInstanceId || "") ||
+		!/^native_event_[a-f0-9]{32}$/.test(value.nativeEventId || "") ||
+		!/^event_[1-9][0-9]{0,6}$/.test(value.eventInstanceId || "") ||
+		!/^event_[1-9][0-9]{0,6}$/.test(value.parentEventInstanceId || "") ||
+		!Number.isSafeInteger(value.eventSequence) || value.eventSequence < 5 || value.eventSequence > 8 ||
+		!/^choice_[A-Za-z0-9_-]{16,64}$/.test(value.choiceId || "") || !ID.test(value.actingSeatId || "") ||
+		!Number.isSafeInteger(value.connectionGeneration) || value.connectionGeneration < 1 ||
+		!Number.isSafeInteger(value.captureOrdinal) || value.captureOrdinal < 1 ||
+		!Number.isSafeInteger(value.nativeCompletionOrdinal) || value.nativeCompletionOrdinal < 1 ||
+		!Array.isArray(value.optionItems) || value.optionItems.length < 1 || value.optionItems.length > 64 ||
+		new Set(value.optionItems.map(item => item?.optionId)).size !== value.optionItems.length ||
+		(expected.roomId !== undefined && value.roomId !== expected.roomId) ||
+		(expected.hostSessionId !== undefined && value.hostSessionId !== expected.hostSessionId) ||
+		(expected.rootInstanceId !== undefined && value.rootInstanceId !== expected.rootInstanceId) ||
+		(expected.eventSequence !== undefined && value.eventSequence !== expected.eventSequence) ||
+		(expected.choiceId !== undefined && value.choiceId !== expected.choiceId) ||
+		(expected.seatId !== undefined && value.actingSeatId !== expected.seatId) ||
+		(expected.nativeEventId !== undefined && value.nativeEventId !== expected.nativeEventId) ||
+		(expected.connectionGeneration !== undefined && value.connectionGeneration !== expected.connectionGeneration) ||
+		(expected.captureOrdinal !== undefined && value.captureOrdinal !== expected.captureOrdinal) ||
+		(expected.nativeCompletionOrdinal !== undefined && value.nativeCompletionOrdinal !== expected.nativeCompletionOrdinal)) return false;
+	if (expected.optionIds && (value.optionItems.length !== expected.optionIds.length ||
+		value.optionItems.some((item, index) => item?.optionId !== expected.optionIds[index]))) return false;
+	if (expected.seatIds && (!Array.isArray(expected.seatIds) || !expected.seatIds.includes(value.actingSeatId))) return false;
+	for (const item of value.optionItems) {
+		if (!exact(item, ["optionId", "operationKind", "label", "targetSeatId", "cardViewId", "completeness"]) ||
+			!/^native_option_[a-f0-9]{32}$/.test(item.optionId || "") ||
+			!Object.hasOwn(OPERATION_LABELS, item.operationKind) || item.label !== OPERATION_LABELS[item.operationKind] ||
+			(item.targetSeatId !== null && (!ID.test(item.targetSeatId) || (expected.seatIds && !expected.seatIds.includes(item.targetSeatId)))) ||
+			item.cardViewId !== null || !["partial", "opaque"].includes(item.completeness) ||
+			(item.operationKind === "unsupported" ? item.completeness !== "opaque" : item.completeness !== "partial")) return false;
+	}
+	return true;
+}
+
+// Display labels are derived only from the authenticated native candidate kind.
+// Physical card identity is deliberately omitted until a same-capture provenance
+// link to this option is available; names and ordering are not sufficient proof.
+function createManagedChoiceDisplay(input) {
+	if (!exact(input, ["roomId", "hostSessionId", "rootInstanceId", "nativeEventId", "eventInstanceId", "parentEventInstanceId",
+		"eventSequence", "choiceId", "actingSeatId", "connectionGeneration", "captureOrdinal", "nativeCompletionOrdinal",
+		"seatIds", "optionIds", "optionKinds", "optionTargetSeatIds"]) || !Array.isArray(input.seatIds) ||
+		!Array.isArray(input.optionIds) || !input.optionKinds || Object.getPrototypeOf(input.optionKinds) !== Object.prototype ||
+		!input.optionTargetSeatIds || Object.getPrototypeOf(input.optionTargetSeatIds) !== Object.prototype ||
+		Object.keys(input.optionKinds).sort().join(",") !== [...input.optionIds].sort().join(",") ||
+		Object.keys(input.optionTargetSeatIds).sort().join(",") !== [...input.optionIds].sort().join(",")) return reject("V3_MANAGED_CHOICE_DISPLAY_REJECTED");
+	const optionItems = input.optionIds.map(optionId => {
+		const kind = input.optionKinds[optionId];
+		const operationKind = kind === "gongJi" || kind === "faShu" ? kind : "unsupported";
+		const targetSeatId = input.optionTargetSeatIds[optionId];
+		return Object.freeze({ optionId, operationKind, label: OPERATION_LABELS[operationKind],
+			targetSeatId: input.seatIds.includes(targetSeatId) ? targetSeatId : null,
+			cardViewId: null, completeness: operationKind === "unsupported" ? "opaque" : "partial" });
+	});
+	const message = Object.freeze({ schema: MANAGED_CHOICE_DISPLAY_SCHEMA, roomId: input.roomId, hostSessionId: input.hostSessionId,
+		rootInstanceId: input.rootInstanceId, nativeEventId: input.nativeEventId, eventInstanceId: input.eventInstanceId,
+		parentEventInstanceId: input.parentEventInstanceId, eventSequence: input.eventSequence, choiceId: input.choiceId,
+		actingSeatId: input.actingSeatId, connectionGeneration: input.connectionGeneration, captureOrdinal: input.captureOrdinal,
+		nativeCompletionOrdinal: input.nativeCompletionOrdinal, optionItems: Object.freeze(optionItems) });
+	return validManagedChoiceDisplay(message, { ...input, seatId: input.actingSeatId })
+		? Object.freeze({ ok: true, message }) : reject("V3_MANAGED_CHOICE_DISPLAY_REJECTED");
+}
+function validateManagedChoiceDisplay(message, expected = {}) {
+	return validManagedChoiceDisplay(message, expected);
 }
 
 function createSeatStateMessage(input) {
@@ -193,4 +266,5 @@ function validateCappedReadOnlySeatState(message, expected = {}) {
 
 module.exports = { SCHEMA, CAPPED_SCHEMA, HAND_DISPLAY_SCHEMA, DISPLAY_SCHEMA, createSeatStateMessage, validateSeatStateMessage,
 	createSeatStateDisplayMessage, validateSeatStateDisplayMessage,
+	MANAGED_CHOICE_DISPLAY_SCHEMA, createManagedChoiceDisplay, validateManagedChoiceDisplay,
 	createCappedReadOnlySeatState, validateCappedReadOnlySeatState, acceptsReconnectCursor };
