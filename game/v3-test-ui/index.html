@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self' ws://127.0.0.1:*; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; object-src 'none'">
+	<title>星杯 V3 隔離測試席位</title>
+	<link rel="stylesheet" href="/style.css">
+	<script defer src="/client.js"></script>
+</head>
+<body>
+	<main>
+		<header><span class="badge">隔離測試環境・非正式遊戲</span><h1>星杯 V3 測試席位</h1><p>伺服器管理原生遊戲；所有瀏覽器都只是普通玩家席位。</p></header>
+		<section aria-labelledby="lobby-title">
+			<h2 id="lobby-title">測試房間大廳</h2>
+			<p>本頁測試身分：<output id="lobby-seat">尚未由隔離測試管理器配置</output></p>
+			<label>Room ID<input id="lobby-room-id" type="text" autocomplete="off" spellcheck="false"></label>
+			<div class="actions">
+				<button id="create-room" type="button" disabled>建立四人測試房間</button>
+				<button id="join-room" type="button" disabled>加入本席位</button>
+				<button id="ready" type="button" disabled>準備</button>
+				<button id="unready" type="button" class="secondary" disabled>取消準備</button>
+				<button id="refresh-room" type="button" disabled>更新大廳狀態</button>
+				<button id="start-room" type="button" disabled>等待伺服器自動啟動</button>
+				<button id="connect-game" type="button" disabled>連線至伺服器主持遊戲</button>
+				<button id="stop-room" type="button" class="secondary" disabled>結束本測試房間</button>
+			</div>
+			<p id="lobby-status" role="status" aria-live="polite">等待隔離測試管理器配置。</p>
+			<div id="lobby-seats" class="players" aria-live="polite"></div>
+		</section>
+		<section aria-labelledby="connection-title">
+			<h2 id="connection-title">連線與席位</h2>
+			<form id="connect-form">
+				<label>本機 Gateway WebSocket<input id="gateway-url" type="url" required autocomplete="url" placeholder="ws://127.0.0.1:PORT"></label>
+				<label>Room ID<input id="room-id" type="text" required autocomplete="off"></label>
+				<label>普通玩家席位<select id="seat-id"><option value="seat_a">A</option><option value="seat_b">B</option><option value="seat_c">C</option><option value="seat_d">D</option></select></label>
+				<label>本席憑證<input id="seat-credential" type="password" required autocomplete="off" spellcheck="false"></label>
+				<div class="actions"><button type="submit">連線／重連本席</button><button id="disconnect" type="button" class="secondary">中斷</button></div>
+			</form>
+			<p id="connection-status" role="status" aria-live="polite">尚未連線</p>
+			<p>Connection generation：<output id="generation">—</output></p>
+		</section>
+		<section aria-labelledby="room-title"><h2 id="room-title">已驗證房間狀態</h2><p>房間：<output id="room-view">尚未取得</output></p><p>目前行動席：<output id="active-seat">尚未提供</output></p><p>階段：<output id="phase">尚未提供</output></p><p>Authority revision：<output id="authority-revision">此投影尚未提供</output></p><p id="resources">公共資源尚未提供。</p><div id="players" class="players" aria-live="polite"></div><p id="private-view">自己的私有狀態尚未取得。</p><div id="own-cards" class="players" aria-label="本席實體手牌"></div></section>
+		<section aria-labelledby="choice-title"><h2 id="choice-title">受限玩家操作</h2><p id="choice-status">尚未查詢選擇</p><button id="read-choice" type="button" disabled>查詢目前合法選項</button><div id="options" class="options"></div><button id="sync-state" type="button" disabled>重新同步已驗證狀態</button><dl class="stages"><dt>Transport ACK</dt><dd id="transport-stage">尚未確認</dd><dt>Choice Controller Acceptance</dt><dd id="controller-stage">尚未提交</dd><dt>Native Action Completed</dt><dd id="native-stage">此傳輸未提供完成確認</dd><dt>Authority Event Accepted</dt><dd id="authority-stage">此傳輸未提供權威事件確認</dd></dl></section>
+		<section id="capped-notice" class="notice" hidden><h2>實驗事件上限已達</h2><p>目前只允許封頂唯讀狀態；這不是遊戲結束，也不能提交下一個實驗事件。</p></section>
+		<footer>玩家頁面不持有主持權限、不取得跨席位憑證。四席全數準備後由隔離伺服器自動啟動；Opaque 選項與卡牌識別碼不代表卡牌名稱或效果。</footer>
+	</main>
+</body>
+</html>

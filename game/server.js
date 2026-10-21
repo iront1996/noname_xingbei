@@ -1,6 +1,13 @@
 (function () {
 	var WebSocketServer = require("ws").Server;
-	var wss = new WebSocketServer({ port: 8080 });
+	var roomLifecycleModule = require("./server-room-lifecycle.js");
+	var createRoomLifecycle = roomLifecycleModule.createRoomLifecycle;
+	var releaseRoomClients = roomLifecycleModule.releaseRoomClients;
+	var configuredPort = typeof process == "object" ? Number(process.env.XINGBEI_HALL_PORT) : NaN;
+	var hallPort = Number.isSafeInteger(configuredPort) && configuredPort > 0 && configuredPort <= 65535 ? configuredPort : 8080;
+	var configuredReconnectMs = typeof process == "object" ? Number(process.env.XINGBEI_OWNER_RECONNECT_MS) : NaN;
+	var ownerReconnectMs = Number.isSafeInteger(configuredReconnectMs) && configuredReconnectMs >= 1000 ? configuredReconnectMs : undefined;
+	var wss = new WebSocketServer({ port: hallPort });
 	var bannedKeys = [];
 	var bannedIps = [];
 
@@ -8,18 +15,35 @@
 	var events = [];
 	var clients = {};
 	var bannedKeyWords = [];
+	var roomLifecycle = createRoomLifecycle({
+		rooms: rooms,
+		ownerReconnectMs: ownerReconnectMs,
+	});
+	var roomCleanupTimer = setInterval(function () {
+		var expiredRooms = roomLifecycle.sweepExpired();
+		for (var room of expiredRooms) {
+			releaseRoomClients(clients, room, "room_expired");
+		}
+		if (expiredRooms.length) util.updaterooms();
+	}, 30000);
+	if (roomCleanupTimer.unref) roomCleanupTimer.unref();
 	var messages = {
 		create: function (key, nickname, avatar, config, mode) {
 			if (this.onlineKey != key) return;
 			this.nickname = util.getNickname(nickname);
 			this.avatar = avatar;
-			var room = {};
-			rooms.push(room);
+			var room = roomLifecycle.createRoom(this, key);
+			if (!room) {
+				this.sendl("createroomfailed", "room_key_unavailable");
+				return;
+			}
 			this.room = room;
 			delete this.status;
-			room.owner = this;
-			room.key = key;
-			this.sendl("createroom", key);
+			this.sendl("createroom", key, {
+				protocol: 1,
+				ownerResumeToken: room.ownerResumeToken,
+				ownerReconnectMs: roomLifecycle.ownerReconnectMs,
+			});
 		},
 		enter: function (key, nickname, avatar) {
 			this.nickname = util.getNickname(nickname);
@@ -35,9 +59,12 @@
 				this.sendl("enterroomfailed");
 				return;
 			}
-			this.room = room;
-			delete this.status;
-			if (room.owner) {
+			if (!room.owner || room.lifecycleState != "active") {
+				this.sendl("enterroomfailed", "room_paused");
+				return;
+			} else if (room.owner) {
+				this.room = room;
+				delete this.status;
 				if (
 					room.servermode &&
 					!room.owner._onconfig &&
@@ -61,6 +88,28 @@
 				util.updaterooms();
 			}
 		},
+		resumeowner: function (protocolVersion, key, token, nickname, avatar) {
+			if (protocolVersion !== 1) {
+				this.sendl("resumeownerfailed", "protocol");
+				return;
+			}
+			var room = roomLifecycle.findRoom(key);
+			var nextToken = roomLifecycle.resumeOwner(room, this, token);
+			if (!nextToken) {
+				this.sendl("resumeownerfailed");
+				return;
+			}
+			this.nickname = util.getNickname(nickname);
+			this.avatar = avatar;
+			this.room = room;
+			delete this.status;
+			this.sendl("ownerresumed", key, {
+				protocol: 1,
+				ownerResumeToken: nextToken,
+				state: room.lifecycleState,
+			});
+			util.updaterooms();
+		},
 		changeAvatar: function (nickname, avatar) {
 			this.nickname = util.getNickname(nickname);
 			this.avatar = avatar;
@@ -70,7 +119,7 @@
 			if (cfg) {
 				this.servermode = true;
 				var room = rooms[cfg[0]];
-				if (!room || room.owner) {
+				if (!room || room.owner || room.lifecycleState) {
 					this.sendl("reloadroom", true);
 				} else {
 					room.owner = this;
@@ -81,7 +130,7 @@
 				}
 			} else {
 				for (var i = 0; i < rooms.length; i++) {
-					if (!rooms[i].owner) {
+					if (!rooms[i].owner && !rooms[i].lifecycleState) {
 						rooms[i].owner = this;
 						rooms[i].servermode = true;
 						this.room = rooms[i];
@@ -182,6 +231,19 @@
 					}
 				}
 				room.config = config;
+				if (roomLifecycle.activateOwner(room, this)) {
+					this.sendl("roomresumed", { protocol: 1, roomId: room.key });
+					for (var id in clients) {
+						if (clients[id].room == room && clients[id] != this) {
+							clients[id].owner = this;
+							this.sendl("onconnection", clients[id].wsid);
+							clients[id].sendl("roomresumed", {
+								protocol: 1,
+								roomId: room.key,
+							});
+						}
+					}
+				}
 			}
 			util.updaterooms();
 		},
@@ -247,7 +309,11 @@
 			for (var i = 0; i < rooms.length; i++) {
 				if (rooms[i].servermode) {
 					roomlist[i] = "server";
-				} else if (rooms[i].owner && rooms[i].config) {
+				} else if (
+					rooms[i].owner &&
+					rooms[i].lifecycleState == "active" &&
+					rooms[i].config
+				) {
 					if (rooms[i]._num == 0) {
 						rooms[i].owner.sendl("reloadroom");
 					}
@@ -379,14 +445,30 @@
 		ws.on("close", function () {
 			for (var i = 0; i < rooms.length; i++) {
 				if (rooms[i].owner == this) {
-					for (var j in clients) {
-						if (clients[j].room == rooms[i] && clients[j] != this) {
-							clients[j].sendl("selfclose");
-							// clients[j].close();
-							// delete clients[j];
+					var room = rooms[i];
+					if (room.servermode) {
+						roomLifecycle.removeRoom(room);
+						releaseRoomClients(
+							clients,
+							room,
+							"server_host_closed",
+							this
+						);
+						i--;
+						continue;
+					}
+					if (roomLifecycle.pauseForOwnerDisconnect(room, this)) {
+						for (var j in clients) {
+							if (clients[j].room == room && clients[j] != this) {
+								delete clients[j].owner;
+								clients[j].sendl(
+									"roompaused",
+									"awaiting_host",
+									roomLifecycle.ownerReconnectMs
+								);
+							}
 						}
 					}
-					rooms.splice(i--, 1);
 				}
 			}
 			if (clients[this.wsid]) {

@@ -25,6 +25,7 @@ import { V2ProgressAudit } from "../util/xingbei-v2-progress-audit.js";
 import { fingerprintXingbeiPublicState } from "../util/xingbei-public-checkpoint.js";
 import { ConnectionRecovery } from "../util/xingbei-connection-recovery.js";
 import { loadSeatCredentials } from "../util/xingbei-seat-credentials.js";
+import { loadOwnerCredentials } from "../util/xingbei-owner-credentials.js";
 import { GamePromises } from "./promises.js";
 import { Check } from "./check.js";
 
@@ -1565,6 +1566,44 @@ export class Game extends GameCompatible {
 			}
 		});
 		return this._xingbeiRecovery.start(_status.ip, {wasInGame: true});
+	}
+	beginXingbeiOwnerRecovery() {
+		if (
+			_status.over ||
+			this._xingbeiSuppressRecovery ||
+			!this.onlinehall ||
+			typeof this.roomId !== "string" ||
+			!this.roomId ||
+			typeof _status.ip !== "string" ||
+			this._xingbeiOwnerResumeReady?.roomId !== this.roomId
+		) {
+			return false;
+		}
+		const storage = typeof sessionStorage === "undefined" ? null : sessionStorage;
+		const credential = loadOwnerCredentials(storage, _status.ip);
+		if (!credential || credential.roomId !== this.roomId || credential.protocol !== 1) return false;
+		if (this._xingbeiRecovery?.active) return true;
+		this._xingbeiOwnerResumeRequested = false;
+		this._xingbeiOwnerReclaimed = false;
+		const gameRef = this;
+		this._xingbeiRecovery = new ConnectionRecovery({
+			connect(endpoint, report) {
+				gameRef._xingbeiOwnerResumeRequested = false;
+				gameRef._xingbeiOwnerReclaimed = false;
+				gameRef.online = false;
+				gameRef.connect(endpoint, success => {
+					if (success) gameRef.requireSandboxOn(endpoint);
+					report(Boolean(success));
+				});
+			},
+			onState(phase, details) {
+				gameRef.showXingbeiRecoveryState(phase, details);
+			},
+			onExhausted() {
+				console.warn("[Xingbei] Owner room reclaim attempts exhausted");
+			},
+		});
+		return this._xingbeiRecovery.start(_status.ip, { wasInGame: true });
 	}
 	showXingbeiRecoveryState(phase, details = {}) {
 		if (typeof document === "undefined") return;
