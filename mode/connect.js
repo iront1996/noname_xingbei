@@ -47,8 +47,8 @@ export default () => {
 				node.style.left = "calc(50% - 210px)";
 				node.style.top = "calc(50% - 20px)";
 				node.style.whiteSpace = "nowrap";
-				// The dedicated web entry always uses the private lobby.
-				const autoLobbyAddress = "wss://myxingbei.com:443";
+				// V2 direct HALL: DNS-only WSS endpoint; the legacy :443 lobby is not an automatic fallback.
+				const autoLobbyAddress = "wss://v2-hall-direct.myxingbei.com:50000";
 				node.textContent = autoLobbyAddress;
 				node.contentEditable = true;
 				node.style.webkitUserSelect = "text";
@@ -115,7 +115,7 @@ export default () => {
 				ui.hall_button = ui.create.system(
 					"联机大厅",
 					function () {
-						node.textContent = get.config("hall_ip") || lib.hallURL;
+						node.textContent = autoLobbyAddress;
 						connect();
 					},
 					true
