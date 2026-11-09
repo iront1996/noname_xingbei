@@ -1,0 +1,30 @@
+name: V2 original HALL contract (non-deploy)
+
+on:
+  pull_request:
+    branches:
+      - feature/image-preload-cache
+    paths:
+      - mode/connect.js
+      - game/server.js
+      - ops/v2-original-hall/**
+      - .github/workflows/v2-original-hall-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Verify V2 clean-HALL source and endpoint contracts
+        run: node --test ops/v2-original-hall/test-contract.mjs
+      - name: Check V2 connect source syntax
+        run: node --check mode/connect.js
+      - name: Check original HALL source syntax
+        run: node --check game/server.js
