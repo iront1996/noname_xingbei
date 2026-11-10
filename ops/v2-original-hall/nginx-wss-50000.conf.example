@@ -1,5 +1,6 @@
-# 新獨立 VPS：僅在憑證存在、DNS 已設為 DNS only、8080 已由防火牆阻擋公網後啟用。
-# 本檔應放置在 nginx http {} 內（如 sites-enabled）。不要修改其他站台的設定。
+# 現有 VPS：只在既有 Nginx 中增加此 server block，不覆蓋任何舊 80/443 站台。
+# 必備：DNS-only A -> 本 VPS；TLS 憑證已存在並可續期；TCP 50000 未被佔用。
+# 原版 HALL 8080 是明文 WS，必須對外封鎖。
 server {
     listen 50000 ssl;
     server_name v2-hall-direct.myxingbei.com;

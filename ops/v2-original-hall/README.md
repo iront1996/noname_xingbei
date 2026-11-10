@@ -1,102 +1,82 @@
-# V2 原版 HALL／DNS-only／WSS 50000 遷移工程
+# V2 原版 HALL｜現有 VPS 原地替換／DNS only／WSS :50000
 
-狀態：**已建立隔離 V2 工程分支；尚未部署、尚未切換正式 V2**。
+狀態：GitHub 草稿分支已建立；尚未部署 VPS、DNS 或 Cloudflare Pages。
 
-## 核定目標與邊界
+## 已授權方案與保護範圍
 
-- V2 正式入口最終只用 `wss://v2-hall-direct.myxingbei.com:50000`。沒有自動回退至舊 `wss://myxingbei.com:443`。
-- V2 網頁、圖片預載、原版遊戲規則、真人房主主持機制與原版 WebSocket 訊息協定不變。
-- 使用新的獨立 VPS（優先）或確認不干擾其他版本的獨立資源；DNS A 記錄設 **DNS only**，而不是 Cloudflare Proxied。
-- HALL 使用原作者固定基準 `RancherJie/noname_xingbei@bd227231b6edeba5b32f906673b9f3cb0091b90c` 的 `game/server.js`，Git blob SHA 必須為 `49a0ad87ffc2638e3651fe6a08b5a150cdf38de3`。
-- 不帶入現有 V2 VPS 上的 A1 Ping/Pong、健康偵測、恢復實驗或監控補丁；不要因為驗證需求改寫原版心跳。
-- WSS 的 TLS 終止與必要的防火牆、程序管理不屬於原版遊戲規則修改。
-- 未經另行部署核對，不得動到 V1、V3、V4、V5、M2、原版倉庫，或其他正式 VPS 服務／埠／配置。
+使用者已授權直接覆蓋現有 V2 聯機服務，並表示改版前可以容忍既有 V2 HALL 停機。因此本工程**不新增第二個常駐 HALL systemd 服務，不強制沿用 A1 Ping/Pong 或舊監控**。
 
-## 開工前已查核
+新預設入口：wss://v2-hall-direct.myxingbei.com:50000；V2 網頁與圖片預載留在 Cloudflare Pages。新入口使用 DNS only A 記錄直指**現有 VPS**，WSS TLS 在既有 Nginx 終止，轉送到現有 HALL 的 8080 埠。仍採真人房主主持，不改原版遊戲規則與訊息協定。
 
-- V2 基準：`feature/image-preload-cache@d872c6fca19b1333f85aadbfb76c735cf25c7fd8`。
-- 原版 `game/server.js` 與這份 V2 前端分支的同路徑檔案，其 Git blob SHA 相同。
-- 原版 HALL 的 `ws` 對外開啟 TCP 8080（明文），60 秒發送文字 `heartbeat`，若下一輪未獲回覆會關閉連線；它不自行處理 TLS。
-- 本次公開 DNS 查詢（2026-11-10）時，`v2-hall-direct.myxingbei.com` 不存在 A 記錄；**尚未指向任何 VPS**。`hall.myxingbei.com` 已解析到 Cloudflare IP，因此刻意不用它，以防破壞既有服務。
-- 任何基於 GitHub 的程式碼比對都不等同於已取得現有 V2 正式 VPS 的完整配置。
+原版基準：RancherJie/noname_xingbei@bd227231b6edeba5b32f906673b9f3cb0091b90c，game/server.js Git Blob SHA 為 49a0ad87ffc2638e3651fe6a08b5a150cdf38de3。
 
-## 隔離 VPS 佈署操作手冊（不在現有正式主機直接執行）
+**尚未確認的關鍵前提：**既有 VPS 的 V2 HALL 由 xingbei-hall.service 執行 /opt/xingbei-hall/server.js。這是依歷史操作紀錄推估，正式 VPS 當前的單元檔、埠、依賴仍須唯讀核對。即使無玩家連線，也不等於 V1、V3 或其他系統沒有共用同一服務；如存在共用，**禁止覆蓋**，先解決隔離問題。不可修改 xingbei-hall-v3.service 或任何其他版本的服務。
 
-### 1. 作業系統與依賴
+## 步驟 1：現有 VPS 唯讀檢查（最先執行）
 
-在**全新** VPS 上使用 Ubuntu LTS、維護中的 Node.js LTS、Nginx、Certbot、Git。僅以最小新 service account 運作。先查驗目前監聽埠和防火牆，確保 50000/8080 不衝突；非新 VPS 須停止並另做影響評估。
+在**現有 VPS** 上執行，暫時不停止或重啟任何服務：
 
-以固定 commit 下載原版單檔，而不是覆蓋任何現有 service：
+~~~bash
+sudo systemctl status xingbei-hall.service --no-pager
+sudo systemctl cat xingbei-hall.service
+sudo systemctl status xingbei-hall-v3.service --no-pager
+sudo systemctl cat xingbei-hall-v3.service
+sudo ss -ltnp
+sudo ss -tn state established
+sudo nginx -T 2>/dev/null | grep -nE 'server_name|listen|proxy_pass|proxy_read_timeout|ssl_certificate'
+sudo ufw status verbose
+sudo ls -l /opt/xingbei-hall/server.js
+~~~
 
-```bash
-sudo mkdir -p /opt/v2-original-hall
-cd /opt/v2-original-hall
-sudo curl -fL \
-  https://raw.githubusercontent.com/RancherJie/noname_xingbei/bd227231b6edeba5b32f906673b9f3cb0091b90c/game/server.js \
-  -o server.js
-git hash-object server.js
-# 必須得到：49a0ad87ffc2638e3651fe6a08b5a150cdf38de3
-node --check server.js
-```
+回傳輸出時刪去 token、密碼、憑證內容及不必要的私有資料。重點查明 V2 HALL 所在檔案、是否有共享依賴、50000 是否佔用、8080 是否公開、DNS/TLS 和 Nginx 原有路由。
 
-只在 hash 正確時再建立獨立 Node 專案：
+在 GitHub 本工程分支的工作目錄：
 
-```bash
-cd /opt/v2-original-hall
-sudo npm init -y
-sudo npm install --save-exact ws@8
-# 保存 package.json 和 package-lock.json，後續以 npm ci 重現
-```
+~~~bash
+python3 ops/v2-original-hall/deploy-existing-vps.py --self-test
+sudo python3 ops/v2-original-hall/deploy-existing-vps.py --check
+~~~
 
-不要複製或部署舊 V2 HALL A1／監控檔案。必要時可在隔離測試工作樹核對原版 source，**不能修改原版基準以滿足新架構**。
+--check 完全唯讀；核對既有服務、來源檔、Node ws 套件，以及 :8080 現有 TCP 連線。若路徑與預期不符，會拒絕而不是覆蓋未知檔案。它無法證明 V1/其他網頁沒有間接引用這台 HALL；此項仍須對照 VPS 路由和其他版本配置。
 
-### 2. DNS、TLS 與開埠
+## 步驟 2：設定 DNS only + WSS，不開新 HALL service
 
-由你擁有的 Cloudflare DNS 區建立獨立 A 記錄 `v2-hall-direct`，值為新 VPS 公開 IPv4，Proxy status 設 **DNS only（灰雲）**。查核 `dig +short v2-hall-direct.myxingbei.com A` 為 VPS IP，而不是 Cloudflare IP。檢查 AAAA 記錄，避免 IPv6 落到其他環境。
+Cloudflare DNS 新增子網域 v2-hall-direct 的 A 記錄，指向**此現有 VPS 的真實公開 IPv4**，Proxy status 選 DNS only（灰雲）。不能改動主網域 myxingbei.com 或目前已存在的 hall.myxingbei.com；不要動 Cloudflare Pages。檢查 AAAA 記錄，避免意外 IPv6 路由。
 
-WSS 對外 TCP 50000 必須支援有效的公開信任 TLS 憑證。範例使用 Certbot 的 HTTP-01 webroot（需要 TCP 80 暫時或持續能夠到達獨立主機），可參考 `nginx-acme-http.conf.example`；取得憑證後再載入 `nginx-wss-50000.conf.example`。
+TLS 憑證須涵蓋 v2-hall-direct.myxingbei.com，且具備可維護的自動續期方式。可使用已涵蓋此子網域的現有憑證，或以 ACME DNS-01 簽發，避免為新增域名覆蓋既有 80/443 虛擬主機。不得把 Cloudflare API token 放入 GitHub。
 
-開放新 VPS 的必要入口：TCP 50000 供 WSS、TCP 80 供 ACME HTTP-01（及維護允許的 SSH）；**不要對公網開放原版明文 TCP 8080**。需同時檢查 VPS 本機與雲服務商安全群組／防火牆，並從外部驗證 8080 不可連。
+僅在既有 nginx.service 中**新增** :50000 TLS server block，參考 nginx-wss-50000.conf.example；不要複製覆蓋全域 nginx.conf、既有 :443 網站或 v3 站台。啟用前檢查 50000 無埠衝突，取得憑證，完成 nginx -t；再對**同一 nginx.service** reload。設定 proxy_pass http://127.0.0.1:8080，proxy_read_timeout / proxy_send_timeout 初始 180s，避免與原版 60 秒心跳週期碰撞。
 
-原版 `server.js` 會在所有介面監聽 8080；此版要維持原始 SHA，所以**不得省略外部封鎖 8080 的安全檢查**。若無法隔離，拒絕上線，而不是偷偷改動原版程式。
+對外只新增 TCP 50000；確保公開網路**無法**直接存取原版明文 8080。原版 server.js 監聽所有介面，這項保護必須靠現有 VPS 防火牆及供應商安全群組實施。保留現有 SSH、其他服務與舊站台所需的埠。
 
-Nginx 僅處理 WSS／TLS 入口轉發本機 `127.0.0.1:8080`；`proxy_read_timeout` 與 `proxy_send_timeout` 設 180 秒，避免與原版 60 秒文字心跳的計時碰撞。這是初始防護設定，非保證穩定值。
+## 步驟 3：原地覆蓋 V2 HALL（只停止同一個服務）
 
-### 3. 單獨 service 與基本安全
+取得本工程分支後，先執行 self-test、--check 和 node --check game/server.js。**只有已確認沒有其他版本共用此 HALL、DNS 已就緒、TLS/防火牆/Nginx 通過檢查且無 8080 使用中的連線，才可執行 --apply。**
 
-參考 `v2-original-hall.service.example`，使用專用 `v2hall` 帳號、`/opt/v2-original-hall` 工作目錄及獨立 service 名稱 `v2-original-hall.service`。設定檔仍是範例，須確認 Node 路徑、使用者與權限；服務啟動前先測試。
+~~~bash
+# 203.0.113.10 是文件保留 IP，必須換成「本 VPS 實際公開 IPv4」，不能照抄
+sudo python3 ops/v2-original-hall/deploy-existing-vps.py \
+  --apply \
+  --original-file game/server.js \
+  --expect-ip 203.0.113.10 \
+  --confirm REPLACE_V2_HALL
+~~~
 
-Nginx access/error logs 及 systemd journal 作為**被動記錄**。不主動插入新 Ping/Pong，不為統計而修改原版心跳行為。這些日誌能提供連線起訖和代理錯誤，但**無法憑空提供原版內部每次 heartbeat send/ACK 的精準時間**；若日後需要這項資料，必須另設有界、可審計的觀測方案。
+此程式：核對系統服務／工作目錄、DNS A 記錄與原版 Git Blob；檢查 Node 語法與現有連線；將既有 /opt/xingbei-hall/server.js 備份至 /root/v2-original-hall-backups/；只停止 xingbei-hall.service；以 atomic replace 換成原版 game/server.js；只啟動相同的 xingbei-hall.service 並確認監聽 8080。若啟動失敗會嘗試自動回復舊檔案及服務。**不**新增 service、不修改 systemd unit、不修改 Nginx、DNS 或前端。
 
-### 4. 封閉驗證與切換門檻
+若檢查未通過，應修正實際部署認知或調查共享依賴，而不是跳過保護條件。
 
-```bash
-# 在 V2 原始碼根目錄（本分支）
-node --test ops/v2-original-hall/test-contract.mjs
+## 步驟 4：測試 WSS，再正式切換前端
 
-# 在新 VPS 上
-sudo nginx -t
-sudo systemctl status v2-original-hall.service --no-pager
-dig +short v2-hall-direct.myxingbei.com A
-openssl s_client -connect v2-hall-direct.myxingbei.com:50000 -servername v2-hall-direct.myxingbei.com </dev/null
-```
+先從**外部客戶端**核對 TLS/SAN、WebSocket 101、原版 roomlist/key 握手（原版 2 秒初始 key 驗證）、建立房間、加入房間、原版真人房主轉發及 2V2/3V3/4V4 玩法相容性。原版房主斷線會關房；本工程不處理這項原版特性。
 
-上述命令只驗證部分靜態條件。仍須使用獨立瀏覽器與測試房，在新入口完成實際 WebSocket 101、原版 `roomlist`／`key` 握手、建立房間、加入房間、4／6／8 人可用性（依原版既有模式）、訊息轉發與持續連線觀測。原版真人房主斷線會關房，此行為不屬於這次修復範圍。
+只在新入口驗收通過且沒有進行中對局後，才把本 PR 的 mode/connect.js 發佈到 V2 Cloudflare Pages，讓 V2 預設唯一官方入口變為 wss://v2-hall-direct.myxingbei.com:50000。舊 :443 不做自動回退。**不得隨意關閉 myxingbei.com 的整個 443 HTTPS 網站服務**；若要移除舊 V2 WebSocket 路由，先確認它不被其他版本或業務使用。
 
-只有當新 DNS、TLS、主機防火牆、HALL、非真人驗證及集中真人驗證均完成，且正式切換窗口內沒有進行中的房間，才把本分支的 `mode/connect.js` 發佈到 V2 的 Cloudflare Pages 正式站。不能先發佈一個不存在的 DNS 或尚未啟用的 WSS URL。
+保留切換前 443 歷史日誌、原始碼備份與新 50000 被動 Nginx/systemd 觀測作對照。原版 HALL 本身不輸出每次 heartbeat ACK 的詳細時間，故不應謊稱在完全保留原版的情況下已實現逐次心跳監控。正式上線後若仍不穩，再依證據評估是否增加最小診斷能力。
 
-切換時留下舊 443 的離線配置備份與前後 baseline 日誌；切換後舊 443 **不作為官方入口、不自動回退**。既有房間不保證可搬遷。需要 rollback 時另取得明確授權，不在客戶端偷偷切換。
+## 安全與限制
 
-### 5. 驗收與證據
-
-- 新網域 DNS A（及 AAAA）結果、代理狀態、TLS 憑證鏈。
-- 新 VPS 的程式 Git blob SHA、Node/`ws` 精確版本、systemd service、Nginx 生效配置。
-- 至少記錄每一輪測試的開始／結束時刻、瀏覽器 Network WS Request URL、握手結果、WebSocket Close code、Nginx access/error、Node journal。
-- 對舊 443 的歷史連線失敗數／時間與新 50000 相同量測方式做對照，避免把不同偵測器的數字誤當作直接可比。
-- 驗收失敗時，**不改動正式 V2**，先分析 DNS／TLS／代理／原版 HALL。
-
-## 已知非目標
-
-- 不是 V3／V4／V5 的 Dedicated Chromium Host；仍由真人房主持有遊戲狀態。
-- 不是保證 WebSocket 絕不斷線，也不是承諾重連恢復整場遊戲。
-- 不引入 A1 Ping/Pong、V2 guest reclaim／Runner、大量卡牌自動玩局或既有監控整合。
+- --check 唯讀；--apply 會修改**既有 V2 HALL 服務程式**並短暫停止／啟動它，只有通過安全檢查時才能實際使用。
+- 自動 rollback 範圍僅限被此腳本取代的 server.js；Nginx、DNS、Cloudflare Pages 的變更須另行保留並執行回復流程。
+- 不新增第二套服務、不再沿用 A1/監控修正、不動 V1、V3、V4、V5、M2、原版與其他正式服務。
+- 現有 VPS 尚未取得可供本聊天室實際管理的 SSH 權限，因此**目前這份 GitHub 工程不是已部署完成**。

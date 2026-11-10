@@ -22,8 +22,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Verify V2 clean-HALL source and endpoint contracts
+      - name: Verify V2 original HALL and endpoint contracts
         run: node --test ops/v2-original-hall/test-contract.mjs
+      - name: Verify in-place deploy script and original-source hash
+        run: python3 ops/v2-original-hall/deploy-existing-vps.py --self-test
+      - name: Check deployment script syntax
+        run: python3 -c "import ast, pathlib; ast.parse(pathlib.Path('ops/v2-original-hall/deploy-existing-vps.py').read_text())"
       - name: Check V2 connect source syntax
         run: node --check mode/connect.js
       - name: Check original HALL source syntax
