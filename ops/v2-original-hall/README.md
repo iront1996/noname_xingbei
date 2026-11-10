@@ -10,7 +10,31 @@
 
 原版基準：RancherJie/noname_xingbei@bd227231b6edeba5b32f906673b9f3cb0091b90c，game/server.js Git Blob SHA 為 49a0ad87ffc2638e3651fe6a08b5a150cdf38de3。**部署工具保留該檔為輸入基準，但為維持 VPS 現有的本機-only 安全邊界，部署時僅加上 WebSocket listener 的 host: "127.0.0.1" 參數；這個必要的監聽範圍調整會讓實際部署檔的 SHA 與原版不同，不影響心跳、房間或遊戲訊息協定。**
 
-**2026-11-11 現有 VPS 唯讀證據：**已確認 xingbei-hall.service 執行 /opt/xingbei-hall/server.js；xingbei-hall-v3.service 執行 /opt/xingbei-hall-v3/server.js。已觀測到 127.0.0.1:8080、127.0.0.1:8081（尚須 PID 對照才能逐一歸屬）。本次命令未顯示 VPS 本機 :80、:443 或 :50000 監聽；nginx -T 查詢沒有輸出，**無法推定 Nginx 已安裝或當前有代理路由**。即使無玩家連線，也不能排除 V1 或其他系統共用 HALL；如存在共用，禁止覆蓋，先解決隔離問題。不可修改 xingbei-hall-v3.service 或任何其他版本的服務。
+**2026-11-11 現有 VPS 唯讀證據（更新）：** systemd MainPID 1900742 = `/usr/bin/node /opt/xingbei-hall/server.js` = `127.0.0.1:8080`；MainPID 193545 = `/usr/bin/node /opt/xingbei-hall-v3/server.js` = `127.0.0.1:8081`。`cloudflared.service`、`xingbei-monitor.service`、`xingbei-v2-observer.service` 均在運行。`command -v` 只找到 `/usr/local/bin/cloudflared`，未找到 Nginx、Caddy、HAProxy、Traefik；VPS 無本機 TCP :80、:443、:50000 監聽。**現有前端外部 WSS 可能透過 Cloudflare Tunnel；Cloudflare Tunnel 的 ingress 路由（是否指向 8080，是否同時供 V1／V3 使用）尚未確認。**不能把 `cloudflared.service` 當作可供 DNS-only :50000 使用的 TLS 直連入口，更不可直接停止它。即使無玩家連線，也不能排除 V1 或其他系統共用 HALL；如存在共用，禁止覆蓋，先解決隔離問題。不可修改 `xingbei-hall-v3.service` 或任何其他版本的服務。
+
+## 目前最先進行的唯讀網路／路由核對
+
+在任何新埠、憑證、DNS 或 HALL 覆蓋之前，先檢查：
+- 現有 VPS **是否有真正可入站的公開 IPv4**（不是只有 Cloudflare Tunnel 的對外通路）；從 VPS 查詢的出口公網 IP 不代表 IPv4 一定直掛在 VPS 上，也不保證 TCP 50000 可以入站。
+- cloudflared 的 ingress 配置是本機管理或 Cloudflare Dashboard 遠端管理；核對當前 hostname → 本機服務（尤其 :8080/:8081）並標記是否涉及 V1/V3。
+- `xingbei-monitor.service`、`xingbei-v2-observer.service` 與 V1 的依賴，避免重建 V2 時破壞其他版本。
+- VPS 本機與供應商防火牆，不得因新 TLS 入口直接暴露明文 8080。
+
+唯讀檢查範例：
+
+~~~bash
+ip -4 -o addr show scope global
+ip -4 route show default
+curl -4fsS --max-time 10 https://api.ipify.org; echo
+sudo ufw status verbose
+sudo systemctl show cloudflared.service -p FragmentPath -p MainPID -p ActiveState
+sudo systemctl show xingbei-monitor.service xingbei-v2-observer.service -p Id -p MainPID -p ActiveState -p WorkingDirectory
+for f in /etc/cloudflared/config.yml /etc/cloudflared/config.yaml /root/.cloudflared/config.yml /root/.cloudflared/config.yaml; do
+  if test -f "$f"; then echo "Local Cloudflare Tunnel config present: $f"; fi
+done
+~~~
+
+**不回傳 cloudflared token、隧道認證 JSON、憑證私鑰或完整含憑證的 systemd ExecStart。** 若 Tunnel 為遠端管理，需要在 Cloudflare Dashboard 查詢公開 hostname 與 service URL，不能由本機不存在的 config 猜測對應路由。
 
 ## 步驟 1：現有 VPS 唯讀檢查（最先執行）
 
@@ -50,7 +74,7 @@ Cloudflare DNS 新增子網域 v2-hall-direct 的 A 記錄，指向**此現有 V
 
 TLS 憑證須涵蓋 v2-hall-direct.myxingbei.com，且具備可維護的自動續期方式。可使用已涵蓋此子網域的現有憑證，或以 ACME DNS-01 簽發，避免為新增域名覆蓋既有 80/443 虛擬主機。不得把 Cloudflare API token 放入 GitHub。
 
-**先確認 VPS 上是否已有可重用的 TLS 服務。**若已安裝 Nginx，可在同一 nginx.service 中新增 :50000 TLS server block，參考 nginx-wss-50000.conf.example；不要覆蓋全域 nginx.conf、既有 :443 網站或 V3 站台。若 VPS 沒有 Nginx／任何其他 TLS 終止服務，必須先規劃並安裝**同台 VPS 的 TLS 入口**；這是提供加密 WSS 的必要基礎設施，**不是新增另一個遊戲 HALL**。不得假稱目前已存在可用的 Nginx，也不得直接使用未加密 :8080 對外。設定 proxy_pass http://127.0.0.1:8080，proxy_read_timeout / proxy_send_timeout 初始 180s，避免與原版 60 秒心跳週期碰撞。
+**已確認 VPS 上沒有已知本機 TLS 服務**（目前僅發現 cloudflared，不是 DNS-only 直連入口）。必須先查 VPS 是否擁有可由公網路由到達的 IPv4、主機與供應商入站 ACL，再於**同一台 VPS**新增必要的 TLS 終止層（優先評估 Nginx；這是加密入口，不是第二個遊戲 HALL），使新 WSS :50000 代理到唯一現有 HALL 的 `127.0.0.1:8080`。範本見 `nginx-wss-50000.conf.example`。**不可停止 cloudflared.service**，因為它可能仍為 V1／V3／其他入口提供路由；也不能把 Cloudflare Tunnel 原有 hostname 直接改成 DNS only 而沒有建立新 TLS 入口。不得使用未加密 :8080 對外。初始 `proxy_read_timeout` 與 `proxy_send_timeout` 均為 180 秒，以避開原版 60 秒心跳週期與 60 秒代理讀取逾時的競態。
 
 對外只新增 TCP 50000；確保公開網路**無法**直接存取原版明文 8080。原版 server.js 監聽所有介面，這項保護必須靠現有 VPS 防火牆及供應商安全群組實施。保留現有 SSH、其他服務與舊站台所需的埠。
 
