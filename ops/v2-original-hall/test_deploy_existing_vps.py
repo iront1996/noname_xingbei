@@ -34,6 +34,10 @@ class InPlaceTests(unittest.TestCase):
 
     def test_original_hash_matches_pinned_commit(self):
         self.assertEqual(module.git_blob_sha(ORIGINAL.read_bytes()), module.EXPECTED_GIT_BLOB)
+        hardened = module.original_with_loopback(ORIGINAL.read_bytes())
+        self.assertEqual(hardened.count(module.LOOPBACK_LISTENER), 1)
+        self.assertNotIn(module.ORIGINAL_LISTENER, hardened)
+        self.assertEqual(len(hardened.splitlines()), len(ORIGINAL.read_bytes().splitlines()))
 
     def test_preflight_rejects_wrong_unit_mapping_before_mutation(self):
         def prop(unit, p):
@@ -84,10 +88,22 @@ class InPlaceTests(unittest.TestCase):
             cmd.return_value = subprocess.CompletedProcess([], 0, "checked", "")
             module.apply(ORIGINAL, "203.0.113.10")
             operations = [tuple(c.args) for c in cmd.call_args_list]
-        self.assertEqual(self.source.read_bytes(), original)
+        self.assertEqual(self.source.read_bytes(), module.original_with_loopback(original))
         self.assertIn(("systemctl", "stop", "xingbei-hall.service"), operations)
         self.assertIn(("systemctl", "start", "xingbei-hall.service"), operations)
         self.assertEqual(len(list((self.root / "backups").glob("*/server.js.before"))), 1)
+
+    def test_listening_checker_requires_loopback_only(self):
+        with patch.object(module, "unit_property", return_value="active"):
+            with patch.object(module, "command", return_value=subprocess.CompletedProcess(
+                [], 0, "LISTEN 0 511 0.0.0.0:8080 0.0.0.0:*\n", ""
+            )), patch.object(module.time, "sleep"):
+                # No unconditional acceptance of public exposure, even if port 8080 exists.
+                self.assertFalse(module.original_listening())
+            with patch.object(module, "command", return_value=subprocess.CompletedProcess(
+                [], 0, "LISTEN 0 511 127.0.0.1:8080 0.0.0.0:*\n", ""
+            )), patch.object(module.time, "sleep"):
+                self.assertTrue(module.original_listening())
 
     def test_apply_rolls_back_on_failed_start(self):
         def cmd(*args, **kwargs):
