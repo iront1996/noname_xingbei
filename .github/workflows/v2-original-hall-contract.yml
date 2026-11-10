@@ -28,6 +28,8 @@ jobs:
         run: python3 ops/v2-original-hall/deploy-existing-vps.py --self-test
       - name: Check deployment script syntax
         run: python3 -c "import ast, pathlib; ast.parse(pathlib.Path('ops/v2-original-hall/deploy-existing-vps.py').read_text())"
+      - name: Simulate existing-VPS preflight, replacement and automatic rollback
+        run: python3 -m unittest discover -s ops/v2-original-hall -p "test-deploy-existing-vps.py" -v
       - name: Check V2 connect source syntax
         run: node --check mode/connect.js
       - name: Check original HALL source syntax
