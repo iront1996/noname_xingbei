@@ -6,11 +6,11 @@
 
 使用者已授權直接覆蓋現有 V2 聯機服務，並表示改版前可以容忍既有 V2 HALL 停機。因此本工程**不新增第二個常駐 HALL systemd 服務，不強制沿用 A1 Ping/Pong 或舊監控**。
 
-新預設入口：wss://v2-hall-direct.myxingbei.com:50000；V2 網頁與圖片預載留在 Cloudflare Pages。新入口使用 DNS only A 記錄直指**現有 VPS**，WSS TLS 在既有 Nginx 終止，轉送到現有 HALL 的 8080 埠。仍採真人房主主持，不改原版遊戲規則與訊息協定。
+新預設入口：wss://v2-hall-direct.myxingbei.com:50000；V2 網頁與圖片預載留在 Cloudflare Pages。新入口使用 DNS only A 記錄直指**現有 VPS**，WSS 必須有 TLS 終止服務並轉送至現有 HALL 的 8080 埠，但**尚未確認這台 VPS 是否安裝 Nginx／其他代理**；不得假定既有 Nginx 可以使用。仍採真人房主主持，不改原版遊戲規則與訊息協定。
 
-原版基準：RancherJie/noname_xingbei@bd227231b6edeba5b32f906673b9f3cb0091b90c，game/server.js Git Blob SHA 為 49a0ad87ffc2638e3651fe6a08b5a150cdf38de3。
+原版基準：RancherJie/noname_xingbei@bd227231b6edeba5b32f906673b9f3cb0091b90c，game/server.js Git Blob SHA 為 49a0ad87ffc2638e3651fe6a08b5a150cdf38de3。**部署工具保留該檔為輸入基準，但為維持 VPS 現有的本機-only 安全邊界，部署時僅加上 WebSocket listener 的 host: "127.0.0.1" 參數；這個必要的監聽範圍調整會讓實際部署檔的 SHA 與原版不同，不影響心跳、房間或遊戲訊息協定。**
 
-**尚未確認的關鍵前提：**既有 VPS 的 V2 HALL 由 xingbei-hall.service 執行 /opt/xingbei-hall/server.js。這是依歷史操作紀錄推估，正式 VPS 當前的單元檔、埠、依賴仍須唯讀核對。即使無玩家連線，也不等於 V1、V3 或其他系統沒有共用同一服務；如存在共用，**禁止覆蓋**，先解決隔離問題。不可修改 xingbei-hall-v3.service 或任何其他版本的服務。
+**2026-11-11 現有 VPS 唯讀證據：**已確認 xingbei-hall.service 執行 /opt/xingbei-hall/server.js；xingbei-hall-v3.service 執行 /opt/xingbei-hall-v3/server.js。已觀測到 127.0.0.1:8080、127.0.0.1:8081（尚須 PID 對照才能逐一歸屬）。本次命令未顯示 VPS 本機 :80、:443 或 :50000 監聽；nginx -T 查詢沒有輸出，**無法推定 Nginx 已安裝或當前有代理路由**。即使無玩家連線，也不能排除 V1 或其他系統共用 HALL；如存在共用，禁止覆蓋，先解決隔離問題。不可修改 xingbei-hall-v3.service 或任何其他版本的服務。
 
 ## 步驟 1：現有 VPS 唯讀檢查（最先執行）
 
@@ -23,12 +23,17 @@ sudo systemctl status xingbei-hall-v3.service --no-pager
 sudo systemctl cat xingbei-hall-v3.service
 sudo ss -ltnp
 sudo ss -tn state established
-sudo nginx -T 2>/dev/null | grep -nE 'server_name|listen|proxy_pass|proxy_read_timeout|ssl_certificate'
+systemctl show xingbei-hall.service xingbei-hall-v3.service -p Id -p MainPID -p ActiveState --no-pager
+ps -o pid,ppid,comm,args -p 1900742,193545
+for bin in nginx caddy haproxy traefik cloudflared certbot; do command -v "$bin" || true; done
+sudo systemctl list-units --type=service --all --no-pager | grep -Ei 'nginx|caddy|haproxy|traefik|cloudflared|tunnel|xingbei' || true
+sudo ss -ltnp | grep -E ':(80|443|8080|8081|50000)([[:space:]]|$)' || true
+if command -v nginx >/dev/null; then sudo nginx -t 2>&1; fi
 sudo ufw status verbose
 sudo ls -l /opt/xingbei-hall/server.js
 ~~~
 
-回傳輸出時刪去 token、密碼、憑證內容及不必要的私有資料。重點查明 V2 HALL 所在檔案、是否有共享依賴、50000 是否佔用、8080 是否公開、DNS/TLS 和 Nginx 原有路由。
+回傳輸出時刪去 token、密碼、憑證內容及不必要的私有資料。重點查明 V2 HALL 是否被 V1/其他入口共用、50000 是否佔用、TLS 入口目前由誰處理，以及對外埠與防火牆的實際情況。
 
 在 GitHub 本工程分支的工作目錄：
 
@@ -45,7 +50,7 @@ Cloudflare DNS 新增子網域 v2-hall-direct 的 A 記錄，指向**此現有 V
 
 TLS 憑證須涵蓋 v2-hall-direct.myxingbei.com，且具備可維護的自動續期方式。可使用已涵蓋此子網域的現有憑證，或以 ACME DNS-01 簽發，避免為新增域名覆蓋既有 80/443 虛擬主機。不得把 Cloudflare API token 放入 GitHub。
 
-僅在既有 nginx.service 中**新增** :50000 TLS server block，參考 nginx-wss-50000.conf.example；不要複製覆蓋全域 nginx.conf、既有 :443 網站或 v3 站台。啟用前檢查 50000 無埠衝突，取得憑證，完成 nginx -t；再對**同一 nginx.service** reload。設定 proxy_pass http://127.0.0.1:8080，proxy_read_timeout / proxy_send_timeout 初始 180s，避免與原版 60 秒心跳週期碰撞。
+**先確認 VPS 上是否已有可重用的 TLS 服務。**若已安裝 Nginx，可在同一 nginx.service 中新增 :50000 TLS server block，參考 nginx-wss-50000.conf.example；不要覆蓋全域 nginx.conf、既有 :443 網站或 V3 站台。若 VPS 沒有 Nginx／任何其他 TLS 終止服務，必須先規劃並安裝**同台 VPS 的 TLS 入口**；這是提供加密 WSS 的必要基礎設施，**不是新增另一個遊戲 HALL**。不得假稱目前已存在可用的 Nginx，也不得直接使用未加密 :8080 對外。設定 proxy_pass http://127.0.0.1:8080，proxy_read_timeout / proxy_send_timeout 初始 180s，避免與原版 60 秒心跳週期碰撞。
 
 對外只新增 TCP 50000；確保公開網路**無法**直接存取原版明文 8080。原版 server.js 監聽所有介面，這項保護必須靠現有 VPS 防火牆及供應商安全群組實施。保留現有 SSH、其他服務與舊站台所需的埠。
 
@@ -62,7 +67,7 @@ sudo python3 ops/v2-original-hall/deploy-existing-vps.py \
   --confirm REPLACE_V2_HALL
 ~~~
 
-此程式：核對系統服務／工作目錄、DNS A 記錄與原版 Git Blob；檢查 Node 語法與現有連線；將既有 /opt/xingbei-hall/server.js 備份至 /root/v2-original-hall-backups/；只停止 xingbei-hall.service；以 atomic replace 換成原版 game/server.js；只啟動相同的 xingbei-hall.service 並確認監聽 8080。若啟動失敗會嘗試自動回復舊檔案及服務。**不**新增 service、不修改 systemd unit、不修改 Nginx、DNS 或前端。
+此程式：核對系統服務／工作目錄、DNS A 記錄與原版輸入 Git Blob；將唯一 WebSocket 監聽位置限制為 127.0.0.1；檢查 Node 語法與現有連線；將既有 /opt/xingbei-hall/server.js 備份至 /root/v2-original-hall-backups/；只停止 xingbei-hall.service；以 atomic replace 換成原版 game/server.js；只啟動相同的 xingbei-hall.service 並確認**僅在 127.0.0.1:8080** 監聽。若啟動失敗會嘗試自動回復舊檔案及服務。**不**新增 service、不修改 systemd unit、不修改 Nginx、DNS 或前端。
 
 若檢查未通過，應修正實際部署認知或調查共享依賴，而不是跳過保護條件。
 
