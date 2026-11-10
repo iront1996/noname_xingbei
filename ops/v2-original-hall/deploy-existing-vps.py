@@ -9,7 +9,6 @@ import datetime as dt
 import hashlib
 import os
 import re
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -22,6 +21,15 @@ DIR = SOURCE.parent
 BACKUPS = Path("/root/v2-original-hall-backups")
 EXPECTED_GIT_BLOB = "49a0ad87ffc2638e3651fe6a08b5a150cdf38de3"
 HOST = "v2-hall-direct.myxingbei.com"
+ORIGINAL_LISTENER = b"var wss = new WebSocketServer({ port: 8080 });"
+LOOPBACK_LISTENER = b'var wss = new WebSocketServer({ port: 8080, host: "127.0.0.1" });'
+
+
+def original_with_loopback(data: bytes) -> bytes:
+    """Preserve original gameplay/heartbeat; change only external listening exposure."""
+    if data.count(ORIGINAL_LISTENER) != 1:
+        fail("Pinned original HALL listener anchor missing or duplicated")
+    return data.replace(ORIGINAL_LISTENER, LOOPBACK_LISTENER, 1)
 
 
 def git_blob_sha(data: bytes) -> str:
@@ -41,13 +49,18 @@ def unit_property(unit: str, prop: str) -> str:
 
 
 def established_backend_count() -> int:
-    # Connections inside Nginx -> 8080 are also real active players and must be drained.
-    output = command("ss", "-H", "-tn", "state", "established").stdout
+    """Count ESTABLISHED TCP sockets whose local endpoint is :8080; Linux /proc format."""
     count = 0
-    for line in output.splitlines():
-        fields = line.split()
-        if len(fields) >= 5 and fields[3].rsplit(":", 1)[-1] == "8080":
-            count += 1
+    for path in (Path("/proc/net/tcp"), Path("/proc/net/tcp6")):
+        if not path.exists():
+            fail(f"Missing TCP connection inventory {path}; fail closed")
+        for line in path.read_text().splitlines()[1:]:
+            fields = line.split()
+            if len(fields) < 4:
+                fail("Malformed kernel TCP connection inventory")
+            local_endpoint, state = fields[1], fields[3]
+            if local_endpoint.rsplit(":", 1)[-1].upper() == "1F90" and state == "01":
+                count += 1
     return count
 
 
@@ -109,14 +122,14 @@ def replace_bytes(data: bytes, original_stat: os.stat_result) -> None:
 
 
 def original_listening() -> bool:
-    for _ in range(15):
+    for _ in range(60):
         if unit_property(SERVICE, "ActiveState") != "active":
             return False
         result = command("ss", "-H", "-ltn", check=False)
         if result.returncode == 0:
             for line in result.stdout.splitlines():
                 parts = line.split()
-                if len(parts) >= 4 and parts[3].rsplit(":", 1)[-1] == "8080":
+                if len(parts) >= 4 and parts[3] == "127.0.0.1:8080":
                     return True
         time.sleep(0.25)
     return False
@@ -138,13 +151,14 @@ def apply(source_file: Path, expected_ip: str) -> None:
     incoming = source_file.read_bytes()
     if git_blob_sha(incoming) != EXPECTED_GIT_BLOB:
         fail("Original HALL Git blob checksum mismatch; replacement refused")
+    hardened = original_with_loopback(incoming)
     old = SOURCE.read_bytes()
-    if old == incoming:
-        print("ALREADY ORIGINAL: no replacement needed")
+    if old == hardened:
+        print("ALREADY ORIGINAL WITH LOOPBACK BIND: no replacement needed")
         return
 
     with tempfile.NamedTemporaryFile(suffix=".js", delete=False) as tf:
-        tf.write(incoming)
+        tf.write(hardened)
         stage = Path(tf.name)
     try:
         command("node", "--check", str(stage))
@@ -165,7 +179,7 @@ def apply(source_file: Path, expected_ip: str) -> None:
     print("Backup saved:", backup)
     try:
         command("systemctl", "stop", SERVICE)
-        replace_bytes(incoming, original_stat)
+        replace_bytes(hardened, original_stat)
         command("systemctl", "start", SERVICE)
         if not original_listening():
             fail("Service did not remain active and listen on local :8080")
@@ -179,8 +193,9 @@ def apply(source_file: Path, expected_ip: str) -> None:
         else:
             print("ROLLBACK SUCCEEDED; old HALL restored", file=sys.stderr)
         raise
-    print("APPLY PASS: original HALL installed in-place; only", SERVICE, "was restarted")
-    print("New blob:", git_blob_sha(SOURCE.read_bytes()))
+    print("APPLY PASS: original HALL behavior installed with loopback-only listener; only", SERVICE, "was restarted")
+    print("Pinned original blob:", git_blob_sha(incoming))
+    print("Minimal listener-only adjusted blob:", git_blob_sha(SOURCE.read_bytes()))
     print("Next: verify WSS 101 + gameplay externally before publishing the new V2 frontend.")
 
 
@@ -198,7 +213,8 @@ def main() -> int:
         if args.self_test:
             local = Path(__file__).resolve().parents[2] / "game/server.js"
             assert git_blob_sha(local.read_bytes()) == EXPECTED_GIT_BLOB
-            print("SELF-TEST PASS: pinned original game/server.js Git blob matches")
+            assert original_with_loopback(local.read_bytes()).count(LOOPBACK_LISTENER) == 1
+            print("SELF-TEST PASS: pinned original blob and single loopback-only binding change")
         elif args.check:
             preflight()
         else:
