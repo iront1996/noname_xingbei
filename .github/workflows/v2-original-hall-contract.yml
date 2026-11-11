@@ -26,6 +26,10 @@ jobs:
         run: npm install --no-save --no-package-lock --ignore-scripts ws@8
       - name: Exercise genuine original HALL WebSocket protocol on an ephemeral loopback port
         run: node --test ops/v2-original-hall/test-hall-protocol.mjs
+      - name: Reproduce proxy-shared-IP ban and validate trusted-proxy IP candidate (isolated only)
+        run: node --test ops/v2-original-hall/test-proxy-ip-isolation.mjs
+      - name: Verify pinned proxy IP patch is strictly nondeploy
+        run: node ops/v2-original-hall/proxy-ip-fix-candidate.mjs --check
       - name: Verify V2 original HALL and endpoint contracts
         run: node --test ops/v2-original-hall/test-contract.mjs
       - name: Verify in-place deploy script and original-source hash
