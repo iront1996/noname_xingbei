@@ -113,14 +113,15 @@ async function main() {
       socket.addEventListener("error", () => reject(new Error("WebSocket 101 upgrade failed")), { once: true });
     }), 11000, "WSS Upgrade 101");
     console.log("PASS WebSocket 101 Upgrade");
-
+    // Server enforces its original 2-second initial key deadline; reply as
+    // soon as the 101 Upgrade completes, without waiting on UI scheduling.
+    socket.send(JSON.stringify(["server", "key", [randomUUID()]]));
     const initial = await received.next(
       msg => Array.isArray(msg) && msg[0] === "roomlist",
       5000, "Original HALL roomlist"
     );
     assert.ok(Array.isArray(initial[1]), "Original HALL roomlist malformed");
     assert.equal(typeof initial[4], "string", "Expected original wsid");
-    socket.send(JSON.stringify(["server", "key", [randomUUID()]]));
     console.log("PASS original HALL roomlist/key protocol; temporary key sent");
 
     if (heartbeatMode) {
