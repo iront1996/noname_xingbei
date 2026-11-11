@@ -18,6 +18,11 @@ server {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_set_header Host $host;
+        # Required for the separately reviewed proxy-IP HALL candidate.
+        # This value is written by trusted Nginx, not copied from client headers.
+        proxy_set_header X-V2-Client-IP $remote_addr;
+        # Prevent accidental reliance on attacker-supplied forwarding chains.
+        proxy_set_header X-Forwarded-For "";
 
         proxy_connect_timeout 5s;
         proxy_read_timeout 180s;
