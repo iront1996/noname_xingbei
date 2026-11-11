@@ -147,6 +147,17 @@ node ops/v2-original-hall/verify-direct-wss.mjs --heartbeat
 
 所有門檻完成後，才把本 V2 分支的 mode/connect.js 發布到 V2 專屬 Cloudflare Pages 正式分支。須先核實 Pages 的實際 production branch，不能因本 PR 的 base 就推定現行部署來源。V2 新客戶端唯一預設 WSS 50000，無舊 443 自動回退。最後可只移除兩條舊 V2 Tunnel Published applications，不需考慮舊 V1 客戶端，但絕不關閉 cloudflared.service 或 V3/monitor 的路由。
 
+## 2026-11-12 確認的 Cloud Firewall 阻擋原因
+
+在已開啟的 Akamai/Linode Cloud Firewall `xing` Rules 頁（ID `198170117`）實際讀到：
+- **Default inbound policy：Drop**
+- 允許的外部入站只有 SSH TCP 22、ICMP；另有 RFC1918 私有網段 TCP/UDP 全埠允許。
+- **沒有允許一般公網 IPv4 TCP 50000 的規則**。
+
+Windows PowerShell `Test-NetConnection v2-hall-direct.myxingbei.com -Port 50000` 返回 DNS `172.234.84.27`、Ping 成功（64 ms）、`TcpTestSucceeded=False`。這與 Cloud Firewall 拒絕入站 TCP 50000 的配置吻合。
+
+**授權後只需針對此已綁定 VPS 的防火牆新增一條規則**：Label `V2-WSS-50000`、Action Accept、Protocol TCP、Port 50000、Sources `0.0.0.0/0`（公開玩家 IPv4）。儲存後重試 PowerShell TCP，並在 VPS 檢查 `sudo ss -lntp | grep ':50000'` 和本機 TLS。**不修改原有 SSH／ICMP／RFC1918 規則、Default inbound policy、V3／監控服務**。Cloud Firewall 開埠不能保證 nginx 已監聽，也不能證明 WSS/TLS 已驗證通過。
+
 ## 5A. Windows 報告 TLS connection timed out 時的分層診斷
 
 2026-11-12 從外部 Windows 實測：DNS-only A = 172.234.84.27 PASS；TLS connect 到 :50000 超時。這尚不是 WebSocket／原版 HALL／心跳測試失敗；不能由一條 TLS 超時訊息單獨斷言故障發生在哪一層。
