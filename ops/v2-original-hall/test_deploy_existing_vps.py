@@ -104,6 +104,10 @@ class InPlaceTests(unittest.TestCase):
                 [], 0, "LISTEN 0 511 127.0.0.1:8080 0.0.0.0:*\n", ""
             )), patch.object(module.time, "sleep"):
                 self.assertTrue(module.original_listening())
+            with patch.object(module, "command", return_value=subprocess.CompletedProcess(
+                [], 0, "LISTEN 0 511 127.0.0.1:8080 0.0.0.0:*\nLISTEN 0 511 0.0.0.0:8080 0.0.0.0:*\n", ""
+            )), patch.object(module.time, "sleep"):
+                self.assertFalse(module.original_listening(), "Public 8080 must override loopback PASS")
 
     def test_apply_rolls_back_on_failed_start(self):
         def cmd(*args, **kwargs):
