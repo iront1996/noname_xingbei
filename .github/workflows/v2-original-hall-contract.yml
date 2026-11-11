@@ -22,6 +22,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
+      - name: Install temporary ws dependency for original HALL integration tests
+        run: npm install --no-save --no-package-lock --ignore-scripts ws@8
+      - name: Exercise genuine original HALL WebSocket protocol on an ephemeral loopback port
+        run: node --test ops/v2-original-hall/test-hall-protocol.mjs
       - name: Verify V2 original HALL and endpoint contracts
         run: node --test ops/v2-original-hall/test-contract.mjs
       - name: Verify in-place deploy script and original-source hash
