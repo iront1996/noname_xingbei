@@ -4,13 +4,13 @@
 
 ## 已授權方案與保護範圍
 
-使用者已授權直接覆蓋現有 V2 聯機服務，並表示改版前可以容忍既有 V2 HALL 停機。因此本工程**不新增第二個常駐 HALL systemd 服務，不強制沿用 A1 Ping/Pong 或舊監控**。
+使用者已授權直接覆蓋現有 V2 聯機服務，並表示改版前可以容忍既有 V2 HALL 停機。**2026-11-11 範圍修正：使用者明確接受舊 V1 網頁／其他客戶端若仍連向 `hall.myxingbei.com` 或 `myxingbei.com`，其連線在 V2 改版過程中可能中斷、失效或改變行為；不再要求調查這些舊客戶端的依賴，也不以舊 V1 的持續可連線性作為 V2 覆蓋阻擋條件。**本工程不新增第二個常駐 HALL systemd 服務，不強制沿用 A1 Ping/Pong 或舊監控。此授權**僅**涵蓋 V2 原有 HALL 及其兩個舊聯機入口，並不授權修改其他版本的程式、檔案或獨立服務。
 
 新預設入口：wss://v2-hall-direct.myxingbei.com:50000；V2 網頁與圖片預載留在 Cloudflare Pages。新入口使用 DNS only A 記錄指向**現有 VPS**。**已核實 VPS 有 cloudflared Tunnel，但未發現本機 Nginx/Caddy/HAProxy/Traefik 或外部 TLS :50000 listener**，因此必須在同 VPS 新增 TLS 終止層，代理至唯一現有 HALL 的 loopback 8080；這不是第二個遊戲 HALL。仍採真人房主主持，不改原版遊戲規則與訊息協定。
 
 原版基準：RancherJie/noname_xingbei@bd227231b6edeba5b32f906673b9f3cb0091b90c，game/server.js Git Blob SHA 為 49a0ad87ffc2638e3651fe6a08b5a150cdf38de3。**部署工具保留該檔為輸入基準，但為維持 VPS 現有的本機-only 安全邊界，部署時僅加上 WebSocket listener 的 host: "127.0.0.1" 參數；這個必要的監聽範圍調整會讓實際部署檔的 SHA 與原版不同，不影響心跳、房間或遊戲訊息協定。**
 
-**2026-11-11 現有 VPS 唯讀證據（已結合 Tunnel 截圖核實）：** systemd MainPID 1900742 = `/usr/bin/node /opt/xingbei-hall/server.js` = `127.0.0.1:8080`；MainPID 193545 = `/usr/bin/node /opt/xingbei-hall-v3/server.js` = `127.0.0.1:8081`。`cloudflared.service`、`xingbei-monitor.service`、`xingbei-v2-observer.service` 均在運行。現有 V2 外部兩個 hostname 已**確認**透過 Cloudflare Tunnel 指向 `127.0.0.1:8080`；V3 和監控各有其他 route。`command -v` 只找到 `/usr/local/bin/cloudflared`，未找到 Nginx、Caddy、HAProxy、Traefik；VPS 無本機 TCP :80、:443、:50000 監聽。不能把 cloudflared 當作 DNS-only :50000 的 TLS 入口，更不可直接停止它。V1／其他版本是否保存使用上述 V2 hostname 仍須核對。
+**2026-11-11 現有 VPS 唯讀證據（已結合 Tunnel 截圖核實）：** systemd MainPID 1900742 = `/usr/bin/node /opt/xingbei-hall/server.js` = `127.0.0.1:8080`；MainPID 193545 = `/usr/bin/node /opt/xingbei-hall-v3/server.js` = `127.0.0.1:8081`。`cloudflared.service`、`xingbei-monitor.service`、`xingbei-v2-observer.service` 均在運行。現有 V2 外部兩個 hostname 已**確認**透過 Cloudflare Tunnel 指向 `127.0.0.1:8080`；V3 和監控各有其他 route。`command -v` 只找到 `/usr/local/bin/cloudflared`，未找到 Nginx、Caddy、HAProxy、Traefik；VPS 無本機 TCP :80、:443、:50000 監聽。不能把 cloudflared 當作 DNS-only :50000 的 TLS 入口，更不可直接停止它。無需再核對舊 V1／其他客戶端是否保存使用上述兩個 V2 hostname；使用者已接受這些入口改版造成的相容性影響。其他版本獨立的 systemd、程式路徑與 Tunnel 路由仍受保護。
 
 ## 2026-11-11 追加 VPS 公網／防火牆查核結果（依使用者實際終端輸出）
 
@@ -19,7 +19,7 @@
 - `cloudflared.service`：active，MainPID 657，單元檔 `/etc/systemd/system/cloudflared.service`。在四個常見路徑沒有找到 Cloudflare Tunnel 本機 YAML 設定檔；這**支持但不證實**目前使用遠端受管 Tunnel。應到 Cloudflare Zero Trust 控制台查看 Public Hostnames／Published applications 的實際 ingress → `localhost:8080/8081` 對應關係；**禁止貼 Tunnel Token、認證 JSON 或完整含 token 的 ExecStart**。
 - `xingbei-monitor.service`（PID 3401804）與 `xingbei-v2-observer.service`（PID 3401805）均 active，目錄分別為 `/opt/xingbei-monitor`、`/opt/xingbei-v2-observer`。清除 V2 A1／監控補丁後可以不再保留其 V2 資料，但必須確認 V1/V3 共用監控不被中斷。
 - 現有 V2、V3 的 Node 服務仍然獨立，並且 `8080`、`8081` 都是 loopback-only；V2 原地替換時的唯一 listener 安全調整必須維持此性質。
-- 下一個階段先完成：**Tunnel 公開路由／V1 共用依賴檢查、主機和供應商入站 ACL、TLS 簽發方法**。檢查成功後，才在同台 VPS 啟動 WSS :50000，最後再執行 V2 原地替換與正式前端切換。
+- 下一個階段先完成：**既有 Tunnel 路由確認（已完成）、主機和供應商入站 ACL、TLS 簽發方法**。檢查成功後，才在同台 VPS 啟動 WSS :50000，最後再執行 V2 原地替換與正式前端切換。
 
 > 不要啟用 Cloudflare 帳戶級「強制 DNS only」選項；只調整**新建立**的 `v2-hall-direct.myxingbei.com` 一筆 A 記錄，避免對其他版本的 Cloudflare Tunnel 或 Pages 造成影響。該子網域的 DNS only 會對外公開 VPS IP，須配合主機及供應商防火牆與服務加固。
 
@@ -54,24 +54,24 @@ sudo -u xingbei node -e 'console.log(require.resolve("ws",{paths:["/opt/xingbei-
 
 主機防火牆檢查：`ufw status verbose` = inactive；`sudo nft list ruleset` 未列規則；`sudo iptables -S` = `-P INPUT ACCEPT`、`-P FORWARD ACCEPT`、`-P OUTPUT ACCEPT`。**此三項顯示未看到主機封鎖規則，但不能證明上游供應商 Cloud Firewall 允許 TCP 50000 或安全。**在確認 SSH 可持續管理與供應商既有入站政策之前，不啟用 UFW、不清除 iptables、不修改雲端政策。
 
-此圖也確立一項需在最終切換時處理的事：**直接覆蓋 V2 `/opt/xingbei-hall/server.js` 會讓 `hall.myxingbei.com` 和 `myxingbei.com` 兩個 Tunnel 入口同時使用新原版 HALL**。V2 新前端不再使用這兩個舊 hostname，但它們在 Cloudflare Tunnel 上仍然存在，直到切換後確認非 V1/其他客戶端必需，才可刪除**這兩條** Published applications。絕對不停止 `cloudflared.service`、不刪 `v3.myxingbei.com` 或 `monitor.myxingbei.com` 路由。
+此圖也確立一項需在最終切換時處理的事：**直接覆蓋 V2 `/opt/xingbei-hall/server.js` 會讓 `hall.myxingbei.com` 和 `myxingbei.com` 兩個舊 Tunnel 入口同時使用新原版 HALL**。使用者已明確接受舊 V1 網頁及其他客戶端因此可能失去連線或改變行為；**不用再追查舊客戶端是否仍使用這兩條路由**。新 V2 前端不再將這兩個 hostname 作為正式預設。正式新入口驗證完成後，可安排只停用／移除**這兩條 V2 舊 Published applications**，不必等待 V1 舊客戶端相容性確認。**絕對不停止 `cloudflared.service`、不刪 `v3.myxingbei.com` 或 `monitor.myxingbei.com` 路由。**
 
-GitHub master 分支的原始 `mode/connect.js` 預設由 `lib.config.last_ip || lib.hallURL` 決定，而該分支 `lib.hallURL` 為 `agserver.ssyy.tech:50000`，**因此 V1 系程式的原始預設不是上面兩個 Tunnel 網域**；但既有用戶可保存 `last_ip` 或自行輸入其他地址，不能推論現役 V1 絕對沒有指向 `hall.myxingbei.com`／`myxingbei.com`。
+GitHub master 分支的原始 `mode/connect.js` 預設由 `lib.config.last_ip || lib.hallURL` 決定，而該分支 `lib.hallURL` 為 `agserver.ssyy.tech:50000`。這個背景不再是 V2 切換門檻；對自行輸入或保存舊 V2 hostname 的客戶端，連線中斷或相容性變更為已接受影響。
 
 ### 下一階段已明確的執行順序
 
 1. **供應商 Cloud Firewall 檢查（只看，不改）**：確認 VPS `172.234.84.27` 的實際入站 policy 是否允許 `50000/tcp` 以及現有 SSH 規則。Linode/Akamai 若有綁定 Cloud Firewall，需核對該台實例；未綁定不代表自動阻擋。
 2. **Cloudflare 僅新增**一筆 `A v2-hall-direct → 172.234.84.27`，設定 DNS only（灰雲）。不刪除、改動任何目前正在使用的路由／DNS 記錄。若 AAAA 存在則須核對其目的地。
 3. 在**同一台**現有 VPS 建立 TLS 憑證與最小化加密 WSS `:50000` 轉發入口（建議以 Nginx 作為 TLS 入口，但**不建立第二個遊戲 HALL**）。新入口先轉發現有 V2 `127.0.0.1:8080`，此時仍有 A1，僅用於 TLS/WS 握手及 TCP 入站測試，**不可當成原版 HALL 的穩定性驗收**。
-4. 檢查 Tunnel 兩個舊 V2 hostname 是否有 V1 依賴，備份 V2 舊檔，使用已實作的 fail-closed 工具原地替換 `xingbei-hall.service` 的 HALL，維持 `127.0.0.1:8080` loopback-only，然後驗證原版 roomlist/key、遊戲訊息及連線持續性。
-5. 完成驗證後才發佈 V2 前端，預設唯一新入口 `wss://v2-hall-direct.myxingbei.com:50000`。若確認舊兩條 Tunnel 入口無其他版本依賴，再移除兩條 Published applications；**保留 cloudflared 本身與 V3/monitor 路由**。
+4. 不再進行舊 V1 客戶端是否使用 V2 兩個舊 hostname 的調查；備份 V2 舊檔，使用已實作的 fail-closed 工具原地替換 `xingbei-hall.service` 的 HALL，維持 `127.0.0.1:8080` loopback-only，然後驗證原版 roomlist/key、遊戲訊息及連線持續性。
+5. 完成驗證後才發佈 V2 前端，預設唯一新入口 `wss://v2-hall-direct.myxingbei.com:50000`。正式 V2 穩定驗證後，如決定停止舊 V2 入口，直接只移除兩條 V2 Published applications，**不再因舊 V1 客戶端而延遲**；保留 cloudflared 本身與 V3/monitor 路由。
 
 ## 目前最先進行的唯讀網路／路由核對
 
 在任何新埠、憑證、DNS 或 HALL 覆蓋之前，先檢查：
 - 現有 VPS **是否有真正可入站的公開 IPv4**（不是只有 Cloudflare Tunnel 的對外通路）；從 VPS 查詢的出口公網 IP 不代表 IPv4 一定直掛在 VPS 上，也不保證 TCP 50000 可以入站。
-- cloudflared 的 ingress 配置是本機管理或 Cloudflare Dashboard 遠端管理；核對當前 hostname → 本機服務（尤其 :8080/:8081）並標記是否涉及 V1/V3。
-- `xingbei-monitor.service`、`xingbei-v2-observer.service` 與 V1 的依賴，避免重建 V2 時破壞其他版本。
+- Cloudflare Dashboard 的 ingress 路由已確認：兩個舊 V2 hostname 指向 :8080，V3 指向 :8081，監控指向 :18763。不再調查舊 V1 客戶端使用哪些 V2 hostname。
+- `xingbei-monitor.service` 是 V1／V2／V3 統一監控，仍需保護其獨立服務，不因移除 V2 的 A1 補丁而停止或覆蓋整體監控；`xingbei-v2-observer.service` 可另評估是否需要關閉，但不屬於 HALL 原地替換操作。
 - VPS 本機與供應商防火牆，不得因新 TLS 入口直接暴露明文 8080。
 
 唯讀檢查範例：
@@ -111,7 +111,7 @@ sudo ufw status verbose
 sudo ls -l /opt/xingbei-hall/server.js
 ~~~
 
-回傳輸出時刪去 token、密碼、憑證內容及不必要的私有資料。重點查明 V2 HALL 是否被 V1/其他入口共用、50000 是否佔用、TLS 入口目前由誰處理，以及對外埠與防火牆的實際情況。
+回傳輸出時刪去 token、密碼、憑證內容及不必要的私有資料。重點查明 50000 是否佔用、TLS 入口目前由誰處理，以及對外埠、防火牆、相同實體程式檔是否被其他 systemd 服務引用。不再追查舊 V1 客戶端使用哪些 V2 聯機地址。
 
 在 GitHub 本工程分支的工作目錄：
 
@@ -120,7 +120,7 @@ python3 ops/v2-original-hall/deploy-existing-vps.py --self-test
 sudo python3 ops/v2-original-hall/deploy-existing-vps.py --check
 ~~~
 
---check 完全唯讀；核對既有服務、來源檔、Node ws 套件，以及 :8080 現有 TCP 連線。若路徑與預期不符，會拒絕而不是覆蓋未知檔案。它無法證明 V1/其他網頁沒有間接引用這台 HALL；此項仍須對照 VPS 路由和其他版本配置。
+--check 完全唯讀；核對既有服務、來源檔、Node ws 套件，以及 :8080 現有 TCP 連線。若路徑與預期不符，會拒絕而不是覆蓋未知檔案。舊 V1 網頁／其他客戶端是否仍連向兩個 V2 舊網域，已不再構成阻擋；但若其他 systemd 服務實際共用同一程式檔，部署器仍須拒絕覆蓋以免直接修改其他服務。
 
 ## 步驟 2：設定 DNS only + WSS，不開新 HALL service
 
@@ -134,7 +134,7 @@ TLS 憑證須涵蓋 v2-hall-direct.myxingbei.com，且具備可維護的自動�
 
 ## 步驟 3：原地覆蓋 V2 HALL（只停止同一個服務）
 
-取得本工程分支後，先執行 self-test、--check 和 node --check game/server.js。**只有已確認沒有其他版本共用此 HALL、DNS 已就緒、TLS/防火牆/Nginx 通過檢查且無 8080 使用中的連線，才可執行 --apply。**
+取得本工程分支後，先執行 self-test、--check 和 node --check game/server.js。**只要確認系統服務與原始檔的對應無誤、沒有其他 systemd 服務共用實體檔案、DNS 已就緒、TLS／防火牆／代理檢查通過且無 8080 使用中的連線，便可執行 --apply；舊 V1 網頁／其他客戶端是否還記住舊 V2 hostname 不再是阻擋條件。**
 
 ~~~bash
 # 203.0.113.10 是文件保留 IP，必須換成「本 VPS 實際公開 IPv4」，不能照抄
@@ -153,7 +153,7 @@ sudo python3 ops/v2-original-hall/deploy-existing-vps.py \
 
 先從**外部客戶端**核對 TLS/SAN、WebSocket 101、原版 roomlist/key 握手（原版 2 秒初始 key 驗證）、建立房間、加入房間、原版真人房主轉發及 2V2/3V3/4V4 玩法相容性。原版房主斷線會關房；本工程不處理這項原版特性。
 
-只在新入口驗收通過且沒有進行中對局後，才把本 PR 的 mode/connect.js 發佈到 V2 Cloudflare Pages，讓 V2 預設唯一官方入口變為 wss://v2-hall-direct.myxingbei.com:50000。舊 :443 不做自動回退。**不得隨意關閉 myxingbei.com 的整個 443 HTTPS 網站服務**；若要移除舊 V2 WebSocket 路由，先確認它不被其他版本或業務使用。
+只在新入口驗收通過且沒有進行中對局後，才把本 PR 的 mode/connect.js 發佈到 V2 Cloudflare Pages，讓 V2 預設唯一官方入口變為 wss://v2-hall-direct.myxingbei.com:50000。舊 :443 不做自動回退。**不必保留 `hall.myxingbei.com` 與 `myxingbei.com` 兩條舊 V2 WebSocket Tunnel 路由給 V1 舊客戶端**；正式新入口驗證後可依 V2 切換計畫停用這兩條 Published applications，但不得停掉整個 cloudflared.service 或影響 V3／監控的其他路由。
 
 保留切換前 443 歷史日誌、原始碼備份與新 50000 被動 Nginx/systemd 觀測作對照。原版 HALL 本身不輸出每次 heartbeat ACK 的詳細時間，故不應謊稱在完全保留原版的情況下已實現逐次心跳監控。正式上線後若仍不穩，再依證據評估是否增加最小診斷能力。
 
