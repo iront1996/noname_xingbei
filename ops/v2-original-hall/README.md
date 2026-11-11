@@ -12,6 +12,33 @@
 
 **2026-11-11 現有 VPS 唯讀證據（更新）：** systemd MainPID 1900742 = `/usr/bin/node /opt/xingbei-hall/server.js` = `127.0.0.1:8080`；MainPID 193545 = `/usr/bin/node /opt/xingbei-hall-v3/server.js` = `127.0.0.1:8081`。`cloudflared.service`、`xingbei-monitor.service`、`xingbei-v2-observer.service` 均在運行。`command -v` 只找到 `/usr/local/bin/cloudflared`，未找到 Nginx、Caddy、HAProxy、Traefik；VPS 無本機 TCP :80、:443、:50000 監聽。**現有前端外部 WSS 可能透過 Cloudflare Tunnel；Cloudflare Tunnel 的 ingress 路由（是否指向 8080，是否同時供 V1／V3 使用）尚未確認。**不能把 `cloudflared.service` 當作可供 DNS-only :50000 使用的 TLS 直連入口，更不可直接停止它。即使無玩家連線，也不能排除 V1 或其他系統共用 HALL；如存在共用，禁止覆蓋，先解決隔離問題。不可修改 `xingbei-hall-v3.service` 或任何其他版本的服務。
 
+## 2026-11-11 追加 VPS 公網／防火牆查核結果（依使用者實際終端輸出）
+
+- `eth0` 實際配置 `172.234.84.27/24`，預設路由經 `172.234.84.1`；`api.ipify.org` 回報出口 IPv4 也是 `172.234.84.27`。這證明 VPS 持有公開 IPv4，而非只有 Cloudflare Tunnel 的出口，但**沒有單獨證明新的外部 TCP 50000 可入站**。
+- `ufw status verbose` 顯示 `Status: inactive`：不得視為已開放或已防護 50000；還需查 `nftables/iptables` 及 VPS 供應商控制台防火牆，先確保 SSH 管理通道，再設定必要入站政策。
+- `cloudflared.service`：active，MainPID 657，單元檔 `/etc/systemd/system/cloudflared.service`。在四個常見路徑沒有找到 Cloudflare Tunnel 本機 YAML 設定檔；這**支持但不證實**目前使用遠端受管 Tunnel。應到 Cloudflare Zero Trust 控制台查看 Public Hostnames／Published applications 的實際 ingress → `localhost:8080/8081` 對應關係；**禁止貼 Tunnel Token、認證 JSON 或完整含 token 的 ExecStart**。
+- `xingbei-monitor.service`（PID 3401804）與 `xingbei-v2-observer.service`（PID 3401805）均 active，目錄分別為 `/opt/xingbei-monitor`、`/opt/xingbei-v2-observer`。清除 V2 A1／監控補丁後可以不再保留其 V2 資料，但必須確認 V1/V3 共用監控不被中斷。
+- 現有 V2、V3 的 Node 服務仍然獨立，並且 `8080`、`8081` 都是 loopback-only；V2 原地替換時的唯一 listener 安全調整必須維持此性質。
+- 下一個階段先完成：**Tunnel 公開路由／V1 共用依賴檢查、主機和供應商入站 ACL、TLS 簽發方法**。檢查成功後，才在同台 VPS 啟動 WSS :50000，最後再執行 V2 原地替換與正式前端切換。
+
+> 不要啟用 Cloudflare 帳戶級「強制 DNS only」選項；只調整**新建立**的 `v2-hall-direct.myxingbei.com` 一筆 A 記錄，避免對其他版本的 Cloudflare Tunnel 或 Pages 造成影響。該子網域的 DNS only 會對外公開 VPS IP，須配合主機及供應商防火牆與服務加固。
+
+### 下一輪唯讀核對指令
+
+~~~bash
+echo '=== kernel firewall ==='
+sudo nft list ruleset 2>&1 | sed -n '1,140p'
+sudo iptables -S 2>&1 | sed -n '1,100p'
+echo '=== existing open ports ==='
+sudo ss -ltnp | grep -E ':(22|80|443|8080|8081|50000)([[:space:]]|$)' || true
+echo '=== V2 source, ownership and Node dependency ==='
+ls -ld /opt/xingbei-hall /opt/xingbei-hall/server.js
+node -v
+sudo -u xingbei node -e 'console.log(require.resolve("ws",{paths:["/opt/xingbei-hall"]}))'
+~~~
+
+命令均為唯讀。還要在主機供應商的防火牆控制台檢查是否已綁定防火牆及目前入站規則；不應只根據 VPS 內的 UFW 判斷。若沒有 Cloudflare Tunnel 本機 YAML，直接到 Cloudflare 控制台查看發佈路由即可，不執行任何包含憑證的登入命令。
+
 ## 目前最先進行的唯讀網路／路由核對
 
 在任何新埠、憑證、DNS 或 HALL 覆蓋之前，先檢查：
@@ -76,7 +103,7 @@ TLS 憑證須涵蓋 v2-hall-direct.myxingbei.com，且具備可維護的自動�
 
 **已確認 VPS 上沒有已知本機 TLS 服務**（目前僅發現 cloudflared，不是 DNS-only 直連入口）。必須先查 VPS 是否擁有可由公網路由到達的 IPv4、主機與供應商入站 ACL，再於**同一台 VPS**新增必要的 TLS 終止層（優先評估 Nginx；這是加密入口，不是第二個遊戲 HALL），使新 WSS :50000 代理到唯一現有 HALL 的 `127.0.0.1:8080`。範本見 `nginx-wss-50000.conf.example`。**不可停止 cloudflared.service**，因為它可能仍為 V1／V3／其他入口提供路由；也不能把 Cloudflare Tunnel 原有 hostname 直接改成 DNS only 而沒有建立新 TLS 入口。不得使用未加密 :8080 對外。初始 `proxy_read_timeout` 與 `proxy_send_timeout` 均為 180 秒，以避開原版 60 秒心跳週期與 60 秒代理讀取逾時的競態。
 
-對外只新增 TCP 50000；確保公開網路**無法**直接存取原版明文 8080。原版 server.js 監聽所有介面，這項保護必須靠現有 VPS 防火牆及供應商安全群組實施。保留現有 SSH、其他服務與舊站台所需的埠。
+對外只新增 TCP 50000；確保公開網路**無法**直接存取原版明文 8080。公開原始碼的 server.js 預設監聽所有介面，但**本工程部署器僅改一處 listener 為 127.0.0.1**，因此不應讓公網監聽 8080；另外仍應以主機及供應商防火牆建立縱深防護。保留現有 SSH、其他服務與舊站台所需的埠。
 
 ## 步驟 3：原地覆蓋 V2 HALL（只停止同一個服務）
 
