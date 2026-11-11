@@ -49,4 +49,6 @@ test("in-place deployment refers to existing HALL service only", () => {
   assert.ok(nginx.includes("listen 50000 ssl;"));
   assert.ok(nginx.includes("proxy_pass http://127.0.0.1:8080;"));
   assert.ok(nginx.includes("proxy_read_timeout 180s;"));
+  assert.ok(nginx.includes("proxy_set_header X-V2-Client-IP $remote_addr;"));
+  assert.ok(nginx.includes('proxy_set_header X-Forwarded-For "";'));
 });
