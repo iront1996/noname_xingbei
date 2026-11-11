@@ -1,5 +1,7 @@
 # V2 原版 HALL｜現有 VPS 原地替換／DNS only／WSS :50000
 
+**正式上線流程以 [GO-LIVE.md](./GO-LIVE.md) 為準。**此 README 為詳細設計及歷史查核紀錄；所有即時 DNS／防火牆／憑證狀態仍須重新驗證。最新工具包括 [activate-wss-existing-vps.sh](./activate-wss-existing-vps.sh)、[deploy-existing-vps.py](./deploy-existing-vps.py) 及 [verify-direct-wss.mjs](./verify-direct-wss.mjs)。
+
 狀態：GitHub 草稿分支已建立；尚未部署 VPS、DNS 或 Cloudflare Pages。
 
 ## 已授權方案與保護範圍
