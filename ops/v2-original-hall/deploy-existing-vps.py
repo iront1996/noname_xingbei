@@ -122,15 +122,29 @@ def replace_bytes(data: bytes, original_stat: os.stat_result) -> None:
 
 
 def original_listening() -> bool:
+    """Require loopback on port 8080; reject any wildcard/public listener."""
     for _ in range(60):
         if unit_property(SERVICE, "ActiveState") != "active":
             return False
         result = command("ss", "-H", "-ltn", check=False)
         if result.returncode == 0:
+            found_loopback = False
+            exposed = False
             for line in result.stdout.splitlines():
                 parts = line.split()
-                if len(parts) >= 4 and parts[3] == "127.0.0.1:8080":
-                    return True
+                if len(parts) < 4:
+                    continue
+                local_address = parts[3]
+                if local_address.rsplit(":", 1)[-1] != "8080":
+                    continue
+                if local_address == "127.0.0.1:8080":
+                    found_loopback = True
+                else:
+                    exposed = True
+            if exposed:
+                return False
+            if found_loopback:
+                return True
         time.sleep(0.25)
     return False
 
