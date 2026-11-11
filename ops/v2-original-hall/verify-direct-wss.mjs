@@ -36,13 +36,14 @@ function watchMessages(socket) {
     const raw = String(event.data);
     let parsed = raw;
     try { parsed = JSON.parse(raw); } catch {}
-    received.push(parsed);
     for (const item of [...waiter]) {
       if (item.predicate(parsed)) {
         waiter.splice(waiter.indexOf(item), 1);
         item.resolve(parsed);
+        return;
       }
     }
+    received.push(parsed);
   });
   socket.addEventListener("close", e => {
     closeReason = "code=" + e.code + " clean=" + e.wasClean;
@@ -53,15 +54,24 @@ function watchMessages(socket) {
   });
   return {
     next(predicate, ms, label) {
-      const found = received.find(predicate);
-      if (found !== undefined) return Promise.resolve(found);
+      const index = received.findIndex(predicate);
+      if (index >= 0) return Promise.resolve(received.splice(index, 1)[0]);
       if (socket.readyState === WebSocket.CLOSED) {
         return Promise.reject(new Error("WebSocket already closed: " + closeReason));
       }
-      const pending = new Promise((resolve, reject) => {
-        waiter.push({ predicate, resolve, reject });
+      return new Promise((resolve, reject) => {
+        const item = {
+          predicate,
+          resolve(message) { clearTimeout(timer); resolve(message); },
+          reject(error) { clearTimeout(timer); reject(error); }
+        };
+        const timer = setTimeout(() => {
+          const index = waiter.indexOf(item);
+          if (index >= 0) waiter.splice(index, 1);
+          reject(new Error(label + " timed out after " + ms + "ms"));
+        }, ms);
+        waiter.push(item);
       });
-      return withDeadline(pending, ms, label);
     }
   };
 }
