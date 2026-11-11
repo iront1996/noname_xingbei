@@ -28,6 +28,10 @@ jobs:
         run: node --test ops/v2-original-hall/test-hall-protocol.mjs
       - name: Reproduce proxy-shared-IP ban and validate trusted-proxy IP candidate (isolated only)
         run: node --test ops/v2-original-hall/test-proxy-ip-isolation.mjs
+      - name: Install disposable Nginx only on isolated GitHub Actions runner
+        run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nginx
+      - name: Reproduce and fix shared-IP ban using a real Nginx process on ephemeral local ports
+        run: node --test ops/v2-original-hall/test-proxy-ip-real-nginx.mjs
       - name: Verify pinned proxy IP patch is strictly nondeploy
         run: node ops/v2-original-hall/proxy-ip-fix-candidate.mjs --check
       - name: Verify V2 original HALL and endpoint contracts
