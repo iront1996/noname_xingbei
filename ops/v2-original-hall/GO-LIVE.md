@@ -147,6 +147,42 @@ node ops/v2-original-hall/verify-direct-wss.mjs --heartbeat
 
 所有門檻完成後，才把本 V2 分支的 mode/connect.js 發布到 V2 專屬 Cloudflare Pages 正式分支。須先核實 Pages 的實際 production branch，不能因本 PR 的 base 就推定現行部署來源。V2 新客戶端唯一預設 WSS 50000，無舊 443 自動回退。最後可只移除兩條舊 V2 Tunnel Published applications，不需考慮舊 V1 客戶端，但絕不關閉 cloudflared.service 或 V3/monitor 的路由。
 
+## 5A. Windows 報告 TLS connection timed out 時的分層診斷
+
+2026-11-12 從外部 Windows 實測：DNS-only A = 172.234.84.27 PASS；TLS connect 到 :50000 超時。這尚不是 WebSocket／原版 HALL／心跳測試失敗；不能由一條 TLS 超時訊息單獨斷言故障發生在哪一層。
+
+### Windows PowerShell（唯讀）
+
+~~~powershell
+Test-NetConnection v2-hall-direct.myxingbei.com -Port 50000 -InformationLevel Detailed
+~~~
+
+以 TcpTestSucceeded 為準，PingSucceeded 不代表 TCP 開放與否。
+
+### 同一台 VPS（唯讀）
+
+~~~bash
+echo '== nginx service =='
+sudo systemctl is-active nginx
+sudo nginx -t
+echo '== listeners =='
+sudo ss -lntp | grep -E ':(50000|8080|8081)([[:space:]]|$)' || true
+echo '== effective nginx V2 directives =='
+sudo nginx -T 2>&1 | grep -nE 'listen 50000|v2-hall-direct|proxy_pass http://127.0.0.1:8080' || true
+echo '== local TLS with actual SNI =='
+timeout 10 openssl s_client -connect 127.0.0.1:50000 -servername v2-hall-direct.myxingbei.com -verify_hostname v2-hall-direct.myxingbei.com -brief </dev/null
+~~~
+
+### 判斷
+
+- ss 找不到 :50000：Nginx 沒有開始監聽，優先檢查 nginx.service、nginx -t 及 V2 site 是否真正啟用；此時 Cloud Firewall 開埠也不能修正沒有監聽的服務。
+- ss 只顯示 127.0.0.1:50000：公開網路無法直達該 Nginx listener。WSS TLS 入口應在對外介面監聽；只有明文 HALL 8080 維持 loopback-only。
+- VPS localhost TLS 正常但 Windows TCP False：優先到 Akamai/Linode 防火牆 xing 檢查入站規則。該 Cloud Firewall 已確定掛載在 VPS，且不會出現在 iptables/nft/ufw 列表。若 inbound policy = DROP，確認有允許 TCP 50000 的規則，且沒有優先命中的衝突 DROP。保留 SSH 與其他規則，僅新增必要允許。
+- Windows TCP True 但 Node TLS 超時：優先檢查 TLS listener、SNI、Nginx 設定及錯誤日誌，不能推斷是 HALL heartbeat。
+- 外部 TLS 成功但 WebSocket 101、roomlist 失敗：再檢查 WebSocket Upgrade、proxy_pass 及 HALL 原版 key 握手。
+
+注意：未從外部確認 TCP、TLS、WS 101 之前，不執行 HALL 原地覆蓋，不發布新 V2 網頁，也不停止 Cloudflare Tunnel／V3／監控服務。
+
 ## 驗收與回復
 
 保存新／舊 source blob、HALL 備份、原 Nginx 設定、DNS A、Cloud Firewall 規則、TLS cert SAN／有效期、WSS Upgrade 結果、原版 HALL roomlist/key／心跳、房間運作與 browser close codes。Nginx 與 systemd 的被動日誌不等於原版心跳逐次 ACK 紀錄；不要謊稱每次心跳都已自動記錄。
