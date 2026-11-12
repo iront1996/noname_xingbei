@@ -1,0 +1,70 @@
+name: V2 original HALL contract (non-deploy)
+
+on:
+  pull_request:
+    branches:
+      - feature/image-preload-cache
+    paths:
+      - mode/connect.js
+      - game/server.js
+      - ops/v2-original-hall/**
+      - .github/workflows/v2-original-hall-contract.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install temporary ws dependency for original HALL integration tests
+        run: npm install --no-save --no-package-lock --ignore-scripts ws@8
+      - name: Exercise genuine original HALL WebSocket protocol on an ephemeral loopback port
+        run: node --test ops/v2-original-hall/test-hall-protocol.mjs
+      - name: Reproduce proxy-shared-IP ban and validate trusted-proxy IP candidate (isolated only)
+        run: node --test ops/v2-original-hall/test-proxy-ip-isolation.mjs
+      - name: Install disposable Nginx only on isolated GitHub Actions runner
+        run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends nginx
+      - name: Reproduce and fix shared-IP ban using a real Nginx process on ephemeral local ports
+        run: node --test ops/v2-original-hall/test-proxy-ip-real-nginx.mjs
+      - name: Verify pinned proxy IP patch is strictly nondeploy
+        run: node ops/v2-original-hall/proxy-ip-fix-candidate.mjs --check
+      - name: Verify V2 original HALL and endpoint contracts
+        run: node --test ops/v2-original-hall/test-contract.mjs
+      - name: Verify in-place deploy script and original-source hash
+        run: python3 ops/v2-original-hall/deploy-existing-vps.py --self-test
+      - name: Check deployment script syntax
+        run: python3 -c "import ast, pathlib; ast.parse(pathlib.Path('ops/v2-original-hall/deploy-existing-vps.py').read_text())"
+      - name: Simulate existing-VPS preflight, replacement and automatic rollback
+        run: python3 -m unittest discover -s ops/v2-original-hall -p "test_deploy_existing_vps.py" -v
+      - name: Verify read-only live HALL attestation script offline
+        run: python3 ops/v2-original-hall/audit-live-v2.py --self-test
+      - name: Check live HALL attestation script syntax
+        run: python3 -c "import ast, pathlib; ast.parse(pathlib.Path('ops/v2-original-hall/audit-live-v2.py').read_text())"
+      - name: Verify V2 proxy IP rollout candidate offline (no VPS)
+        run: python3 ops/v2-original-hall/deploy-proxy-ip-fix.py --self-test
+      - name: Simulate guarded proxy-IP rollout and automatic rollback
+        run: python3 -m unittest discover -s ops/v2-original-hall -p "test_deploy_proxy_ip_fix.py" -v
+      - name: Verify pinned text Buffer relay conversion candidate (nondeploy)
+        run: node ops/v2-original-hall/proxy-relay-text-fix-candidate.mjs --check
+      - name: Verify V2-only text-relay deployment candidate without writes
+        run: python3 ops/v2-original-hall/deploy-relay-text-fix.py --self-test
+      - name: Simulate V2 relay fix update, rollback and active-session refusal
+        run: python3 -m unittest discover -s ops/v2-original-hall -p "test_deploy_relay_text_fix.py" -v
+      - name: Verify V2 relay deployment script syntax
+        run: python3 -c "import ast, pathlib; ast.parse(pathlib.Path('ops/v2-original-hall/deploy-relay-text-fix.py').read_text())"
+      - name: Check proxy-IP deployment script syntax
+        run: python3 -c "import ast, pathlib; ast.parse(pathlib.Path('ops/v2-original-hall/deploy-proxy-ip-fix.py').read_text())"
+      - name: Check safe direct WSS Nginx activation script syntax
+        run: bash -n ops/v2-original-hall/activate-wss-existing-vps.sh
+      - name: Check public direct WSS verification script syntax
+        run: node --check ops/v2-original-hall/verify-direct-wss.mjs
+      - name: Check V2 connect source syntax
+        run: node --check mode/connect.js
+      - name: Check original HALL source syntax
+        run: node --check game/server.js
