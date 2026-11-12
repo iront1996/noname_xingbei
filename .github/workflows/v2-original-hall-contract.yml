@@ -50,6 +50,14 @@ jobs:
         run: python3 ops/v2-original-hall/deploy-proxy-ip-fix.py --self-test
       - name: Simulate guarded proxy-IP rollout and automatic rollback
         run: python3 -m unittest discover -s ops/v2-original-hall -p "test_deploy_proxy_ip_fix.py" -v
+      - name: Verify pinned text Buffer relay conversion candidate (nondeploy)
+        run: node ops/v2-original-hall/proxy-relay-text-fix-candidate.mjs --check
+      - name: Verify V2-only text-relay deployment candidate without writes
+        run: python3 ops/v2-original-hall/deploy-relay-text-fix.py --self-test
+      - name: Simulate V2 relay fix update, rollback and active-session refusal
+        run: python3 -m unittest discover -s ops/v2-original-hall -p "test_deploy_relay_text_fix.py" -v
+      - name: Verify V2 relay deployment script syntax
+        run: python3 -c "import ast, pathlib; ast.parse(pathlib.Path('ops/v2-original-hall/deploy-relay-text-fix.py').read_text())"
       - name: Check proxy-IP deployment script syntax
         run: python3 -c "import ast, pathlib; ast.parse(pathlib.Path('ops/v2-original-hall/deploy-proxy-ip-fix.py').read_text())"
       - name: Check safe direct WSS Nginx activation script syntax
