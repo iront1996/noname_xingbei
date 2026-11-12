@@ -191,3 +191,39 @@ test("real isolated Nginx: header overwrite + candidate HALL isolate different I
     assert.deepEqual([...(await repeating.next(initial))], ["denied", "banned"]);
   });
 });
+
+
+test("real isolated Nginx: protected HALL accepts ordinary host room, guest enter and host-to-guest relay", async () => {
+  await withRealNginx(CANDIDATE, async browser => {
+    const host = browser("127.0.0.2");
+    await host.open();
+    assert.equal((await host.next(initial))[0], "roomlist");
+    host.send("server", "key", ["normal-room-host-key"]);
+    host.send("server", "create", "normal-room-host-key", "normal-host", "avatar", {}, "xingBei");
+    const created = await host.next(x => Array.isArray(x) && x[0] === "createroom");
+    assert.equal(created[1], "normal-room-host-key");
+    const roomConfig = {
+      version: 27, mode: "xingBei", number: 4, characterPack: [],
+      gameStarted: false, observe: true, observeReady: true
+    };
+    host.send("server", "config", roomConfig);
+
+    const guest = browser("127.0.0.3");
+    await guest.open();
+    const roomlist = await guest.next(initial);
+    assert.equal(roomlist[0], "roomlist");
+    const rooms = roomlist[1];
+    const offered = rooms.find(room => Array.isArray(room) && room[4] === "normal-room-host-key");
+    assert.ok(offered, "The normal host's room must be visible in the guest roomlist");
+    assert.equal(offered[2].version, 27, "Game version must be retained as original host sent it");
+    assert.equal(offered[2].number, 4);
+    guest.send("server", "key", ["normal-room-guest-key"]);
+    guest.send("server", "enter", "normal-room-host-key", "normal-guest", "avatar");
+
+    const notification = await host.next(x => Array.isArray(x) && x[0] === "onconnection");
+    assert.equal(typeof notification[1], "string", "HALL must forward visitor WSID to real host");
+    host.send("server", "send", notification[1], "native-host-to-guest-ack");
+    assert.equal(await guest.next(x => x === "native-host-to-guest-ack"),
+      "native-host-to-guest-ack", "HALL must relay host response to guest");
+  });
+});
