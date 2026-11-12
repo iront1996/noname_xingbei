@@ -49,6 +49,21 @@
 
 此結果**證明公開 JavaScript 檔案已更新**。仍須以一般瀏覽器實際載入 V2 網頁，觀察聯機大廳顯示新網址、建立房間與加入房間流程，才能確認整個遊戲執行流程正常。瀏覽器若仍顯示舊內容，可先強制重新整理檢查，暫時不要清除整個圖片快取。
 
+## 已通過：V2 共用 IP 封鎖安全修正（正式 VPS）
+
+原版 HALL 透過 Nginx 本機代理時，`bannedIps` 可能把不同玩家視為 `127.0.0.1`。GitHub Actions 已在**隔離環境**以真正 Nginx＋原版 HALL 重現誤封，並對最小修正候選完成回歸驗證及部署失敗回復測試（run #44 PASS）。
+
+2026-11-12 使用者提供正式 VPS 驗證輸出，證實候選已安裝：
+
+- `sha256sum /opt/xingbei-hall/server.js` = `963f3a155ad00f5a7b1cdc00937c6d4240fb34f93a94938f2e4629cbf2ea9bb6`，與安全候選一致。
+- `deploy-proxy-ip-fix.py --check` = `CHECK PASS`、`HALL state: proxy-ip candidate`、`V2 nginx header state: ready`、零 8080 ESTABLISHED sessions。
+- `xingbei-hall.service`、`xingbei-hall-v3.service`、`nginx.service`、`cloudflared.service`、`xingbei-monitor.service` 全部 `active`。
+- 安裝後外部 Windows `verify-direct-wss.mjs` 與 `--heartbeat`：DNS、TLS 1.3、WS 101、roomlist/key 與原版文字 heartbeat ×2 全部 PASS。
+
+**版本政策**：現行正式 HALL 已不是先前「原版＋唯一 loopback listener」位元組版本，而是「原版＋listener 限制＋來源 IP 安全例外」。`audit-live-v2.py --check` 原版專用 SHA baseline 不應再作新安全版本的唯一判斷；應使用 `deploy-proxy-ip-fix.py --check`。不得將隔離的惡意訊息驗證視為正式 VPS 已執行惡意測試。
+
+詳見 `PROXY-IP-SECURITY-FIX.md`。多人實際對局與長期穩定性仍待驗收。
+
 ## 需再核對，才可稱為整體 V2 正式上線
 
 1. **VPS 來源內容比對已 PASS**，四個指定服務皆 active；若需補上完整機器可重複稽核（當前 systemd ExecStart、Nginx 50000 實際 listener 與固定原版 Git blob），可執行 `sudo python3 ops/v2-original-hall/audit-live-v2.py --check`。此項是補充證據，不應把已完成的位元組比對重新標成未通過。
