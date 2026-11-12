@@ -116,3 +116,17 @@ node ops/v2-original-hall/verify-direct-wss.mjs --heartbeat
 - 原版 HALL：`RancherJie/noname_xingbei@bd227231b6edeba5b32f906673b9f3cb0091b90c/game/server.js`。
 - NGINX 官方：`https://nginx.org/en/docs/http/websocket.html`、`https://nginx.org/en/docs/http/ngx_http_proxy_module.html`。
 - Node ws 官方：`https://github.com/websockets/ws/blob/master/README.md`，connection callback 取得 HTTP request，透過 reverse proxy 需要可信轉發來源。
+
+## 7. 2026-11-12 V2 玩家無法加入房間事件（仍待定位）
+
+使用者回報：玩家能建立房間，但其他玩家點擊房間無法進入。尚未取得訪客瀏覽器錯誤、WebSocket 原始事件分類或真人房主端 `onconnection` 事件證據，因此**不可認定本次來源 IP 安全修正是根因，也不可將先前 TLS / 心跳 PASS 當作真實入房驗證**。
+
+已完成不觸及正式環境的追加回歸：`test-proxy-ip-real-nginx.mjs` 新增「使用已核准安全候選 HALL＋真正隔離 Nginx，真人房主模型建立並提交 `config`、訪客從不同來源讀取房間列表、發送原版 `enter`、房主收到 `onconnection`、房主傳送訊息給訪客」測試。GitHub Actions run [#47](https://github.com/iront1996/noname_xingbei/actions/runs/43234449978) **PASS**。這證明所測 HALL／Nginx 協定鏈沒有必然阻斷原版入房訊息，但不等於驗證完整瀏覽器 UI、真實房主初始化、版本檢查、選角或正式 Nginx 的連線事件。
+
+從原始前端確認：
+- `noname/ui/click/index.js` 的 `connectroom` 會先檢查 `roomfull`、`roomgaming`、`this.version != lib.versionOL`、`_status.enteringroom`，再發送 `game.send("server", "enter", ...)`。
+- `game/server.js` 的 `messages.enter` 需找到 room、有 `room.config` 且房間允許加入，才把 `onconnection` 傳給 `room.owner`。
+- 真人房主端 `noname/library/index.js` 的 `onconnection` 委派給 `lib.init.connection`，其後續瀏覽器初始化未經隔離測試完全模擬。
+- 原始前端 `updaterooms` 在房間列表動態變動時用 `ui.rooms[i].initRoom(list[i])` 而非鍵值查找，可能在索引移位時產生 UI 房間資訊錯配，需以實際事件判斷；不能直接視為本次根因。
+
+下一步僅做**唯讀**故障證據收集：訪客點擊後是版本提示／房滿／稍後再試／沒有回應；客戶端 WebSocket 是否發出 `enter`、房主是否收到 `onconnection`、Console 是否有 JavaScript 例外。不要在正式 HALL 發送非法 `events`、不要在有玩家連線時重啟，也不要為了定位而修改 V1／V3／V4／V5／M2。
