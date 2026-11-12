@@ -13,6 +13,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import WebSocket, { WebSocketServer } from "ws";
 import { ORIGINAL, CANDIDATE } from "./proxy-ip-fix-candidate.mjs";
+import { RELAY_TEXT_CANDIDATE } from "./proxy-relay-text-fix-candidate.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const nginxTemplate = readFileSync(join(root, "ops/v2-original-hall/nginx-wss-50000.conf.example"), "utf8");
@@ -33,7 +34,7 @@ function sandboxHall(src) {
       if (name === "node:net") return net;
       throw Error("Unexpected dependency");
     },
-    setTimeout, clearTimeout,
+    setTimeout, clearTimeout, Buffer,
     setInterval(fn, ms) {
       assert.equal(ms, 60000);
       return 1;
@@ -225,5 +226,85 @@ test("real isolated Nginx: protected HALL accepts ordinary host room, guest ente
     host.send("server", "send", notification[1], "native-host-to-guest-ack");
     assert.equal(await guest.next(x => x === "native-host-to-guest-ack"),
       "native-host-to-guest-ack", "HALL must relay host response to guest");
+  });
+});
+
+
+async function enterWithNativeHandshake(browser) {
+  const host = browser("127.0.0.2");
+  await host.open();
+  assert.equal((await host.next(initial))[0], "roomlist");
+  host.send("server", "key", ["relay-test-host-key"]);
+  host.send("server", "create", "relay-test-host-key", "host", "avatar", {}, "xingBei");
+  assert.equal((await host.next(x => Array.isArray(x) && x[0] === "createroom"))[1], "relay-test-host-key");
+  host.send("server", "config", {
+    version: 27, mode: "xingBei", number: 4, characterPack: [],
+    gameStarted: false, observe: true, observeReady: true
+  });
+  const guest = browser("127.0.0.3");
+  await guest.open();
+  const roomlist = await guest.next(initial);
+  assert.equal(roomlist[0], "roomlist");
+  assert.ok(roomlist[1].some(x => Array.isArray(x) && x[4] === "relay-test-host-key"),
+    "Guest must see host's configured room");
+  guest.send("server", "key", ["relay-test-guest-key"]);
+  guest.send("server", "enter", "relay-test-host-key", "guest", "avatar");
+  const onconnection = await host.next(x => Array.isArray(x) && x[0] === "onconnection");
+  assert.equal(typeof onconnection[1], "string");
+  host.send("server", "send", onconnection[1], '["opened"]');
+  assert.equal(await guest.next(x => x === '["opened"]'), '["opened"]');
+  // Native browser-side lib.message.client.opened sends init as a JSON text frame.
+  guest.send("init", 27, {
+    onlineKey: "relay-test-guest-key",
+    nickname: "測試訪客",
+    versionLocal: "1.6.9",
+    extension: false
+  }, null);
+  const hostReceived = await host.next(x => Array.isArray(x) && x[0] === "onmessage");
+  assert.equal(hostReceived[1], onconnection[1], "Message must be mapped to original guest wsid");
+  return { host, guest, hostReceived, guestWsid: onconnection[1] };
+}
+
+test("INCIDENT REPRO: current V2 security HALL relays native guest init as JSON Buffer object", async () => {
+  await withRealNginx(CANDIDATE, async browser => {
+    const { hostReceived } = await enterWithNativeHandshake(browser);
+    const forwarded = hostReceived[2];
+    assert.equal(forwarded?.type, "Buffer",
+      "Expected current live V2 HALL to corrupt WebSocket text type during JSON forwarding");
+    assert.ok(Array.isArray(forwarded.data));
+    // Native host lib.init.connection receives message as JS object and JSON.parse fails.
+    assert.throws(() => JSON.parse(forwarded), SyntaxError);
+    const raw = Buffer.from(forwarded.data).toString("utf8");
+    assert.deepEqual(JSON.parse(raw).slice(0, 2), ["init", 27],
+      "UTF-8 Buffer contains intact original JSON content, but its shape was lost");
+  });
+});
+
+test("RELAY FIX: real Nginx + V2 HALL deliver JSON text init verbatim and host can continue", async () => {
+  await withRealNginx(RELAY_TEXT_CANDIDATE, async browser => {
+    const { host, guest, hostReceived, guestWsid } = await enterWithNativeHandshake(browser);
+    const forwarded = hostReceived[2];
+    assert.equal(typeof forwarded, "string", "Forwarded native message must stay a JSON text string");
+    const nativeInit = JSON.parse(forwarded);
+    assert.equal(nativeInit[0], "init");
+    assert.equal(nativeInit[1], 27);
+    assert.equal(nativeInit[2].nickname, "測試訪客");
+    assert.equal(nativeInit[2].onlineKey, "relay-test-guest-key");
+
+    host.send("server", "send", guestWsid, '["init","test-guest-id",{},null,false,null]');
+    assert.equal(await guest.next(x => x === '["init","test-guest-id",{},null,false,null]'),
+      '["init","test-guest-id",{},null,false,null]');
+    assert.equal(host.ws.readyState, WebSocket.OPEN);
+    assert.equal(guest.ws.readyState, WebSocket.OPEN);
+  });
+});
+
+test("RELAY FIX: binary frames retain original Buffer serialization rather than text reinterpretation", async () => {
+  await withRealNginx(RELAY_TEXT_CANDIDATE, async browser => {
+    const { host, guest } = await enterWithNativeHandshake(browser);
+    guest.ws.send(Buffer.from([0, 255, 1, 128]), { binary: true });
+    const forwarded = await host.next(x => Array.isArray(x) &&
+      x[0] === "onmessage" && x[2]?.type === "Buffer");
+    assert.deepEqual([...forwarded[2].data], [0, 255, 1, 128]);
   });
 });
