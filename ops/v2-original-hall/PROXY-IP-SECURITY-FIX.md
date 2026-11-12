@@ -1,6 +1,6 @@
 # V2 原版 HALL 反向代理共用 IP 封鎖：驗證、最小修正與安全准入
 
-**狀態（2026-11-12）：隔離重現及修正候選測試均 PASS；正式 V2 未安裝這項修正。** 本文件與 GitHub CI 不代表已在正式 VPS 施行新程式。使用者要求不得在正式 HALL 發送惡意/非法訊息做測試，全部此類測試僅在 GitHub Actions 的暫時 loopback 網路環境執行。
+**狀態（2026-11-12）：隔離重現／修正測試 PASS，正式 V2 已安裝安全候選且部署驗證 PASS；真人多人遊戲與長期穩定性仍待驗收。** 此最新狀態依使用者從 VPS 與 Windows 終端提供的原始輸出記錄，非由 GitHub CI 遠端登入 VPS 驗證。不得在正式 HALL 發送惡意或非法訊息測試封鎖；這類測試只在 GitHub Actions 的暫時 loopback 網路環境執行。
 
 ## 1. 原始缺陷
 
@@ -91,10 +91,24 @@ node ops/v2-original-hall/verify-direct-wss.mjs --heartbeat
 
 原本的 `audit-live-v2.py --check` 是專門核對純原版＋listener 版本，因此套用候選後其預期 SHA 會不符。改用此工程 `deploy-proxy-ip-fix.py --check` 核對新安全版本；必要時額外比較 `sha256sum /opt/xingbei-hall/server.js` 與部署器輸出的候選 SHA256。
 
+## 5A. 正式環境已完成：來源 IP 安全候選部署與核對
+
+使用者於 2026-11-12 在正式 VPS 的 `/tmp/v2-original-hall-release` 提供以下**實際終端輸出**：
+
+- V2 專用 GitHub 分支 `feature/v2-original-hall-direct-wss50000` 更新至 `0d0040b`；`--self-test` 回報 `SELF-TEST PASS: pinned HALL, minimal security exception, Nginx idempotent header`。
+- 首次 `--check` 因 8080 上有一條 ESTABLISHED 連線而 **FAIL CLOSED**，未強行踢除玩家；之後檢查發現 8080／50000 無已建立連線，且 `xingbei-hall.service` 與 `nginx.service` 均 `active`。
+- 後續 `--check` 回報 `CHECK PASS: source/service mapping, ws dependency, and 0 active :8080 sessions`、`HALL state: original+loopback`、`V2 nginx header state: requires security header`。確認符合安裝前安全准入。
+- 使用者之後回報正式 V2 `/opt/xingbei-hall/server.js` SHA256：`963f3a155ad00f5a7b1cdc00937c6d4240fb34f93a94938f2e4629cbf2ea9bb6`，與隔離候選預期 SHA256 **完全相同**。
+- 正式部署後重新執行 `sudo python3 ops/v2-original-hall/deploy-proxy-ip-fix.py --check`，輸出：`CHECK PASS: exact V2 HALL baseline/candidate; exclusive active service, zero sockets`、`HALL state: proxy-ip candidate`、`V2 nginx header state: ready`，候選 SHA256 同上。
+- `xingbei-hall.service`、`xingbei-hall-v3.service`、`nginx.service`、`cloudflared.service`、`xingbei-monitor.service` 均回報 `active`。
+- 使用者在 Windows 從外部重新執行 `verify-direct-wss.mjs`、`verify-direct-wss.mjs --heartbeat`：DNS only `172.234.84.27`、TLS 1.3、WebSocket 101、`roomlist/key`、兩輪原版文字心跳均 PASS；憑證到期 `2027-02-09 17:20:27 UTC`。
+
+**認定邊界**：正式檔案版本、部署器檢查、五個服務 active 與外部原版 WebSocket 技術冒煙測試皆有輸出證據。因 IP 安全功能的惡意流量測試依既定規範僅在隔離環境執行，**不可宣稱已在正式線上以惡意事件再次重現並修復**。也不可由零 socket 推斷房間正常、長期連線與完整三模式玩法皆已驗收。
+
 ## 6. 尚須實際完成的驗收
 
-- 真正 VPS 的 Nginx 生效配置是否符合上面的可信代理條件：目前尚未取得當前 `nginx -T` 的有效設定核對輸出。
-- 正式 VPS 上未部署安全修正，故尚無修正後的外部 WSS/心跳實測與多人驗收。
+- 已取得受控部署器 `--check` 的 V2 Nginx 指定來源檔案與預期標頭比對 PASS，以及外部 WSS 101／heartbeat PASS；**若需要進一步的獨立生效設定稽核**，仍可只讀取得 `nginx -T`（避免公開包含憑證路徑以外的敏感設定）。
+- 正式安全修正與部署後的外部 WSS／兩輪原版心跳均已驗證通過；尚無 2V2／3V3／4V4 完整真人玩法、一般使用者建房／入房及長時間穩定性驗收。
 - 任何對原版玩法、完整對局或長期斷線率的判斷都不能由本次隔離安全測試直接外推。
 
 ## 來源
