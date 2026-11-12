@@ -252,7 +252,7 @@ async function enterWithNativeHandshake(browser) {
   const onconnection = await host.next(x => Array.isArray(x) && x[0] === "onconnection");
   assert.equal(typeof onconnection[1], "string");
   host.send("server", "send", onconnection[1], '["opened"]');
-  assert.equal(await guest.next(x => x === '["opened"]'), '["opened"]');
+  assert.deepEqual([...(await guest.next(x => Array.isArray(x) && x[0] === "opened"))], ["opened"]);
   // Native browser-side lib.message.client.opened sends init as a JSON text frame.
   guest.send("init", 27, {
     onlineKey: "relay-test-guest-key",
@@ -292,8 +292,8 @@ test("RELAY FIX: real Nginx + V2 HALL deliver JSON text init verbatim and host c
     assert.equal(nativeInit[2].onlineKey, "relay-test-guest-key");
 
     host.send("server", "send", guestWsid, '["init","test-guest-id",{},null,false,null]');
-    assert.equal(await guest.next(x => x === '["init","test-guest-id",{},null,false,null]'),
-      '["init","test-guest-id",{},null,false,null]');
+    assert.deepEqual([...(await guest.next(x => Array.isArray(x) && x[0] === "init"))],
+      ["init", "test-guest-id", {}, null, false, null]);
     assert.equal(host.ws.readyState, WebSocket.OPEN);
     assert.equal(guest.ws.readyState, WebSocket.OPEN);
   });
