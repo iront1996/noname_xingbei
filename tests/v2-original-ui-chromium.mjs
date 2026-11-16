@@ -38,6 +38,8 @@ try {
  const opened=await page.goto(address+"/",{waitUntil:"domcontentloaded",timeout:60000});
  assert.equal(opened?.status(),200);
  const wss="wss://v2-hall-direct.myxingbei.com:50000";
+ await page.waitForFunction(async expected=>{const {lib}=await import("/noname.js");return lib.hallURL===expected;},wss,{timeout:10000});
+ console.log("V2_ORIGINAL_HALL_SETTINGS_DEFAULT_PASS");
  await page.waitForFunction(wss=>[...document.querySelectorAll('[contenteditable="true"]')].some(n=>n.textContent?.trim()===wss),wss,{timeout:90000});
  console.log("V2_NATIVE_CONNECT_DEFAULT_HALL_PASS");
  await page.waitForFunction(

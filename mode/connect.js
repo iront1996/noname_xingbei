@@ -7,6 +7,8 @@ export default () => {
 	return {
 		name: "connect",
 		start() {
+			// V2-only default server for the original native online settings panel.
+			lib.hallURL = "wss://v2-hall-direct.myxingbei.com:50000";
 			var directstartmode = lib.config.directstartmode;
 			ui.create.menu(true);
 			event.textnode = ui.create.div("", "输入联机地址");

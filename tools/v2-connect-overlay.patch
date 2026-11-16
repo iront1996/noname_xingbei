@@ -1,8 +1,17 @@
 diff --git a/mode/connect.js b/mode/connect.js
-index bf06b29..588a512 100644
+index bf06b29..72766c9 100644
 --- a/mode/connect.js
 +++ b/mode/connect.js
-@@ -37,6 +37,24 @@
+@@ -7,6 +7,8 @@
+ 	return {
+ 		name: "connect",
+ 		start() {
++			// V2-only default server for the original native online settings panel.
++			lib.hallURL = "wss://v2-hall-direct.myxingbei.com:50000";
+ 			var directstartmode = lib.config.directstartmode;
+ 			ui.create.menu(true);
+ 			event.textnode = ui.create.div("", "输入联机地址");
+@@ -37,6 +39,24 @@
  				}
  
  				event.created = true;
@@ -27,7 +36,7 @@ index bf06b29..588a512 100644
  				var node = ui.create.div(".shadowed");
  				node.style.width = "400px";
  				node.style.height = "30px";
-@@ -47,13 +65,19 @@
+@@ -47,13 +67,19 @@
  				node.style.left = "calc(50% - 210px)";
  				node.style.top = "calc(50% - 20px)";
  				node.style.whiteSpace = "nowrap";
@@ -49,7 +58,7 @@ index bf06b29..588a512 100644
  					event.textnode.textContent = "正在连接...";
  					clearTimeout(event.timeout);
  					if (e) e.preventDefault();
-@@ -106,7 +130,7 @@
+@@ -106,7 +132,7 @@
  				ui.hall_button = ui.create.system(
  					"联机大厅",
  					function () {
@@ -58,7 +67,7 @@ index bf06b29..588a512 100644
  						connect();
  					},
  					true
-@@ -146,11 +170,12 @@
+@@ -146,11 +172,12 @@
  				);
  				if (get.config("read_clipboard", "connect")) {
  					var ced = false;
