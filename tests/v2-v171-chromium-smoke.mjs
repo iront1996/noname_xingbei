@@ -6,6 +6,7 @@ const host='http://127.0.0.1:8765';
 const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
 const context=await browser.newContext({serviceWorkers:'allow'});
 const page=await context.newPage();
+page.on('dialog', async dialog => { await dialog.accept(); });
 const errors=[],badRequests=[];
 page.on('pageerror',e=>errors.push(String(e)));
 page.on('requestfailed',r=>{if(r.url().startsWith(host))badRequests.push(r.url());});
@@ -13,6 +14,7 @@ try {
   const response=await page.goto(host+'/',{waitUntil:'domcontentloaded',timeout:45000});
   assert.equal(response?.status(),200);
   await page.waitForFunction(()=>window.noname_update?.version==='1.7.1');
+  await page.waitForFunction(()=>Array.isArray(window.noname_asset_list)&&window.noname_asset_list.length>0,null,{timeout:60000});
   const m=await page.evaluate(async()=>{
     const r=await fetch('/game/preload-manifest.json',{cache:'no-store'});
     if(!r.ok)throw new Error('manifest missing');
