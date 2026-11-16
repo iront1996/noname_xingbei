@@ -11,7 +11,7 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { extname, join } from "node:path";
 import { createHash } from "node:crypto";
 const official="https://rancherjie.github.io/noname_xingbei/";
-const v2="https://feature-image-preload-cache.xingbei-play.pages.dev/";
+const v2=process.env.V2_AUDIT_BASE_URL||"https://feature-image-preload-cache.xingbei-play.pages.dev/";
 const pinned="abd687ff7237c24a1fcd05b6524309c73b9cb818";
 const upstream="/tmp/v2-original-source";
 const allow=new Set([".js",".mjs",".css",".html",".json",".vue",".ts"]);

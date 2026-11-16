@@ -1,7 +1,6 @@
 name: V2 prepare complete official deployed site in isolated candidate
 on:
-  push:
-    branches: [integration/v2-public-runtime-parity-20261117]
+  workflow_dispatch: # Manual-only reconstruction, never automatically rewrite a published candidate
 permissions:
   contents: write
 concurrency:
