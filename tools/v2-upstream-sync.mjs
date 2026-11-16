@@ -124,7 +124,25 @@ function prepare(upstreamSha) {
   const state = currentState();
   verify(state.upstream.sha);
   if (state.upstream.sha === upstreamSha) {
-    console.log("V2_UPSTREAM_UNCHANGED", upstreamSha);
+    // The original *published* site can update independently of its Git master.
+    execFileSync(process.execPath, [
+      join(root, "tools/v2-published-release-sync.mjs"), "--sync", upstreamSha, upstreamSha
+    ], { cwd: root, stdio: "inherit" });
+    git(["add", "--all"]);
+    if (!git(["diff", "--cached", "--quiet"], { stdio: "pipe" })) {
+      // This branch is unchanged in content; only the disposable trigger commit exists.
+      console.log("V2_PUBLICATION_UNCHANGED", upstreamSha);
+      return;
+    }
+    git(["commit", "-m", "sync(v2): reconcile original published resources " + upstreamSha.slice(0, 12)]);
+    execFileSync(process.execPath, [join(root, "tools/sync-image-manifest.mjs"), "--write"], { cwd: root, stdio: "inherit" });
+    git(["add", "game/preload-manifest.json"]);
+    if (git(["diff", "--cached", "--name-only"])) {
+      git(["commit", "-m", "build(v2): update published image manifest"]);
+    }
+    verify(upstreamSha);
+    assert.equal(git(["status", "--porcelain"]), "");
+    console.log("V2_PUBLICATION_CANDIDATE_READY", git(["rev-parse", "HEAD"]));
     return;
   }
   const ff = spawnSync("git", ["merge-base", "--is-ancestor", state.upstream.sha, upstreamSha], { cwd: root });
