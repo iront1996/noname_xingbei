@@ -16,9 +16,10 @@ const browser=await chromium.launch({headless:true,args:["--no-sandbox"]});
 async function open(s){
  const ctx=await browser.newContext({viewport:{width:1650,height:850},deviceScaleFactor:1,serviceWorkers:"allow"});
  const page=await ctx.newPage();
- const errors=[],failed=[];
+ const errors=[],failed=[],httpErrors=[];
  page.on("pageerror",e=>errors.push(String(e)));
- page.on("requestfailed",r=>{if(r.url().startsWith(s.base))failed.push(r.url())});
+ page.on("requestfailed",r=>{if(r.url().startsWith(s.base))failed.push({url:r.url(),resourceType:r.resourceType(),failure:r.failure()?.errorText??null})});
+ page.on("response",r=>{if(r.status()>=400&&r.url().startsWith(s.base))httpErrors.push({url:r.url(),status:r.status()})});
  page.on("dialog",d=>d.accept());
  await page.route("**/game/config.js",async route=>{
   const response=await route.fetch();
@@ -54,7 +55,7 @@ async function open(s){
  assert.ok(state.input.length>=1);
  console.log("V2_PUBLISHED_UI_STATE_"+s.name.toUpperCase().replace("-","_"),JSON.stringify(state));
  await page.screenshot({path:"artifacts/v2-live-ui/"+s.name+".png",animations:"disabled"});
- return {ctx,page,state,errors,failed};
+ return {ctx,page,state,errors,failed,httpErrors};
 }
 try{
  for(const name of names){
@@ -94,7 +95,9 @@ try{
  assert.ok(cache.keys.includes("xingbei-image-assets-v1-"+cache.version));
  console.log("V2_OFFICIAL_UI_AND_PRELOAD_PARITY_PASS",JSON.stringify({extensions:names.length,images:cache.count,originalHall:original.state.input[0],v2Hall:candidate.state.input[0]}));
  console.log("V2_UI_PAGEERRORS",JSON.stringify({official:original.errors.slice(0,15),candidate:candidate.errors.slice(0,15)}));
+ console.log("V2_NETWORK_DIAGNOSTICS",JSON.stringify({candidateFailed:candidate.failed.slice(0,30),candidateHTTP:candidate.httpErrors.slice(0,30),originalFailed:original.failed.slice(0,30),originalHTTP:original.httpErrors.slice(0,30)}));
  assert.equal(candidate.errors.length,0,"candidate browser errors");
+ assert.equal(candidate.httpErrors.length,0,"candidate HTTP errors");
  assert.equal(candidate.failed.length,0,"candidate failed same-origin requests");
  await original.ctx.close();await candidate.ctx.close();
 }finally{await browser.close()}
