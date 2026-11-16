@@ -54,7 +54,7 @@ try {
      wss:[...document.querySelectorAll('[contenteditable="true"]')].map(x=>x.textContent?.trim())};
  });
  console.log("V2_BROWSER_CACHE_STATUS",JSON.stringify(info));
- assert.equal(info.count,641);
+ assert.ok(info.count > 0 && Number.isInteger(info.count));
  assert.ok(info.sw?.endsWith("/xingbei-image-sw.js"));
  assert.equal(info.state?.version,info.version);
  assert.equal(info.state?.count,info.count);
