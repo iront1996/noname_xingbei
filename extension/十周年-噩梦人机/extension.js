@@ -1,18 +1,7 @@
-(function (registerExtension) {
-    if (typeof game !== "undefined" && game && typeof game.import === "function") {
-        registerExtension(game);
-    } else {
-        import("../../noname.js").then(function (module) {
-            registerExtension(module.game);
-        }).catch(function (error) {
-            console.error("扩展无法获取游戏实例", error);
-        });
-    }
-})(function (game) {
-    game.import("extension", function (lib, game, ui, get, ai, _status) {
+game.import("extension", function (lib, game, ui, get, ai, _status) {
     "use strict";
 
-    var extensionName = "十周年-噩梦人机";
+    var extensionName = "十周年噩梦人机";
     var extensionFolder = "十周年-噩梦人机";
     function migrateExtensionConfig() {
         var oldPrefix = "extension_" + extensionFolder + "_";
@@ -139,7 +128,7 @@
     // 技能实现依赖十周年角色包延迟载入，但联机客户端需要提前取得名称与说明，
     // 否则 addSkill 只同步技能ID后，非主机无法生成噩梦词条。
     var nightmareDisplayMetadata = {
-        "nightmare_yuFengErXing": ["【御风而行】", "回合开始时，你+1【水晶】。"],
+        "nightmare_yuFengErXing": ["【御风而行】", "回合开始时，你+1<span class='lan'>【水晶】</span>。"],
         "nightmare_kuangFengZhouYu": ["【狂风骤雨】", "本回合攻击每命中1次，后续主动攻击伤害+1。"],
         "nightmare_xueZhiKeWang": ["【血之渴望】", "你的主动攻击同时附带【血影狂刀】与【血腥咆哮】的效果。"],
         "nightmare_shiXueKuangHua": ["【嗜血狂化】", "主动攻击命中后，若我方战绩区有<span style=\"color:#E02B17\">【宝石】</span>，可以消耗1<span style=\"color:#E02B17\">【宝石】</span>，发动【狂化】。"],
@@ -161,7 +150,7 @@
         "nightmare_shenShengWuZhuang": ["【神圣武装】", "发动【天枪】或【地枪】时，移除的【治疗】数-1。"],
         "nightmare_yuanSuGongMing": ["【元素共鸣】", "【陨石】【冰冻】【火球】【风刃】【雷击】造成的伤害+1。"],
         "nightmare_yuanSuLunZhuan": ["【元素轮转】", "回合开始时，+1【元素】。"],
-        "nightmare_touLiangHuanZhu": ["【飞龙探云】", "【偷天换日】会同时转移1【水晶】。"],
+        "nightmare_touLiangHuanZhu": ["【飞龙探云】", "【偷天换日】会同时转移1<span class='lan'>【水晶】</span>。"],
         "nightmare_qiangYunJiaShen": ["【强运加身】", "发动【强运】时，选择1名队友+1<span style=\"color:#E02B17\">【宝石】</span>。"],
         "nightmare_yiBingZiSheng": ["【疫病滋生】", "回合结束时，+1【治疗】。"],
         "nightmare_bingYuanChongZu": ["【病原重组】", "【瘟疫】与【剧毒新星】不再以我方角色为目标。"],
@@ -174,8 +163,8 @@
         "nightmare_wanJuanGuiYi": ["【万卷归一】", "【魔道法典】造成的法术伤害额外+1。"],
         "nightmare_jinJiFaDian": ["【禁忌法典】", "你造成大于3点的伤害后，+1<span style=\"color:#E02B17\">【宝石】</span>。"],
         "nightmare_wanFuGuiZong": ["【万符归宗】", "【雷鸣】造成的伤害+1。"],
-        "nightmare_fuZhenLunZhuan": ["【符阵轮转】", "发动【念咒】时，+1【水晶】。"],
-        "nightmare_jianYiBuJue": ["【剑意不绝】", "回合开始时，+1【水晶】；攻击命中时，+1【剑气】。"],
+        "nightmare_fuZhenLunZhuan": ["【符阵轮转】", "发动【念咒】时，+1<span class='lan'>【水晶】</span>。"],
+        "nightmare_jianYiBuJue": ["【剑意不绝】", "回合开始时，+1<span class='lan'>【水晶】</span>；攻击命中时，+1【剑气】。"],
         "nightmare_wanJianChenFu": ["【万剑臣服】", "发动【剑气斩】时，可以弃置与本次伤害数相同数量的手牌。"],
         "nightmare_douQiFeiTeng": ["【斗气沸腾】", "攻击命中后，+1【斗气】。"],
         "nightmare_wuJi": ["【武极】", "【百式幻龙拳】不再消耗【斗气】。"],
@@ -204,7 +193,7 @@
         "nightmare_wuSeShenJian": ["【五色神箭】", "【元素射击】造成的伤害+1。"],
         "nightmare_senZhiZhuFu": ["【森之祝福】", "队友提炼时，你+1<span style=\"color:#E02B17\">【宝石】</span>。"],
         "nightmare_shuangHunGongMing": ["【双魂共鸣】", "【鬼火】上限+2；发动【黑暗祭礼】后，保留2【鬼火】。"],
-        "nightmare_shiShenHuZhu": ["【式神护主】", "【式神咒束】不再移除<span style=\"color:#E02B17\">【宝石】</span>和【水晶】。"],
+        "nightmare_shiShenHuZhu": ["【式神护主】", "【式神咒束】不再移除<span style=\"color:#E02B17\">【宝石】</span>和<span class='lan'>【水晶】</span>。"],
         "nightmare_xueSeKeWang": ["【血色渴望】", "你的【鲜血】大于1时，造成的伤害+1。"],
         "nightmare_xianXueHuiLiu": ["【鲜血回流】", "回合开始时，+2【鲜血】。"],
         "nightmare_yueShiSheMian": ["【月蚀赦免】", "进入【暗月形态】后首次移除【暗月】时，不触发本次【暗月诅咒】造成的己方士气下降；若【暗月】因此清零，仍【重置】并脱离【暗月形态】。"],
@@ -218,21 +207,21 @@
     // 第二批噩梦人机（38-48）。元数据在角色包尚未载入时也会同步给联机客户端。
     Object.assign(nightmareDisplayMetadata, {
         nightmare_shenEnManYi: ["【神恩满溢】", "回合开始时，你+1【治疗】；队友获得【治疗】后，你+1【治疗】。"],
-        nightmare_shengYinChiLing: ["【圣印敕令】", "你的【圣印】溢出时，你+1【水晶】。"],
+        nightmare_shengYinChiLing: ["【圣印敕令】", "你的【圣印】溢出时，你+1<span class='lan'>【水晶】</span>。"],
         nightmare_shenShengBiHuLing: ["【神圣庇护令】", "发动【庇护领域】时，所需移除的【治疗】-2。"],
         nightmare_yiDuanWuZui: ["【异端无罪】", "我方士气将下降时，移除【异端裁决所】等量【治疗】，防止此次士气下降。"],
         nightmare_yongHengShengHuang: ["【永恒圣煌】", "发动【圣煌降临】无需支付消耗。"],
         nightmare_shengHuangShenYu2: ["【圣煌神谕】", "【圣煌辉光炮】与【圣煌余晖】不再支付基础【信仰】消耗。"],
         nightmare_xingHenCanXiang: ["【星痕残响】", "你受到的伤害-X，X为你的【律法】数。"],
         nightmare_mingDingXingTu: ["【命定星图】", "你的【卢恩】上限+6；【卢恩】增加后，将牌堆顶1张牌作为【卢恩】。"],
-        nightmare_shangZhiShiKong: ["【熵值失控】", "游戏开始时+3【水晶】；发动【魔力熵增】后+1【水晶】。"],
+        nightmare_shangZhiShiKong: ["【熵值失控】", "游戏开始时+3<span class='lan'>【水晶】</span>；发动【魔力熵增】后+1<span class='lan'>【水晶】</span>。"],
         nightmare_zhanFaYanSuan: ["【战法演算】", "【攻击行动】结束后+1【法术行动】；【法术行动】结束后+1【攻击行动】。"],
         nightmare_lieWuShenXun: ["【猎巫审讯】", "【狩魔刺】对应的攻击强制命中；造成伤害后，目标将手牌补至上限。"],
         nightmare_lieWuChuXing: ["【猎巫处刑】", "发动【灌银毒刃】后，额外转移目标1颗星石。"],
         nightmare_wuJianFengXue: ["【无间风穴】", "【影之穴】与【影缝】额外移除目标1颗星石。"],
         nightmare_qianYingYiXing: ["【千影易形】", "你的【糸】增加时，选择一项：目标队友弃置1张牌；或目标队友+1【治疗】。"],
         nightmare_keQianYuXi: ["【课前预习】", "回合开始时，若手牌数大于3，弃置3张手牌。"],
-        nightmare_daXiaoJieTeQuan: ["【大小姐特权】", "其他队友提炼时，你+1【水晶】；【魔法入门】伤害+1。"],
+        nightmare_daXiaoJieTeQuan: ["【大小姐特权】", "其他队友提炼时，你+1<span class='lan'>【水晶】</span>；【魔法入门】伤害+1。"],
         nightmare_shenShiKeYin: ["【神蚀刻印】", "手牌上限+2；回合结束时，若【魔刃】或【异刃】不在场上，将其加入手牌。"],
         nightmare_zhuShenJieMie: ["【诸神皆灭】", "使用【魔刃】或【异刃】发动的攻击不能被响应。"],
         nightmare_eYiManYing: ["【恶意满盈】", "你的攻击令对方士气下降后，我方士气+X。"],
@@ -243,14 +232,14 @@
 
     Object.assign(nightmareDisplayMetadata, {
         nightmare_miShuHuiXiang: ["【秘术回响】", "发动【言灵术】后，+1【法术行动】。"],
-        nightmare_wanYanTongXiao: ["【万言通晓】", "发动【真言术】后，+1【水晶】。"],
+        nightmare_wanYanTongXiao: ["【万言通晓】", "发动【真言术】后，+1<span class='lan'>【水晶】</span>。"],
         nightmare_shuangMianZhiZheng: ["【双面执政】", "【银制子弹】和【圣遗物】上限+2；回合开始时，选择其中1种+1。"],
         nightmare_shengLvTeShe: ["【圣律特赦】", "发动【罪断豁免】后，目标对手受到1点法术伤害。"],
         nightmare_shiLiaoXuBian: ["【史料续编】", "回合开始时，若手牌中没有【史书】，弃置1张牌并将【史书】加入手牌。"],
         nightmare_liShiChongYan: ["【历史重演】", "发动【秘境万象】后，+1【法术行动】。"],
         nightmare_shenYiYinLu: ["【神意引路】", "将【路标】转移给对手后，对其造成2点法术伤害。"],
         nightmare_shiJieBuDao: ["【世界布道】", "将【路标】转移给队友后，令其+1<span style=\"color:#E02B17\">【宝石】</span>。"],
-        nightmare_moRiQiShi: ["【末日启示】", "手牌上限+2；发动【放逐】后+1【水晶】。"],
+        nightmare_moRiQiShi: ["【末日启示】", "手牌上限+2；发动【放逐】后+1<span class='lan'>【水晶】</span>。"],
         nightmare_yuYanBianZuan: ["【预言编纂】", "【天雷劫火】与【地裂波涛】最终摸4张牌并造成4点法术伤害。"],
         nightmare_wuDiWeiDai: ["【无底胃袋】", "回合开始时弃置1张手牌，将【魔弹】加入手牌。"],
         nightmare_heiDongXiaoHua: ["【黑洞消化】", "发动【食欲的黑洞】后弃置2张手牌。"],
@@ -268,7 +257,7 @@
         nightmare_yiBenWanLi: ["【一本万利】", "发动【殓金魔法】后，所有队友各+1<span style=\"color:#E02B17\">【宝石】</span>。"],
         nightmare_wangGuoYiChan: ["【亡国遗产】", "【亡女金库】额外移除所有我方角色的<span style=\"color:#E02B17\">【宝石】</span>，每移除1颗伤害+1。"],
         nightmare_chaoManSanFen: ["【潮满三分】", "你的【灵涌】上限-2。"],
-        nightmare_haiShenDaiXing: ["【海神代行】", "发动【邪灵退散】后，+1【法术行动】并+1【水晶】。"],
+        nightmare_haiShenDaiXing: ["【海神代行】", "发动【邪灵退散】后，+1【法术行动】并+1<span class='lan'>【水晶】</span>。"],
         nightmare_woYaoYanPai: ["【我要验牌】", "回合开始时，若手牌中没有元素师独有牌，弃置全部手牌并摸等量牌。"],
         nightmare_yuanZiHuanCun: ["【元子缓存】", "获得【元子】时，+1<span style=\"color:#E02B17\">【宝石】</span>。"],
         nightmare_fuBiHuiShou: ["【伏笔回收】", "【神秘伏笔】的效果额外结算1次。"],
@@ -283,14 +272,10 @@
         nightmare_gaoZhiLiangShuiMian: ["【高质量睡眠】", "队友受到伤害后，你弃置1张手牌。"],
         nightmare_zongYouRenZhiDeJiDu: ["【总有人值得忌妒】", "回合开始时，若对方持有【暗灭】或【圣光】，弃置1张牌并转移其中1张。"],
         nightmare_suanYiShangTou: ["【酸意上头】", "【暗灭】伤害+2；使用【圣光】后我方士气+1。"],
-        nightmare_jianShengJiCheng: ["【剑圣继承】", "发动【风之剑】后，+1【水晶】。"],
+        nightmare_jianShengJiCheng: ["【剑圣继承】", "发动【风之剑】后，+1<span class='lan'>【水晶】</span>。"],
         nightmare_shiYanBiDa: ["【誓言必达】", "由【剑残影】增加的【攻击行动】强制命中且伤害+1。"],
         nightmare_shenFengJiaoZhun: ["【神风校准】", "你的主动攻击均视为风系。"],
-        nightmare_wuShiYiDao: ["【午时已到】", "发动【狙击】后，所有对手将手牌补至上限。"],
-        nightmare_qianChengHuiXiang: ["【虔诚回响】", "【神谕】结算后，你+2<span class='hong'>【虔诚】</span>。"],
-        nightmare_sheZuiEnDian: ["【赦罪恩典】", "【赦罪】结算后，你+1<span class='lan'>【水晶】</span>。"],
-        nightmare_mengZhaoHuiXiang: ["【梦兆回响】", "发动【扭曲链接】或【入梦】后，你+1<span class='lan'>【水晶】</span>。"],
-        nightmare_mengJingBiHu: ["【梦境庇护】", "【极乐梦境】在场时，你的手牌上限+2。"]
+        nightmare_wuShiYiDao: ["【午时已到】", "发动【狙击】后，所有对手将手牌补至上限。"]
     });
 
     function publishNightmareDisplayMetadata() {
@@ -755,8 +740,8 @@
                 return current.side == player.side && (includeSelf || current != player);
             });
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_allies_37840"] = allies;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_allies_37840"] = allies;
 
 
         function enemies(player) {
@@ -789,7 +774,7 @@
             trigger: { player: "phaseBegin" },
             forced: true,
             content: function () { player.addNengLiang("shuiJing"); }
-        }, "【御风而行】", "回合开始时，你+1【水晶】。");
+        }, "【御风而行】", "回合开始时，你+1<span class='lan'>【水晶】</span>。");
         addSkill("nightmare_kuangFengZhouYu", {
             trigger: { source: "gongJiMingZhong" },
             forced: true,
@@ -1186,7 +1171,7 @@
                     await player.addZhanJi("shuiJing", 1);
                 }
             }
-        }, "【飞龙探云】", "【偷天换日】会同时转移1【水晶】。");
+        }, "【飞龙探云】", "【偷天换日】会同时转移1<span class='lan'>【水晶】</span>。");
         addSkill("nightmare_qiangYunJiaShen", {
             trigger: { player: "qiZha" },
             forced: true,
@@ -1255,7 +1240,7 @@
             trigger: { player: "phaseBegin" },
             filter: function (event, player) { return allies(player, false).some(function (current) { return current.zhiLiao < current.getZhiLiaoLimit(); }); },
             check: function (event, player) {
-                        var allies = lib["十周年-噩梦人机_callbacks"]["online_allies_37840"];
+                        var allies = lib["十周年噩梦人机_callbacks"]["online_allies_37840"];
 
                 return allies(player, false).some(function (current) {
                     return current.zhiLiao < current.getZhiLiaoLimit() && get.zhiLiaoEffect2(current, player, 1) > get.zhiLiaoEffect2(player, player, 1);
@@ -1334,7 +1319,7 @@
             trigger: { player: "nianZhouAfter" },
             forced: true,
             content: function () { player.addNengLiang("shuiJing"); }
-        }, "【符阵轮转】", "发动【念咒】时，+1【水晶】。");
+        }, "【符阵轮转】", "发动【念咒】时，+1<span class='lan'>【水晶】</span>。");
         register("lingFuShi", ["nightmare_wanFuGuiZong", "nightmare_fuZhenLunZhuan"]);
 
         // 19. 剑帝
@@ -1345,7 +1330,7 @@
                 if (event.triggername == "phaseBegin") player.addNengLiang("shuiJing", 1);
                 else player.addZhiShiWu("jianQi");
             }
-        }, "【剑意不绝】", "回合开始时，+1【水晶】；攻击命中时，+1【剑气】。");
+        }, "【剑意不绝】", "回合开始时，+1<span class='lan'>【水晶】</span>；攻击命中时，+1【剑气】。");
         addSkill("nightmare_wanJianChenFu", {
             charlotte: true
         }, "【万剑臣服】", "发动【剑气斩】时，可以弃置与本次伤害数相同数量的手牌。");
@@ -1733,7 +1718,7 @@
             forced: true,
             content: function () { player.addZhiShiWu("guiHuo", 2); }
         }, "【双魂共鸣】", "【鬼火】上限+2；发动【黑暗祭礼】后，保留2【鬼火】。");
-        addSkill("nightmare_shiShenHuZhu", { charlotte: true }, "【式神护主】", "【式神咒束】不再移除<span style=\"color:#E02B17\">【宝石】</span>和【水晶】。");
+        addSkill("nightmare_shiShenHuZhu", { charlotte: true }, "【式神护主】", "【式神咒束】不再移除<span style=\"color:#E02B17\">【宝石】</span>和<span class='lan'>【水晶】</span>。");
         register("yinYangShi", ["nightmare_shuangHunGongMing", "nightmare_shiShenHuZhu"]);
         if (lib.skill.guiHuo && !lib.skill.guiHuo._nightmareMaxPatched) {
             lib.skill.guiHuo._nightmareMaxPatched = true;
@@ -2470,8 +2455,8 @@
                 if (target.hasSkill && target.hasSkill("moFaHuDun")) score += 0.35;
                 return score >= 1.15 ? score : 0;
             }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_shieldTargetScore_130138"] = shieldTargetScore;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_shieldTargetScore_130138"] = shieldTargetScore;
 
             shield.ai.order = function (item, player) {
                 var best = 0;
@@ -2488,7 +2473,7 @@
                 return shieldTargetScore(player, target);
             };
             shield.ai2 = function (target) {
-                        var shieldTargetScore = lib["十周年-噩梦人机_callbacks"]["online_shieldTargetScore_130138"];
+                        var shieldTargetScore = lib["十周年噩梦人机_callbacks"]["online_shieldTargetScore_130138"];
 
                 var player = _status.event && _status.event.player;
                 if (!player || !target || target.side != player.side) return -100;
@@ -2736,8 +2721,8 @@
                 lib.xingBeiNightmare.isNightmareAi(player) &&
                 player.hasSkill("nightmare_shenShengWuZhuang") ? 1 : 0;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_diQiangDiscount_143315"] = diQiangDiscount;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_diQiangDiscount_143315"] = diQiangDiscount;
 
 
         skill.cost = async function (event, trigger, player) {
@@ -2754,7 +2739,7 @@
                 .set("target", target)
                 .set("baseDamage", trigger.damageNum || 2)
                 .set("ai", function () {
-                        var diQiangDiscount = lib["十周年-噩梦人机_callbacks"]["online_diQiangDiscount_143315"];
+                        var diQiangDiscount = lib["十周年噩梦人机_callbacks"]["online_diQiangDiscount_143315"];
                         var helper = lib.xingBeiShiZhouNianAi;
 
                     var player = _status.event.player;
@@ -2953,8 +2938,8 @@
             }
             return best;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_bestRadiancePlan_154328"] = bestRadiancePlan;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_bestRadiancePlan_154328"] = bestRadiancePlan;
 
 
         function punishPlan(player, costCard, target) {
@@ -2973,8 +2958,8 @@
             if (!attack && ownGain == 0) score -= 0.55;
             return { attack: attack, score: score };
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_punishPlan_154780"] = punishPlan;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_punishPlan_154780"] = punishPlan;
 
 
         function bestPunishPlan(player, costCard) {
@@ -3015,8 +3000,8 @@
             if (attack) score += Math.min(1.0, Math.max(0, attack.score) * 0.18);
             return { score: score, gain: gain, attack: attack };
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_prayerPlan_156744"] = prayerPlan;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_prayerPlan_156744"] = prayerPlan;
 
 
         var radiance = lib.skill && lib.skill.huiYao;
@@ -3033,7 +3018,7 @@
             };
             radiance.ai.result = {
                 player: function (player) {
-                        var bestRadiancePlan = lib["十周年-噩梦人机_callbacks"]["online_bestRadiancePlan_154328"];
+                        var bestRadiancePlan = lib["十周年噩梦人机_callbacks"]["online_bestRadiancePlan_154328"];
 
                     var plan = bestRadiancePlan(player);
                     return plan && plan.score >= 0.7 ? plan.score : -8;
@@ -3060,7 +3045,7 @@
             punish.ai.result = {
                 player: 0,
                 target: function (player, target) {
-                        var punishPlan = lib["十周年-噩梦人机_callbacks"]["online_punishPlan_154780"];
+                        var punishPlan = lib["十周年噩梦人机_callbacks"]["online_punishPlan_154780"];
 
                     if (target.side == player.side) return 0;
                     var plan = punishPlan(player, null, target);
@@ -3165,7 +3150,7 @@
             prayer.ai.result = {
                 player: function (player) {
                         var helper = lib.xingBeiShiZhouNianAi;
-                        var prayerPlan = lib["十周年-噩梦人机_callbacks"]["online_prayerPlan_156744"];
+                        var prayerPlan = lib["十周年噩梦人机_callbacks"]["online_prayerPlan_156744"];
 
                     if (helper.shouldReserveSpecial(_status.event, player)) return -10;
                     var plan = prayerPlan(player);
@@ -3556,8 +3541,8 @@
             if (sameSuit <= 1) value += 0.25;
             return value;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_moonValue_183392"] = moonValue;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_moonValue_183392"] = moonValue;
 
 
         function lowestDiscardCost(player) {
@@ -3620,8 +3605,8 @@
             }
             return score;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_medusaCardScore_186150"] = medusaCardScore;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_medusaCardScore_186150"] = medusaCardScore;
 
 
         function attackHitChance(target, card, cannotRespond) {
@@ -3708,14 +3693,14 @@
             }
             return best;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_paleMoonPlan_190413"] = paleMoonPlan;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_paleMoonPlan_190413"] = paleMoonPlan;
 
 
         var medusa = lib.skill && lib.skill.meiDuShaZhiYan;
         if (medusa && markPatched(medusa, "fullActionChain")) {
             medusa.cost = async function (event, trigger, player) {
-                var medusaCardScore = lib["十周年-噩梦人机_callbacks"]["online_medusaCardScore_186150"];
+                var medusaCardScore = lib["十周年噩梦人机_callbacks"]["online_medusaCardScore_186150"];
                 var result = await player.chooseCardButton(darkMoons(player), "是否发动【美杜莎之眼】<br>" + lib.translate.meiDuShaZhiYan_info)
                     .set("filterButton", function (button) {
                         return get.xiBie(button.link) == _status.event.xiBie;
@@ -3779,7 +3764,7 @@
                 if (event.cost_data == "选项一") {
                     var links = (await player.chooseCardButton(darkMoons(player), true, "移除1个【暗月】，令目标角色+1[治疗]")
                         .set("ai", function (button) {
-                        var moonValue = lib["十周年-噩梦人机_callbacks"]["online_moonValue_183392"];
+                        var moonValue = lib["十周年噩梦人机_callbacks"]["online_moonValue_183392"];
 
                             return 8 - moonValue(_status.event.player, button.link);
                         }).forResult("links") || []);
@@ -3824,7 +3809,7 @@
                 var result = await player.chooseCardButton(darkMoons(player), "是否发动【暗月斩】<br>" + lib.translate.anYueZhan_info, [1, 2])
                     .set("desired", plan.score >= 0.45 ? plan.amount : 0)
                     .set("ai", function (button) {
-                        var moonValue = lib["十周年-噩梦人机_callbacks"]["online_moonValue_183392"];
+                        var moonValue = lib["十周年噩梦人机_callbacks"]["online_moonValue_183392"];
 
                         var desired = _status.event.desired;
                         if (!desired || ui.selected.buttons.length >= desired) return -20;
@@ -3892,7 +3877,7 @@
             };
             pale.ai.result = {
                 player: function (player) {
-                        var paleMoonPlan = lib["十周年-噩梦人机_callbacks"]["online_paleMoonPlan_190413"];
+                        var paleMoonPlan = lib["十周年噩梦人机_callbacks"]["online_paleMoonPlan_190413"];
 
                     var plan = paleMoonPlan(player);
                     return plan.score >= 0.75 ? plan.score : -10;
@@ -4240,8 +4225,8 @@
         if (garden && markPatched(garden, "resourceChoice")) {
             garden.content = async function (event, trigger, player) {
                 var choiceList = [
-                    "【水晶】将【血蔷薇庭院】放置于场上，你+2【鲜血】",
-                    "【宝石】将【血蔷薇庭院】放置于场上，无视上限+2【鲜血】（最高为4），你弃到4张牌",
+                    "<span class='lan'>【水晶】</span>将【血蔷薇庭院】放置于场上，你+2【鲜血】",
+                    "<span style=\"color:#E02B17\">【宝石】</span>将【血蔷薇庭院】放置于场上，无视上限+2【鲜血】（最高为4），你弃到4张牌",
                 ];
                 var choices = ["选项一"];
                 if (player.canBiShaBaoShi()) choices.push("选项二");
@@ -4927,8 +4912,8 @@
             });
             return best;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_bestBurst_255640"] = bestBurst;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_bestBurst_255640"] = bestBurst;
 
 
         function elementGainDamage(player, target, skillName, baseDamage, suit) {
@@ -4984,8 +4969,8 @@
             }
             return score;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_targetScore_257705"] = targetScore;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_targetScore_257705"] = targetScore;
 
 
         var ignition = lib.skill && lib.skill.yuanSuDianRan;
@@ -5009,8 +4994,8 @@
             // 【元素点燃】没有实体费用牌，也需要显式提供直接选人分数。
             // 否则本体会把上面的负面效果语义再次用于最终选人并取消技能。
             ignition.ai2 = function (target) {
-                        var bestBurst = lib["十周年-噩梦人机_callbacks"]["online_bestBurst_255640"];
-                        var targetScore = lib["十周年-噩梦人机_callbacks"]["online_targetScore_257705"];
+                        var bestBurst = lib["十周年噩梦人机_callbacks"]["online_bestBurst_255640"];
+                        var targetScore = lib["十周年噩梦人机_callbacks"]["online_targetScore_257705"];
 
                 var player = _status.event.player;
                 var plan = bestBurst(player);
@@ -5038,8 +5023,8 @@
             // 本技能先选择实体牌；备份技能后必须直接替换选人AI，
             // 否则本体会按该实体攻击牌而不是【陨石】的法术效果评价目标。
             meteor.ai2 = function (target) {
-                        var bestBurst = lib["十周年-噩梦人机_callbacks"]["online_bestBurst_255640"];
-                        var targetScore = lib["十周年-噩梦人机_callbacks"]["online_targetScore_257705"];
+                        var bestBurst = lib["十周年噩梦人机_callbacks"]["online_bestBurst_255640"];
+                        var targetScore = lib["十周年噩梦人机_callbacks"]["online_targetScore_257705"];
 
                 var player = _status.event.player;
                 var plan = bestBurst(player);
@@ -5080,7 +5065,7 @@
             // 带实体牌费用的技能在选牌后由event.ai2负责选人；
             // 显式使用技能评分，避免退回实体攻击牌的普通目标评价。
             skill.onlineElementTargetScore = function (target) {
-                        var targetScore = lib["十周年-噩梦人机_callbacks"]["online_targetScore_257705"];
+                        var targetScore = lib["十周年噩梦人机_callbacks"]["online_targetScore_257705"];
 
                 return targetScore(_status.event.player, target, data.damage, name, data.suit);
             };
@@ -5832,8 +5817,8 @@
             if (actualLoss < 2) return null;
             return { spend: lightning, target: bestTarget, moraleLoss: actualLoss, rawMoraleLoss: bestRawLoss };
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_scatterPlan_299105"] = scatterPlan;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_scatterPlan_299105"] = scatterPlan;
 
 
         function windChainPlan(player, previousTarget) {
@@ -6028,7 +6013,7 @@
             };
             scatter.ai.result = {
                 player: function (player) {
-                        var scatterPlan = lib["十周年-噩梦人机_callbacks"]["online_scatterPlan_299105"];
+                        var scatterPlan = lib["十周年噩梦人机_callbacks"]["online_scatterPlan_299105"];
 
                     var plan = scatterPlan(player);
                     return plan ? 2 + plan.moraleLoss : 0;
@@ -6229,8 +6214,8 @@
             var forcedDiscard = Math.max(0, actual - room);
             return amount * 0.18 + treatment * 1.15 + forcedDiscard * 0.38 - safeDraw * 0.42;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_noMoraleDamagePressure_322393"] = noMoraleDamagePressure;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_noMoraleDamagePressure_322393"] = noMoraleDamagePressure;
 
 
         helper.yingLingRunePlan = function (player, chooseAllocation, forcedCard, forcedTarget) {
@@ -6439,7 +6424,7 @@
                 var targets = (await player.chooseTarget("对另一名目标角色造成" + amount + "点法术伤害", true, function (card, player, target) {
                     return target != _status.event.excludedTarget;
                 }).set("excludedTarget", trigger.player).set("amount", amount).set("ai", function (target) {
-                        var noMoraleDamagePressure = lib["十周年-噩梦人机_callbacks"]["online_noMoraleDamagePressure_322393"];
+                        var noMoraleDamagePressure = lib["十周年噩梦人机_callbacks"]["online_noMoraleDamagePressure_322393"];
 
                     var player = _status.event.player;
                     if (target.side == player.side) return -10;
@@ -7067,8 +7052,8 @@
                 if (target.side == player.side) return -Infinity;
                 return 5 + Math.max(0, target.countCards("h") - target.getHandcardLimit() + 2) * 2;
             }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_linkTargetValue_371615"] = linkTargetValue;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_linkTargetValue_371615"] = linkTargetValue;
 
             sorrow.check = function (event, player) {
                 var current = player.storage.tongShengGongSi_target;
@@ -7087,7 +7072,7 @@
                 var result = await player.chooseTarget("转移【同生共死】目标，取消则移除【同生共死】", function (card, player, target) {
                     return target != _status.event.currentTarget;
                 }).set("currentTarget", current).set("ai", function (target) {
-                        var linkTargetValue = lib["十周年-噩梦人机_callbacks"]["online_linkTargetValue_371615"];
+                        var linkTargetValue = lib["十周年噩梦人机_callbacks"]["online_linkTargetValue_371615"];
 
                     return linkTargetValue(_status.event.player, target);
                 }).forResult();
@@ -7270,8 +7255,8 @@
             }
             return best;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_responseAttackTargetValue_381638"] = responseAttackTargetValue;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_responseAttackTargetValue_381638"] = responseAttackTargetValue;
 
 
         function hasLegalMatchingResponse(event, player, incomingCard, excludedCard) {
@@ -7287,8 +7272,8 @@
                 return responseAttackTargetValue(event, player, card) != -Infinity;
             });
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_hasLegalMatchingResponse_382496"] = hasLegalMatchingResponse;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_hasLegalMatchingResponse_382496"] = hasLegalMatchingResponse;
 
 
         function responseTargetChoice(target) {
@@ -7322,8 +7307,8 @@
             if (overflow >= get.shiQi(player.side) && overflow > 0) value += 500;
             return value - Math.max(0, get.value(card, player)) * 0.08;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_responseDefensePriority_384262"] = responseDefensePriority;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_responseDefensePriority_384262"] = responseDefensePriority;
 
 
         function incomingAttackDamage(event) {
@@ -7398,8 +7383,8 @@
 
             return preparation >= 1.15;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_shouldTakeAttackForCodices_386699"] = shouldTakeAttackForCodices;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_shouldTakeAttackForCodices_386699"] = shouldTakeAttackForCodices;
 
 
         function canLeaveKnownReboundPair(player, count) {
@@ -7760,10 +7745,10 @@
                     .set("canZhiLiao", trigger.canZhiLiao)
                     .set("incomingDamage", event.incomingDamage)
                     .set("ai1", function (item) {
-                        var responseAttackTargetValue = lib["十周年-噩梦人机_callbacks"]["online_responseAttackTargetValue_381638"];
-                        var hasLegalMatchingResponse = lib["十周年-噩梦人机_callbacks"]["online_hasLegalMatchingResponse_382496"];
-                        var shouldTakeAttackForCodices = lib["十周年-噩梦人机_callbacks"]["online_shouldTakeAttackForCodices_386699"];
-                        var responseDefensePriority = lib["十周年-噩梦人机_callbacks"]["online_responseDefensePriority_384262"];
+                        var responseAttackTargetValue = lib["十周年噩梦人机_callbacks"]["online_responseAttackTargetValue_381638"];
+                        var hasLegalMatchingResponse = lib["十周年噩梦人机_callbacks"]["online_hasLegalMatchingResponse_382496"];
+                        var shouldTakeAttackForCodices = lib["十周年噩梦人机_callbacks"]["online_shouldTakeAttackForCodices_386699"];
+                        var responseDefensePriority = lib["十周年噩梦人机_callbacks"]["online_responseDefensePriority_384262"];
 
                         var player = _status.event.player;
                         if (item && typeof item == "object" && get.type(item, player) == "gongJi") {
@@ -7911,8 +7896,8 @@
         function cappedSelfRisk(player, amount, cardsLeaving) {
             return helper.selfDamageRisk(player, cappedDamage(amount), cardsLeaving || 0);
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_cappedSelfRisk_416135"] = cappedSelfRisk;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_cappedSelfRisk_416135"] = cappedSelfRisk;
 
 
         function lockedDragonTarget(player) {
@@ -7993,7 +7978,7 @@
                     return target.side != player.side;
                 }).set("qiAfter", qiAfter).set("ai", function (target) {
                         var helper = lib.xingBeiShiZhouNianAi;
-                        var cappedSelfRisk = lib["十周年-噩梦人机_callbacks"]["online_cappedSelfRisk_416135"];
+                        var cappedSelfRisk = lib["十周年噩梦人机_callbacks"]["online_cappedSelfRisk_416135"];
 
                     var player = _status.event.player;
                     var score = helper.damagePressure(target, player, 1);
@@ -8194,8 +8179,8 @@
             }
             return score;
         }
-        lib["十周年-噩梦人机_callbacks"] = lib["十周年-噩梦人机_callbacks"] || {};
-        lib["十周年-噩梦人机_callbacks"]["online_witherTargetPressure_429576"] = witherTargetPressure;
+        lib["十周年噩梦人机_callbacks"] = lib["十周年噩梦人机_callbacks"] || {};
+        lib["十周年噩梦人机_callbacks"]["online_witherTargetPressure_429576"] = witherTargetPressure;
 
 
         function bestWitherTarget(player, count) {
@@ -8340,7 +8325,7 @@
                     var plan = bestWitherTarget(player, 1);
                     var targets = (await player.chooseTarget("对目标角色造成1点法术伤害", true)
                         .set("bestTarget", plan.target).set("ai", function (target) {
-                        var witherTargetPressure = lib["十周年-噩梦人机_callbacks"]["online_witherTargetPressure_429576"];
+                        var witherTargetPressure = lib["十周年噩梦人机_callbacks"]["online_witherTargetPressure_429576"];
 
                             if (target.side == _status.event.player.side) return -100;
                             if (target == _status.event.bestTarget) return 20;
@@ -9305,12 +9290,7 @@
             ["shenMiFuBi"],
             ["xinYueZhang", "prompt2", true],
             ["xinYueZhang", "content", true],
-            ["tianPing", "addPai", true],
-            ["shenYu", "content", true],
-            ["sheZui", "content", true],
-            ["niuQuLianJie", "content", true],
-            ["ruMeng", "content", true],
-            ["guShenJieLv", "mod.maxHandcardFinal", true]
+            ["tianPing", "addPai", true]
         ];
         var missingDependencies = secondBatchDependencies.filter(function (item) {
             return item[2] ? !hasSkillFunction(item[0], item[1]) : !hasSkillPath(item[0], item[1]);
@@ -9322,7 +9302,7 @@
             if (lib._xingBeiNightmareSecondBatchMissingSignature !== missingSignature) {
                 lib._xingBeiNightmareSecondBatchMissingSignature = missingSignature;
                 console.warn(
-                    "[十周年-噩梦人机] 第二批噩梦技能等待原角色包完成加载，当前缺少：",
+                    "[十周年噩梦人机] 第二批噩梦技能等待原角色包完成加载，当前缺少：",
                     missingDependencies
                 );
             }
@@ -9776,7 +9756,7 @@
         function patchFixedProphecy(name, suits) {
             var skill = lib.skill && lib.skill[name];
             if (!skill || typeof skill.content != "function") {
-                console.warn("[十周年-噩梦人机] 预言技能补丁跳过，原技能不可用：" + name);
+                console.warn("[十周年噩梦人机] 预言技能补丁跳过，原技能不可用：" + name);
                 return false;
             }
             if (skill._nightmareFixedProphecyPatched) return true;
@@ -10257,61 +10237,6 @@
         });
         register("moGongEX", ["nightmare_shenFengJiaoZhun", "nightmare_wuShiYiDao"]);
 
-        addSkill("nightmare_qianChengHuiXiang", { charlotte: true, popup: false });
-        addSkill("nightmare_sheZuiEnDian", { charlotte: true, popup: false });
-        addSkill("nightmare_mengZhaoHuiXiang", { charlotte: true, popup: false });
-        addSkill("nightmare_mengJingBiHu", { charlotte: true, popup: false });
-        register("daZuiSiJiao", ["nightmare_qianChengHuiXiang", "nightmare_sheZuiEnDian"]);
-        register("guShenJiSi", ["nightmare_mengZhaoHuiXiang", "nightmare_mengJingBiHu"]);
-
-        var shenYuSkill = lib.skill.shenYu;
-        if (shenYuSkill && markPatched(shenYuSkill, "nightmareDevotionEcho")) {
-            var originalShenYuContent = shenYuSkill.content;
-            shenYuSkill.content = async function (event, trigger, player) {
-                await originalShenYuContent.apply(this, arguments);
-                if (player.hasSkill("nightmare_qianChengHuiXiang")) {
-                    await player.addZhiShiWu("daZuiQianCheng", 2);
-                }
-            };
-        }
-        var sheZuiSkill = lib.skill.sheZui;
-        if (sheZuiSkill && markPatched(sheZuiSkill, "nightmareSheZuiGrace")) {
-            var originalSheZuiContent = sheZuiSkill.content;
-            sheZuiSkill.content = async function (event, trigger, player) {
-                await originalSheZuiContent.apply(this, arguments);
-                if (player.hasSkill("nightmare_sheZuiEnDian")) await player.addNengLiang("shuiJing", 1);
-            };
-        }
-        var niuQuLianJieSkill = lib.skill.niuQuLianJie;
-        if (niuQuLianJieSkill && markPatched(niuQuLianJieSkill, "nightmareDreamEcho")) {
-            var originalNiuQuLianJieContent = niuQuLianJieSkill.content;
-            niuQuLianJieSkill.content = async function (event, trigger, player) {
-                await originalNiuQuLianJieContent.apply(this, arguments);
-                if (player.hasSkill("nightmare_mengZhaoHuiXiang")) {
-                    await player.addNengLiang("shuiJing", 1);
-                }
-            };
-        }
-        var ruMengSkill = lib.skill.ruMeng;
-        if (ruMengSkill && markPatched(ruMengSkill, "nightmareDreamEcho")) {
-            var originalRuMengContent = ruMengSkill.content;
-            ruMengSkill.content = async function (event, trigger, player) {
-                await originalRuMengContent.apply(this, arguments);
-                if (player.hasSkill("nightmare_mengZhaoHuiXiang")) {
-                    await player.addNengLiang("shuiJing", 1);
-                }
-            };
-        }
-        var guShenJieLvSkill = lib.skill.guShenJieLv;
-        if (guShenJieLvSkill && guShenJieLvSkill.mod && markPatched(guShenJieLvSkill, "nightmareDreamHandLimit")) {
-            var originalGuShenHandLimit = guShenJieLvSkill.mod.maxHandcardFinal;
-            guShenJieLvSkill.mod.maxHandcardFinal = function (player, num) {
-                var result = originalGuShenHandLimit.apply(this, arguments);
-                if (player.hasSkill("nightmare_mengJingBiHu") && player.hasSkill("mengZhao_jiLeMengJing")) return result + 2;
-                return result;
-            };
-        }
-
         // 只有所有定义和原技能补丁都成功执行后才标记完成。
         // 这样即使角色包延迟加载，也可以在后续 phaseBefore/gameStart 再次尝试。
         lib._xingBeiNightmareSkillsSecondBatchDefined = true;
@@ -10362,7 +10287,7 @@
         boostSkill("jiRi_moBaoChongJie", "nightmare_shengDanJiaBan", 1.8, 1.5);
         boostSkill("wangNvJinKu", "nightmare_wangGuoYiChan", 1.8, 1.4);
 
-        // 第38—72名角色逐一绑定强化后的关联技能估值。纯强制强化没有独立发动按钮，
+        // 第38—70名角色逐一绑定强化后的关联技能估值。纯强制强化没有独立发动按钮，
         // 因此提高其资源来源、资源消耗或能够兑现强化收益的原技能优先级。
         var secondBatchPlans = [
             { character: "shengDianQiShi", nightmare: "nightmare_shenEnManYi", skills: ["shenWei", "shengYu", "shenLinShengQi", "shengYanQiYuan"], order: 0.7, result: 0.6 },
@@ -10397,9 +10322,7 @@
             { character: "daiDuoShaoNv", nightmare: "nightmare_rangBieRenGan", skills: ["rangWoTangPing", "xiangYongMoDan", "buXiangTiLian", "zaiShuiYiXia"], order: 0.9, result: 0.8 },
             { character: "jiDuShaoNv", nightmare: "nightmare_suanYiShangTou", skills: ["cuYiXiuXin", "xuRongZhangWo", "xiangSiBing", "jiDuZhuiFang"], order: 1.4, result: 1.2 },
             { character: "jianZhiZi", nightmare: "nightmare_shiYanBiDa", skills: ["fengZhiJian", "jianShouShiYan", "jianCanYing"], order: 1.7, result: 1.4 },
-            { character: "moGongEX", nightmare: "nightmare_wuShiYiDao", skills: ["shenFengShi", "jiFengZhuiShe", "gongShenHouBu", "juJi"], order: 1.8, result: 1.5 },
-            { character: "daZuiSiJiao", nightmare: "nightmare_qianChengHuiXiang", skills: ["xinYangZhiJia", "shuLingQuanBing"], order: 0.8, result: 0.7 },
-            { character: "guShenJiSi", nightmare: "nightmare_mengZhaoHuiXiang", skills: ["ruMeng"], order: 0.9, result: 0.8 }
+            { character: "moGongEX", nightmare: "nightmare_wuShiYiDao", skills: ["shenFengShi", "jiFengZhuiShe", "gongShenHouBu", "juJi"], order: 1.8, result: 1.5 }
         ];
         secondBatchPlans.forEach(function (plan) {
             plan.skills.forEach(function (skill) {
@@ -11258,7 +11181,7 @@
 
     return {
         name: extensionName,
-        version: "1.17",
+        version: "1.9",
         editable: false,
         arenaReady: function () {
             applyShiZhouNianAiPatch();
@@ -11272,7 +11195,7 @@
             applyShiZhouNianAiPatch();
         },
         help: {
-            "十周年-噩梦人机": "内置十周年-AI优化版的全部决策逻辑。本扩展启用时，独立AI优化版自动跳过加载，关闭噩梦强化技能仍保留内置AI；切换扩展启用状态后需重启。允许为仅由电脑控制的角色附加噩梦强化技能，玩家亲自操控、联机操控或接管角色时不会获得强化技能。"
+            "十周年噩梦人机": "内置十周年AI优化版的全部决策逻辑。本扩展启用时，独立AI优化版自动跳过加载，关闭噩梦强化技能仍保留内置AI；切换扩展启用状态后需重启。允许为仅由电脑控制的角色附加噩梦强化技能，玩家亲自操控、联机操控或接管角色时不会获得强化技能。"
         },
         config: {
             enableNightmareSkills: {
@@ -11308,5 +11231,4 @@
         },
         files: { character: [], card: [], skill: [], audio: [] }
     };
-});
 });

@@ -1,28 +1,9 @@
-(function (registerExtension) {
-    if (typeof game !== "undefined" && game && typeof game.import === "function") {
-        registerExtension(game);
-    } else {
-        import("../../noname.js").then(function (module) {
-            registerExtension(module.game);
-        }).catch(function (error) {
-            console.error("扩展无法获取游戏实例", error);
-        });
-    }
-})(function (game) {
-    game.import("extension", function (lib, game, ui, get, ai, _status) {
+game.import("extension", function (lib, game, ui, get, ai, _status) {
     "use strict";
 
     var extensionName = "无名杯UI优化包";
-    var extensionVersion = "2.27";
     var observer = null;
     var decorateTimer = null;
-    var cardDecorationFrame = null;
-    var pendingCardNodes = [];
-    var pendingPromptNodes = [];
-    var pendingGlobalUiNodes = [];
-    var pendingIdentityNodes = [];
-    var pendingSelectionDecoration = false;
-    var cardDefinitionsApplied = false;
     var combatLines = [];
     var combatLineHookInstalled = false;
     var combatLineSequence = 0;
@@ -82,10 +63,6 @@
         _moDan: "moDan_xianxia.webp"
     };
     var resourceMarkArtMap = {
-        baoShi: "baoShi_xianxia.webp",
-        shuiJing: "shuiJing_xianxia.webp"
-    };
-    var starryResourceMarkArtMap = {
         baoShi: "baoShi_starry.webp",
         shuiJing: "shuiJing_starry.webp"
     };
@@ -97,6 +74,27 @@
     function configValue(key, fallback) {
         var name = "extension_" + extensionName + "_" + key;
         return lib.config[name] === undefined ? fallback : lib.config[name];
+    }
+
+    var extensionIdentityAliases = {
+        "十周年AI优化版": "十周年-AI优化版",
+        "十周年噩梦人机": "十周年-噩梦人机"
+    };
+
+    function migrateExtensionIdentityConfigs() {
+        var marker = "extension_" + extensionName + "_extensionIdentityMigrationV1";
+        if (lib.config[marker]) return;
+        Object.keys(extensionIdentityAliases).forEach(function (newName) {
+            var oldName = extensionIdentityAliases[newName];
+            var oldPrefix = "extension_" + oldName + "_";
+            var newPrefix = "extension_" + newName + "_";
+            Object.keys(lib.config).forEach(function (key) {
+                if (!key.startsWith(oldPrefix)) return;
+                var newKey = newPrefix + key.slice(oldPrefix.length);
+                if (lib.config[newKey] === undefined) game.saveConfig(newKey, lib.config[key]);
+            });
+        });
+        game.saveConfig(marker, true);
     }
 
     function configureDefaultStarryBackground() {
@@ -126,27 +124,6 @@
                 game.saveConfig("image_background_blur", true);
             }
         }
-        game.saveConfig(marker, true);
-    }
-
-    var extensionIdentityAliases = {
-        "十周年AI优化版": "十周年-AI优化版",
-        "十周年噩梦人机": "十周年-噩梦人机"
-    };
-
-    function migrateExtensionIdentityConfigs() {
-        var marker = "extension_" + extensionName + "_extensionIdentityMigrationV1";
-        if (lib.config[marker]) return;
-        Object.keys(extensionIdentityAliases).forEach(function (newName) {
-            var oldName = extensionIdentityAliases[newName];
-            var oldPrefix = "extension_" + oldName + "_";
-            var newPrefix = "extension_" + newName + "_";
-            Object.keys(lib.config).forEach(function (key) {
-                if (!key.startsWith(oldPrefix)) return;
-                var newKey = newPrefix + key.slice(oldPrefix.length);
-                if (lib.config[newKey] === undefined) game.saveConfig(newKey, lib.config[key]);
-            });
-        });
         game.saveConfig(marker, true);
     }
 
@@ -236,21 +213,17 @@
         var names = Object.keys(lib.extensionMenu || {});
         var collator = new Intl.Collator("zh-CN", { numeric: true, sensitivity: "base" });
         var preferred = [
-            "bigcowcow",
+            "无名杯UI优化包",
+            "十周年语音包",
+            "十周年AI优化版",
+            "十周年噩梦人机",
+            "百年战争·序章",
             "宿命挽歌",
             "轮回遗梦",
             "永夜残响",
             "峡谷幻音",
             "电啸龙吟",
-            "创世纪",
-            "百年战争·序章",
-            "百年战争·纷争",
-            "百年战争·变局",
-            "百年战争·终章",
-            "无名杯UI优化包",
-            "十周年语音包",
-            "十周年AI优化版",
-            "十周年噩梦人机"
+            "创世纪"
         ];
         var priority = new Map(preferred.map(function (name, index) { return ["extension_" + name, index]; }));
         names.sort(function (a, b) {
@@ -353,7 +326,6 @@
     }
 
     function installPlayerSlotIndicators() {
-        if (currentTheme() !== "starry") return;
         var proto = lib.element && lib.element.Player && lib.element.Player.prototype;
         if (!proto || proto._wmbPlayerSlotIndicators) return;
         var update = proto.$update;
@@ -376,13 +348,11 @@
     }
 
     function refreshPlayerSlotIndicators() {
-        if (currentTheme() !== "starry") return;
         var players = (game.players || []).concat(game.dead || []);
         players.forEach(function (player) {
             renderPlayerSlotIndicators(player);
         });
     }
-
     function currentTheme() {
         return configValue("uiTheme", "starry");
     }
@@ -392,7 +362,7 @@
     }
 
     function isWaterbearTheme() {
-        return currentTheme() === "waterbear";
+        return false;
     }
 
     function isCustomTheme() {
@@ -406,11 +376,9 @@
 
     function scoreboardNode() {
         var board = ui.shiQiInfo;
-        if (!board || !board.isConnected) {
-            board = document.querySelector(".wmb-scoreboard, .touchinfo.zhanJi, .zhanJi.table");
-        }
-        // Some mobile cores put the score table inside .touchinfo; keep a usable host if that wrapper is absent.
-        if (board && board.tagName === "TABLE") board = board.closest(".touchinfo") || board.parentElement;
+        if (!board || !board.isConnected) board = document.querySelector(".wmb-scoreboard, .zhanJi.table");
+        // Android 1.4.5 puts zhanJi/table on the inner table, desktop on its host.
+        if (board && board.tagName === "TABLE") board = board.closest(".touchinfo");
         return board;
     }
 
@@ -420,10 +388,10 @@
         toggleClass(document.body, "wmb-ui-has-scoreboard", board && board.isConnected);
         if (!board) return;
         board.classList.add("wmb-scoreboard");
-        var title = isWaterbearTheme() ? "战局纪要" : "仙缘 · 战局";
-        if (board.getAttribute("data-wmb-title") !== title) {
-            board.setAttribute("data-wmb-title", title);
-        }
+        board.setAttribute(
+            "data-wmb-title",
+            isWaterbearTheme() ? "战局纪要" : "仙缘 · 战局"
+        );
 
         var rows = board.querySelectorAll("tr");
         if (rows[1]) rows[1].classList.add("wmb-team-red");
@@ -433,16 +401,40 @@
             board.querySelectorAll("td:nth-child(2) > img").forEach(function (image) {
                 var source = image.getAttribute("src") || "";
                 if (source.indexOf("baoShi") !== -1) {
-                    var gemImage = imageRoot + (currentTheme() === "starry" ? "baoShi_starry.webp" : "baoShi_xianxia.webp");
-                    if (image.getAttribute("src") !== gemImage && image.src !== gemImage) image.src = gemImage;
+                    image.src = imageRoot + "baoShi_starry.webp";
                 } else if (source.indexOf("shuiJing") !== -1) {
-                    var crystalImage = imageRoot + (currentTheme() === "starry" ? "shuiJing_starry.webp" : "shuiJing_xianxia.webp");
-                    if (image.getAttribute("src") !== crystalImage && image.src !== crystalImage) image.src = crystalImage;
+                    image.src = imageRoot + "shuiJing_starry.webp";
                 }
                 image.classList.add("wmb-starstone");
             });
-            board.querySelectorAll(".wmb-stone-summary").forEach(function (summary) {
-                summary.remove();
+            [rows[1], rows[2]].forEach(function (row) {
+                if (!row || !row.cells[1]) return;
+                var cell = row.cells[1];
+                var images = cell.querySelectorAll(":scope > img");
+                var gems = Array.prototype.filter.call(images, function (image) {
+                    return image.getAttribute("src").indexOf("baoShi") !== -1;
+                }).length;
+                var crystals = images.length - gems;
+                var summary = cell.querySelector(".wmb-stone-summary");
+                if (!summary) {
+                    summary = document.createElement("span");
+                    summary.className = "wmb-stone-summary";
+                    ["baoShi", "shuiJing"].forEach(function (name) {
+                        var item = document.createElement("span");
+                        var icon = document.createElement("img");
+                        icon.src = imageRoot + name + "_xianxia.webp";
+                        icon.alt = name === "baoShi" ? "宝石" : "水晶";
+                        item.appendChild(icon);
+                        item.appendChild(document.createElement("span"));
+                        summary.appendChild(item);
+                    });
+                    cell.appendChild(summary);
+                }
+                [gems, crystals].forEach(function (count, index) {
+                    var label = summary.children[index].lastChild;
+                    var value = "×" + count;
+                    if (label.textContent !== value) label.textContent = value;
+                });
             });
         }
     }
@@ -597,21 +589,9 @@
         viewportFrame = null;
         if (!isXianJianTheme() || !document.body) return;
         var size = visibleLayoutSize();
-        var mobilePlatform = lib.device === "android" || lib.device === "ios" ||
+        var mobile = lib.device === "android" || lib.device === "ios" ||
             /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-        var viewport = window.visualViewport;
-        var viewportWidth = viewport && viewport.width || window.innerWidth;
-        var viewportHeight = viewport && viewport.height || window.innerHeight;
-        var screenWidth = window.screen && window.screen.width || viewportWidth;
-        var screenHeight = window.screen && window.screen.height || viewportHeight;
-        var shortSide = Math.min(viewportWidth, viewportHeight, screenWidth, screenHeight);
-        var coarsePointer = typeof window.matchMedia === "function" &&
-            window.matchMedia("(pointer: coarse)").matches;
-        var arenaMobile = !!(ui.arena && (ui.arena.classList.contains("mobile") ||
-            ui.arena.classList.contains("long")));
-        var touchClient = mobilePlatform || arenaMobile || navigator.maxTouchPoints > 0 || coarsePointer;
-        var small = mobilePlatform || arenaMobile || (touchClient && shortSide <= 1100);
-        toggleClass(document.body, "wmb-ui-mobile-client", touchClient);
+        var small = mobile && (window.innerWidth <= 1050 || window.innerHeight <= 600);
         toggleClass(document.body, "wmb-ui-small-screen", small);
         document.body.style.setProperty("--wmb-layout-width", size.width + "px");
         document.body.style.setProperty("--wmb-layout-height", size.height + "px");
@@ -692,9 +672,7 @@
         installManagedMusic();
         var board = scoreboardNode();
         if (!board || !board.isConnected) return;
-        var created = false;
         if (!musicPanel) {
-            created = true;
             musicPanel = document.createElement("section");
             musicPanel.className = "wmb-bgm-panel wmb-bgm-collapsed";
             musicPanel.setAttribute("aria-label", "战局背景音乐控制");
@@ -757,7 +735,7 @@
             musicObservedBoard = board;
         }
         scheduleMusicPosition();
-        if (created) syncMusicPanel();
+        syncMusicPanel();
         if (!musicTimer) {
             musicTimer = setInterval(syncMusicPanel, 700);
             window.addEventListener("resize", scheduleMusicPosition);
@@ -767,7 +745,6 @@
     function applyCardDefinitions() {
         if (!isXianJianTheme()) return;
         if (!configValue("cardArt", true)) return;
-        if (cardDefinitionsApplied) return;
         Object.keys(cardArtMap).forEach(function (name) {
             if (!lib.card[name]) return;
             lib.card[name].image = "ext:" + extensionName + "/image/card/" + cardArtMap[name];
@@ -776,9 +753,8 @@
             if (!lib.skill[name]) return;
             lib.skill[name].markimage = "extension/" + extensionName + "/image/mark/" + markArtMap[name];
         });
-        var activeResourceMarkArtMap = currentTheme() === "starry" ? starryResourceMarkArtMap : resourceMarkArtMap;
-        Object.keys(activeResourceMarkArtMap).forEach(function (name) {
-            var image = "extension/" + extensionName + "/image/" + activeResourceMarkArtMap[name];
+        Object.keys(resourceMarkArtMap).forEach(function (name) {
+            var image = "extension/" + extensionName + "/image/" + resourceMarkArtMap[name];
             var expandedName = "_tiLian_" + name;
             if (lib.skill[expandedName]) lib.skill[expandedName].markimage = image;
             if (lib.skill._tiLian && lib.skill._tiLian.subSkill && lib.skill._tiLian.subSkill[name]) {
@@ -790,61 +766,37 @@
             if (!skill || !lightMarkArtMap[skill.markimage]) return;
             skill.markimage = "extension/" + extensionName + "/image/" + lightMarkArtMap[skill.markimage];
         });
-        cardDefinitionsApplied = true;
     }
 
-    function matchingNodes(root, selector) {
-        if (!root) return [];
-        var nodes = [];
-        if (root.nodeType === 1 && root.matches(selector)) nodes.push(root);
-        if (root.querySelectorAll) {
-            Array.prototype.push.apply(nodes, root.querySelectorAll(selector));
-        }
-        return nodes;
-    }
-
-    function decorateLightMarks(rootNode) {
+    function decorateLightMarks() {
         if (!isXianJianTheme()) return;
-        var root = rootNode || ui.arena;
-        if (!root) return;
-        matchingNodes(root, ".player .card.mark").forEach(function (mark) {
+        document.querySelectorAll(".player .card.mark").forEach(function (mark) {
             var skill = mark.name && lib.skill[mark.name];
             if (!skill || typeof skill.markimage != "string" ||
                 skill.markimage.indexOf("extension/" + extensionName + "/image/") !== 0) return;
             if (skill.markimage.indexOf("huangDeng_xianxia.webp") === -1 &&
                 skill.markimage.indexOf("lanDeng_xianxia.webp") === -1) return;
-            if (mark.dataset.wmbMarkImage === skill.markimage) return;
-            if (mark.setBackgroundImage) {
-                mark.setBackgroundImage(skill.markimage);
-                mark.dataset.wmbMarkImage = skill.markimage;
-            }
+            if (mark.setBackgroundImage) mark.setBackgroundImage(skill.markimage);
         });
     }
 
-    function decorateCards(rootNode) {
+    function decorateCards() {
         if (!isXianJianTheme()) return;
         if (!configValue("cardArt", true)) return;
-        var root = rootNode || ui.arena;
-        if (!root) return;
         var imageRoot = "extension/" + extensionName + "/image/card/";
-        matchingNodes(root, ".card").forEach(function (card) {
+        document.querySelectorAll(".card").forEach(function (card) {
             var name = card.name;
             if (!name || !cardArtMap[name] || card.dataset.wmbCardArt === name) return;
             if (card.node && card.node.image && card.node.image.setBackgroundImage) {
-                var currentImage = card.node.image.style && card.node.image.style.backgroundImage || "";
-                if (currentImage.indexOf(cardArtMap[name]) === -1) {
-                    card.node.image.setBackgroundImage(imageRoot + cardArtMap[name]);
-                }
+                card.node.image.setBackgroundImage(imageRoot + cardArtMap[name]);
                 card.dataset.wmbCardArt = name;
             }
         });
     }
 
-    function decorateTeamIdentities(rootNode) {
+    function decorateTeamIdentities() {
         if (!isCustomTheme()) return;
-        var root = rootNode || ui.arena;
-        if (!root) return;
-        matchingNodes(root, ".player .identity").forEach(function (identity) {
+        document.querySelectorAll(".player .identity").forEach(function (identity) {
             var text = (identity.textContent || "").replace(/\s/g, "");
             var isRed = text.indexOf("红") !== -1;
             var isBlue = text.indexOf("蓝") !== -1;
@@ -863,10 +815,10 @@
         var selecting = ui.arena.classList.contains("selecting");
         var selected = ui.selected && Array.isArray(ui.selected.targets) ?
             ui.selected.targets : Array.prototype.slice.call(
-                ui.arena.querySelectorAll(".player.selected")
+                document.querySelectorAll("#arena .player.selected")
             );
         var numerals = ["壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
-        ui.arena.querySelectorAll(".player").forEach(function (player) {
+        document.querySelectorAll("#arena .player").forEach(function (player) {
             var index = selected.indexOf(player);
             var badge = player.querySelector(":scope > .wmb-target-order");
             if (selecting && index !== -1) {
@@ -904,8 +856,8 @@
     }
 
     function decorateTurnIndicators() {
-        if (!isXianJianTheme() || !ui.arena) return;
-        ui.arena.querySelectorAll(".player:not(.minskin)").forEach(function (player) {
+        if (!isXianJianTheme()) return;
+        document.querySelectorAll("#arena .player:not(.minskin)").forEach(function (player) {
             if (!player.querySelector(":scope > .wmb-xj-turn-shade")) {
                 var shade = document.createElement("div");
                 shade.className = "wmb-xj-turn-shade";
@@ -927,69 +879,31 @@
         toggleClass(body, "wmb-ui-waterbear", isWaterbearTheme());
         toggleClass(body, "wmb-ui-separate-energy-markers", !!lib.config.separateEnergyAndMarkers);
         toggleClass(body, "wmb-ui-no-motion", !configValue("motion", true));
-        if (isWaterbearTheme()) {
-            var devicePlatform = navigator.platform || "";
-            if (navigator.userAgentData && navigator.userAgentData.platform) {
-                devicePlatform += " " + navigator.userAgentData.platform;
-            }
-            var mobilePlatform = /Android|iPhone|iPad|iPod/i.test(devicePlatform + " " + navigator.userAgent);
-            var coarsePointer = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-            toggleClass(body, "wmb-ui-mobile-client",
-                mobilePlatform || navigator.maxTouchPoints > 0 || coarsePointer);
-            return true;
-        }
+        if (isWaterbearTheme()) return true;
         body.classList.add("wmb-ui-optimized");
         toggleClass(body, "wmb-ui-compact", configValue("compactLayout", false));
         toggleClass(body, "wmb-ui-strong-glass", configValue("glass", "standard") === "strong");
         return true;
     }
 
-    function decorateActionResponsePrompts(rootNode) {
-        var dialogs = rootNode ? matchingNodes(rootNode, ".dialog") :
-            document.querySelectorAll("#arena > .dialog, #window > .dialog.popped");
-        dialogs.forEach(function (dialog) {
-            var text = (dialog.textContent || "").replace(/\s+/g, "");
-            var actionPrompt = text.indexOf("[攻击行动]或者[法术行动]") !== -1;
-            var event = _status.event;
-            var chooseUseOrResponse = false;
-            for (var depth = 0; event && depth < 6; depth++) {
-                if (event.name === "chooseToUse" || event.name === "chooseToRespond") {
-                    chooseUseOrResponse = true;
-                    break;
-                }
-                if (typeof event.getParent !== "function") break;
-                try {
-                    var parent = event.getParent();
-                    if (!parent || parent === event) break;
-                    event = parent;
-                } catch (error) {
-                    break;
-                }
-            }
-            var responsePrompt = chooseUseOrResponse || /^(受到|受击|响应)/.test(text);
-            toggleClass(dialog, "wmb-action-response-prompt", actionPrompt || responsePrompt);
-        });
-    }
-
-    function decorateGlobalUi(rootNode) {
+    function decorateGlobalUi() {
         if (!isCustomTheme()) return;
-        var root = rootNode || document;
-        matchingNodes(root, "#system1 > div, #system2 > div").forEach(function (button) {
+        document.querySelectorAll("#system1 > div, #system2 > div").forEach(function (button) {
             button.classList.add("wmb-system-button");
         });
-        matchingNodes(root, ".dialog.popped, .menubg.charactercard").forEach(function (detail) {
+        document.querySelectorAll(".dialog.popped, .menubg.charactercard").forEach(function (detail) {
             detail.classList.add("wmb-detail-panel");
         });
-        matchingNodes(root, ".player.connect").forEach(function (player) {
+        document.querySelectorAll(".player.connect").forEach(function (player) {
             player.classList.add("wmb-connect-player");
         });
-        matchingNodes(root, ".connectbutton").forEach(function (button) {
+        document.querySelectorAll(".connectbutton").forEach(function (button) {
             button.classList.add("wmb-connect-button");
         });
-        matchingNodes(root, ".dialog.fullwidth.fullheight.fixed").forEach(function (rooms) {
+        document.querySelectorAll(".dialog.fullwidth.fullheight.fixed").forEach(function (rooms) {
             rooms.classList.add("wmb-room-list");
         });
-        matchingNodes(root, ".connectevents").forEach(function (button) {
+        document.querySelectorAll(".connectevents").forEach(function (button) {
             button.classList.add("wmb-connect-hall-button");
         });
         if (ui.iptext) ui.iptext.classList.add("wmb-connect-title");
@@ -998,13 +912,13 @@
     }
 
     function decorateFactionFrames() {
-        if (!isWaterbearTheme() || !ui.arena) return;
+        if (!isWaterbearTheme()) return;
         var factionClasses = [
             "wmb-wb-faction-xue", "wmb-wb-faction-sheng",
             "wmb-wb-faction-ji", "wmb-wb-faction-huan",
             "wmb-wb-faction-yong", "wmb-wb-faction-other"
         ];
-        ui.arena.querySelectorAll(".player").forEach(function (player) {
+        document.querySelectorAll(".player").forEach(function (player) {
             factionClasses.forEach(function (name) {
                 player.classList.remove(name);
             });
@@ -1074,6 +988,12 @@
         banner.className = "wmb-skill-banner " + prefix +
             "-skill-banner " + prefix + "-skill-" + type;
         banner.textContent = skillFxText(name, player);
+        ["left", "right"].forEach(function (side) {
+            var star = document.createElement("span");
+            star.className = prefix + "-skill-star " + prefix + "-skill-star-" + side;
+            star.setAttribute("aria-hidden", "true");
+            banner.appendChild(star);
+        });
         document.body.appendChild(banner);
         refreshSkillFxPositions();
         player.classList.add(prefix + "-skill-source", prefix + "-skill-source-" + type);
@@ -1198,18 +1118,14 @@
 
     function showHitFx(trigger) {
         var target = trigger.target;
-        var arena = ui.arena;
-        if (!target || !arena || !arena.isConnected) return;
-        var targetRect = target.getBoundingClientRect();
-        var arenaRect = arena.getBoundingClientRect();
-        var scaleX = arenaRect.width / arena.offsetWidth || 1;
-        var scaleY = arenaRect.height / arena.offsetHeight || 1;
+        if (!target || !document.body) return;
+        var rect = target.getBoundingClientRect();
         var fx = document.createElement("div");
         var prefix = combatFxPrefix();
         fx.className = prefix + "-hit-fx " + prefix + "-hit-" + attackColor(trigger.card);
-        fx.style.left = ((targetRect.left + targetRect.width / 2 - arenaRect.left) / scaleX - arena.clientLeft) + "px";
-        fx.style.top = ((targetRect.top + targetRect.height / 2 - arenaRect.top) / scaleY - arena.clientTop) + "px";
-        arena.appendChild(fx);
+        fx.style.left = (rect.left + rect.width / 2) + "px";
+        fx.style.top = (rect.top + rect.height / 2) + "px";
+        document.body.appendChild(fx);
         setTimeout(function () { fx.remove(); }, 850);
     }
 
@@ -1248,7 +1164,6 @@
                 ".control, .menubutton, .button, .dialog .textbutton.selectable, .card, .wmb-system-button, .connectbutton"
             );
             if (!target) return;
-            if (document.body.classList.contains("wmb-ui-mobile-client") && target.matches(".card")) return;
             var rect = target.getBoundingClientRect();
             var ripple = document.createElement("span");
             ripple.className = "wmb-wb-click-ripple";
@@ -1285,53 +1200,7 @@
         decorateTimer = setTimeout(function () {
             decorateTimer = null;
             decorateArena();
-        }, document.body && document.body.classList.contains("wmb-ui-mobile-client") ? 120 : 0);
-    }
-
-    function addPendingNode(list, node) {
-        if (list.indexOf(node) === -1) list.push(node);
-    }
-
-    function queueIncrementalDecoration() {
-        if (cardDecorationFrame !== null) return;
-        cardDecorationFrame = requestAnimationFrame(function () {
-            cardDecorationFrame = null;
-            var cards = pendingCardNodes;
-            var prompts = pendingPromptNodes;
-            var globalUi = pendingGlobalUiNodes;
-            var identities = pendingIdentityNodes;
-            var selectionChanged = pendingSelectionDecoration;
-            pendingCardNodes = [];
-            pendingPromptNodes = [];
-            pendingGlobalUiNodes = [];
-            pendingIdentityNodes = [];
-            pendingSelectionDecoration = false;
-            cards.forEach(function (node) {
-                decorateCards(node);
-                decorateLightMarks(node);
-            });
-            prompts.forEach(function (node) { decorateActionResponsePrompts(node); });
-            globalUi.forEach(function (node) {
-                decorateGlobalUi(node);
-                observeDialogClassChanges(node);
-            });
-            identities.forEach(function (node) { decorateTeamIdentities(node); });
-            if (selectionChanged) decorateTargetSelection();
-        });
-    }
-
-    function observeClassChanges(node) {
-        if (!observer || !node || node.nodeType !== 1 || node._wmbUiClassObserved) return;
-        node._wmbUiClassObserved = true;
-        observer.observe(node, {
-            attributes: true,
-            attributeFilter: ["class"],
-            attributeOldValue: true
-        });
-    }
-
-    function observeDialogClassChanges(root) {
-        matchingNodes(root, ".dialog").forEach(observeClassChanges);
+        }, 0);
     }
 
     function isTransientWaterbearFx(node) {
@@ -1388,133 +1257,26 @@
     }
 
     function observeUiChanges(records) {
-        var needsFullDecoration = false;
-        var incrementalWork = false;
-        var scoreboardChanged = false;
-        var scoreboardAdded = false;
-        var characterRatingsChanged = false;
-        var characterStarSelector = '.button.character > .hp[data-condition="xing"], .character-intro-table > .hp[data-condition="xing"]';
-        var majorUiSelector = ".player, .connectbutton, .connectevents, .menubg.charactercard";
-        var scoreboardSelector = ".zhanJi, .touchinfo, .wmb-scoreboard";
-
-        records.forEach(function (record) {
-            if (needsFullDecoration) return;
-            if (record.target && record.target.nodeType === 1 &&
-                (record.target.matches(characterStarSelector) || record.target.querySelector(characterStarSelector))) {
-                characterRatingsChanged = true;
+        var needsDecoration = records.some(function (record) {
+            if (record.type === "attributes" && record.target &&
+                record.target.classList &&
+                (record.target === ui.arena || record.target.classList.contains("player"))) {
+                return true;
             }
-            if (record.type === "attributes" && record.target && record.target.classList) {
-                if (record.target === ui.arena) {
-                    pendingSelectionDecoration = true;
-                    incrementalWork = true;
-                    return;
-                }
-                if (record.target.matches(".dialog")) {
-                    addPendingNode(pendingPromptNodes, record.target);
-                    addPendingNode(pendingGlobalUiNodes, record.target);
-                    incrementalWork = true;
-                    return;
-                }
-                if (record.target.matches(".player")) {
-                    var previousClasses = (record.oldValue || "").split(/\s+/);
-                    var selectionChanged = ["selectable", "selected"]
-                        .some(function (name) {
-                            return record.target.classList.contains(name) || previousClasses.includes(name);
-                        });
-                    if (selectionChanged) {
-                        pendingSelectionDecoration = true;
-                        incrementalWork = true;
-                    }
-                    return;
-                }
-                if (record.target.matches(".identity")) {
-                    addPendingNode(pendingIdentityNodes, record.target);
-                    incrementalWork = true;
-                }
-                return;
-            }
-            if (record.target && record.target.nodeType === 1) {
-                var scoreboard = record.target.closest(".wmb-scoreboard, .zhanJi, .touchinfo");
-                if (scoreboard) {
-                    scoreboardChanged = true;
-                    return;
-                }
-                if (record.target.matches("#system1, #system2")) {
-                    needsFullDecoration = true;
-                    return;
-                }
-                if (record.target.matches(".dialog")) {
-                    addPendingNode(pendingPromptNodes, record.target);
-                    addPendingNode(pendingGlobalUiNodes, record.target);
-                    incrementalWork = true;
-                    return;
-                }
-                if (record.target.matches(".identity")) {
-                    addPendingNode(pendingIdentityNodes, record.target);
-                    incrementalWork = true;
-                }
-            }
-            Array.prototype.forEach.call(record.removedNodes || [], function (node) {
-                if (node.nodeType === 1 &&
-                    (node.matches(majorUiSelector) || node.querySelector(majorUiSelector))) {
-                    needsFullDecoration = true;
-                }
-            });
-            Array.prototype.forEach.call(record.addedNodes || [], function (node) {
-                if (!node || node.nodeType !== 1 || !node.classList || isTransientWaterbearFx(node)) return;
-                if (node.matches(characterStarSelector) || node.querySelector(characterStarSelector)) {
-                    characterRatingsChanged = true;
-                }
-                if (node.matches(majorUiSelector) || node.querySelector(majorUiSelector)) {
-                    needsFullDecoration = true;
-                    return;
-                }
-                if (node.matches(scoreboardSelector) || node.querySelector(scoreboardSelector)) {
-                    scoreboardChanged = true;
-                    scoreboardAdded = true;
-                }
-                if (node.matches(".dialog") || node.querySelector(".dialog")) {
-                    addPendingNode(pendingPromptNodes, node);
-                    addPendingNode(pendingGlobalUiNodes, node);
-                    incrementalWork = true;
-                }
-                if (node.matches(".identity") || node.querySelector(".identity")) {
-                    addPendingNode(pendingIdentityNodes, node);
-                    incrementalWork = true;
-                }
-                if (node.matches(".card") || node.querySelector(".card")) {
-                    addPendingNode(pendingCardNodes, node);
-                    incrementalWork = true;
-                }
+            var changed = Array.prototype.slice.call(record.addedNodes || [])
+                .concat(Array.prototype.slice.call(record.removedNodes || []));
+            return changed.some(function (node) {
+                return node.nodeType === 1 && !isTransientWaterbearFx(node);
             });
         });
-        if (scoreboardChanged || needsFullDecoration) {
-            decorateScoreboard();
-        }
-        if (characterRatingsChanged) decorateCharacterStarRatings();
-        if (scoreboardAdded) ensureMusicPanel();
-        if (needsFullDecoration) {
-            pendingCardNodes = [];
-            pendingPromptNodes = [];
-            pendingGlobalUiNodes = [];
-            pendingIdentityNodes = [];
-            pendingSelectionDecoration = false;
-            if (cardDecorationFrame !== null) {
-                cancelAnimationFrame(cardDecorationFrame);
-                cardDecorationFrame = null;
-            }
-            queueDecoration();
-        } else if (incrementalWork) {
-            queueIncrementalDecoration();
-        }
+        if (needsDecoration) queueDecoration();
     }
 
     function decorateArena() {
         if (!applyRootClasses()) return;
-        if (!viewportListening) installViewportLayout();
+        installViewportLayout();
         applyCardDefinitions();
         decorateGlobalUi();
-        decorateActionResponsePrompts();
         decorateScoreboard();
         ensureMusicPanel();
         decorateCharacterStarRatings();
@@ -1532,13 +1294,10 @@
             // 联机大厅和对局会重建大块界面，监听根节点才能跨场景持续生效。
             observer.observe(document.documentElement, {
                 childList: true,
-                subtree: true
+                subtree: true,
+                attributes: true,
+                attributeFilter: ["class"]
             });
-        }
-        if (observer) {
-            observeClassChanges(ui.arena);
-            document.querySelectorAll("#arena .player, #arena > .dialog, #window > .dialog")
-                .forEach(observeClassChanges);
         }
     }
 
@@ -1553,40 +1312,31 @@
 
     function loadStyle() {
         if (!isCustomTheme()) return;
-        var currentStyles = document.querySelectorAll(
-            "link[data-wmb-ui-style], link[href*='extension/" + extensionName + "/']"
-        );
-        for (var index = 0; index < currentStyles.length; index++) {
-            currentStyles[index].remove();
-        }
-        var styleFiles = currentTheme() === "starry"
-            ? ["extension", "starry"]
-            : [isWaterbearTheme() ? "waterbear" : "extension"];
-        styleFiles.forEach(function (styleTheme) {
-            var styleUrl = lib.assetURL + "extension/" + extensionName + "/" +
-                styleTheme + ".css?v=" + encodeURIComponent(extensionVersion) +
-                "&t=" + Date.now();
-            var style = lib.init.css(styleUrl);
-            if (style) {
-                style.setAttribute("data-wmb-ui-style", "true");
-                style.setAttribute("data-wmb-ui-version", extensionVersion);
-                style.setAttribute("data-wmb-ui-theme", currentTheme());
-            }
+        if (document.querySelector('link[data-wmb-ui-style="base"]')) return;
+        var styleRoot = lib.assetURL + "extension/" + extensionName + "/";
+        var styles = [["extension.css?rev=2.24", "base"]];
+        if (currentTheme() === "starry") styles.push(["starry.css?rev=2.62", "theme"]);
+        styles.forEach(function (item) {
+            var style = document.createElement("link");
+            style.rel = "stylesheet";
+            style.href = styleRoot + item[0];
+            style.setAttribute("data-wmb-ui-style", item[1]);
+            document.head.appendChild(style);
         });
     }
 
     return {
         name: extensionName,
-        version: extensionVersion,
+        version: "2.62",
         editable: false,
         precontent: function () {
+            migrateStarryThemeDefault();
+            configureDefaultStarryBackground();
             migrateExtensionIdentityConfigs();
             installExtensionIdentityCompatibility();
             installExtensionListSortHook();
-            migrateStarryThemeDefault();
-            configureDefaultStarryBackground();
-            loadStyle();
             installPlayerSlotIndicators();
+            loadStyle();
             applyCardDefinitions();
             installSkillFx();
             installCombatLineHook();
@@ -1596,33 +1346,31 @@
             startDecoration();
         },
         arenaReady: function () {
+            applyCardDefinitions();
             installPlayerSlotIndicators();
             refreshPlayerSlotIndicators();
-            applyCardDefinitions();
             decorateArena();
         },
         content: function () {
             // precontent 在游戏创建背景层前运行；此处再应用一次才能正确解析 ext: 图片路径。
             configureDefaultStarryBackground();
             applyExtensionListSort();
-            installExtensionListSortHook();
             installPlayerSlotIndicators();
             refreshPlayerSlotIndicators();
+            installExtensionListSortHook();
             applyCardDefinitions();
             installManagedMusic();
             if (document.body) decorateArena();
         },
         config: {
             uiTheme: {
-                name: "界面版本",
+                name: "界面风格",
                 init: "starry",
                 item: {
-                    original: "原版",
-                    xianjian: "仙剑版",
                     starry: "星空风",
-                    waterbear: "水熊版"
+                    xianjian: "仙剑版"
                 },
-                intro: "切换后请重新启动游戏。原版不加载本扩展样式；仙剑版为水墨仙侠主题；星空风为蓝紫色星空主题；水熊版为羊皮纸桌游主题。"
+                intro: "默认使用蓝紫色星空风；可切换为原有青绿色仙剑配色。切换后重新启动游戏。"
             },
             compactLayout: {
                 name: "紧凑角色与操作面板",
@@ -1650,18 +1398,18 @@
             extensionAutoSort: {
                 name: "扩展列表自动排序",
                 init: true,
-                intro: "依次排列 bigcowcow、宿命挽歌、轮回遗梦、永夜残响、峡谷幻音、电啸龙吟、创世纪、百年战争四部曲、无名杯UI优化包、十周年语音包、十周年AI优化版、十周年噩梦人机；其他扩展按名称排序。两个十周年扩展使用去掉连字符的新内部 ID，原文件夹名保留以兼容现有安装。须启用本扩展并重启游戏。"
+                intro: "按约定顺序排列无名杯UI优化包、十周年语音包、十周年AI优化版、十周年噩梦人机、百年战争·序章、宿命挽歌、轮回遗梦、永夜残响、峡谷幻音、电啸龙吟、创世纪；其他扩展按名称排序。两个十周年角色扩展使用去掉连字符的新内部 ID，原文件夹名保留以兼容现有安装。须启用本扩展并重启游戏。"
             }
         },
         help: {
-            "无名杯UI优化包": "独立优化无名杯对局界面。界面版本可选原版、仙剑版、蓝紫色星空风与水熊版，覆盖战况面板、角色框、手牌、行动按钮、技能栏、选择弹窗与日志显示，不修改游戏规则或核心文件。"
+            "无名杯UI优化包": "独立优化无名杯对局界面，提供蓝紫色星空风与青绿色仙剑版配色；覆盖战况面板、角色框、手牌、行动按钮、技能栏、选择弹窗与日志显示，不修改游戏规则或核心文件。"
         },
         package: {
-            intro: "优化无名杯对局UI：新增蓝紫星空风、卡牌槽位、治疗槽位和内置随机音乐。",
+            intro: "优化无名杯对局UI：重绘战况面板视觉，统一角色框、行动按钮、技能栏、卡牌、弹窗与日志；提供星空风与仙剑配色切换。",
             author: "蒙牛 / Codex",
             diskURL: "",
             forumURL: "",
-            version: extensionVersion
+            version: "2.62"
         },
         files: {
             character: [],
@@ -1672,5 +1420,4 @@
             ["ext:" + extensionName + "/image/background/xingbei_starry.jpg"]: "星空·蓝紫"
         }
     };
-});
 });

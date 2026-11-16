@@ -186,7 +186,7 @@ body.wmb-ui-optimized #arena .card.selected {
 body.wmb-ui-optimized .card:empty:not(.mark),
 body.wmb-ui-optimized .card.infohidden:not(.mark),
 body.wmb-ui-optimized .card.infohidden:not(.infoflip):not(.mark) {
-    background-image: url("image/cardback_starry.webp?rev=2.23") !important;
+    background-image: url("image/cardback_xianxia.webp?rev=2.20") !important;
     background-size: 100% 100% !important;
     background-position: center !important;
     background-repeat: no-repeat !important;
@@ -633,7 +633,7 @@ body.wmb-ui-optimized #splash {
     align-content: start;
     justify-content: center;
     gap: clamp(10px, 1.15vw, 16px);
-    padding: 96px 10px 30px;
+    padding: 78px 10px 30px;
     overflow-x: hidden;
     overflow-y: auto;
     white-space: normal;
@@ -644,8 +644,7 @@ body.wmb-ui-optimized #splash {
     counter-reset: wmb-comic-panel;
 }
 
-body.wmb-ui-optimized #splash::before,
-body.wmb-ui-optimized #splash::after {
+body.wmb-ui-optimized #splash::before {
     position: absolute;
     left: 50%;
     z-index: 20;
@@ -658,7 +657,7 @@ body.wmb-ui-optimized #splash::after {
 }
 
 body.wmb-ui-optimized #splash::before {
-    content: "星海篇章";
+    content: "星杯传说";
     top: 18px;
     padding: 5px 22px 7px;
     border: 2px solid var(--wmb-comic-paper);
@@ -671,16 +670,6 @@ body.wmb-ui-optimized #splash::before {
     line-height: 1.15;
     text-shadow: 2px 2px 0 #66539d;
     clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
-}
-
-body.wmb-ui-optimized #splash::after {
-    content: "选择一段故事，开启下一场战局";
-    top: 61px;
-    color: rgba(232, 229, 255, .86);
-    font-size: clamp(11px, 1.1vw, 14px);
-    font-weight: 700;
-    letter-spacing: .14em;
-    text-shadow: 0 1px 4px rgba(9, 11, 28, .9);
 }
 
 body.wmb-ui-optimized #splash > div {
@@ -730,6 +719,14 @@ body.wmb-ui-optimized #splash > div > .avatar {
     background-repeat: no-repeat;
     filter: saturate(.9) contrast(1.04);
     transition: transform .35s ease, filter .35s ease;
+}
+
+body.wmb-ui-optimized #splash > div[link="illustration"] > .avatar {
+    background-position: center 28% !important;
+}
+
+body.wmb-ui-optimized #splash > div[link="nightmarePve"] > .avatar {
+    background-position: center 43% !important;
 }
 
 body.wmb-ui-optimized #splash > div::after {
@@ -818,7 +815,7 @@ body.wmb-ui-optimized #splash > div.clicked {
         grid-template-columns: repeat(4, minmax(0, 1fr));
         grid-auto-rows: clamp(64px, 10vh, 100px);
         gap: 11px;
-        padding-top: 90px;
+        padding-top: 72px;
     }
 
     body.wmb-ui-optimized #splash > div:nth-child(6n + 1) { grid-column: span 4; }
@@ -831,16 +828,44 @@ body.wmb-ui-optimized #splash > div.clicked {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         grid-auto-rows: clamp(76px, 13vh, 110px);
         gap: 10px;
-        padding: 84px 4px 24px;
+        padding: 65px 4px 24px;
     }
 
     body.wmb-ui-optimized #splash::before { top: 12px; font-size: 22px; }
-    body.wmb-ui-optimized #splash::after { top: 52px; font-size: 11px; }
     body.wmb-ui-optimized #splash > div { grid-column: span 1; }
     body.wmb-ui-optimized #splash > div:nth-child(6n + 1) { grid-column: span 2; grid-row: span 2; }
     body.wmb-ui-optimized #splash > div:nth-child(6n + 5) { grid-column: span 1; grid-row: span 2; }
     body.wmb-ui-optimized #splash > div > .splashtext { bottom: 10px; padding: 6px 9px 7px; font-size: clamp(15px, 4vw, 19px); }
     body.wmb-ui-optimized #splash > div::before { top: 7px; left: 7px; min-width: 27px; font-size: 10px; }
+}
+
+/* Give the online room more visual weight and compact the tutorial panel. */
+body.wmb-ui-optimized #splash > div[link="connect"] {
+    grid-column: span 4;
+    grid-row: span 2;
+}
+
+body.wmb-ui-optimized #splash > div[link="tutorial"] {
+    grid-column: span 2;
+    grid-row: span 2;
+}
+
+@media (max-width: 560px) {
+    body.wmb-ui-optimized #splash > div[link="connect"] { grid-column: span 2; grid-row: span 2; }
+    body.wmb-ui-optimized #splash > div[link="tutorial"] { grid-column: span 1; grid-row: span 2; }
+}
+
+/* Arrange the desktop splash as three aligned comic-page bands. */
+@media (min-width: 901px) {
+    body.wmb-ui-optimized #splash { grid-template-columns: repeat(10, minmax(0, 1fr)); }
+    body.wmb-ui-optimized #splash > div[link="xingBei"] { grid-column: 1 / span 4; grid-row: 1 / span 3; }
+    body.wmb-ui-optimized #splash > div[link="boss"] { grid-column: 5 / span 2; grid-row: 1 / span 3; }
+    body.wmb-ui-optimized #splash > div[link="connect"] { grid-column: 7 / span 4; grid-row: 1 / span 3; }
+    body.wmb-ui-optimized #splash > div[link="offlineChoose"] { grid-column: 2 / span 2; grid-row: 4 / span 2; }
+    body.wmb-ui-optimized #splash > div[link="illustration"] { grid-column: 4 / span 4; grid-row: 4 / span 2; }
+    body.wmb-ui-optimized #splash > div[link="leaderboard"] { grid-column: 8 / span 2; grid-row: 4 / span 2; }
+    body.wmb-ui-optimized #splash > div[link="tutorial"] { grid-column: 4 / span 2; grid-row: 6 / span 2; }
+    body.wmb-ui-optimized #splash > div[link="nightmarePve"] { grid-column: 6 / span 2; grid-row: 6 / span 2; }
 }
 
 /* 主菜单采用明亮Q版角色配图，沿用项目中的默认角色原型。 */

@@ -1,12 +1,15 @@
-extension["十周年-噩梦人机"] = {
-    "intro": "内置十周年-AI优化版，为72名电脑角色提供144项噩梦强化技能；新增最多三名玩家的联机合作 PvE 模式。真人操控角色保持原版技能。",
-    "author": "蒙牛 / Codex",
-    "netdisk": "",
-    "forum": "",
-    "version": "1.17",
-    "files": [
+extension["十周年噩梦人机"] = {
+    intro: "继承十周年AI优化版，为70名电脑角色添加140项噩梦强化；新增最多三名玩家的联机合作 PvE 模式。",
+    author: "蒙牛 / Codex",
+    netdisk: "",
+    forum: "",
+    version: "1.9",
+    files: [
+        "info.json",
         "README.md",
+        "package.js",
         "extension.js",
+        "image/splash/xieLing.webp",
         "image/character/chibi/default/anShaZhe.webp",
         "image/character/chibi/default/cangYanMoNv.webp",
         "image/character/chibi/default/chuanJiaoShi.webp",
@@ -151,9 +154,6 @@ extension["十周年-噩梦人机"] = {
         "image/character/chibi/nightmare/zhongCaiZhe.webp",
         "image/character/chibi/nightmare/zhouFuShi.webp",
         "image/character/chibi/nightmare/zhuLvZhe.webp",
-        "image/splash/xieLing.webp",
-        "info.json",
-        "package.js"
     ],
-    "size": "9.74MB"
+    size: "179.56MB"
 };

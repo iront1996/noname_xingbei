@@ -1,18 +1,7 @@
-(function (registerExtension) {
-    if (typeof game !== "undefined" && game && typeof game.import === "function") {
-        registerExtension(game);
-    } else {
-        import("../../noname.js").then(function (module) {
-            registerExtension(module.game);
-        }).catch(function (error) {
-            console.error("扩展无法获取游戏实例", error);
-        });
-    }
-})(function (game) {
-    game.import("extension", function (lib, game, ui, get, ai, _status) {
+game.import("extension", function (lib, game, ui, get, ai, _status) {
     "use strict";
 
-    var extensionName = "十周年-AI优化版";
+    var extensionName = "十周年AI优化版";
     function migrateExtensionConfig() {
         var oldPrefix = "extension_十周年-AI优化版_";
         var newPrefix = "extension_" + extensionName + "_";
@@ -29,7 +18,7 @@
         // 本体对已安装但尚无enable值的扩展默认启用；不在此写用户配置。
         var config = lib.config || {};
         var installed = Array.isArray(config.extensions) && config.extensions.includes("十周年-噩梦人机");
-        var nightmareEnabled = config["extension_十周年-噩梦人机_enable"];
+        var nightmareEnabled = config["extension_十周年噩梦人机_enable"];
         if (nightmareEnabled === undefined) nightmareEnabled = config["extension_十周年-噩梦人机_enable"];
         return lib.xingBeiNightmareAiProviderActive === true ||
             (installed && nightmareEnabled !== false);
@@ -598,8 +587,8 @@
                 if (target.hasSkill && target.hasSkill("moFaHuDun")) score += 0.35;
                 return score >= 1.15 ? score : 0;
             }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_shieldTargetScore_31107"] = shieldTargetScore;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_shieldTargetScore_31107"] = shieldTargetScore;
 
             shield.ai.order = function (item, player) {
                 var best = 0;
@@ -616,7 +605,7 @@
                 return shieldTargetScore(player, target);
             };
             shield.ai2 = function (target) {
-                        var shieldTargetScore = lib["十周年-AI优化版_callbacks"]["online_shieldTargetScore_31107"];
+                        var shieldTargetScore = lib["十周年AI优化版_callbacks"]["online_shieldTargetScore_31107"];
 
                 var player = _status.event && _status.event.player;
                 if (!player || !target || target.side != player.side) return -100;
@@ -1039,8 +1028,8 @@
             }
             return best;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_bestRadiancePlan_53593"] = bestRadiancePlan;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_bestRadiancePlan_53593"] = bestRadiancePlan;
 
 
         function punishPlan(player, costCard, target) {
@@ -1059,8 +1048,8 @@
             if (!attack && ownGain == 0) score -= 0.55;
             return { attack: attack, score: score };
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_punishPlan_54045"] = punishPlan;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_punishPlan_54045"] = punishPlan;
 
 
         function bestPunishPlan(player, costCard) {
@@ -1097,8 +1086,8 @@
             if (gain <= 0 && (!attack.di || attack.di.score < 1.2)) score -= 1;
             return { score: score, gain: gain, attack: attack };
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_prayerPlan_56009"] = prayerPlan;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_prayerPlan_56009"] = prayerPlan;
 
 
         var radiance = lib.skill && lib.skill.huiYao;
@@ -1115,7 +1104,7 @@
             };
             radiance.ai.result = {
                 player: function (player) {
-                        var bestRadiancePlan = lib["十周年-AI优化版_callbacks"]["online_bestRadiancePlan_53593"];
+                        var bestRadiancePlan = lib["十周年AI优化版_callbacks"]["online_bestRadiancePlan_53593"];
 
                     var plan = bestRadiancePlan(player);
                     return plan && plan.score >= 0.7 ? plan.score : -8;
@@ -1142,7 +1131,7 @@
             punish.ai.result = {
                 player: 0,
                 target: function (player, target) {
-                        var punishPlan = lib["十周年-AI优化版_callbacks"]["online_punishPlan_54045"];
+                        var punishPlan = lib["十周年AI优化版_callbacks"]["online_punishPlan_54045"];
 
                     if (target.side == player.side) return 0;
                     var plan = punishPlan(player, null, target);
@@ -1189,7 +1178,7 @@
             prayer.ai.result = {
                 player: function (player) {
                         var helper = lib.xingBeiShiZhouNianAi;
-                        var prayerPlan = lib["十周年-AI优化版_callbacks"]["online_prayerPlan_56009"];
+                        var prayerPlan = lib["十周年AI优化版_callbacks"]["online_prayerPlan_56009"];
 
                     if (helper.shouldReserveSpecial(_status.event, player)) return -10;
                     var plan = prayerPlan(player);
@@ -1580,8 +1569,8 @@
             if (sameSuit <= 1) value += 0.25;
             return value;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_moonValue_78914"] = moonValue;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_moonValue_78914"] = moonValue;
 
 
         function lowestDiscardCost(player) {
@@ -1638,8 +1627,8 @@
             }
             return score;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_medusaCardScore_81330"] = medusaCardScore;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_medusaCardScore_81330"] = medusaCardScore;
 
 
         function attackHitChance(target, card, cannotRespond) {
@@ -1726,14 +1715,14 @@
             }
             return best;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_paleMoonPlan_85593"] = paleMoonPlan;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_paleMoonPlan_85593"] = paleMoonPlan;
 
 
         var medusa = lib.skill && lib.skill.meiDuShaZhiYan;
         if (medusa && markPatched(medusa, "fullActionChain")) {
             medusa.cost = async function (event, trigger, player) {
-                var medusaCardScore = lib["十周年-AI优化版_callbacks"]["online_medusaCardScore_81330"];
+                var medusaCardScore = lib["十周年AI优化版_callbacks"]["online_medusaCardScore_81330"];
                 var result = await player.chooseCardButton(darkMoons(player), "是否发动【美杜莎之眼】<br>" + lib.translate.meiDuShaZhiYan_info)
                     .set("filterButton", function (button) {
                         return get.xiBie(button.link) == _status.event.xiBie;
@@ -1797,7 +1786,7 @@
                 if (event.cost_data == "选项一") {
                     var links = (await player.chooseCardButton(darkMoons(player), true, "移除1个【暗月】，令目标角色+1[治疗]")
                         .set("ai", function (button) {
-                        var moonValue = lib["十周年-AI优化版_callbacks"]["online_moonValue_78914"];
+                        var moonValue = lib["十周年AI优化版_callbacks"]["online_moonValue_78914"];
 
                             return 8 - moonValue(_status.event.player, button.link);
                         }).forResult("links") || []);
@@ -1842,7 +1831,7 @@
                 var result = await player.chooseCardButton(darkMoons(player), "是否发动【暗月斩】<br>" + lib.translate.anYueZhan_info, [1, 2])
                     .set("desired", plan.score >= 0.45 ? plan.amount : 0)
                     .set("ai", function (button) {
-                        var moonValue = lib["十周年-AI优化版_callbacks"]["online_moonValue_78914"];
+                        var moonValue = lib["十周年AI优化版_callbacks"]["online_moonValue_78914"];
 
                         var desired = _status.event.desired;
                         if (!desired || ui.selected.buttons.length >= desired) return -20;
@@ -1910,7 +1899,7 @@
             };
             pale.ai.result = {
                 player: function (player) {
-                        var paleMoonPlan = lib["十周年-AI优化版_callbacks"]["online_paleMoonPlan_85593"];
+                        var paleMoonPlan = lib["十周年AI优化版_callbacks"]["online_paleMoonPlan_85593"];
 
                     var plan = paleMoonPlan(player);
                     return plan.score >= 0.75 ? plan.score : -10;
@@ -2258,8 +2247,8 @@
         if (garden && markPatched(garden, "resourceChoice")) {
             garden.content = async function (event, trigger, player) {
                 var choiceList = [
-                    "【水晶】将【血蔷薇庭院】放置于场上，你+2【鲜血】",
-                    "【宝石】将【血蔷薇庭院】放置于场上，无视上限+2【鲜血】（最高为4），你弃到4张牌",
+                    "<span class='lan'>【水晶】</span>将【血蔷薇庭院】放置于场上，你+2【鲜血】",
+                    "<span style=\"color:#E02B17\">【宝石】</span>将【血蔷薇庭院】放置于场上，无视上限+2【鲜血】（最高为4），你弃到4张牌",
                 ];
                 var choices = ["选项一"];
                 if (player.canBiShaBaoShi()) choices.push("选项二");
@@ -2945,8 +2934,8 @@
             });
             return best;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_bestBurst_150370"] = bestBurst;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_bestBurst_150370"] = bestBurst;
 
 
         function elementGainDamage(player, target, skillName, baseDamage, suit) {
@@ -3002,8 +2991,8 @@
             }
             return score;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_targetScore_152435"] = targetScore;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_targetScore_152435"] = targetScore;
 
 
         var ignition = lib.skill && lib.skill.yuanSuDianRan;
@@ -3027,8 +3016,8 @@
             // 【元素点燃】没有实体费用牌，也需要显式提供直接选人分数。
             // 否则本体会把上面的负面效果语义再次用于最终选人并取消技能。
             ignition.ai2 = function (target) {
-                        var bestBurst = lib["十周年-AI优化版_callbacks"]["online_bestBurst_150370"];
-                        var targetScore = lib["十周年-AI优化版_callbacks"]["online_targetScore_152435"];
+                        var bestBurst = lib["十周年AI优化版_callbacks"]["online_bestBurst_150370"];
+                        var targetScore = lib["十周年AI优化版_callbacks"]["online_targetScore_152435"];
 
                 var player = _status.event.player;
                 var plan = bestBurst(player);
@@ -3056,8 +3045,8 @@
             // 本技能先选择实体牌；备份技能后必须直接替换选人AI，
             // 否则本体会按该实体攻击牌而不是【陨石】的法术效果评价目标。
             meteor.ai2 = function (target) {
-                        var bestBurst = lib["十周年-AI优化版_callbacks"]["online_bestBurst_150370"];
-                        var targetScore = lib["十周年-AI优化版_callbacks"]["online_targetScore_152435"];
+                        var bestBurst = lib["十周年AI优化版_callbacks"]["online_bestBurst_150370"];
+                        var targetScore = lib["十周年AI优化版_callbacks"]["online_targetScore_152435"];
 
                 var player = _status.event.player;
                 var plan = bestBurst(player);
@@ -3098,7 +3087,7 @@
             // 带实体牌费用的技能在选牌后由event.ai2负责选人；
             // 显式使用技能评分，避免退回实体攻击牌的普通目标评价。
             skill.onlineElementTargetScore = function (target) {
-                        var targetScore = lib["十周年-AI优化版_callbacks"]["online_targetScore_152435"];
+                        var targetScore = lib["十周年AI优化版_callbacks"]["online_targetScore_152435"];
 
                 return targetScore(_status.event.player, target, data.damage, name, data.suit);
             };
@@ -3848,8 +3837,8 @@
             if (actualLoss < 2) return null;
             return { spend: lightning, target: bestTarget, moraleLoss: actualLoss, rawMoraleLoss: bestRawLoss };
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_scatterPlan_194285"] = scatterPlan;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_scatterPlan_194285"] = scatterPlan;
 
 
         function windChainPlan(player, previousTarget) {
@@ -4047,7 +4036,7 @@
             };
             scatter.ai.result = {
                 player: function (player) {
-                        var scatterPlan = lib["十周年-AI优化版_callbacks"]["online_scatterPlan_194285"];
+                        var scatterPlan = lib["十周年AI优化版_callbacks"]["online_scatterPlan_194285"];
 
                     var plan = scatterPlan(player);
                     return plan ? 2 + plan.moraleLoss : 0;
@@ -4251,8 +4240,8 @@
             var forcedDiscard = Math.max(0, actual - room);
             return amount * 0.18 + treatment * 1.15 + forcedDiscard * 0.38 - safeDraw * 0.42;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_noMoraleDamagePressure_217840"] = noMoraleDamagePressure;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_noMoraleDamagePressure_217840"] = noMoraleDamagePressure;
 
 
         helper.yingLingRunePlan = function (player, chooseAllocation, forcedCard, forcedTarget) {
@@ -4461,7 +4450,7 @@
                 var targets = (await player.chooseTarget("对另一名目标角色造成" + amount + "点法术伤害", true, function (card, player, target) {
                     return target != _status.event.excludedTarget;
                 }).set("excludedTarget", trigger.player).set("amount", amount).set("ai", function (target) {
-                        var noMoraleDamagePressure = lib["十周年-AI优化版_callbacks"]["online_noMoraleDamagePressure_217840"];
+                        var noMoraleDamagePressure = lib["十周年AI优化版_callbacks"]["online_noMoraleDamagePressure_217840"];
 
                     var player = _status.event.player;
                     if (target.side == player.side) return -10;
@@ -5089,8 +5078,8 @@
                 if (target.side == player.side) return -Infinity;
                 return 5 + Math.max(0, target.countCards("h") - target.getHandcardLimit() + 2) * 2;
             }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_linkTargetValue_267062"] = linkTargetValue;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_linkTargetValue_267062"] = linkTargetValue;
 
             sorrow.check = function (event, player) {
                 var current = player.storage.tongShengGongSi_target;
@@ -5109,7 +5098,7 @@
                 var result = await player.chooseTarget("转移【同生共死】目标，取消则移除【同生共死】", function (card, player, target) {
                     return target != _status.event.currentTarget;
                 }).set("currentTarget", current).set("ai", function (target) {
-                        var linkTargetValue = lib["十周年-AI优化版_callbacks"]["online_linkTargetValue_267062"];
+                        var linkTargetValue = lib["十周年AI优化版_callbacks"]["online_linkTargetValue_267062"];
 
                     return linkTargetValue(_status.event.player, target);
                 }).forResult();
@@ -5292,8 +5281,8 @@
             }
             return best;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_responseAttackTargetValue_277085"] = responseAttackTargetValue;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_responseAttackTargetValue_277085"] = responseAttackTargetValue;
 
 
         function hasLegalMatchingResponse(event, player, incomingCard, excludedCard) {
@@ -5309,8 +5298,8 @@
                 return responseAttackTargetValue(event, player, card) != -Infinity;
             });
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_hasLegalMatchingResponse_277943"] = hasLegalMatchingResponse;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_hasLegalMatchingResponse_277943"] = hasLegalMatchingResponse;
 
 
         function responseTargetChoice(target) {
@@ -5344,8 +5333,8 @@
             if (overflow >= get.shiQi(player.side) && overflow > 0) value += 500;
             return value - Math.max(0, get.value(card, player)) * 0.08;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_responseDefensePriority_279709"] = responseDefensePriority;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_responseDefensePriority_279709"] = responseDefensePriority;
 
 
         function incomingAttackDamage(event) {
@@ -5420,8 +5409,8 @@
 
             return preparation >= 1.15;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_shouldTakeAttackForCodices_282146"] = shouldTakeAttackForCodices;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_shouldTakeAttackForCodices_282146"] = shouldTakeAttackForCodices;
 
 
         function canLeaveKnownReboundPair(player, count) {
@@ -5783,10 +5772,10 @@
                     .set("canZhiLiao", trigger.canZhiLiao)
                     .set("incomingDamage", event.incomingDamage)
                     .set("ai1", function (item) {
-                        var responseAttackTargetValue = lib["十周年-AI优化版_callbacks"]["online_responseAttackTargetValue_277085"];
-                        var hasLegalMatchingResponse = lib["十周年-AI优化版_callbacks"]["online_hasLegalMatchingResponse_277943"];
-                        var shouldTakeAttackForCodices = lib["十周年-AI优化版_callbacks"]["online_shouldTakeAttackForCodices_282146"];
-                        var responseDefensePriority = lib["十周年-AI优化版_callbacks"]["online_responseDefensePriority_279709"];
+                        var responseAttackTargetValue = lib["十周年AI优化版_callbacks"]["online_responseAttackTargetValue_277085"];
+                        var hasLegalMatchingResponse = lib["十周年AI优化版_callbacks"]["online_hasLegalMatchingResponse_277943"];
+                        var shouldTakeAttackForCodices = lib["十周年AI优化版_callbacks"]["online_shouldTakeAttackForCodices_282146"];
+                        var responseDefensePriority = lib["十周年AI优化版_callbacks"]["online_responseDefensePriority_279709"];
 
                         var player = _status.event.player;
                         if (item && typeof item == "object" && get.type(item, player) == "gongJi") {
@@ -5934,8 +5923,8 @@
         function cappedSelfRisk(player, amount, cardsLeaving) {
             return helper.selfDamageRisk(player, cappedDamage(amount), cardsLeaving || 0);
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_cappedSelfRisk_311630"] = cappedSelfRisk;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_cappedSelfRisk_311630"] = cappedSelfRisk;
 
 
         function lockedDragonTarget(player) {
@@ -6016,7 +6005,7 @@
                     return target.side != player.side;
                 }).set("qiAfter", qiAfter).set("ai", function (target) {
                         var helper = lib.xingBeiShiZhouNianAi;
-                        var cappedSelfRisk = lib["十周年-AI优化版_callbacks"]["online_cappedSelfRisk_311630"];
+                        var cappedSelfRisk = lib["十周年AI优化版_callbacks"]["online_cappedSelfRisk_311630"];
 
                     var player = _status.event.player;
                     var score = helper.damagePressure(target, player, 1);
@@ -6217,8 +6206,8 @@
             }
             return score;
         }
-        lib["十周年-AI优化版_callbacks"] = lib["十周年-AI优化版_callbacks"] || {};
-        lib["十周年-AI优化版_callbacks"]["online_witherTargetPressure_325071"] = witherTargetPressure;
+        lib["十周年AI优化版_callbacks"] = lib["十周年AI优化版_callbacks"] || {};
+        lib["十周年AI优化版_callbacks"]["online_witherTargetPressure_325071"] = witherTargetPressure;
 
 
         function bestWitherTarget(player, count) {
@@ -6363,7 +6352,7 @@
                     var plan = bestWitherTarget(player, 1);
                     var targets = (await player.chooseTarget("对目标角色造成1点法术伤害", true)
                         .set("bestTarget", plan.target).set("ai", function (target) {
-                        var witherTargetPressure = lib["十周年-AI优化版_callbacks"]["online_witherTargetPressure_325071"];
+                        var witherTargetPressure = lib["十周年AI优化版_callbacks"]["online_witherTargetPressure_325071"];
 
                             if (target.side == _status.event.player.side) return -100;
                             if (target == _status.event.bestTarget) return 20;
@@ -7537,7 +7526,7 @@
 
     return {
         name: extensionName,
-        version: "1.15",
+        version: "1.10",
         editable: false,
         arenaReady: function () {
             applyShiZhouNianAiPatch();
@@ -7549,7 +7538,7 @@
             applyShiZhouNianAiPatch();
         },
         help: {
-            "十周年-AI优化版": "仅优化原版十周年角色与基础行动的AI决策。启用十周年-噩梦人机时，本扩展自动跳过AI加载，由噩梦人机提供内置AI，避免重复覆盖；关闭噩梦强化技能不影响该互斥。禁用噩梦扩展后重启，本扩展恢复加载；两者均关闭并重启才恢复原版AI。不修改技能规则、数值或原始角色文件。"
+            "十周年AI优化版": "仅优化原版十周年角色与基础行动的AI决策。启用十周年噩梦人机时，本扩展自动跳过AI加载，由噩梦人机提供内置AI，避免重复覆盖；关闭噩梦强化技能不影响该互斥。禁用噩梦扩展后重启，本扩展恢复加载；两者均关闭并重启才恢复原版AI。不修改技能规则、数值或原始角色文件。"
         },
         config: {},
         package: {
@@ -7559,5 +7548,4 @@
         },
         files: { character: [], card: [], skill: [], audio: [] }
     };
-});
 });

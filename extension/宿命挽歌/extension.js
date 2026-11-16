@@ -1,384 +1,4 @@
-/* AUDIO_PACK_RUNTIME_BEGIN */
-/* Resource runtime v2, revision 11 (verify cached files exist before skipping restore). */
-(function (root) {
-    'use strict';
-    if (root.NonameAudioPacks && root.NonameAudioPacks.revision >= 11) return;
-    function sha256(bytes) {
-        var k = [], h = [], n = 2;
-        while (k.length < 64) {
-            var prime = true;
-            for (var d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
-            if (prime) {
-                if (h.length < 8) h.push((Math.sqrt(n) % 1 * 4294967296) | 0);
-                k.push((Math.pow(n, 1 / 3) % 1 * 4294967296) | 0);
-            }
-            n++;
-        }
-        var length = Math.ceil((bytes.length + 9) / 64) * 64;
-        var padded = new Uint8Array(length);
-        padded.set(bytes); padded[bytes.length] = 128;
-        var view = new DataView(padded.buffer);
-        view.setUint32(length - 8, Math.floor(bytes.length / 536870912));
-        view.setUint32(length - 4, (bytes.length * 8) >>> 0);
-        function r(x, c) { return (x >>> c) | (x << (32 - c)); }
-        for (var offset = 0; offset < length; offset += 64) {
-            var w = new Int32Array(64);
-            for (var i = 0; i < 64; i++) {
-                if (i < 16) w[i] = view.getInt32(offset + i * 4);
-                else {
-                    var x = w[i - 15], y = w[i - 2];
-                    w[i] = (w[i - 16] + (r(x, 7) ^ r(x, 18) ^ (x >>> 3)) + w[i - 7] + (r(y, 17) ^ r(y, 19) ^ (y >>> 10))) | 0;
-                }
-            }
-            var a = h[0], b = h[1], c = h[2], dd = h[3], e = h[4], f = h[5], g = h[6], hh = h[7];
-            for (i = 0; i < 64; i++) {
-                var t1 = (hh + (r(e, 6) ^ r(e, 11) ^ r(e, 25)) + ((e & f) ^ (~e & g)) + k[i] + w[i]) | 0;
-                var t2 = ((r(a, 2) ^ r(a, 13) ^ r(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
-                hh = g; g = f; f = e; e = (dd + t1) | 0; dd = c; c = b; b = a; a = (t1 + t2) | 0;
-            }
-            [a, b, c, dd, e, f, g, hh].forEach(function (v, j) { h[j] = (h[j] + v) | 0; });
-        }
-        return h.map(function (v) { return ('00000000' + (v >>> 0).toString(16)).slice(-8); }).join('');
-    }
-    async function hash(bytes) {
-        if (root.crypto && root.crypto.subtle) {
-            var value = new Uint8Array(await root.crypto.subtle.digest('SHA-256', bytes));
-            return Array.from(value).map(function (b) { return ('0' + b.toString(16)).slice(-2); }).join('');
-        }
-        return sha256(bytes);
-    }
-    function ascii(text) {
-        var bytes = new Uint8Array(text.length);
-        for (var i = 0; i < text.length; i++) {
-            if (text.charCodeAt(i) > 127) throw new Error('音频 JSON 不是原始 ASCII 数据');
-            bytes[i] = text.charCodeAt(i);
-        }
-        return bytes;
-    }
-    function safe(path) {
-        if (typeof path !== 'string' || /[\\:\x00-\x1f]/.test(path) || path.split('/').some(function (p) { return !p || p === '.' || p === '..'; })) throw new Error('非法音频路径: ' + path);
-        return path;
-    }
-    function buffer(value) {
-        return ArrayBuffer.isView(value) ? new Uint8Array(value.buffer, value.byteOffset, value.byteLength) : new Uint8Array(value);
-    }
-    async function readVerified(game, path, expected, options, binary) {
-        if (options.onActivity) options.onActivity();
-        async function verify(text) {
-            var bytes = binary ? buffer(text) : typeof text === 'string' ? ascii(text) : null;
-            if (!bytes || (expected.size !== undefined && bytes.length !== expected.size) || await hash(bytes) !== expected.sha256) {
-                throw new Error('扩展资源 SHA-256 不匹配: ' + path.split('/').pop());
-            }
-            return text;
-        }
-        var localError;
-        try { return await verify(await game.promises[binary ? 'readFile' : 'readFileAsText'](path)); }
-        catch (error) { localError = error; }
-        var sources = (options.sources || []).filter(function (source, index, all) {
-            return typeof source === 'string' && /^https?:\/\//i.test(source) && all.indexOf(source) === index;
-        }).slice(0, 3);
-        if (!sources.length || typeof root.fetch !== 'function') throw localError;
-        var text, downloadError;
-        for (var source of sources) {
-            if (options.onActivity) options.onActivity();
-            if (options.onRepair) options.onRepair(path.split('/').pop(), source);
-            var controller = typeof root.AbortController === 'function' ? new root.AbortController() : null;
-            var timer;
-            try {
-                // The hash-pinned filename/manifest is authoritative, never an HTTP error page.
-                var url = source.replace(/\/?$/, '/') + path.slice('extension/'.length).split('/').map(encodeURIComponent).join('/');
-                text = await Promise.race([
-                    (async function () {
-                        var response = await root.fetch(url, { cache: 'no-store', signal: controller ? controller.signal : undefined });
-                        if (!response.ok) throw new Error('HTTP ' + response.status);
-                        return verify(await (binary ? response.arrayBuffer() : response.text()));
-                    })(),
-                    new Promise(function (_, reject) {
-                        timer = root.setTimeout(function () {
-                            if (controller) controller.abort();
-                            reject(new Error('下载超时'));
-                        }, 30000);
-                    }),
-                ]);
-                break;
-            } catch (error) { downloadError = error; }
-            finally { root.clearTimeout(timer); }
-        }
-        if (text === undefined) throw new Error('扩展资源缺失或损坏，自动补下载失败: ' + path.split('/').pop() + '（' + (downloadError.message || downloadError) + '）');
-        var split = path.lastIndexOf('/'), directory = path.slice(0, split);
-        await game.promises.createDir(directory);
-        var bytes = binary ? buffer(text) : ascii(text);
-        await writeResourceFile(game, path, bytes);
-        // Do not record success until the repaired local file also passes verification.
-        var verified = await verify(await game.promises[binary ? 'readFile' : 'readFileAsText'](path));
-        if (options.onRepaired) options.onRepaired(path);
-        return verified;
-    }
-    // Reset Cordova's FileWriter before writing so an older longer file cannot leave
-    // trailing bytes. Resolve only after both the truncate and write operations finish.
-    async function writeResourceFile(game, path, bytes) {
-        var base = '';
-        try {
-            base = root.localStorage && root.localStorage.getItem('noname_inited') || '';
-        } catch (_) {}
-        if (typeof root.resolveLocalFileSystemURL === 'function' && base && base !== 'nodejs') {
-            var split = path.lastIndexOf('/');
-            var directory = base + path.slice(0, split + 1);
-            var name = path.slice(split + 1);
-            await new Promise(function (resolve, reject) {
-                var phase = 'truncate', settled = false;
-                function fail(error) {
-                    if (settled) return;
-                    settled = true;
-                    reject(error || new Error('扩展资源写入失败: ' + path));
-                }
-                root.resolveLocalFileSystemURL(directory, function (directoryEntry) {
-                    directoryEntry.getFile(name, { create: true }, function (fileEntry) {
-                        fileEntry.createWriter(function (writer) {
-                            writer.onerror = function (event) {
-                                fail(writer.error || (event && event.target && event.target.error));
-                            };
-                            writer.onwriteend = function () {
-                                if (settled) return;
-                                if (writer.error) return fail(writer.error);
-                                if (phase === 'truncate') {
-                                    phase = 'write';
-                                    try {
-                                        writer.seek(0);
-                                        var payload = typeof root.Blob === 'function' ? new root.Blob([bytes]) : bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-                                        writer.write(payload);
-                                    } catch (error) {
-                                        fail(error);
-                                    }
-                                    return;
-                                }
-                                settled = true;
-                                resolve();
-                            };
-                            try {
-                                writer.truncate(0);
-                            } catch (error) {
-                                fail(error);
-                            }
-                        }, fail);
-                    }, fail);
-                }, fail);
-            });
-            return;
-        }
-        var split = path.lastIndexOf('/');
-        var data = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-        await game.promises.writeFile(data, path.slice(0, split), path.slice(split + 1));
-    }
-    async function cachedFileExists(game, path) {
-        try {
-            return await game.promises.checkFile(path) === 1;
-        } catch (_) {
-            return false;
-        }
-    }
-    function notice(name) {
-        if (!root.document) return { update: function () {}, repair: function () {}, remove: function () {} };
-        var node = root.document.createElement('div');
-        node.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.9);color:white;display:flex;align-items:center;justify-content:center;font-size:20px;white-space:pre-wrap;text-align:center;';
-        node.textContent = name + '：正在检查扩展资源…';
-        (root.document.body || root.document.documentElement).appendChild(node);
-        return {
-            update: function (done, total) { node.textContent = name + '：正在还原音频 ' + done + '/' + total + '\n所有扩展完成后自动重启，请勿关闭游戏。'; },
-            repair: function (file, source) { node.textContent = name + '：正在补下载扩展资源\n' + file + '\n来源：' + new URL(source).hostname + '\n校验通过后继续加载，请勿关闭游戏。'; },
-            remove: function () { node.remove(); },
-        };
-    }
-    var queue = Promise.resolve(), pending = new Map();
-    var changed = false, failed = false, restartScheduled = false;
-    var preparing = 0, lastActivity = 0;
-    function activity() { lastActivity = Date.now(); }
-    async function install(meta, game, options) {
-        options = options || {};
-        var base = 'extension/' + safe(meta.name);
-        var storage = options.storage || root.localStorage;
-        var text = await readVerified(game, base + '/audio-data/manifest.json', meta, options);
-        var manifest = JSON.parse(text);
-        if (manifest.format !== 2 || !Array.isArray(manifest.files) || !Array.isArray(manifest.bundles)) throw new Error('无效音频清单');
-        var assetsChanged = false;
-        var key = 'noname-audio-pack-v2:' + meta.name;
-        var previous;
-        try { previous = JSON.parse(storage.getItem(key) || 'null'); } catch (_) {}
-        var cacheRuntimeMatches = previous && previous.runtime === 11;
-        var assetHashes = Object.create(null);
-        if (manifest.assets !== undefined && !Array.isArray(manifest.assets)) throw new Error('无效静态资源清单');
-        var assetPaths = new Set();
-        for (var asset of manifest.assets || []) {
-            safe(asset.path);
-            if (!/\.(?:png|jpe?g|webp|gif|svg|css)$/i.test(asset.path) || assetPaths.has(asset.path)) throw new Error('非法静态资源路径: ' + asset.path);
-            assetPaths.add(asset.path);
-        }
-        var bundleNames = new Set(manifest.bundles.map(function (bundle) { return safe(bundle.name); }));
-        var files = new Map(), needed = new Set(), selected = new Set();
-        var hashes = Object.create(null), legacy = false;
-        for (var entry of manifest.files) {
-            safe(entry.path);
-            if (files.has(entry.path)) throw new Error('重复音频路径');
-            if (entry.bundles && (!Array.isArray(entry.bundles) || !entry.bundles.length || entry.bundles.some(function (name) { return !bundleNames.has(name); }))) throw new Error('无效音频分包索引');
-            files.set(entry.path, entry);
-        }
-        // Cache entries are written only after full verification. Reuse them for unchanged manifests.
-        var cacheComplete = !options.force && cacheRuntimeMatches && previous && previous.manifest === meta.sha256 && previous.files &&
-            manifest.files.every(function (entry) { return previous.files[entry.path] === entry.sha256; }) &&
-            (manifest.assets || []).every(function (asset) { return previous.assets && previous.assets[asset.path] === asset.sha256; });
-        if (cacheComplete) {
-            var resourcesPresent = true;
-            for (var resource of manifest.files.concat(manifest.assets || [])) {
-                if (!await cachedFileExists(game, base + '/' + resource.path)) {
-                    resourcesPresent = false;
-                    break;
-                }
-            }
-            if (resourcesPresent) return false;
-        }
-        for (var asset of manifest.assets || []) {
-            var cachedAsset = false;
-            if (!options.force && cacheRuntimeMatches && previous && previous.assets && previous.assets[asset.path] === asset.sha256) {
-                if (options.onActivity) options.onActivity();
-                cachedAsset = await cachedFileExists(game, base + '/' + asset.path);
-            }
-            if (!cachedAsset) {
-                await readVerified(game, base + '/' + asset.path, asset, Object.assign({}, options, {
-                    onRepaired: function () { assetsChanged = true; },
-                }), true);
-            }
-            assetHashes[asset.path] = asset.sha256;
-        }
-        for (var entry of manifest.files) {
-            var cached = false;
-            if (!options.force && previous && previous.files && previous.files[entry.path] === entry.sha256) {
-                if (options.onActivity) options.onActivity();
-                if (cacheRuntimeMatches) {
-                    cached = await cachedFileExists(game, base + '/' + entry.path);
-                } else {
-                    try {
-                        var existing = buffer(await game.promises.readFile(base + '/' + entry.path));
-                        cached = existing.length === entry.size && await hash(existing) === entry.sha256;
-                    } catch (_) {}
-                }
-            }
-            if (cached) {
-                hashes[entry.path] = entry.sha256;
-            } else {
-                needed.add(entry.path);
-                if (entry.bundles) entry.bundles.forEach(function (name) { selected.add(name); });
-                else legacy = true;
-            }
-        }
-        var total = needed.size, index = 0, position = 0, bytes = null, current = null, directories = new Set();
-        for (var bundle of manifest.bundles) {
-            if (!needed.size || (!legacy && !selected.has(bundle.name))) continue;
-            safe(bundle.name);
-            text = await readVerified(game, base + '/audio-data/' + bundle.name, bundle, options);
-            var body = JSON.parse(text);
-            if (body.format !== 2 || !Array.isArray(body.records)) throw new Error('无效音频数据包');
-            for (var record of body.records) {
-                var file = files.get(safe(record.path));
-                if (!file || !needed.has(file.path) || (file.bundles && !file.bundles.includes(bundle.name))) continue;
-                if ((current && current !== file.path) || record.offset !== position) throw new Error('音频分片顺序错误');
-                if (!bytes) {
-                    if (!Number.isSafeInteger(file.size) || file.size < 0) throw new Error('无效音频长度');
-                    bytes = new Uint8Array(file.size);
-                    current = file.path;
-                }
-                var raw = root.atob(record.base64);
-                if (position + raw.length > bytes.length) throw new Error('音频长度超限');
-                for (var j = 0; j < raw.length; j++) bytes[position++] = raw.charCodeAt(j);
-                if (position !== file.size) continue;
-                if (await hash(bytes) !== file.sha256) throw new Error('音频 SHA-256 不匹配: ' + file.path);
-                var target = base + '/' + safe(file.path), split = target.lastIndexOf('/');
-                var parts = target.slice(0, split).split('/');
-                for (j = 1; j <= parts.length; j++) {
-                    var directory = parts.slice(0, j).join('/');
-                    if (!directories.has(directory)) {
-                        await game.promises.createDir(directory);
-                        directories.add(directory);
-                    }
-                }
-                await writeResourceFile(game, target, bytes);
-                var written = buffer(await game.promises.readFile(target));
-                if (written.length !== file.size || await hash(written) !== file.sha256) throw new Error('写入校验失败: ' + file.path);
-                hashes[file.path] = file.sha256;
-                needed.delete(file.path);
-                index++; position = 0; bytes = null; current = null;
-                if (options.onProgress) options.onProgress(index, total);
-                // Let the browser paint progress during long voice-pack installations.
-                await new Promise(function (resolve) { root.setTimeout(resolve, 0); });
-            }
-        }
-        if (needed.size || bytes) throw new Error('音频数据包不完整');
-        storage.setItem(key, JSON.stringify({ version: manifest.version, manifest: meta.sha256, runtime: 11, files: hashes, assets: assetHashes }));
-        return index > 0 || assetsChanged;
-    }
-    function prepare(meta, lib, game) {
-        if (pending.has(meta.name)) return pending.get(meta.name);
-        if (!Array.isArray(lib.onprepare)) return Promise.reject(new Error('客户端缺少 onprepare 启动钩子'));
-        if (!restartScheduled) {
-            restartScheduled = true;
-            lib.onprepare.push(async function () {
-                await queue;
-                if (changed && !failed) game.reload();
-            });
-        }
-        var task = queue.then(async function () {
-            var progress = notice(meta.name);
-            preparing++; activity();
-            try {
-                var config = lib.config || {}, sources = config.extension_sources || {};
-                var urls = [sources[config.extension_source]].concat(Object.values(sources));
-                if (await install(meta, game, {
-                    onActivity: activity,
-                    onProgress: function (done, total) { activity(); progress.update(done, total); },
-                    onRepair: progress.repair, sources: urls,
-                })) changed = true;
-            } catch (error) {
-                failed = true;
-                console.error('[扩展资源准备失败] ' + meta.name, error);
-                if (root.alert) root.alert(meta.name + ' 资源准备失败，下次启动会重试：' + (error.message || error));
-                throw error;
-            } finally { preparing--; progress.remove(); }
-        });
-        queue = task.catch(function () {});
-        pending.set(meta.name, task);
-        task.catch(function () { pending.delete(meta.name); });
-        return task;
-    }
-    root.NonameAudioPacks = {
-        format: 2, revision: 11, sha256: sha256, install: install, prepare: prepare,
-        isPreparing: function () { return preparing > 0 && Date.now() - lastActivity < 30000; },
-        wrap: function (meta, factory) {
-            return function (lib, game, ui, get, ai, _status) {
-                var object = factory.apply(this, arguments);
-                object.audioPackMetadata = meta;
-                object.audioPackOriginalPrecontent = object.precontent;
-                object.precontent = async function () {
-                    await globalThis.NonameAudioPacks.prepare(this.audioPackMetadata, lib, game);
-                    if (this.audioPackOriginalPrecontent) return this.audioPackOriginalPrecontent.apply(this, arguments);
-                };
-                return object;
-            };
-        },
-    };
-})(typeof globalThis !== 'undefined' ? globalThis : window);
-
-/* AUDIO_PACK_RUNTIME_END */
-(function (registerExtension) {
-    if (typeof game !== "undefined" && game && typeof game.import === "function") {
-        registerExtension(game);
-    } else {
-        import("../../noname.js").then(function (module) {
-            registerExtension(module.game);
-        }).catch(function (error) {
-            console.error("扩展无法获取游戏实例", error);
-        });
-    }
-})(function (game) {
-    game.import("extension", globalThis.NonameAudioPacks.wrap({"name":"宿命挽歌","sha256":"8653aed9f2ae3086ef70918e25ccfb494850d27c2832073981b3ccbede44e19a"}, function(lib, game, ui, get, ai, _status) {
+game.import("extension", function(lib, game, ui, get, ai, _status) {
     // <diy-form-preview>
     // Copies stay inside each standalone expansion; the shared UI hook installs once.
     function installDiyFormPreview(groups, routes) {
@@ -665,6 +285,11 @@
         return (player.name == 'shuiMoShouBaiYueJiaoZhu' || player.name1 == 'shuiMoShouBaiYueJiaoZhu') &&
             player.countNengLiang('baoShi') >= 2 &&
             (player.countCards('h') > 5 || player.countZhiShiWu('hongShui') < 4);
+    };
+    lib.suMingBaiYueAi.wantsLowFloodWave = function(player) {
+        return (player.name == 'shuiMoShouBaiYueJiaoZhu' || player.name1 == 'shuiMoShouBaiYueJiaoZhu') &&
+            player.countNengLiang('shuiJing') >= 1 &&
+            player.countZhiShiWu('hongShui') < 6;
     };
     lib.suMingBaiYueAi.earthIceWouldKillAllies = function(player) {
         var targets = game.filterPlayer(function(target) { return target.isIn(); }).sortBySeat(player);
@@ -4429,7 +4054,7 @@
                         return player.hasCard(function(card){
                             return lib.skill.huoQou.filterCard(card);
                             });
-		        		},
+                        },
                                 "content": async function (event, trigger, player) {
                             player.storage.huoQou_num = 2
                             await event.trigger("miaoJiangShengNv_huoQouStart");
@@ -4496,7 +4121,7 @@
                             return player.hasCard(function(card){
                                 return lib.skill.leiJi.filterCard(card);
                             });
-			        	},
+                        },
                                 "content": async function (event, trigger, player) {
                             await event.trigger("miaoJiangShengNv_leiJiStart");
                             'step 0'
@@ -5879,6 +5504,8 @@
                     "taoTianJuLang": {
                         aiCostPlan: function(player) {
                             var hand=player.getCards('h'),best=[],score=-Infinity;
+                            var priorityWave = lib.suMingBaiYueAi.wantsGemBackedWave(player) ||
+                                lib.suMingBaiYueAi.wantsLowFloodWave(player);
                             for(var i=0;i<hand.length;i++) for(var j=i+1;j<hand.length;j++) {
                                 if(!lib.filter.cardDiscardable(hand[i],player,'taoTianJuLang') ||
                                     !lib.filter.cardDiscardable(hand[j],player,'taoTianJuLang')) continue;
@@ -5888,9 +5515,9 @@
                                             return target.side!==player.side&&player.canUseXingBei(card,target);
                                         });
                                 });
-                                if(!safe && !lib.suMingBaiYueAi.wantsGemBackedWave(player)) continue;
+                                if(!safe && !priorityWave) continue;
                                 var value=14-get.value(hand[i],player)-get.value(hand[j],player);
-                                if(lib.suMingBaiYueAi.wantsGemBackedWave(player)) {
+                                if(priorityWave) {
                                     var left=hand.filter(function(card,k) { return k!==i && k!==j; });
                                     if(left.some(function(card) { return get.name(card,player)==='anMie'; })) value+=200;
                                     if(left.some(function(card) { return get.type(card,player)==='faShu'; })) value+=200;
@@ -5945,12 +5572,13 @@
                                 return lib.skill.taoTianJuLang.aiCostPlan(player).length === 2;
                             }
                             if(player.countNengLiang('shuiJing') <= 0) return false;
-                            // 启动技发动后当回合无法提炼：星石不足3颗不放；
-                            // 多余水晶放宽时要求宝石至少1颗，保证后续【风雪冰天】费用
+                            // 常规分支要求至少3颗星石；低洪水补洪分支允许用实际水晶越过此门槛。
+                            // 额外水晶分支仍要求保留1颗宝石供后续【风雪冰天】使用。
                             var xingShi = lib.suMingBaiYueAi.xingShiTotal(player);
                             var spareOK = lib.suMingBaiYueAi.hasSpareShuiJing(player) &&
                                 player.countNengLiang('baoShi') >= 1;
-                            if(xingShi < 3 && !spareOK) return false;
+                            var lowFloodRefill = lib.suMingBaiYueAi.wantsLowFloodWave(player);
+                            if(xingShi < 3 && !spareOK && !lowFloodRefill) return false;
                             if(lib.skill.taoTianJuLang.aiCostPlan(player).length!==2) return false;
                             var current = player.countZhiShiWu('hongShui');
                             if(current >= 8) return false;
@@ -6289,7 +5917,7 @@
             "author": "蒙牛",
             "diskURL": "",
             "forumURL": "",
-			"version": "2.44",
+			"version": "2.29",
         },
         "files": {
             "character": [
@@ -6449,5 +6077,4 @@
         },
         "connect": true,
     };
-}));
 });
