@@ -1,0 +1,64 @@
+name: V2 original published UI and extensions regression
+on:
+  push:
+    branches: [integration/v2-public-runtime-parity-20261117]
+    paths:
+      - 'tests/v2-live-original-ui-regression.mjs'
+      - '.github/workflows/v2-live-original-ui-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-ui-regression:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install Chromium only in CI
+        run: |
+          mkdir -p /tmp/v2-playwright
+          npm install --prefix /tmp/v2-playwright --no-save --no-package-lock playwright@1.56.1
+          node /tmp/v2-playwright/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Start candidate local-only server
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/v2-candidate-http.log 2>&1 &
+          echo $! >/tmp/v2-candidate-http.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8765/game/update.js >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Compare 202 published original script/config/styles with candidate
+        env:
+          V2_AUDIT_BASE_URL: http://127.0.0.1:8765/
+        run: |
+          git clone --depth 1 https://github.com/RancherJie/noname_xingbei.git /tmp/v2-original-source
+          node tests/v2-public-site-audit.mjs
+          node --input-type=module -e '
+            import fs from "node:fs";
+            const x=JSON.parse(fs.readFileSync("artifacts/v2-runtime-parity/report.json"));
+            const unexpected=x.summary.groups.officialV2.filter(p=>p!=="mode/connect.js"&&p!==".eslintrc.json");
+            if(unexpected.length)throw new Error("original deployed source differs from V2: "+unexpected.join(", "));
+            console.log("V2_ORIGINAL_PUBLIC_SOURCE_PARITY_PASS",x.summary.inspected,"files");
+          '
+      - name: Compare 11 official extension bundles, native UI and V2 cache
+        run: node tests/v2-live-original-ui-regression.mjs
+      - name: Archive diagnostic screenshots and source checks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-original-ui-full-regression
+          path: |
+            artifacts/v2-live-ui/
+            artifacts/v2-runtime-parity/
+          if-no-files-found: ignore
+      - name: Stop candidate server
+        if: always()
+        run: |
+          if test -f /tmp/v2-candidate-http.pid; then kill "$(cat /tmp/v2-candidate-http.pid)" || true; fi
