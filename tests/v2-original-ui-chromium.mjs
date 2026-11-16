@@ -59,6 +59,7 @@ try {
   return {count:manifest.count,sw:navigator.serviceWorker.controller?.scriptURL,
      wss:[...document.querySelectorAll('[contenteditable="true"]')].map(x=>x.textContent?.trim())};
  });
+ console.log("V2_BROWSER_CACHE_STATUS",JSON.stringify(info));
  assert.equal(info.count,641);
  assert.ok(info.sw?.endsWith("/xingbei-image-sw.js"));
  assert.ok(info.wss.includes(wss));
