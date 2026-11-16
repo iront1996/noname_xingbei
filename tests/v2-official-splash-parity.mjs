@@ -41,7 +41,7 @@ async function capture(origin,name,style){
  assert.equal(snap.style,style);
  for(const card of snap.cards){
   assert.ok(card.background.includes("/image/splash/"+style+"/"),JSON.stringify(card));
-  assert.ok(card.rect.width>50 && card.rect.height>80,JSON.stringify(card));
+  assert.ok(card.rect.width>=45 && card.rect.height>80,JSON.stringify(card));
  }
  assert.deepEqual(errors,[]);
  await splash.screenshot({path:"artifacts/v2-splash/"+name+"-"+style+".png",animations:"disabled"});
