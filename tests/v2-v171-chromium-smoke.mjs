@@ -25,7 +25,9 @@ try {
   const m=await page.evaluate(async()=>{
     const r=await fetch('/game/preload-manifest.json',{cache:'no-store'});
     if(!r.ok)throw new Error('manifest missing');
-    return {manifest:await r.json(),version:window.noname_update.version,assetCount:window.noname_asset_list?.length??null};
+    const versionScript=await fetch('/game/update.js',{cache:'no-store'}).then(response=>response.text());
+    const version=/version:\\s*["']([^"']+)["']/.exec(versionScript)?.[1];
+    return {manifest:await r.json(),version,assetCount:window.noname_asset_list?.length??null};
   });
   assert.equal(m.version,'1.7.1'); assert.equal(m.manifest.count,641);
   for(const name of ['image/character/daZuiSiJiao.jpg','image/character/guShenJiSi.jpg','image/card/zhuanShu/jiLeMengJing.png']){
