@@ -33,7 +33,7 @@ const report = {
 async function remote(path, required) {
   const url = pub.originalWebsite + path.split("/").map(encodeURIComponent).join("/") +
     "?v2_publication=" + sentinel;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     let response;
     try {
       response = await fetch(url, { cache: "no-store", signal: AbortSignal.timeout(25000) });
@@ -53,8 +53,8 @@ async function remote(path, required) {
       }
       return content;
     } catch (error) {
-      if (attempt === 2 || /invalid|too large/.test(String(error))) throw error;
-      await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)));
+      if (attempt === 5 || /invalid|too large/.test(String(error))) throw error;
+      await new Promise(resolve => setTimeout(resolve, Math.min(10000, 900 * 2 ** attempt)));
     }
   }
   throw new Error("unreachable " + path);
@@ -97,7 +97,7 @@ const seen = new Set();
 const distinctTasks = tasks.filter(task => !seen.has(task.path) && seen.add(task.path));
 if (distinctTasks.length > 1700) throw new Error("unreviewed public asset inventory size");
 let cursor = 0;
-const jobs = Array.from({ length: 12 }, async () => {
+const jobs = Array.from({ length: 4 }, async () => {
   while (cursor < distinctTasks.length) {
     const task = distinctTasks[cursor++];
     const content = await remote(task.path, task.required);
