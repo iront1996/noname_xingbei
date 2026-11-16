@@ -1,0 +1,40 @@
+name: V2 upstream UI and image preload Chromium
+on:
+  push:
+    branches: [integration/v2-original-ui-auto-sync-20261116]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install disposable Chromium
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v2-playwright
+          npm install --prefix /tmp/v2-playwright --no-package-lock --no-save playwright@1.56.1
+          node /tmp/v2-playwright/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Start local-only server
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/v2-smoke-http.log 2>&1 &
+          echo $! >/tmp/v2-smoke.pid
+          for i in {1..25}; do
+            if curl -fsS http://127.0.0.1:8765/game/update.js >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Test original splash and V2-only feature preservation
+        run: node tests/v2-original-ui-chromium.mjs
+      - name: Stop local server
+        if: always()
+        run: |
+          if test -f /tmp/v2-smoke.pid; then kill "$(cat /tmp/v2-smoke.pid)" || true; fi
