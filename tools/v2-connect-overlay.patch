@@ -32,7 +32,7 @@ index bf06b29..588a512 100644
  				node.style.top = "calc(50% - 20px)";
  				node.style.whiteSpace = "nowrap";
 -				node.textContent = lib.config.last_ip || lib.hallURL;
-+				node.textContent = lib.config.last_ip || "wss://v2-hall-direct.myxingbei.com:50000";
++				node.textContent = "wss://v2-hall-direct.myxingbei.com:50000";
  				node.contentEditable = true;
  				node.style.webkitUserSelect = "text";
  				node.style.textAlign = "center";
