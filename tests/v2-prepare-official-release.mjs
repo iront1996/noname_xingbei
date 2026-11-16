@@ -62,12 +62,32 @@ if(diffs.length!==35||allowed.size!==35)throw new Error("published original site
 for(const path of allowed)if(!diffs.some(x=>x.path===path))throw new Error("original published file drift vanished: "+path);
 // The official published release bundles these eleven optional extensions;
 // upstream source deliberately does NOT contain extension/ at all.
-for(const name of bundleNames){
- const path="extension/"+name+"/extension.js";
- const local=readFileSync(join(extSource,name,"extension.js"));
- const live=await retrieve(path,10*1024*1024);
- if(!live||sha(local)!==sha(live))throw new Error("official extension repo != published official extension "+name);
-}
+// The public official extension release is the authority: its deployed files
+// may differ from the separate GitHub extension catalog without version tags.
+// Reconcile every known catalog file with the actual public release; preserve
+// license/docs and inactive packages from the catalog when not published.
+const extTree=git(["-C",extSource,"ls-tree","-r","--name-only","HEAD"]).split("\n").filter(Boolean);
+const extFiles=extTree.filter(p=>bundleNames.some(n=>p.startsWith(n+"/")));
+const extDrift=[],missingPublished=[];
+let ei=0;
+await Promise.all(Array.from({length:10},async()=>{
+ while(ei<extFiles.length){
+  const file=extFiles[ei++];
+  const officialBytes=await retrieve("extension/"+file);
+  const localPath=join(extSource,file);
+  if(!officialBytes){
+   if(file.endsWith("/extension.js"))throw new Error("official extension unavailable "+file);
+   missingPublished.push(file);
+   continue;
+  }
+  const old=readFileSync(localPath);
+  if(sha(old)!==sha(officialBytes)){
+   writeFileSync(localPath,officialBytes);
+   extDrift.push({path:file,sha256:sha(officialBytes),bytes:officialBytes.length});
+  }
+ }
+}));
+console.log("OFFICIAL_EXTENSION_RELEASE_VERIFIED",JSON.stringify({sourceFiles:extFiles.length,changedFromCatalog:extDrift.length,notPublished:missingPublished.length,sample:extDrift.slice(0,25)}));
 const originalImages=list.filter(p=>(p.startsWith("image/")||p.startsWith("theme/"))&&p.endsWith(".png"));
 const gathered=[];
 let imageIndex=0;
@@ -88,5 +108,5 @@ console.log("OFFICIAL_PUBLIC_LAYER_READY",JSON.stringify({sourceFiles:diffs.leng
 mkdirSync("artifacts/v2-deploy-layer",{recursive:true});
 writeFileSync("artifacts/v2-deploy-layer/snapshot.json",JSON.stringify({
  source:pinned,extensions:extensionPinned,published:official,date:new Date().toISOString(),
- sourceFiles:diffs,webpFiles:gathered.sort((a,b)=>a.path.localeCompare(b.path)),extensionsIncluded:bundleNames
+ sourceFiles:diffs,webpFiles:gathered.sort((a,b)=>a.path.localeCompare(b.path)),extensionSourceDrift:extDrift,extensionNotPublished:missingPublished,extensionsIncluded:bundleNames
 },null,2));
