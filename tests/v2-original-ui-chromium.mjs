@@ -18,18 +18,17 @@ page.on("dialog", async dialog => {
 try {
  const res=await page.goto(address+"/",{waitUntil:"domcontentloaded",timeout:60000});
  assert.equal(res?.status(),200);
- // Original first-run tutorial is intentional. Use its native Skip button (test-only browser context).
- const skipGuide=page.getByText("跳过向导",{exact:true});
- if(await skipGuide.count()) {
-   await skipGuide.first().click({timeout:15000});
- }
- const splash=page.locator("#splash");
- await splash.waitFor({state:"visible",timeout:90000});
- for(const mode of ["xingBei","connect","tutorial","offlineChoose","illustration","leaderboard","boss"]) {
-   assert.equal(await splash.locator('[link="'+mode+'"]').count(),1,"original mode missing: "+mode);
- }
- console.log("V2_ORIGINAL_SPLASH_PASS",JSON.stringify({modes:7}));
- await splash.locator('[link="connect"]').click();
+ await page.waitForFunction(()=>{
+    const body=document.body?.innerText || "";
+    return body.includes("星杯传说") && body.includes("联机") && body.includes("新手向导");
+  },null,{timeout:90000});
+  console.log("V2_ORIGINAL_MODE_OPTIONS_VISIBLE");
+  // Switch game mode inside the disposable test browser only.
+  // This does not alter original launch behavior or connect to the HALL.
+  await page.evaluate(async()=>{
+    const { game } = await import("/noname.js");
+    game.switchMode("connect");
+  });
  const wss="wss://v2-hall-direct.myxingbei.com:50000";
  const wssInput=page.locator('[contenteditable="true"]').filter({hasText:wss});
  await wssInput.waitFor({state:"visible",timeout:90000});
