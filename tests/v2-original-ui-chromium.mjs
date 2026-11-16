@@ -40,28 +40,25 @@ try {
  const wss="wss://v2-hall-direct.myxingbei.com:50000";
  await page.waitForFunction(wss=>[...document.querySelectorAll('[contenteditable="true"]')].some(n=>n.textContent?.trim()===wss),wss,{timeout:90000});
  console.log("V2_NATIVE_CONNECT_DEFAULT_HALL_PASS");
- const verified=await page.waitForFunction(async()=>{
-  const response=await fetch("/game/preload-manifest.json",{cache:"no-store"});
-  if(!response.ok)return false;
-  const manifest=await response.json();
-  if(!manifest.count||manifest.count!==manifest.assets.length)return false;
-  const name="xingbei-image-assets-v1-"+manifest.version;
-  const keys=await caches.keys();
-  const state=await caches.open("xingbei-image-cache-state-v1");
-  const item=await state.match(new URL("/__xingbei-image-cache-state__",location.href).href);
-  if(!item)return false;
-  const info=await item.json();
-  return keys.includes(name) && info.version===manifest.version && info.count===manifest.count && !!navigator.serviceWorker.controller;
- },null,{timeout:240000});
- assert.ok(verified);
+ await page.waitForFunction(
+   () => navigator.serviceWorker.controller?.scriptURL?.endsWith("/xingbei-image-sw.js") === true,
+   null,{timeout:240000}
+ );
  const info=await page.evaluate(async()=>{
   const manifest=await(await fetch("/game/preload-manifest.json",{cache:"no-store"})).json();
-  return {count:manifest.count,sw:navigator.serviceWorker.controller?.scriptURL,
+  const names=await caches.keys();
+  const statusCache=await caches.open("xingbei-image-cache-state-v1");
+  const result=await statusCache.match(new URL("/__xingbei-image-cache-state__",location.href).href);
+  return {count:manifest.count,version:manifest.version,sw:navigator.serviceWorker.controller?.scriptURL,
+     state:result?await result.json():null,hasImageCache:names.includes("xingbei-image-assets-v1-"+manifest.version),
      wss:[...document.querySelectorAll('[contenteditable="true"]')].map(x=>x.textContent?.trim())};
  });
  console.log("V2_BROWSER_CACHE_STATUS",JSON.stringify(info));
  assert.equal(info.count,641);
  assert.ok(info.sw?.endsWith("/xingbei-image-sw.js"));
+ assert.equal(info.state?.version,info.version);
+ assert.equal(info.state?.count,info.count);
+ assert.ok(info.hasImageCache);
  assert.ok(info.wss.includes(wss));
  assert.equal(await page.locator('[aria-label="星杯傳說圖片資源準備"]').count(),0);
  assert.equal(failed.length,0,JSON.stringify(failed.slice(0,10)));
