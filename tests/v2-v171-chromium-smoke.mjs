@@ -14,7 +14,14 @@ try {
   const response=await page.goto(host+'/',{waitUntil:'domcontentloaded',timeout:45000});
   assert.equal(response?.status(),200);
   await page.waitForFunction(()=>window.noname_update?.version==='1.7.1');
-  await page.waitForFunction(()=>Array.isArray(window.noname_asset_list)&&window.noname_asset_list.length>0,null,{timeout:60000});
+  try {
+    await page.waitForFunction(()=>[...document.querySelectorAll('[contenteditable="true"]')].some(n=>n.textContent?.includes('wss://v2-hall-direct.myxingbei.com:50000')),null,{timeout:90000});
+    await page.waitForFunction(()=>document.body?.innerText?.includes('圖片準備完成，請按「連接」'),null,{timeout:180000});
+  } catch(error) {
+    console.log('CHROMIUM_UI_DIAGNOSTIC',JSON.stringify(await page.evaluate(()=>({body:document.body?.innerText?.slice(0,2500),documentState:document.readyState,contentEditable:[...document.querySelectorAll('[contenteditable]')].map(x=>x.textContent?.slice(0,150))}))));
+    console.log('CHROMIUM_INIT_ERRORS',JSON.stringify(errors.slice(0,30)),JSON.stringify(badRequests.slice(0,15)));
+    throw error;
+  }
   const m=await page.evaluate(async()=>{
     const r=await fetch('/game/preload-manifest.json',{cache:'no-store'});
     if(!r.ok)throw new Error('manifest missing');
@@ -32,11 +39,14 @@ try {
     assert.equal(result.status,200);assert.equal(result.bytes,record.bytes);assert.ok(result.width>0&&result.height>0);
   }
   console.log('CHROMIUM_BOOT_AND_NEW_ASSETS_PASS',JSON.stringify({version:m.version,assets:m.manifest.count,assetList:m.assetCount}));
-  await page.evaluate(async()=>{
+  await page.evaluate(async version=>{
+    // Recreate an old-only browser cache, without changing any real player's storage.
+    await caches.delete('xingbei-image-assets-v1-'+version);
+    await caches.delete('xingbei-image-cache-state-v1');
     const old=await caches.open('xingbei-image-assets-v1-'+ '0'.repeat(40)+'-'+ '0'.repeat(40));
     const url=new URL('/image/character/daZuiSiJiao.jpg',location.href).href;
     await old.put(url,await fetch(url,{cache:'no-store'}));
-  });
+  },m.manifest.version);
   const up=await page.evaluate(async()=>{
     const {prepareImageAssets,ensureImageCacheWorker}=await import('/game/preload-images.mjs');
     const summary=await prepareImageAssets();
