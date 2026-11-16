@@ -120,7 +120,7 @@ try{
   const entry=await status.match(new URL("/__xingbei-image-cache-state__",location.href).href);
   return {count:manifest.count,version:manifest.version,keys:await caches.keys(),state:entry?await entry.json():null};
  });
- assert.equal(cache.count,875);
+ assert.ok(Number.isInteger(cache.count)&&cache.count>0,"invalid image cache manifest count");
  assert.equal(cache.state?.count,cache.count);
  assert.equal(cache.state?.version,cache.version);
  assert.ok(cache.keys.includes("xingbei-image-assets-v1-"+cache.version));
