@@ -1,0 +1,45 @@
+name: V2 v1.7.1 isolated Chromium smoke
+on:
+  push:
+    branches:
+      - integration/v2-upstream-v1.7.1-20261116
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout isolated candidate
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install test-only Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v2-playwright
+          npm install --prefix /tmp/v2-playwright --no-package-lock --no-save playwright@1.56.1
+          node /tmp/v2-playwright/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Run isolated local HTTP server
+        shell: bash
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/v2-local-http.log 2>&1 &
+          echo $! > /tmp/v2-local-http.pid
+          for i in {1..20}; do
+            curl -fsS http://127.0.0.1:8765/game/update.js >/dev/null && exit 0
+            sleep 1
+          done
+          exit 1
+      - name: Browser bootstrap, images and service worker cache migration
+        run: node tests/v2-v171-chromium-smoke.mjs
+      - name: Stop isolated server
+        if: always()
+        run: |
+          if test -f /tmp/v2-local-http.pid; then kill "$(cat /tmp/v2-local-http.pid)" || true; fi
