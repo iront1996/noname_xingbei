@@ -1,4 +1,4 @@
-name: V2 controlled upstream auto-sync
+name: V2 controlled upstream and public-release auto-sync
 on:
   push:
     branches:
@@ -32,19 +32,28 @@ jobs:
           test "$(git branch --show-current)" = "$GITHUB_REF_NAME"
           upstream="$(git ls-remote https://github.com/RancherJie/noname_xingbei.git refs/heads/master | cut -f1)"
           test "$(printf '%s' "$upstream" | wc -c)" -eq 40
-          expected="v2-sync-candidate-$(printf %s "$upstream" | cut -c1-12)"
-          test "$GITHUB_REF_NAME" = "$expected"
+          expected="v2-sync-candidate-$(printf '%s' "$upstream" | cut -c1-12)"
+          case "$GITHUB_REF_NAME" in
+            "$expected"|"$expected"-*) ;;
+            *) echo 'Candidate name does not match current original'; exit 1 ;;
+          esac
           baseline="$(git ls-remote origin refs/heads/feature/image-preload-cache | cut -f1)"
-          test "$(git rev-parse HEAD)" = "$baseline" || { echo 'Candidate must be created from current production V2'; exit 1; }
+          test "$(printf '%s' "$baseline" | wc -c)" -eq 40
+          # The scheduled trigger creates a no-tree-change child of the current V2 head.
+          test "$(git rev-parse HEAD^)" = "$baseline" || { echo 'Stale or untrusted V2 candidate'; exit 1; }
+          test "$(git rev-parse 'HEAD^{tree}')" = "$(git rev-parse "$baseline^{tree}")"
           old="$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')"
           git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git "$upstream"
           printf 'BASE_SHA=%s\nUPSTREAM_SHA=%s\nOLD_UPSTREAM_SHA=%s\n' "$baseline" "$upstream" "$old" >> "$GITHUB_ENV"
-          if test "$old" = "$upstream"; then
+          if test "$old" != "$upstream"; then
+            echo 'CHANGED=true' >> "$GITHUB_ENV"
+            echo 'Original Git revision changed'
+          elif node tools/v2-published-release-sync.mjs --check "$old" "$upstream"; then
             echo 'CHANGED=false' >> "$GITHUB_ENV"
-            echo 'No new original upstream commit: no release'
+            echo 'No original-source or public-release changes'
           else
             echo 'CHANGED=true' >> "$GITHUB_ENV"
-            echo 'Upstream revision changed. Preparing isolated candidate.'
+            echo 'Published original website changed or failed closed'
           fi
       - name: Prepare complete upstream inheritance, fail closed on overlay conflict
         if: env.CHANGED == 'true'
@@ -56,6 +65,15 @@ jobs:
           git config user.name 'V2 Sync CI'
           git config user.email 'v2-sync@users.noreply.github.com'
           node tools/v2-upstream-sync.mjs --prepare "$UPSTREAM_SHA"
+      - name: Skip publication-only fetch false alarms
+        if: env.CHANGED == 'true'
+        shell: bash
+        run: |
+          if test "$OLD_UPSTREAM_SHA" = "$UPSTREAM_SHA" &&
+             test "$(node -p 'require("/tmp/v2-auto-sync/publication.json").changed.length')" = 0; then
+            echo 'CHANGED=false' >> "$GITHUB_ENV"
+            echo 'No changed resources; do not release a no-op'
+          fi
       - name: Validate source parity and image manifest
         if: env.CHANGED == 'true'
         shell: bash
@@ -63,13 +81,25 @@ jobs:
           set -euo pipefail
           node tools/v2-upstream-sync.mjs --verify "$UPSTREAM_SHA"
           node tools/sync-image-manifest.mjs --check
-          for f in mode/connect.js game/v2-preload-gate.mjs game/preload-images.mjs tools/v2-upstream-sync.mjs; do node --check "$f"; done
+          for f in mode/connect.js game/v2-preload-gate.mjs game/preload-images.mjs tools/v2-upstream-sync.mjs tools/v2-published-release-sync.mjs; do node --check "$f"; done
+          node tools/v2-published-release-sync.mjs --check "$OLD_UPSTREAM_SHA" "$UPSTREAM_SHA"
           while IFS= read -r p; do
             case "$p" in
               *.js|*.mjs) node --check "$p" ;;
             esac
           done < <(git diff --name-only "$BASE_SHA" HEAD -- '*.js' '*.mjs')
           test -z "$(git status --porcelain)"
+      - name: Fetch exact original Git revision for deployed source audit
+        if: env.CHANGED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v2-original-source
+          git -C /tmp/v2-original-source init --quiet
+          git -C /tmp/v2-original-source remote add origin https://github.com/RancherJie/noname_xingbei.git
+          git -C /tmp/v2-original-source fetch --depth 1 origin "$UPSTREAM_SHA"
+          git -C /tmp/v2-original-source checkout --quiet --detach FETCH_HEAD
+          test "$(git -C /tmp/v2-original-source rev-parse HEAD)" = "$UPSTREAM_SHA"
       - name: Install disposable Chromium for end-to-end V2 UI and cache checks
         if: env.CHANGED == 'true'
         shell: bash
@@ -89,9 +119,16 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Audit published original scripts, config and style with local V2 candidate
+        if: env.CHANGED == 'true'
+        env:
+          V2_AUDIT_BASE_URL: http://127.0.0.1:8765/
+        run: node tests/v2-public-site-audit.mjs
       - name: Verify genuine original mode choices, V2 Hall default and decoded image cache
         if: env.CHANGED == 'true'
-        run: node tests/v2-original-ui-chromium.mjs
+        run: |
+          node tests/v2-original-ui-chromium.mjs
+          node tests/v2-live-original-ui-regression.mjs
       - name: Stop local HTTP server
         if: always()
         run: |
@@ -110,6 +147,11 @@ jobs:
               *) echo "GAME_CODE_REQUIRES_REVIEW: $path"; risky=true ;;
             esac
           done < <(git diff --name-only "$OLD_UPSTREAM_SHA" "$UPSTREAM_SHA")
+          if test -n "$(node -p 'require("/tmp/v2-auto-sync/publication.json").risky.join(",")')"; then
+            echo 'REVIEW_REQUIRED: published scripts/extensions changed'
+            node -p 'JSON.stringify(require("/tmp/v2-auto-sync/publication.json").risky)'
+            risky=true
+          fi
           printf 'RISKY=%s\n' "$risky" >> "$GITHUB_ENV"
       - name: Publish tested candidate branch only
         if: env.CHANGED == 'true'
@@ -124,7 +166,7 @@ jobs:
       - name: Hold game-code updates for review; no production write
         if: env.CHANGED == 'true' && env.RISKY == 'true'
         run: |
-          echo 'Upstream gameplay/engine changed. All scoped checks passed, but production is HELD for additional review.'
+          echo 'Upstream gameplay, UI or published extension changed. Production HELD for additional review.'
           echo "Candidate: $GITHUB_REF_NAME"
           echo 'NO AUTO RELEASE of unverified game rules.'
       - name: Release low-risk updates only by fast-forward, with backup
@@ -149,11 +191,13 @@ jobs:
           set -euo pipefail
           origin='https://feature-image-preload-cache.xingbei-play.pages.dev'
           ok=false
-          for i in {1..30}; do
+          for i in {1..36}; do
             if curl --fail --silent --show-error "$origin/game/update.js?release=$NEW_SHA" -o /tmp/v2-live-update.js &&
                curl --fail --silent --show-error "$origin/game/preload-manifest.json?release=$NEW_SHA" -o /tmp/v2-live-images.json &&
                cmp -s game/update.js /tmp/v2-live-update.js &&
-               cmp -s game/preload-manifest.json /tmp/v2-live-images.json; then
+               cmp -s game/preload-manifest.json /tmp/v2-live-images.json &&
+               curl --fail --silent --show-error "$origin/noname/init/index.js?release=$NEW_SHA" -o /tmp/v2-live-init.js &&
+               cmp -s noname/init/index.js /tmp/v2-live-init.js; then
               ok=true
               break
             fi
