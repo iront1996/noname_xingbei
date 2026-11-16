@@ -55,10 +55,10 @@ function buildManifest() {
   const assets = [];
   for (const record of raw.toString("utf8").split("\0")) {
     if (!record) continue;
-    const match = /^100644 blob ([0-9a-f]{40}) (\d+)\t(.+)$/u.exec(record);
+    const match = /^100644 blob ([0-9a-f]{40}) +(\d+)\t(.+)$/u.exec(record);
     if (!match) {
       // Reject executable image files rather than silently skipping them.
-      const executable = /^100755 blob ([0-9a-f]{40}) (\d+)\t(.+)$/u.exec(record);
+      const executable = /^100755 blob ([0-9a-f]{40}) +(\d+)\t(.+)$/u.exec(record);
       if (executable && extensions.has(extname(executable[3]).toLowerCase())) {
         throw new Error("Image must be a regular file: " + executable[3]);
       }

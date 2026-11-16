@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "version": "1b17db21ec285b21a35c6014e41edd49985badf1-5145c1f936e0911e983248831dc7d632192c0710",
-  "count": 638,
-  "totalBytes": 78244443,
+  "version": "33d92d71a2e44bdde029611405b44bb9846df86a-5145c1f936e0911e983248831dc7d632192c0710",
+  "count": 641,
+  "totalBytes": 80138549,
   "assets": [
     {
       "path": "image/background/noname_bg.jpg",
@@ -170,6 +170,11 @@
       "gitBlobSha": "20b2dfceaaf59d7f993dd0b32b4eddd6b1814d01"
     },
     {
+      "path": "image/card/zhuanShu/jiLeMengJing.png",
+      "bytes": 696048,
+      "gitBlobSha": "414cb597b937e12f93a78ee9d22bdec254116f0d"
+    },
+    {
       "path": "image/card/zhuanShu/jueJie.png",
       "bytes": 244561,
       "gitBlobSha": "a72006e285a58f6ba0eacecd815cdfd6b6a8c90e"
@@ -310,6 +315,11 @@
       "gitBlobSha": "8262dae05af55cd58d9a45d392d84b61befa5472"
     },
     {
+      "path": "image/character/daZuiSiJiao.jpg",
+      "bytes": 459064,
+      "gitBlobSha": "8932311e23e6cc550f183666c0a911b651d95b03"
+    },
+    {
       "path": "image/character/dadiwushi.jpg",
       "bytes": 116125,
       "gitBlobSha": "747b4ef9733d06c2844f4fe93e06ed6b2a516ecc"
@@ -353,6 +363,11 @@
       "path": "image/character/geDouJia.jpg",
       "bytes": 101390,
       "gitBlobSha": "2966111263103eecfea19769b113a18ea5c1cc2a"
+    },
+    {
+      "path": "image/character/guShenJiSi.jpg",
+      "bytes": 738994,
+      "gitBlobSha": "14011060d697a62ee6fc6181271987e0a0b442ab"
     },
     {
       "path": "image/character/hongLianQiShi.jpg",
