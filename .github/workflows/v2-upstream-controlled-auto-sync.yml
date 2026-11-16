@@ -1,0 +1,177 @@
+name: V2 controlled upstream auto-sync
+on:
+  push:
+    branches:
+      - 'v2-sync-candidate-*'
+permissions:
+  contents: write
+concurrency:
+  group: v2-original-upstream-safe-release
+  cancel-in-progress: false
+jobs:
+  prepare-validate-and-release:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout disposable V2 candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check upstream and V2 ref leases
+        id: preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = 'iront1996/noname_xingbei'
+          test "$(git branch --show-current)" = "$GITHUB_REF_NAME"
+          upstream="$(git ls-remote https://github.com/RancherJie/noname_xingbei.git refs/heads/master | cut -f1)"
+          test "$(printf '%s' "$upstream" | wc -c)" -eq 40
+          expected="v2-sync-candidate-$(printf %s "$upstream" | cut -c1-12)"
+          test "$GITHUB_REF_NAME" = "$expected"
+          baseline="$(git ls-remote origin refs/heads/feature/image-preload-cache | cut -f1)"
+          test "$(git rev-parse HEAD)" = "$baseline" || { echo 'Candidate must be created from current production V2'; exit 1; }
+          old="$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')"
+          git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git "$upstream"
+          printf 'BASE_SHA=%s\nUPSTREAM_SHA=%s\nOLD_UPSTREAM_SHA=%s\n' "$baseline" "$upstream" "$old" >> "$GITHUB_ENV"
+          if test "$old" = "$upstream"; then
+            echo 'CHANGED=false' >> "$GITHUB_ENV"
+            echo 'No new original upstream commit: no release'
+          else
+            echo 'CHANGED=true' >> "$GITHUB_ENV"
+            echo 'Upstream revision changed. Preparing isolated candidate.'
+          fi
+      - name: Prepare complete upstream inheritance, fail closed on overlay conflict
+        if: env.CHANGED == 'true'
+        env:
+          V2_SYNC_DISPOSABLE: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'V2 Sync CI'
+          git config user.email 'v2-sync@users.noreply.github.com'
+          node tools/v2-upstream-sync.mjs --prepare "$UPSTREAM_SHA"
+      - name: Validate source parity and image manifest
+        if: env.CHANGED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/v2-upstream-sync.mjs --verify "$UPSTREAM_SHA"
+          node tools/sync-image-manifest.mjs --check
+          for f in mode/connect.js game/v2-preload-gate.mjs game/preload-images.mjs tools/v2-upstream-sync.mjs; do node --check "$f"; done
+          while IFS= read -r p; do
+            case "$p" in
+              *.js|*.mjs) node --check "$p" ;;
+            esac
+          done < <(git diff --name-only "$BASE_SHA" HEAD -- '*.js' '*.mjs')
+          test -z "$(git status --porcelain)"
+      - name: Install disposable Chromium for end-to-end V2 UI and cache checks
+        if: env.CHANGED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v2-playwright
+          npm install --prefix /tmp/v2-playwright --no-save --no-package-lock playwright@1.56.1
+          node /tmp/v2-playwright/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Start isolated local HTTP server
+        if: env.CHANGED == 'true'
+        shell: bash
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/v2-sync-http.log 2>&1 &
+          echo $! > /tmp/v2-sync-http.pid
+          for i in {1..25}; do
+            if curl -fsS http://127.0.0.1:8765/game/update.js >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Verify genuine original mode choices, V2 Hall default and decoded image cache
+        if: env.CHANGED == 'true'
+        run: node tests/v2-original-ui-chromium.mjs
+      - name: Stop local HTTP server
+        if: always()
+        run: |
+          if test -f /tmp/v2-sync-http.pid; then kill "$(cat /tmp/v2-sync-http.pid)" || true; fi
+      - name: Determine low-risk or game-code update
+        if: env.CHANGED == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="$(git rev-parse HEAD)"
+          printf 'NEW_SHA=%s\n' "$candidate" >> "$GITHUB_ENV"
+          risky=false
+          while IFS= read -r path; do
+            case "$path" in
+              README*|*.md|image/*|theme/*|audio/*|game/update.js|game/asset.js|.gitignore) ;;
+              *) echo "GAME_CODE_REQUIRES_REVIEW: $path"; risky=true ;;
+            esac
+          done < <(git diff --name-only "$OLD_UPSTREAM_SHA" "$UPSTREAM_SHA")
+          printf 'RISKY=%s\n' "$risky" >> "$GITHUB_ENV"
+      - name: Publish tested candidate branch only
+        if: env.CHANGED == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+          echo 'Isolated candidate updated after all checks'
+      - name: Hold game-code updates for review; no production write
+        if: env.CHANGED == 'true' && env.RISKY == 'true'
+        run: |
+          echo 'Upstream gameplay/engine changed. All scoped checks passed, but production is HELD for additional review.'
+          echo "Candidate: $GITHUB_REF_NAME"
+          echo 'NO AUTO RELEASE of unverified game rules.'
+      - name: Release low-risk updates only by fast-forward, with backup
+        if: env.CHANGED == 'true' && env.RISKY == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/feature/image-preload-cache | cut -f1)" = "$BASE_SHA"
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          backup="refs/heads/backup/v2-auto-before-$(printf %s "$NEW_SHA" | cut -c1-12)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "$BASE_SHA:$backup"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/feature/image-preload-cache"
+          echo 'V2_PRODUCTION_PUBLISHED_BY_FAST_FORWARD'
+      - name: Confirm Cloudflare public content or rollback low-risk update
+        if: env.CHANGED == 'true' && env.RISKY == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          origin='https://feature-image-preload-cache.xingbei-play.pages.dev'
+          ok=false
+          for i in {1..30}; do
+            if curl --fail --silent --show-error "$origin/game/update.js?release=$NEW_SHA" -o /tmp/v2-live-update.js &&
+               curl --fail --silent --show-error "$origin/game/preload-manifest.json?release=$NEW_SHA" -o /tmp/v2-live-images.json &&
+               cmp -s game/update.js /tmp/v2-live-update.js &&
+               cmp -s game/preload-manifest.json /tmp/v2-live-images.json; then
+              ok=true
+              break
+            fi
+            sleep 10
+          done
+          if test "$ok" = true; then
+            echo 'V2_PRODUCTION_PUBLIC_HEALTH_PASS'
+            exit 0
+          fi
+          echo 'V2 Cloudflare health not confirmed; attempting non-force rollback'
+          test "$(git ls-remote origin refs/heads/feature/image-preload-cache | cut -f1)" = "$NEW_SHA" || {
+            echo 'Production ref changed; refusing rollback over another update'; exit 1;
+          }
+          git config user.name 'V2 Auto Rollback'
+          git config user.email 'v2-rollback@users.noreply.github.com'
+          oldtree="$(git rev-parse "$BASE_SHA^{tree}")"
+          rollback="$(git commit-tree "$oldtree" -p "$NEW_SHA" -m 'revert(v2): restore previous safe V2 tree after unconfirmed Cloudflare health')"
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "$rollback:refs/heads/feature/image-preload-cache"
+          echo 'V2_PRODUCTION_ROLLBACK_COMMITTED'
+          exit 1
