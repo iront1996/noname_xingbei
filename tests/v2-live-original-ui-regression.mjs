@@ -89,7 +89,7 @@ try{
      });
    });
    console.log("V2_NATIVE_EXTENSIONS_GUI_"+label,JSON.stringify(observed));
-   const required=["无名杯UI优化包","十周年-AI优化版"];
+   const required=["无名杯UI优化包","十周年AI优化版"];
    for (const name of required) {
      assert.ok(observed.text?.includes(name),label+" native extensions panel missing "+name);
    }
