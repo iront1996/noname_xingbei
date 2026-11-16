@@ -51,6 +51,11 @@ async function remote(path, required) {
            content.toString("ascii", 8, 12) !== "WEBP")) {
         throw new Error("invalid published WebP " + path);
       }
+      if (path.endsWith(".png") && content.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a")
+        throw new Error("invalid published PNG " + path);
+      if (/\.(?:jpg|jpeg)$/i.test(path) &&
+          content.subarray(0, 3).toString("hex") !== "ffd8ff")
+        throw new Error("invalid published JPEG " + path);
       return content;
     } catch (error) {
       if (attempt === 5 || /invalid|too large/.test(String(error))) throw error;
