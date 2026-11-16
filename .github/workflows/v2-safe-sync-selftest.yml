@@ -4,6 +4,9 @@ on:
     branches: [integration/v2-safe-auto-sync-20261117]
 permissions:
   contents: read
+concurrency:
+  group: v2-safe-auto-sync-selftest
+  cancel-in-progress: true
 jobs:
   v2-scoped-selftest:
     if: github.repository == 'iront1996/noname_xingbei'
