@@ -13,7 +13,7 @@ const protectedBlobs = {
  'mode/connect.js':'0ae990c90934ac3ef96190d00d56efafe6605b3a',
  'noname/init/index.js':'bcecb1ca9c977571a151d15fd87f712a8ecd5594',
  'game/preload-images.mjs':'75b9c1b9b8957380bab12db2b59095be351572fb',
- 'tools/sync-image-manifest.mjs':'a00163a506faf3316770b17af439c14d410f088d',
+ 'tools/sync-image-manifest.mjs':'a0fc8744559b2c65b483ea4284ff5847952bd51b',
  'xingbei-image-sw.js':'887cd79d83d3b570f91fd46d7f0cce959e5b335c',
  'game/server.js':'49a0ad87ffc2638e3651fe6a08b5a150cdf38de3'
 };
