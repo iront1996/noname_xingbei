@@ -143,7 +143,7 @@ jobs:
           risky=false
           while IFS= read -r path; do
             case "$path" in
-              README*|*.md|image/*|theme/*|audio/*|game/update.js|game/asset.js|.gitignore) ;;
+              README*|*.md|.gitignore|image/*.png|image/*.jpg|image/*.jpeg|image/*.webp|image/*.gif|image/*.avif|theme/*.png|theme/*.jpg|theme/*.jpeg|theme/*.webp|audio/*.mp3|audio/*.ogg|audio/*.wav) ;;
               *) echo "GAME_CODE_REQUIRES_REVIEW: $path"; risky=true ;;
             esac
           done < <(git diff --name-only "$OLD_UPSTREAM_SHA" "$UPSTREAM_SHA")
