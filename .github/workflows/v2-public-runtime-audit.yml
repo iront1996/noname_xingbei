@@ -1,0 +1,33 @@
+name: V2 deployed original runtime audit (read-only)
+on:
+  push:
+    branches: [integration/v2-public-runtime-parity-20261117]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare-deployed:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout V2 isolated audit branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Clone pinned original
+        run: |
+          git clone --depth 1 https://github.com/RancherJie/noname_xingbei.git /tmp/v2-original-source
+          test "$(git -C /tmp/v2-original-source rev-parse HEAD)" = "abd687ff7237c24a1fcd05b6524309c73b9cb818"
+      - name: Audit every original JS/CSS/HTML/JSON/Vue/TypeScript deployed file
+        run: node tests/v2-public-site-audit.mjs
+      - name: Archive official/V2 per-file report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: v2-public-site-audit
+          path: artifacts/v2-runtime-parity/
+          if-no-files-found: error
