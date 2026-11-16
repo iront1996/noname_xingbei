@@ -1,0 +1,83 @@
+name: V2 prepare complete official deployed site in isolated candidate
+on:
+  push:
+    branches: [integration/v2-public-runtime-parity-20261117]
+permissions:
+  contents: write
+concurrency:
+  group: v2-official-published-layer-candidate
+  cancel-in-progress: false
+jobs:
+  build-candidate:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout V2 isolated candidate
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Fetch pinned original and all official bundled extension assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/RancherJie/noname_xingbei.git /tmp/v2-original-source
+          test "$(git -C /tmp/v2-original-source rev-parse HEAD)" = "abd687ff7237c24a1fcd05b6524309c73b9cb818"
+          git clone --depth 1 https://github.com/RancherJie/noname_xingbei_extension.git /tmp/v2-extension-source
+          test "$(git -C /tmp/v2-extension-source rev-parse HEAD)" = "b13809ceced561a5249d9d4256c1e78af1998add"
+      - name: Reconcile official deployed scripts, CSS and WebP assets
+        run: node tests/v2-prepare-official-release.mjs
+      - name: Copy pinned official extension packages, no executable build scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p extension
+          for package in '无名杯UI优化包' '百年战争·序章' '十周年-噩梦人机' '十周年-AI优化版' '宿命挽歌' '创世纪' '电啸龙吟' '轮回遗梦' '十周年语音包' '峡谷幻音' '永夜残响'; do
+            test -f "/tmp/v2-extension-source/$package/extension.js"
+            cp -a "/tmp/v2-extension-source/$package" "extension/$package"
+          done
+          test -f 'extension/无名杯UI优化包/extension.js'
+      - name: Syntax checks of all changed executable scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check noname/init/index.js
+          node --check mode/connect.js
+          node --check extension/无名杯UI优化包/extension.js
+          node --check extension/十周年-AI优化版/extension.js
+          while IFS= read -r -d '' file; do node --check "$file"; done < <(find extension -name '*.js' -print0)
+      - name: Commit isolated candidate, then rebuild accurate V2 image manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'V2 Official Parity Candidate'
+          git config user.email 'v2-parity@users.noreply.github.com'
+          git add -A character game layout mode noname theme image tests
+          git add -f extension
+          git commit -m 'feat(v2): reconstruct official published UI extensions and WebP resources in candidate'
+          node tools/sync-image-manifest.mjs --write
+          git add game/preload-manifest.json
+          if ! git diff --cached --quiet; then git commit -m 'build(v2): regenerate full image cache manifest for official published resources'; fi
+          node tools/sync-image-manifest.mjs --check
+          echo "CANDIDATE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - name: Push only verified isolated candidate branch (never release)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'integration/v2-public-runtime-parity-20261117'
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+          echo 'Candidate prepared. No production branch, VPS, original website or HALL was written.'
+      - name: Upload exact official release manifest for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-official-release-overlay-evidence
+          path: artifacts/v2-deploy-layer/
+          if-no-files-found: ignore
