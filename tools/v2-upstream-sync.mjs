@@ -23,6 +23,14 @@ const upstreamName = "RancherJie/noname_xingbei";
 const upstreamBranch = "master";
 const stateFile = "ops/v2-sync-state.json";
 const patchFile = "tools/v2-connect-overlay.patch";
+const publication = JSON.parse(readFileSync(join(root, "ops/v2-official-publication.json"), "utf8"));
+assert.equal(publication.schemaVersion, 1);
+const officialOverlay = new Set(publication.publishedTextOverlays);
+const extensionPrefixes = publication.bundledExtensions.map(name => `extension/${name}/`);
+const isOfficialExtension = path => extensionPrefixes.some(prefix => path.startsWith(prefix));
+const isOfficialExtraImage = path =>
+  /^(?:image|theme)\/.+\.(?:webp|avif)$/i.test(path);
+const isPublishedException = path => officialOverlay.has(path) || isOfficialExtension(path) || isOfficialExtraImage(path);
 const protectedExact = new Set([
   "mode/connect.js",
   "game/preload-images.mjs",
@@ -78,25 +86,33 @@ function verify(upstreamSha) {
   const ours = tracked("HEAD");
   for (const [path, sha] of theirs) {
     if (isOwned(path)) continue;
+    if (officialOverlay.has(path)) {
+      assert.ok(ours.has(path), "missing official published overlay: " + path);
+      continue;
+    }
     assert.equal(ours.get(path), sha, "original game differs from upstream: " + path);
   }
   for (const [path] of ours) {
     if (isOwned(path)) continue;
-    assert.ok(theirs.has(path), "unapproved V2-only game file: " + path);
+    assert.ok(theirs.has(path) || isPublishedException(path), "unapproved V2-only game file: " + path);
   }
   const original = git(["show", upstreamSha + ":mode/connect.js"]);
   const expected = expectedConnect(original + "\n");
   const actual = readFileSync(join(root, "mode/connect.js"), "utf8");
   assert.equal(actual, expected, "V2 connect overlay differs from pinned original + two features");
-  assert.equal(ours.get("noname/init/index.js"), theirs.get("noname/init/index.js"), "original UI bootstrap must remain unchanged");
-  assert.equal(ours.get("game/asset.js"), theirs.get("game/asset.js"), "original asset index must remain unchanged");
+  for (const path of publication.publishedTextOverlays) {
+    assert.ok(theirs.has(path) && ours.has(path), "missing tracked official overlay " + path);
+  }
+  for (const name of publication.bundledExtensions) {
+    assert.ok(ours.has(`extension/${name}/extension.js`), "missing official bundled extension: " + name);
+  }
   const gate = readFileSync(join(root, "game/v2-preload-gate.mjs"), "utf8");
   assert.ok(gate.includes("prepareImageAssets") && gate.includes("ensureImageCacheWorker"));
   assert.ok(actual.includes("wss://v2-hall-direct.myxingbei.com:50000"));
   assert.ok(actual.includes('get.config("read_clipboard", "connect")'));
   assert.ok(actual.includes("await ensureV2Images()"));
   assert.ok(!actual.includes('config.set("mode", "connect")'));
-  console.log("V2_UPSTREAM_PARITY_PASS", JSON.stringify({ upstreamSha, files: theirs.size, twoV2Features: true }));
+  console.log("V2_UPSTREAM_PARITY_PASS", JSON.stringify({ upstreamSha, files: theirs.size, twoV2Features: true, publishedOverlays: officialOverlay.size, bundledExtensions: publication.bundledExtensions.length }));
 }
 function prepare(upstreamSha) {
   assert.match(upstreamSha, /^[0-9a-f]{40}$/);
@@ -106,6 +122,7 @@ function prepare(upstreamSha) {
   assert.equal(git(["status", "--porcelain"]), "", "worktree must be clean");
   const oldHead = git(["rev-parse", "HEAD"]);
   const state = currentState();
+  verify(state.upstream.sha);
   if (state.upstream.sha === upstreamSha) {
     console.log("V2_UPSTREAM_UNCHANGED", upstreamSha);
     return;
@@ -124,24 +141,42 @@ function prepare(upstreamSha) {
     }
   }
   for (const path of oldTree.keys()) {
-    assert.ok(isOwned(path) || originalTree.has(path), "unapproved V2 drift: " + path);
+    assert.ok(isOwned(path) || originalTree.has(path) || isPublishedException(path), "unapproved V2 drift: " + path);
+  }
+  for (const path of officialOverlay) {
+    assert.ok(originalTree.has(path), "upstream removed an audited official published overlay: " + path);
+  }
+  for (const path of originalTree.keys()) {
+    if (isOfficialExtension(path) && !oldTree.has(path)) {
+      throw new Error("upstream introduced collision with released extension " + path);
+    }
   }
   const overlay = readFileSync(join(root, patchFile), "utf8");
   const upstreamConnect = git(["show", upstreamSha + ":mode/connect.js"]) + "\n";
   const nextConnect = expectedConnect(upstreamConnect);
   assert.ok(overlay.includes("v2-hall-direct.myxingbei.com:50000"));
   // Keep trusted V2-only files, tests, and workflows from the current branch.
-  const kept = [...oldTree.keys()].filter(isOwned);
+  const kept = [...oldTree.keys()].filter(path =>
+    isOwned(path) || officialOverlay.has(path) || isOfficialExtension(path) ||
+    (isOfficialExtraImage(path) && !originalTree.has(path))
+  );
   git(["read-tree", "--reset", "-u", upstreamSha]);
-  for (const path of kept) git(["restore", "--source", oldHead, "--staged", "--worktree", "--", path]);
+  for (let i = 0; i < kept.length; i += 100) {
+    git(["restore", "--source", oldHead, "--staged", "--worktree", "--", ...kept.slice(i, i + 100)]);
+  }
   writeFileSync(join(root, "mode/connect.js"), nextConnect);
   writeFileSync(join(root, stateFile), JSON.stringify({
     schemaVersion: 1,
     upstream: { repository: upstreamName, branch: upstreamBranch, sha: upstreamSha },
     previousUpstreamSha: state.upstream.sha
   }, null, 2) + "\n");
+  // Reconcile the actual public release, not only GitHub's source tree.
+  // All script, CSS and extension drift is review-gated by the workflow.
+  execFileSync(process.execPath, [
+    join(root, "tools/v2-published-release-sync.mjs"), "--sync", state.upstream.sha, upstreamSha
+  ], { cwd: root, stdio: "inherit" });
   git(["add", "--all"]);
-  git(["commit", "-m", "sync(v2): inherit upstream " + upstreamSha.slice(0, 12) + " preserving two V2 features"]);
+  git(["commit", "-m", "sync(v2): inherit published upstream " + upstreamSha.slice(0, 12) + " preserving V2 features"]);
   // The image manifest derives its version from HEAD:image and HEAD:theme.
   // Commit upstream content first, then regenerate and commit the manifest.
   execFileSync(process.execPath, [join(root, "tools/sync-image-manifest.mjs"), "--write"], { cwd: root, stdio: "inherit" });
