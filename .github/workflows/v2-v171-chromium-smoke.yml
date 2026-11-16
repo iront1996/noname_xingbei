@@ -9,7 +9,7 @@ permissions:
 jobs:
   smoke:
     if: github.repository == 'iront1996/noname_xingbei'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     steps:
       - name: Checkout isolated candidate
