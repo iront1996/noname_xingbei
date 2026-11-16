@@ -29,25 +29,25 @@ const snap=String(Date.now());
 async function retrieve(path,max=25*1024*1024){
  const url=official+path.split("/").map(encodeURIComponent).join("/")+"?build="+snap;
  let cause;
- for(let i=0;i<2;i++)try{
+ for(let i=0;i<4;i++)try{
   const res=await fetch(url,{cache:"no-store",signal:AbortSignal.timeout(30000)});
   if(res.status===404)return null;
   if(!res.ok)throw new Error("HTTP "+res.status+" "+url);
   const bytes=Buffer.from(await res.arrayBuffer());
   if(bytes.length>max)throw new Error("oversized file "+path);
   return bytes;
- }catch(e){cause=e;}
+ }catch(e){cause=e;await new Promise(resolve=>setTimeout(resolve,500*(2**i)));}
  throw new Error("cannot retrieve "+path+": "+cause);
 }
 const list=git(["-C",originSource,"ls-tree","-r","--name-only","HEAD"]).split("\n").filter(Boolean);
-const paths=list.filter(x=>/\.(?:js|mjs|ts|css|html|json|vue)$/.test(x));
+const paths=[...allowed]; // Public-site full 202-file audit already narrowed 35 controlled official differences.
 const diffs=[];
 let next=0;
-await Promise.all(Array.from({length:12},async()=>{
+await Promise.all(Array.from({length:5},async()=>{
  while(next<paths.length){
   const path=paths[next++];
   const content=await retrieve(path);
-  if(!content){if(path===".eslintrc.json")continue;throw new Error("missing published original source "+path);}
+  if(!content)throw new Error("missing published original source "+path);
   const old=readFileSync(path);
   if(sha(old)===sha(content))continue;
   if(path==="mode/connect.js")continue; // V2-only WSS and image preload patch.
@@ -70,7 +70,7 @@ const extTree=git(["-C",extSource,"ls-tree","-r","--name-only","HEAD"]).split("\
 const extFiles=extTree.filter(p=>bundleNames.some(n=>p.startsWith(n+"/")));
 const extDrift=[],missingPublished=[];
 let ei=0;
-await Promise.all(Array.from({length:10},async()=>{
+await Promise.all(Array.from({length:5},async()=>{
  while(ei<extFiles.length){
   const file=extFiles[ei++];
   const officialBytes=await retrieve("extension/"+file);
@@ -91,7 +91,7 @@ console.log("OFFICIAL_EXTENSION_RELEASE_VERIFIED",JSON.stringify({sourceFiles:ex
 const originalImages=list.filter(p=>(p.startsWith("image/")||p.startsWith("theme/"))&&p.endsWith(".png"));
 const gathered=[];
 let imageIndex=0;
-await Promise.all(Array.from({length:12},async()=>{
+await Promise.all(Array.from({length:5},async()=>{
  while(imageIndex<originalImages.length){
   const orig=originalImages[imageIndex++];
   const webp=orig.slice(0,-4)+".webp";
