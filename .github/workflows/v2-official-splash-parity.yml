@@ -1,0 +1,55 @@
+name: V2 official splash visual parity
+on:
+  push:
+    branches: [integration/v2-official-splash-visual-audit-20261117]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Clone pinned official original source
+        run: |
+          git clone --depth 1 --branch master https://github.com/RancherJie/noname_xingbei.git /tmp/v2-official-source
+          test "$(git -C /tmp/v2-official-source rev-parse HEAD)" = "abd687ff7237c24a1fcd05b6524309c73b9cb818"
+      - name: Install CI-only Chromium
+        run: |
+          mkdir -p /tmp/v2-playwright
+          npm install --prefix /tmp/v2-playwright --no-save --no-package-lock playwright@1.56.1
+          node /tmp/v2-playwright/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Start local original and V2 servers
+        run: |
+          python3 -m http.server 8766 --bind 127.0.0.1 --directory /tmp/v2-official-source >/tmp/v2-original-http.log 2>&1 &
+          echo $! >/tmp/v2-original-http.pid
+          python3 -m http.server 8765 --bind 127.0.0.1 >/tmp/v2-local-http.log 2>&1 &
+          echo $! >/tmp/v2-local-http.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8765/game/config.js >/dev/null &&
+               curl -fsS http://127.0.0.1:8766/game/config.js >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Compare original and V2 splash styles
+        run: node tests/v2-official-splash-parity.mjs
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-official-splash-evidence
+          path: artifacts/v2-splash/
+          if-no-files-found: ignore
+      - name: Stop servers
+        if: always()
+        run: |
+          for f in /tmp/v2-local-http.pid /tmp/v2-original-http.pid; do
+            if test -f "$f"; then kill "$(cat "$f")" || true; fi
+          done
