@@ -1,0 +1,377 @@
+:root {
+    --wmb-wb-ink: #2b1a10;
+    --wmb-wb-paper: #c59a58;
+    --wmb-wb-paper-light: #e0bd78;
+    --wmb-wb-paper-dark: #7b4f27;
+    --wmb-wb-bronze: #8d5e2e;
+    --wmb-wb-bronze-light: #d0a55c;
+    --wmb-wb-wood: #3d2416;
+    --wmb-wb-shadow: 0 12px 24px rgba(22, 10, 4, .58), 0 3px 6px rgba(22, 10, 4, .72);
+}
+
+body.wmb-ui-waterbear {
+    color: #f0d9aa;
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'%3E%3Cpath d='M3 2l18 11-8 2-4 9z' fill='%23d5ad68' stroke='%23352012' stroke-width='2'/%3E%3Cpath d='M6 6l10 7-5 1-2 5z' fill='%23fff0b8' opacity='.65'/%3E%3C/svg%3E") 3 2, auto;
+}
+
+body.wmb-ui-waterbear #arena {
+    isolation: isolate;
+    background-color: var(--wmb-wb-wood) !important;
+    background-image: url("image/waterbear/table_wood.webp") !important;
+    background-repeat: repeat !important;
+    background-position: center !important;
+    background-size: 1024px 1024px !important;
+    box-shadow: inset 0 0 90px rgba(18, 7, 2, .62) !important;
+}
+
+body.wmb-ui-waterbear #arena::before {
+    content: "";
+    position: absolute;
+    inset: 30px 34px 32px;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--wmb-wb-paper);
+    background-image:
+        linear-gradient(118deg, rgba(255, 229, 167, .12), transparent 34%, rgba(75, 38, 15, .1)),
+        url("image/waterbear/parchment_tile.webp");
+    background-repeat: repeat, repeat;
+    background-position: center, center;
+    background-size: auto, 512px 512px;
+    box-shadow: 0 18px 30px rgba(13, 5, 2, .68), inset 0 0 70px rgba(82, 42, 17, .24);
+}
+
+body.wmb-ui-waterbear #arena::after {
+    content: "";
+    position: absolute;
+    inset: 9px 12px 11px;
+    z-index: 0;
+    pointer-events: none;
+    border: 112px solid transparent;
+    border-image-source: url("image/waterbear/parchment_border.webp");
+    border-image-slice: 340;
+    border-image-width: 112px;
+    border-image-repeat: round;
+    filter: drop-shadow(0 14px 14px rgba(20, 8, 2, .62));
+}
+
+body.wmb-ui-waterbear #arena > * { z-index: 1; }
+
+body.wmb-ui-waterbear .dialog,
+body.wmb-ui-waterbear .menu,
+body.wmb-ui-waterbear .popup-container > div,
+body.wmb-ui-waterbear .wmb-detail-panel,
+body.wmb-ui-waterbear .wmb-room-list,
+body.wmb-ui-waterbear .wmb-scoreboard {
+    color: #3b2413 !important;
+    background:
+        linear-gradient(135deg, rgba(255, 229, 167, .42), transparent 31%),
+        repeating-linear-gradient(3deg, rgba(85, 45, 18, .035) 0 1px, transparent 1px 5px),
+        #c69a59 !important;
+    border: 2px solid #5a3417 !important;
+    outline: 1px solid #c99b51;
+    box-shadow: var(--wmb-wb-shadow), inset 0 0 0 3px rgba(78, 40, 15, .18), inset 0 1px rgba(255, 237, 190, .58) !important;
+    text-shadow: 0 1px rgba(255, 228, 166, .5) !important;
+}
+
+body.wmb-ui-waterbear .wmb-scoreboard {
+    min-width: 254px;
+    height: auto !important;
+    padding: 28px 9px 8px !important;
+    border-radius: 4px 12px 4px 12px !important;
+}
+
+body.wmb-ui-waterbear .wmb-scoreboard::before {
+    content: attr(data-wmb-title);
+    position: absolute;
+    top: 5px;
+    left: 12px;
+    color: #3c2412;
+    font: 800 15px/19px "STKaiti", "KaiTi", serif;
+    letter-spacing: 4px;
+}
+
+body.wmb-ui-waterbear .wmb-scoreboard::after {
+    content: "";
+    position: absolute;
+    left: 9px;
+    right: 9px;
+    top: 24px;
+    height: 2px;
+    background: linear-gradient(90deg, #5b3518, #c08d42, #5b3518);
+    box-shadow: 0 1px rgba(247, 210, 139, .5);
+}
+
+body.wmb-ui-waterbear .control,
+body.wmb-ui-waterbear .menubutton,
+body.wmb-ui-waterbear .button,
+body.wmb-ui-waterbear .dialog .textbutton,
+body.wmb-ui-waterbear .wmb-system-button,
+body.wmb-ui-waterbear .connectbutton,
+body.wmb-ui-waterbear .connectevents {
+    position: relative;
+    overflow: hidden;
+    color: #f3d9a0 !important;
+    background:
+        linear-gradient(115deg, rgba(255,255,255,.22), transparent 27% 67%, rgba(0,0,0,.2)),
+        repeating-linear-gradient(90deg, rgba(255,255,255,.025) 0 2px, transparent 2px 7px),
+        linear-gradient(#8c5c2c, #573117) !important;
+    border: 1px solid #d0a45b !important;
+    outline: 2px solid rgba(61, 31, 13, .86);
+    box-shadow: 0 5px 10px rgba(31, 13, 5, .52), inset 0 1px rgba(255, 229, 163, .46), inset 0 -2px rgba(31, 13, 5, .36) !important;
+    text-shadow: 0 2px 2px #2b1408 !important;
+    transition: transform .12s ease, filter .14s ease, box-shadow .14s ease;
+}
+
+body.wmb-ui-waterbear .control:hover,
+body.wmb-ui-waterbear .menubutton:hover,
+body.wmb-ui-waterbear .button:hover,
+body.wmb-ui-waterbear .dialog .textbutton.selectable:hover,
+body.wmb-ui-waterbear .dialog .textbutton.selectable.selected,
+body.wmb-ui-waterbear .wmb-system-button:hover,
+body.wmb-ui-waterbear .connectbutton:hover {
+    filter: brightness(1.16) saturate(1.08);
+    transform: translateY(-2px);
+}
+
+body.wmb-ui-waterbear .control:active,
+body.wmb-ui-waterbear .menubutton:active,
+body.wmb-ui-waterbear .button:active,
+body.wmb-ui-waterbear .dialog .textbutton.selectable:active,
+body.wmb-ui-waterbear .wmb-system-button:active,
+body.wmb-ui-waterbear .connectbutton:active {
+    transform: translateY(2px) scale(.975);
+    box-shadow: 0 2px 4px rgba(31, 13, 5, .55), inset 0 3px 7px rgba(28, 12, 4, .42) !important;
+}
+
+body.wmb-ui-waterbear .dialog .textbutton {
+    box-sizing: border-box;
+    margin: 8px 0 !important;
+    padding: 10px 12px !important;
+    font-size: 18px;
+    border-radius: 4px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+/* 与本体操作按钮一样跟随圆角设置。 */
+body.wmb-ui-waterbear #window[data-radius_size="reduce"] .dialog .textbutton { border-radius: 4px; }
+body.wmb-ui-waterbear #window[data-radius_size="off"] .dialog .textbutton { border-radius: 0; }
+body.wmb-ui-waterbear #window[data-radius_size="increase"] .dialog .textbutton { border-radius: 16px; }
+
+.wmb-wb-click-ripple {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    margin: -6px;
+    z-index: 30;
+    pointer-events: none;
+    border-radius: 50%;
+    background: rgba(255, 229, 166, .72);
+    box-shadow: 0 0 12px #ffd77e;
+    animation: wmb-wb-ripple .5s ease-out forwards;
+}
+
+body.wmb-ui-waterbear .card {
+    filter: drop-shadow(0 7px 7px rgba(28, 12, 4, .54));
+}
+
+body.wmb-ui-waterbear .card:hover { filter: drop-shadow(0 11px 9px rgba(28, 12, 4, .65)) brightness(1.08); }
+body.wmb-ui-waterbear .card:active { transform: translateY(3px) scale(.98); }
+
+body.wmb-ui-waterbear .player {
+    --wmb-faction-main: #806f55;
+    --wmb-faction-light: #c8b389;
+    --wmb-faction-dark: #32281c;
+    box-shadow: 0 12px 22px rgba(24, 9, 3, .62), 0 3px 6px rgba(24, 9, 3, .78), inset 0 0 0 2px rgba(255, 228, 168, .16) !important;
+    border: 2px solid var(--wmb-faction-dark) !important;
+    border-left-width: 7px !important;
+}
+
+body.wmb-ui-waterbear .player.wmb-wb-faction-xue { --wmb-faction-main:#9e2930; --wmb-faction-light:#df6a64; --wmb-faction-dark:#3c0b10; }
+body.wmb-ui-waterbear .player.wmb-wb-faction-sheng { --wmb-faction-main:#3978a4; --wmb-faction-light:#8fc9e7; --wmb-faction-dark:#102c4b; }
+body.wmb-ui-waterbear .player.wmb-wb-faction-ji { --wmb-faction-main:#3d8053; --wmb-faction-light:#9ac47d; --wmb-faction-dark:#183622; }
+body.wmb-ui-waterbear .player.wmb-wb-faction-huan { --wmb-faction-main:#70438d; --wmb-faction-light:#bd8cd1; --wmb-faction-dark:#2d183d; }
+body.wmb-ui-waterbear .player.wmb-wb-faction-yong { --wmb-faction-main:#a66a24; --wmb-faction-light:#e4b352; --wmb-faction-dark:#4b2b0d; }
+
+.wmb-wb-frame-left {
+    position: absolute;
+    z-index: 12;
+    pointer-events: none;
+    inset: -11px -9px -12px -14px;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-size: 100% 100%;
+    filter: drop-shadow(3px 6px 5px rgba(18, 7, 3, .72));
+}
+
+.wmb-wb-faction-xue > .wmb-wb-frame-left { background-image:url("image/waterbear/frame_xue_v2.webp"); }
+.wmb-wb-faction-sheng > .wmb-wb-frame-left { background-image:url("image/waterbear/frame_sheng_v2.webp"); }
+.wmb-wb-faction-ji > .wmb-wb-frame-left { background-image:url("image/waterbear/frame_ji_v2.webp"); }
+.wmb-wb-faction-huan > .wmb-wb-frame-left { background-image:url("image/waterbear/frame_huan_v2.webp"); }
+.wmb-wb-faction-yong > .wmb-wb-frame-left { background-image:url("image/waterbear/frame_yong_v2.webp"); }
+.wmb-wb-faction-other > .wmb-wb-frame-left { display:none; }
+
+/* 名字保持原布局，仅确保显示在阵营边框上方。 */
+body.wmb-ui-waterbear .player > .name,
+body.wmb-ui-waterbear .player > .name2 {
+    z-index: 16 !important;
+}
+
+body.wmb-ui-waterbear .player > .marks {
+    z-index: 18 !important;
+    position: absolute !important;
+    top: 31px !important;
+    right: -17px !important;
+    bottom: auto !important;
+    left: auto !important;
+    width: 30px !important;
+    max-height: calc(100% - 55px) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 3px !important;
+    overflow: visible !important;
+}
+
+body.wmb-ui-separate-energy-markers .player > .marks2 {
+    top: 5px !important;
+    right: 5px !important;
+    bottom: auto !important;
+    left: auto !important;
+}
+
+body.wmb-ui-waterbear .player > .marks > .mark,
+body.wmb-ui-waterbear .player > .marks > .card {
+    position: relative !important;
+    inset: auto !important;
+    margin: 0 !important;
+    flex: 0 0 auto !important;
+}
+
+body.wmb-ui-waterbear .player > .count {
+    z-index: 18 !important;
+    top: auto !important;
+    right: -17px !important;
+    bottom: 8px !important;
+    left: auto !important;
+}
+
+.wmb-wb-skill-banner {
+    position: fixed;
+    z-index: 120;
+    left: 50%;
+    top: calc(24% + var(--wmb-skill-offset, 0px));
+    min-width: 220px;
+    padding: 12px 38px;
+    color: #f7e6bd;
+    font: 800 22px/1.2 "STKaiti", "KaiTi", serif;
+    letter-spacing: 4px;
+    text-align: center;
+    pointer-events: none;
+    border: 2px solid currentColor;
+    background: linear-gradient(90deg, transparent, rgba(37,19,8,.92) 18% 82%, transparent);
+    text-shadow: 0 2px 3px #160904;
+    transform: translateX(-50%);
+    transition: top 180ms ease-out;
+}
+
+.wmb-wb-skill-passive { color:#e2c688; animation:wmb-wb-passive 1.55s ease-out forwards; }
+.wmb-wb-skill-response { color:#85d8f4; animation:wmb-wb-response 1.55s cubic-bezier(.2,.8,.2,1) forwards; }
+.wmb-wb-skill-spell { color:#d69cff; animation:wmb-wb-spell 1.55s ease-out forwards; }
+.wmb-wb-skill-source { animation:wmb-wb-source-pulse 1.55s ease-out; }
+.wmb-wb-skill-source-passive { box-shadow:0 0 0 4px rgba(226,198,136,.5), var(--wmb-wb-shadow) !important; }
+.wmb-wb-skill-source-response { box-shadow:0 0 0 4px rgba(90,201,239,.6), var(--wmb-wb-shadow) !important; }
+.wmb-wb-skill-source-spell { box-shadow:0 0 0 4px rgba(190,104,236,.62), var(--wmb-wb-shadow) !important; }
+
+.linexy.wmb-wb-attack-line {
+    z-index: 4 !important;
+    box-shadow:
+        0 0 0 3px var(--wmb-line-border, #2d160b),
+        0 0 9px 5px var(--wmb-line-color),
+        0 0 19px 8px var(--wmb-line-color) !important;
+}
+
+.wmb-wb-attack-fallback {
+    position: absolute;
+    z-index: 3;
+    width: 10px;
+    box-sizing: border-box;
+    transform-origin: top center;
+    pointer-events: none;
+    border: 2px solid var(--wmb-line-border, #2d160b);
+    border-radius: 7px;
+    background: linear-gradient(90deg, transparent, var(--wmb-line-color), #fff1b7 52%, var(--wmb-line-color), transparent);
+    box-shadow: 0 0 5px #170904, 0 0 13px var(--wmb-line-color);
+}
+
+.wmb-wb-line-shui,.wmb-wb-hit-shui{--wmb-line-color:#55cfff;--wmb-line-border:#164d73}
+.wmb-wb-line-huo,.wmb-wb-hit-huo{--wmb-line-color:#ff5c32;--wmb-line-border:#75200f}
+.wmb-wb-line-feng,.wmb-wb-hit-feng{--wmb-line-color:#79e59a;--wmb-line-border:#206337}
+.wmb-wb-line-lei,.wmb-wb-hit-lei{--wmb-line-color:#c990ff;--wmb-line-border:#50217a}
+.wmb-wb-line-di,.wmb-wb-hit-di{--wmb-line-color:#d4a451;--wmb-line-border:#674515}
+.wmb-wb-line-guang,.wmb-wb-hit-guang{--wmb-line-color:#fff1a1;--wmb-line-border:#9a7222}
+.wmb-wb-line-an,.wmb-wb-hit-an{--wmb-line-color:#8750b5;--wmb-line-border:#210f35}
+.wmb-wb-line-default,.wmb-wb-hit-default{--wmb-line-color:#d8bd83;--wmb-line-border:#53351a}
+
+.wmb-wb-hit-fx {
+    position: absolute;
+    z-index: 110;
+    width: 30px;
+    height: 30px;
+    margin: -15px;
+    pointer-events: none;
+    border: 5px double var(--wmb-line-color);
+    border-radius: 50%;
+    box-shadow: 0 0 12px var(--wmb-line-color), inset 0 0 10px var(--wmb-line-color);
+    animation: wmb-wb-hit .8s ease-out forwards;
+}
+
+body.wmb-ui-waterbear.wmb-ui-no-motion .wmb-wb-click-ripple,
+body.wmb-ui-waterbear.wmb-ui-no-motion .wmb-wb-skill-banner,
+body.wmb-ui-waterbear.wmb-ui-no-motion .wmb-wb-skill-source,
+body.wmb-ui-waterbear.wmb-ui-no-motion .wmb-wb-attack-line,
+body.wmb-ui-waterbear.wmb-ui-no-motion .wmb-wb-attack-fallback,
+body.wmb-ui-waterbear.wmb-ui-no-motion .wmb-wb-hit-fx {
+    animation: none !important;
+    transition: none !important;
+}
+
+/* 移动端保留桌布纹理，移除大面积阴影与边框滤镜，减轻低端设备绘制负担。 */
+body.wmb-ui-waterbear.wmb-ui-mobile-client #arena {
+    box-shadow: none !important;
+}
+body.wmb-ui-waterbear.wmb-ui-mobile-client #arena::before {
+    box-shadow: none !important;
+}
+body.wmb-ui-waterbear.wmb-ui-mobile-client #arena::after {
+    filter: none !important;
+}
+body.wmb-ui-waterbear.wmb-ui-mobile-client #arena .player {
+    box-shadow: 0 2px 6px rgba(22, 10, 4, .4) !important;
+    filter: none !important;
+}
+body.wmb-ui-waterbear.wmb-ui-mobile-client #arena .player > .wmb-wb-frame-left {
+    filter: none !important;
+}
+body.wmb-ui-waterbear.wmb-ui-mobile-client #arena .card,
+body.wmb-ui-waterbear.wmb-ui-mobile-client #arena .card:hover {
+    filter: none !important;
+}
+body.wmb-ui-waterbear.wmb-ui-mobile-client #arena .card.selectable,
+body.wmb-ui-waterbear.wmb-ui-mobile-client #arena .card.selected {
+    box-shadow: none !important;
+    outline: 2px solid #d0a55c;
+}
+body.wmb-ui-waterbear.wmb-ui-mobile-client .wmb-wb-click-ripple {
+    display: none !important;
+}
+body.wmb-ui-waterbear.wmb-ui-mobile-client .wmb-wb-hit-fx {
+    box-shadow: 0 0 8px var(--wmb-line-color) !important;
+}
+
+@keyframes wmb-wb-ripple { to { transform:scale(9); opacity:0; } }
+@keyframes wmb-wb-passive { 0%{opacity:0;transform:translate(-50%,18px) scale(.92)} 25%,72%{opacity:1;transform:translate(-50%,0) scale(1)} 100%{opacity:0;transform:translate(-50%,-8px)} }
+@keyframes wmb-wb-response { 0%{opacity:0;transform:translate(-70%,-8px) skewX(-12deg)} 22%,72%{opacity:1;transform:translate(-50%,0) skewX(0)} 100%{opacity:0;transform:translate(-32%,0)} }
+@keyframes wmb-wb-spell { 0%{opacity:0;filter:blur(8px);transform:translate(-50%,0) scale(.72)} 30%,70%{opacity:1;filter:blur(0);transform:translate(-50%,0) scale(1.06)} 100%{opacity:0;transform:translate(-50%,0) scale(1.18)} }
+@keyframes wmb-wb-source-pulse { 0%,100%{filter:brightness(1)} 45%{filter:brightness(1.35)} }
+@keyframes wmb-wb-hit { 0%{opacity:1;transform:scale(.25) rotate(0)} 55%{opacity:.92;transform:scale(2.2) rotate(135deg)} 100%{opacity:0;transform:scale(3.2) rotate(220deg)} }

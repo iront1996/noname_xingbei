@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="400" viewBox="0 0 300 400">
+  <rect width="300" height="400" fill="#243338"/>
+  <path d="M50 350L210 55L220 30L225 65L65 360Z" fill="#b2a1d7"/>
+  <path d="M250 350L90 55L80 30L75 65L235 360Z" fill="#e7cd84"/>
+  <path d="M25 310L95 350M205 350L275 310" stroke="#8a7055" stroke-width="12"/>
+  <rect x="80" y="130" width="140" height="145" rx="8" fill="#243338" fill-opacity=".9"/>
+  <text x="150" y="170" text-anchor="middle" fill="#e7cd84" font-size="23" font-family="serif">永安少侠</text>
+  <text x="150" y="228" text-anchor="middle" fill="#fff3d6" font-size="45" font-family="serif">景天</text>
+  <text x="150" y="382" text-anchor="middle" fill="#bbc5c4" font-size="14">双剑宿缘 · 临时题签</text>
+</svg>

@@ -1,0 +1,33 @@
+extension["永夜残响"] = {
+    "intro": "添加角色五河琴里、夜刀神十香、四糸乃、时崎狂三、鸢一折纸；含隐藏反转形态。",
+    "author": "蒙牛",
+    "netdisk": "",
+    "forum": "",
+    "version": "2.17",
+    "files": [
+        "LICENSE",
+        "README.md",
+        "audio-data/manifest.json",
+        "audio-data/pack-fe863965b566d7c7ada0819d639f9386b79cd365728766f25ae04d2d50dbe7ef.json",
+        "extension.js",
+        "fanZhuanShiXiang.webp",
+        "fanZhuanZheZhi.webp",
+        "info.json",
+        "mark_fanZhuanLingLi.webp",
+        "mark_qinLiLingLi.webp",
+        "mark_shiCha.webp",
+        "mark_shiJianJingZhi.webp",
+        "mark_shiXiangLingLi.webp",
+        "mark_siMiNaiBingJing.webp",
+        "mark_siMiNaiDongJie.webp",
+        "mark_zheZhiGuangYu.webp",
+        "mark_zheZhiHeiYu.webp",
+        "package.js",
+        "shiQiKuangSan.jpg",
+        "shiXiang.jpg",
+        "siMiNai.jpg",
+        "wHeQingLi.jpg",
+        "yuanYiZheZhi.webp"
+    ],
+    "size": "9.46MB"
+};
