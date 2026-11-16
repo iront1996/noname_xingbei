@@ -39,7 +39,7 @@ const protectedExact = new Set([
   "xingbei-image-sw.js",
   "tools/sync-image-manifest.mjs"
 ]);
-const protectedPrefixes = [".github/", "tests/", "tools/v2-", "ops/v2-sync-"];
+const protectedPrefixes = [".github/", "tests/", "tools/v2-", "ops/v2-"];
 const isOwned = path => protectedExact.has(path) || protectedPrefixes.some(p => path.startsWith(p));
 
 function git(args, options = {}) {
