@@ -1,0 +1,76 @@
+name: V2 safe auto-sync code and published release self-test
+on:
+  push:
+    branches: [integration/v2-safe-auto-sync-20261117]
+permissions:
+  contents: read
+jobs:
+  v2-scoped-selftest:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Syntax and publication manifest schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check tools/v2-upstream-sync.mjs
+          node --check tools/v2-published-release-sync.mjs
+          node --check tests/v2-public-site-audit.mjs
+          node --check tests/v2-live-original-ui-regression.mjs
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            import fs from "node:fs";
+            const p=JSON.parse(fs.readFileSync("ops/v2-official-publication.json","utf8"));
+            assert.equal(p.publishedTextOverlays.length,35);
+            assert.equal(p.bundledExtensions.length,11);
+            for (const path of p.publishedTextOverlays) assert.ok(fs.existsSync(path),path);
+            for (const name of p.bundledExtensions) assert.ok(fs.existsSync("extension/"+name+"/extension.js"),name);
+            console.log("V2_PUBLICATION_SCHEMA_AND_BUNDLE_PASS");
+          '
+      - name: Fetch trusted pinned original without changing V2
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream="$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')"
+          git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git "$upstream"
+          mkdir -p /tmp/v2-original-source
+          git -C /tmp/v2-original-source init --quiet
+          git -C /tmp/v2-original-source remote add origin https://github.com/RancherJie/noname_xingbei.git
+          git -C /tmp/v2-original-source fetch --depth 1 origin "$upstream"
+          git -C /tmp/v2-original-source checkout --quiet --detach FETCH_HEAD
+          node tools/v2-upstream-sync.mjs --verify "$upstream"
+          node tools/sync-image-manifest.mjs --check
+          node tools/v2-published-release-sync.mjs --check "$upstream" "$upstream"
+      - name: Start local read-only candidate for full published-source comparison
+        shell: bash
+        run: |
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/v2-source-http.log 2>&1 &
+          echo "$!" > /tmp/v2-source-http.pid
+          for i in {1..25}; do
+            if curl -fsS http://127.0.0.1:8765/game/update.js > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Assert official published source parity across all tracked text files
+        env:
+          V2_AUDIT_BASE_URL: http://127.0.0.1:8765/
+        run: node tests/v2-public-site-audit.mjs
+      - name: Stop local source auditor
+        if: always()
+        run: |
+          if test -f /tmp/v2-source-http.pid; then kill "$(cat /tmp/v2-source-http.pid)" || true; fi
+      - name: Archive isolated V2 parity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-safe-sync-selftest
+          path: artifacts/v2-runtime-parity/
+          if-no-files-found: ignore
