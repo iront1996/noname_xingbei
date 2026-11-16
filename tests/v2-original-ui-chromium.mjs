@@ -2,78 +2,72 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 const { chromium } = createRequire(import.meta.url)("/tmp/v2-playwright/node_modules/playwright");
-const address="http://127.0.0.1:8765";
-const browser=await chromium.launch({headless:true,args:["--no-sandbox"]});
-const context=await browser.newContext({serviceWorkers:"allow"});
-const page=await context.newPage();
-const errors=[],failedRequests=[];
-page.on("pageerror", e=>errors.push(String(e)));
-page.on("requestfailed", req=>{
- if(req.url().startsWith(address))failedRequests.push(req.url());
-});
-page.on("dialog", async dialog => {
- if(dialog.type()==="confirm" && /GPL|开源声明|開源聲明/.test(dialog.message()))await dialog.accept();
- else await dialog.dismiss();
-});
+const address = "http://127.0.0.1:8765";
+const browser = await chromium.launch({headless:true,args:["--no-sandbox"]});
+const errors=[];
 try {
- const res=await page.goto(address+"/",{waitUntil:"domcontentloaded",timeout:60000});
- assert.equal(res?.status(),200);
- await page.waitForFunction(()=>{
-    const body=document.body?.innerText || "";
-    return body.includes("星杯传说") && body.includes("联机") && body.includes("新手向导");
-  },null,{timeout:90000});
-  console.log("V2_ORIGINAL_MODE_OPTIONS_VISIBLE");
-  // Switch game mode inside the disposable test browser only.
-  // This does not alter original launch behavior or connect to the HALL.
-  await page.evaluate(async()=>{
-    const { game } = await import("/noname.js");
-    game.switchMode("connect");
-  });
- const wss="wss://v2-hall-direct.myxingbei.com:50000";
- const wssInput=page.locator('[contenteditable="true"]').filter({hasText:wss});
- await wssInput.waitFor({state:"visible",timeout:90000});
- await page.waitForFunction(()=>{
-  const state=[...document.querySelectorAll(".menubutton")].some(n=>n.textContent?.includes("连接"));
-  const label=document.body?.innerText||"";
-  return state && (/输入联机地址|圖片預載/.test(label));
+ const context1=await browser.newContext({serviceWorkers:"allow"});
+ const original=await context1.newPage();
+ original.on("dialog", d => /GPL|开源声明/.test(d.message())?d.accept():d.dismiss());
+ original.on("pageerror",e=>errors.push("original: "+e.message));
+ const response=await original.goto(address+"/",{waitUntil:"domcontentloaded",timeout:60000});
+ assert.equal(response?.status(),200);
+ await original.waitForFunction(()=>{
+  const text=document.body?.innerText||"";
+  return ["星杯传说","BOSS","联机","线下选角","图鉴","排行榜","新手向导"].every(label=>text.includes(label));
  },null,{timeout:90000});
- // Non-invasive: no button click and no live WSS connection.
- const state=await page.evaluate(async()=>{
-  const manifest=await (await fetch("/game/preload-manifest.json",{cache:"no-store"})).json();
+ assert.equal(await original.locator('[aria-label="星杯傳說圖片資源準備"]').count(),0);
+ console.log("V2_NATIVE_MODE_OPTIONS_PASS");
+ await context1.close();
+
+ // The second isolated context serves a test-only config variant selecting
+ // native Connect mode, avoiding original tutorial and synthetic eventStack.
+ // All actual JS, host URL, image cache and service worker files are untouched.
+ const context2=await browser.newContext({serviceWorkers:"allow"});
+ const page=await context2.newPage();
+ const failed=[];
+ page.on("pageerror",e=>errors.push("connect: "+e.message));
+ page.on("requestfailed",r=>{if(r.url().startsWith(address))failed.push(r.url());});
+ page.on("dialog",d=>/GPL|开源声明/.test(d.message())?d.accept():d.dismiss());
+ await page.route("**/game/config.js",async route=>{
+  const source=await route.fetch();
+  const body=await source.text();
+  assert.ok(body.includes('mode: "tutorial"'),"unknown upstream game config anchor");
+  await route.fulfill({response:source,body:body.replace('mode: "tutorial"','mode: "connect",\n\tshow_splash: "off"')});
+ });
+ const opened=await page.goto(address+"/",{waitUntil:"domcontentloaded",timeout:60000});
+ assert.equal(opened?.status(),200);
+ const wss="wss://v2-hall-direct.myxingbei.com:50000";
+ await page.waitForFunction(wss=>[...document.querySelectorAll('[contenteditable="true"]')].some(n=>n.textContent?.trim()===wss),wss,{timeout:90000});
+ console.log("V2_NATIVE_CONNECT_DEFAULT_HALL_PASS");
+ const verified=await page.waitForFunction(async()=>{
+  const response=await fetch("/game/preload-manifest.json",{cache:"no-store"});
+  if(!response.ok)return false;
+  const manifest=await response.json();
+  if(!manifest.count||manifest.count!==manifest.assets.length)return false;
   const name="xingbei-image-assets-v1-"+manifest.version;
-  const stateCache=await caches.open("xingbei-image-cache-state-v1");
-  const row=await stateCache.match(new URL("/__xingbei-image-cache-state__",location.href).href);
-  const state=row?await row.json():null;
-  return {manifest,cacheName:name,cacheKeys:await caches.keys(),state,worker:navigator.serviceWorker.controller?.scriptURL};
- });
- await page.waitForFunction(async()=>{
   const keys=await caches.keys();
-  const manifest=await (await fetch("/game/preload-manifest.json")).json();
-  return keys.includes("xingbei-image-assets-v1-"+manifest.version);
+  const state=await caches.open("xingbei-image-cache-state-v1");
+  const item=await state.match(new URL("/__xingbei-image-cache-state__",location.href).href);
+  if(!item)return false;
+  const info=await item.json();
+  return keys.includes(name) && info.version===manifest.version && info.count===manifest.count && !!navigator.serviceWorker.controller;
  },null,{timeout:240000});
- const verified=await page.evaluate(async()=>{
+ assert.ok(verified);
+ const info=await page.evaluate(async()=>{
   const manifest=await(await fetch("/game/preload-manifest.json",{cache:"no-store"})).json();
-  const keys=await caches.keys();
-  const cache=await caches.open("xingbei-image-cache-state-v1");
-  const response=await cache.match(new URL("/__xingbei-image-cache-state__",location.href).href);
-  return {count:manifest.count,version:manifest.version,cacheState:response?await response.json():null,
-    active:keys.includes("xingbei-image-assets-v1-"+manifest.version),
-    sw:navigator.serviceWorker.controller?.scriptURL};
+  return {count:manifest.count,sw:navigator.serviceWorker.controller?.scriptURL,
+     wss:[...document.querySelectorAll('[contenteditable="true"]')].map(x=>x.textContent?.trim())};
  });
- assert.equal(verified.count,641);
- assert.equal(verified.cacheState?.version,verified.version);
- assert.equal(verified.cacheState?.count,641);
- assert.ok(verified.active);
- assert.ok(verified.sw?.endsWith("/xingbei-image-sw.js"));
- assert.equal(await page.locator('[aria-label="星杯傳說圖片資源準備"]').count(),0,"legacy V2 overlay appeared");
- assert.ok(errors.length===0,"browser exceptions: "+JSON.stringify(errors.slice(0,8)));
- assert.equal(failedRequests.length,0,"failed same-origin requests: "+JSON.stringify(failedRequests.slice(0,8)));
- console.log("V2_ORIGINAL_CONNECT_AND_PRELOAD_PASS",JSON.stringify({count:verified.count,defaultHall:wss,originalUI:true}));
+ assert.equal(info.count,641);
+ assert.ok(info.sw?.endsWith("/xingbei-image-sw.js"));
+ assert.ok(info.wss.includes(wss));
+ assert.equal(await page.locator('[aria-label="星杯傳說圖片資源準備"]').count(),0);
+ assert.equal(failed.length,0,JSON.stringify(failed.slice(0,10)));
+ assert.equal(errors.length,0,JSON.stringify(errors.slice(0,10)));
+ console.log("V2_ORIGINAL_CONNECT_AND_PRELOAD_PASS",JSON.stringify({images:info.count,defaultHall:wss}));
+ await context2.close();
 } catch(error) {
- console.log("V2_ORIGINAL_UI_DIAGNOSTICS",JSON.stringify({
-  errors:errors.slice(0,15),failedRequests:failedRequests.slice(0,15),
-  body:await page.evaluate(()=>document.body?.innerText?.slice(0,1400)).catch(()=>null),
-  url:page.url()
- }));
+ console.log("V2_ORIGINAL_UI_DIAGNOSTICS",JSON.stringify({errors:errors.slice(0,15),error:String(error)}));
  throw error;
-} finally {await context.close();await browser.close();}
+} finally {await browser.close();}
