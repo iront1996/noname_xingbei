@@ -1,0 +1,33 @@
+name: V2 v1.7.1 isolated validation
+on:
+  push:
+    branches:
+      - integration/v2-upstream-v1.7.1-20261116
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contract:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout candidate without retained credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse changed JavaScript files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in character/sanBan.js character/shenZiChuangLin.js character/shiZhouNian.js character/teDian.js character/yiDuanYeHuo.js character/zhongMoDaoZhu.js game/asset.js game/config.js game/update.js mode/xingBei.js noname/get/index.js noname/library/element/content.js noname/library/element/player.js game/preload-images.mjs tools/sync-image-manifest.mjs tests/v2-upstream-v171-contract.mjs; do
+            node --check "$f"
+          done
+      - name: Verify V2 and v1.7.1 content contract
+        run: node tests/v2-upstream-v171-contract.mjs
+      - name: Verify image manifest and all image contents
+        run: node tools/sync-image-manifest.mjs --check
