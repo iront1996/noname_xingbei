@@ -1,0 +1,39 @@
+name: V2 upstream parity and safe-sync dry run
+on:
+  push:
+    branches: [integration/v2-original-ui-auto-sync-20261116]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-parity:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Fetch pinned upstream source without changing repository
+        run: git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git abd687ff7237c24a1fcd05b6524309c73b9cb818
+      - name: Check syntax of original-compatible V2 module and safe sync engine
+        run: |
+          node --check mode/connect.js
+          node --check game/v2-preload-gate.mjs
+          node --check game/preload-images.mjs
+          node --check tools/v2-upstream-sync.mjs
+      - name: Ensure full upstream parity except two V2 features
+        run: node tools/v2-upstream-sync.mjs --verify abd687ff7237c24a1fcd05b6524309c73b9cb818
+      - name: Verify all image bytes
+        run: node tools/sync-image-manifest.mjs --check
+      - name: Verify no-change is a no-op in an isolated local candidate
+        run: |
+          git config user.name "V2 isolated CI"
+          git config user.email "v2-ci@users.noreply.github.com"
+          git switch -c v2-sync-candidate-000000000000
+          V2_SYNC_DISPOSABLE=1 node tools/v2-upstream-sync.mjs --prepare abd687ff7237c24a1fcd05b6524309c73b9cb818
+          git diff --exit-code
