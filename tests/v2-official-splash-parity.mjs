@@ -29,6 +29,8 @@ async function capture(origin,name,style){
   const el=document.querySelector("#splash");
   return !!el && modes.every(mode=>el.querySelector('[link="'+mode+'"] .avatar')?.style.backgroundImage?.includes("image/splash"));
  },MODES,{timeout:60000});
+ // Native mode cards reveal with original staggered transitions; compare only settled geometry.
+ await page.waitForTimeout(2500);
  const snap=await page.evaluate(modes=>{
   const root=document.querySelector("#splash");
   return {style:root.dataset.splash_style,classes:root.className,cards:modes.map(mode=>{
