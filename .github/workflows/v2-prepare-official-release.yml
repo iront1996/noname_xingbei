@@ -38,6 +38,7 @@ jobs:
           mkdir -p extension
           for package in '无名杯UI优化包' '百年战争·序章' '十周年-噩梦人机' '十周年-AI优化版' '宿命挽歌' '创世纪' '电啸龙吟' '轮回遗梦' '十周年语音包' '峡谷幻音' '永夜残响'; do
             test -f "/tmp/v2-extension-source/$package/extension.js"
+            rm -rf -- "extension/$package"
             cp -a "/tmp/v2-extension-source/$package" "extension/$package"
           done
           test -f 'extension/无名杯UI优化包/extension.js'

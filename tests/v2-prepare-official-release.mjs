@@ -49,11 +49,12 @@ await Promise.all(Array.from({length:5},async()=>{
   const content=await retrieve(path);
   if(!content)throw new Error("missing published original source "+path);
   const old=readFileSync(path);
-  if(sha(old)===sha(content))continue;
+  const baseline=readFileSync(join(originSource,path));
+  if(sha(baseline)===sha(content))throw new Error("official source no longer differs from pinned upstream: "+path);
   if(path==="mode/connect.js")continue; // V2-only WSS and image preload patch.
   if(!allowed.has(path))throw new Error("unreviewed original site drift: "+path);
   mkdirSync(dirname(path),{recursive:true});
-  writeFileSync(path,content);
+  if(sha(old)!==sha(content))writeFileSync(path,content);
   diffs.push({path,sha256:sha(content),bytes:content.length});
  }
 }));
@@ -66,7 +67,7 @@ for(const path of allowed)if(!diffs.some(x=>x.path===path))throw new Error("orig
 // may differ from the separate GitHub extension catalog without version tags.
 // Reconcile every known catalog file with the actual public release; preserve
 // license/docs and inactive packages from the catalog when not published.
-const extTree=git(["-C",extSource,"ls-tree","-r","--name-only","HEAD"]).split("\n").filter(Boolean);
+const extTree=git(["-C",extSource,"ls-tree","-r","-z","--name-only","HEAD"]).split("\0").filter(Boolean);
 const extFiles=extTree.filter(p=>bundleNames.some(n=>p.startsWith(n+"/")));
 const extDrift=[],missingPublished=[];
 let ei=0;
@@ -87,6 +88,7 @@ await Promise.all(Array.from({length:5},async()=>{
   }
  }
 }));
+if(extFiles.length<300)throw new Error("expected all bundled extension catalog paths, got "+extFiles.length);
 console.log("OFFICIAL_EXTENSION_RELEASE_VERIFIED",JSON.stringify({sourceFiles:extFiles.length,changedFromCatalog:extDrift.length,notPublished:missingPublished.length,sample:extDrift.slice(0,25)}));
 const originalImages=list.filter(p=>(p.startsWith("image/")||p.startsWith("theme/"))&&p.endsWith(".png"));
 const gathered=[];
