@@ -70,6 +70,37 @@ try{
  console.log("V2_OFFICIAL_BUNDLED_EXTENSION_BYTES_PASS",names.length);
  const original=await open(sites[0]);
  const candidate=await open(sites[1]);
+ async function inspectActualExtensionMenu(session,label) {
+   const observed=await session.page.evaluate(()=>{
+     const app=window;
+     return import(new URL("noname.js",location.href).href).then(({lib,game,ui})=>{
+       const loaded=Object.keys(lib.extensionMenu??{}).filter(x=>x.startsWith("extension_"));
+       const has=lib.config.extensions.map(name=>({name,present:game.hasExtension(name)}));
+       ui.click.configMenu();
+       ui.click.menuTab("扩展");
+       const container=document.querySelector(".menu-container:not(.hidden)");
+       return {
+         initialized:typeof ui.click.configMenu==="function",
+         loaded,has,
+         text:container?.innerText?.slice(0,14000)??null,
+         leftMenus:[...(container?.querySelectorAll(".menu-content .left.pane .menubutton")??[])].map(x=>x.textContent?.trim()),
+         cards:[...(container?.querySelectorAll(".menu-content .right.pane")??[])].map(x=>x.innerText?.slice(0,700))
+       };
+     });
+   });
+   console.log("V2_NATIVE_EXTENSIONS_GUI_"+label,JSON.stringify(observed));
+   const required=["无名杯UI优化包","十周年-AI优化版"];
+   for (const name of required) {
+     assert.ok(observed.text?.includes(name),label+" native extensions panel missing "+name);
+   }
+   assert.ok(observed.leftMenus.some(x=>x.includes("无名杯UI优化包")),label+" native extension sidebar missing UI addon");
+   await session.page.screenshot({path:"artifacts/v2-live-ui/"+label+"-extensions.png",animations:"disabled"});
+   return observed;
+ }
+ const officialMenu=await inspectActualExtensionMenu(original,"OFFICIAL");
+ const candidateMenu=await inspectActualExtensionMenu(candidate,"V2_CANDIDATE");
+ assert.deepEqual(candidateMenu.leftMenus.slice().sort(),officialMenu.leftMenus.slice().sort(),"actual native extension sidebar differs");
+
  const normalize=x=>({
    extensions:x.extensions.slice().sort(),
    enabled:x.enabled,
