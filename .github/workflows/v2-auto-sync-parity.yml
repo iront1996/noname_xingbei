@@ -37,3 +37,18 @@ jobs:
           git switch -c v2-sync-candidate-000000000000
           V2_SYNC_DISPOSABLE=1 node tools/v2-upstream-sync.mjs --prepare abd687ff7237c24a1fcd05b6524309c73b9cb818
           git diff --exit-code
+      - name: Simulate a future upstream commit, without remote writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$(mktemp -d)"
+          git worktree add --detach "$scratch" FETCH_HEAD
+          printf '\nV2 upstream sync fixture: GitHub CI only.\n' >> "$scratch/README.md"
+          git -C "$scratch" add README.md
+          git -C "$scratch" commit -m 'test: upstream README-only change'
+          fixture="$(git -C "$scratch" rev-parse HEAD)"
+          git worktree remove --force "$scratch"
+          V2_SYNC_DISPOSABLE=1 node tools/v2-upstream-sync.mjs --prepare "$fixture"
+          node tools/v2-upstream-sync.mjs --verify "$fixture"
+          node tools/sync-image-manifest.mjs --check
+          git diff --exit-code
