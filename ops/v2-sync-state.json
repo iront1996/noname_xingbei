@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "RancherJie/noname_xingbei",
+    "branch": "master",
+    "sha": "abd687ff7237c24a1fcd05b6524309c73b9cb818"
+  }
+}

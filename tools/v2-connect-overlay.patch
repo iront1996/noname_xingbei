@@ -1,0 +1,74 @@
+diff --git a/mode/connect.js b/mode/connect.js
+index bf06b29..588a512 100644
+--- a/mode/connect.js
++++ b/mode/connect.js
+@@ -37,6 +37,24 @@
+ 				}
+ 
+ 				event.created = true;
++				// V2-only: preload and verify images before entering an online room.
++				// All original game modes, menus, invitations and host behavior remain upstream.
++				const v2TextNode = event.textnode;
++				const ensureV2Images = async () => {
++					try {
++						const { ensureV2ImageCache } = await import("/game/v2-preload-gate.mjs");
++						await ensureV2ImageCache(snapshot => {
++							if (!v2TextNode?.isConnected) return;
++							v2TextNode.textContent = "圖片預載 " + snapshot.ready + "／" + snapshot.total;
++						});
++						if (v2TextNode?.isConnected) v2TextNode.textContent = "输入联机地址";
++					} catch (error) {
++						if (v2TextNode?.isConnected) v2TextNode.textContent = "圖片預載失敗，按「连接」重試";
++						console.warn("[V2 image preload]", error);
++						throw error;
++					}
++				};
++				void ensureV2Images().catch(() => {});
+ 				var node = ui.create.div(".shadowed");
+ 				node.style.width = "400px";
+ 				node.style.height = "30px";
+@@ -47,13 +65,19 @@
+ 				node.style.left = "calc(50% - 210px)";
+ 				node.style.top = "calc(50% - 20px)";
+ 				node.style.whiteSpace = "nowrap";
+-				node.textContent = lib.config.last_ip || lib.hallURL;
++				node.textContent = lib.config.last_ip || "wss://v2-hall-direct.myxingbei.com:50000";
+ 				node.contentEditable = true;
+ 				node.style.webkitUserSelect = "text";
+ 				node.style.textAlign = "center";
+ 				node.style.overflow = "hidden";
+ 
+-				var connect = function (e) {
++				var connect = async function (e) {
++					if (e) e.preventDefault();
++					try {
++						await ensureV2Images();
++					} catch {
++						return;
++					}
+ 					event.textnode.textContent = "正在连接...";
+ 					clearTimeout(event.timeout);
+ 					if (e) e.preventDefault();
+@@ -106,7 +130,7 @@
+ 				ui.hall_button = ui.create.system(
+ 					"联机大厅",
+ 					function () {
+-						node.textContent = get.config("hall_ip") || lib.hallURL;
++						node.textContent = get.config("hall_ip") || "wss://v2-hall-direct.myxingbei.com:50000";
+ 						connect();
+ 					},
+ 					true
+@@ -146,11 +170,12 @@
+ 				);
+ 				if (get.config("read_clipboard", "connect")) {
+ 					var ced = false;
+-					var read = text => {
++					var read = async text => {
+ 						try {
+ 							var text2 = text.split("\n")[2];
+ 							var ip = text2.slice(5);
+ 							if (ip.length > 0 && text2.startsWith("联机地址:") && (ced || confirm("是否根据剪贴板的邀请链接以进入联机地址和房间？"))) {
++								await ensureV2Images();
+ 								node.innerHTML = ip;
+ 								event.textnode.innerHTML = "正在连接...";
+ 								clearTimeout(event.timeout);
