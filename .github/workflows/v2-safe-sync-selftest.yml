@@ -67,6 +67,33 @@ jobs:
         if: always()
         run: |
           if test -f /tmp/v2-source-http.pid; then kill "$(cat /tmp/v2-source-http.pid)" || true; fi
+      - name: Simulate a future original README-only release on disposable worktree
+        shell: bash
+        env:
+          V2_SYNC_DISPOSABLE: '1'
+        run: |
+          set -euo pipefail
+          git -C /tmp/v2-original-source config user.name 'V2 Fixture'
+          git -C /tmp/v2-original-source config user.email 'v2-fixture@users.noreply.github.com'
+          printf '\nV2 future upstream dry-run only\n' >> /tmp/v2-original-source/README.md
+          git -C /tmp/v2-original-source add README.md
+          git -C /tmp/v2-original-source commit -m 'test: harmless original README-only update'
+          fixture="$(git -C /tmp/v2-original-source rev-parse HEAD)"
+          git fetch --no-tags /tmp/v2-original-source "$fixture"
+          worktree="/tmp/v2-safe-sync-worktree"
+          git worktree add -b "v2-sync-candidate-$(printf '%s' "$fixture" | cut -c1-12)" "$worktree" HEAD
+          (
+            cd "$worktree"
+            git config user.name 'V2 CI'
+            git config user.email 'v2-fixture@users.noreply.github.com'
+            node tools/v2-upstream-sync.mjs --prepare "$fixture"
+            node tools/v2-upstream-sync.mjs --verify "$fixture"
+            node tools/sync-image-manifest.mjs --check
+            test -z "$(git status --porcelain)"
+            test "$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')" = "$fixture"
+            echo 'V2_SAFE_PUBLICATION_PRESERVING_PREPARE_PASS'
+          )
+          git worktree remove --force "$worktree"
       - name: Archive isolated V2 parity evidence
         if: always()
         uses: actions/upload-artifact@v4
