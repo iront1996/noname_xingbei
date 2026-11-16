@@ -76,10 +76,28 @@ for (const path of changedImagePaths) {
     tasks.push({ path: path.slice(0, -4) + ".webp", kind: "published-image", required: false });
   }
 }
+// Also compare every tracked published WebP and every runtime extension asset.
+// The Git tree remains the inventory authority: no discovery of executable
+// content from an unreviewed remote directory listing.
+const publishedFiles = execFileSync("git", ["ls-files", "-z", "--", "image", "theme", "extension"],
+  { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 }).split("\0").filter(Boolean);
+for (const path of publishedFiles) {
+  if (/^(?:image|theme)\/.+\.webp$/i.test(path)) {
+    tasks.push({ path, kind: "published-image", required: false });
+  } else if (path.startsWith("extension/") &&
+             pub.bundledExtensions.some(name => path.startsWith("extension/" + name + "/")) &&
+             !/(?:^|\/)(?:README(?:\.md)?|LICENSE(?:\.md)?)$/i.test(path)) {
+    const suffix = extname(path).toLowerCase();
+    const kind = [".webp", ".png", ".jpg", ".jpeg"].includes(suffix) ?
+      "published-image" : "published-extension";
+    tasks.push({ path, kind, required: false });
+  }
+}
 const seen = new Set();
 const distinctTasks = tasks.filter(task => !seen.has(task.path) && seen.add(task.path));
+if (distinctTasks.length > 1700) throw new Error("unreviewed public asset inventory size");
 let cursor = 0;
-const jobs = Array.from({ length: 6 }, async () => {
+const jobs = Array.from({ length: 12 }, async () => {
   while (cursor < distinctTasks.length) {
     const task = distinctTasks[cursor++];
     const content = await remote(task.path, task.required);
