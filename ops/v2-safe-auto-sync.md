@@ -23,11 +23,12 @@ change the default branch. A separately configured scheduled automation may trig
 this V2-only `push` workflow:
 
 1. Read latest official `master` SHA, current V2 HEAD commit and its tree SHA.
-2. Create a unique candidate branch
-   `v2-sync-candidate-<official-first-12>-<UTC-YYYYMMDDHH>` from the V2 HEAD.
-3. Create one no-tree-change Git commit with the original V2 HEAD as sole parent
-   and exactly the V2 HEAD's tree. Move only that candidate branch to the commit
-   using fast-forward (never `force`).
+2. Create one no-tree-change Git commit with the current V2 HEAD as
+   its **sole parent** and exactly the same tree SHA.
+3. Create a unique branch
+   `v2-sync-candidate-<official-first-12>-<UTC-YYYYMMDDHH>` pointing **directly
+   to that new commit**. Do not create the branch at V2 HEAD first and then
+   advance it: that would trigger a redundant, failing CI run. Never use force.
 4. GitHub Actions workflow `v2-upstream-controlled-auto-sync.yml` validates
    that the tick has exactly that parent/tree and that V2 HEAD is unchanged.
 5. The workflow checks original Git and the live released resources, prepares an
