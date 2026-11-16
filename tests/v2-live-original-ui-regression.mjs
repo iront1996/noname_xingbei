@@ -97,7 +97,7 @@ try{
  console.log("V2_UI_PAGEERRORS",JSON.stringify({official:original.errors.slice(0,15),candidate:candidate.errors.slice(0,15)}));
  console.log("V2_NETWORK_DIAGNOSTICS",JSON.stringify({candidateFailed:candidate.failed.slice(0,30),candidateHTTP:candidate.httpErrors.slice(0,30),originalFailed:original.failed.slice(0,30),originalHTTP:original.httpErrors.slice(0,30)}));
  assert.equal(candidate.errors.length,0,"candidate browser errors");
- const path=url=>{const u=new URL(url);return u.pathname.replace(/^\\/noname_xingbei\\//,"/")+u.search};
+ const path=url=>{const u=new URL(url);return u.pathname.replace(/^\/noname_xingbei\//,"/")+u.search};
  const sharedHttp=new Set(original.httpErrors.map(x=>path(x.url)));
  const sharedAborted=new Set(original.failed.map(x=>path(x.url)+"|"+x.resourceType+"|"+x.failure));
  const unmatchedHttp=candidate.httpErrors.filter(x=>!sharedHttp.has(path(x.url)));
