@@ -18,6 +18,11 @@ page.on("dialog", async dialog => {
 try {
  const res=await page.goto(address+"/",{waitUntil:"domcontentloaded",timeout:60000});
  assert.equal(res?.status(),200);
+ // Original first-run tutorial is intentional. Use its native Skip button (test-only browser context).
+ const skipGuide=page.getByText("跳过向导",{exact:true});
+ if(await skipGuide.count()) {
+   await skipGuide.first().click({timeout:15000});
+ }
  const splash=page.locator("#splash");
  await splash.waitFor({state:"visible",timeout:90000});
  for(const mode of ["xingBei","connect","tutorial","offlineChoose","illustration","leaderboard","boss"]) {
