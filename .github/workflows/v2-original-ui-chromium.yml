@@ -1,7 +1,7 @@
 name: V2 upstream UI and image preload Chromium
 on:
   push:
-    branches: [integration/v2-original-ui-auto-sync-20261116]
+    branches: [integration/v2-original-ui-auto-sync-20261116, integration/v2-original-site-hall-default-parity-20261117]
   workflow_dispatch:
 permissions:
   contents: read
