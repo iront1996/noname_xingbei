@@ -139,7 +139,7 @@ window.noname_asset_list=
 	'image/card/zhuanShu/tianPing_zuo.png',
 	'image/card/zhuanShu/xiWangZhiGe.jpg',
 	'image/card/zhuanShu/zhouFu.jpg',
-	'image/card/zhuanShu/jiLeMengJing.png',
+	'image/card/zhuanShu/jiLeMengJing.jpg',
 
 	'image/card/zhiShiWu/baiWanLongYan.jpg',
 	'image/card/zhiShiWu/longKuangMiSuo.jpg',
