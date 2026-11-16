@@ -129,7 +129,7 @@ function prepare(upstreamSha) {
       join(root, "tools/v2-published-release-sync.mjs"), "--sync", upstreamSha, upstreamSha
     ], { cwd: root, stdio: "inherit" });
     git(["add", "--all"]);
-    if (!git(["diff", "--cached", "--quiet"], { stdio: "pipe" })) {
+    if (!git(["diff", "--cached", "--name-only"])) {
       // This branch is unchanged in content; only the disposable trigger commit exists.
       console.log("V2_PUBLICATION_UNCHANGED", upstreamSha);
       return;
