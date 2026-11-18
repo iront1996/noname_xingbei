@@ -116,6 +116,16 @@ jobs:
             sleep 1
           done
           exit 1
+      - name: Materialize exact original master for 202-file auditor
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v2-original-source
+          git -C /tmp/v2-original-source init --quiet
+          git -C /tmp/v2-original-source fetch --depth 1 https://github.com/RancherJie/noname_xingbei.git 27ad858dbeea5da35fc434cc226b0302792d2ba3
+          git -C /tmp/v2-original-source checkout --quiet --detach FETCH_HEAD
+          test "$(git -C /tmp/v2-original-source rev-parse HEAD)" = 27ad858dbeea5da35fc434cc226b0302792d2ba3
+          echo 'V2_172_EXACT_ORIGINAL_AUDIT_SOURCE_READY'
       - name: Check 202 original published source assets
         env:
           V2_AUDIT_BASE_URL: http://127.0.0.1:8765/
