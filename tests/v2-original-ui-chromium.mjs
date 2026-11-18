@@ -25,9 +25,22 @@ try {
  // All actual JS, host URL, image cache and service worker files are untouched.
  const context2=await browser.newContext({serviceWorkers:"allow"});
  const page=await context2.newPage();
- const failed=[];
+ const failed=[],mediaEvents=[],httpErrors=[];
  page.on("pageerror",e=>errors.push("connect: "+e.message));
- page.on("requestfailed",r=>{if(r.url().startsWith(address))failed.push(r.url());});
+ const isBgm=url=>url.includes("/audio/background/music_default.mp3");
+ page.on("request",r=>{if(isBgm(r.url()))mediaEvents.push({event:"request",url:r.url(),type:r.resourceType(),method:r.method()});});
+ page.on("response",r=>{
+  if(isBgm(r.url()))mediaEvents.push({event:"response",url:r.url(),status:r.status(),type:r.request().resourceType(),headers:r.headers()});
+  if(r.url().startsWith(address)&&r.status()>=400)httpErrors.push({url:r.url(),status:r.status()});
+ });
+ page.on("requestfinished",r=>{if(isBgm(r.url()))mediaEvents.push({event:"finished",url:r.url(),type:r.resourceType()});});
+ page.on("requestfailed",r=>{
+  if(r.url().startsWith(address)){
+   const entry={url:r.url(),type:r.resourceType(),method:r.method(),failure:r.failure()?.errorText??null};
+   failed.push(entry);
+   if(isBgm(r.url()))mediaEvents.push({event:"failed",...entry});
+  }
+ });
  page.on("dialog",d=>/GPL|开源声明/.test(d.message())?d.accept():d.dismiss());
  await page.route("**/game/config.js",async route=>{
   const source=await route.fetch();
@@ -63,6 +76,21 @@ try {
  assert.ok(info.hasImageCache);
  assert.ok(info.wss.includes(wss));
  assert.equal(await page.locator('[aria-label="星杯傳說圖片資源準備"]').count(),0);
+ // Probe the exact audio bytes and MIME from the same local server before
+ // deciding if a media request failure indicates a missing or broken asset.
+ const bgm=await page.evaluate(async()=>{
+  const res=await fetch("/audio/background/music_default.mp3",{cache:"no-store"});
+  const bytes=await res.arrayBuffer();
+  const audio=document.createElement("audio");
+  return {status:res.status,size:bytes.byteLength,contentType:res.headers.get("content-type"),
+   acceptRanges:res.headers.get("accept-ranges"),canPlayMp3:audio.canPlayType("audio/mpeg"),
+   elements:[...document.querySelectorAll("audio")].map(e=>({src:e.currentSrc||e.src,readyState:e.readyState,
+     networkState:e.networkState,paused:e.paused,error:e.error?.code??null}))};
+ });
+ console.log("V2_BGM_NETWORK_DIAGNOSTICS",JSON.stringify({bgm,mediaEvents,failed,httpErrors}));
+ assert.equal(bgm.status,200,"local original background music must be served by HTTP");
+ assert.ok(bgm.size>1024,"original background music must have nonempty MP3 bytes");
+ assert.ok(bgm.canPlayMp3,"Chromium must support the original MP3 codec");
  assert.equal(failed.length,0,JSON.stringify(failed.slice(0,10)));
  assert.equal(errors.length,0,JSON.stringify(errors.slice(0,10)));
  console.log("V2_ORIGINAL_CONNECT_AND_PRELOAD_PASS",JSON.stringify({images:info.count,defaultHall:wss}));
