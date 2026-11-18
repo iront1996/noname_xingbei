@@ -22,6 +22,8 @@ jobs:
           node-version: '22'
       - name: Validate V2 scheduled candidate naming regression
         run: node tests/v2-candidate-branch-contract.mjs
+      - name: Verify optional HTTP 503 review hold and required-source fail-closed behavior
+        run: node tests/v2-published-unavailable-contract.mjs
       - name: Syntax and publication manifest schema
         shell: bash
         run: |
