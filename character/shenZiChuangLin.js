@@ -1196,7 +1196,7 @@ game.import('character',function(lib,game,ui,get,ai,_status){
                     `,
                     nocount:true,
                 },
-                markimage:'image/card/zhuanShu/fengXue.webp',
+                markimage:'image/card/zhuanShu/fengXue.png',
                 onremove:'storage',
                 group:['fengXueX_yingZhiFeng1_1','fengXueX_yingZhiFeng1_2','fengXueX_yingZhiFeng2','fengXueX_fengZhi'],
                 subSkill:{
@@ -1347,7 +1347,7 @@ game.import('character',function(lib,game,ui,get,ai,_status){
                     max:4,
                 },
                 onremove:'storage',
-                markimage:'image/card/zhiShiWu/hong.webp',
+                markimage:'image/card/zhiShiWu/hong.png',
             },
 
             //结界师
@@ -1528,7 +1528,7 @@ game.import('character',function(lib,game,ui,get,ai,_status){
                     <span class="greentext">[被动]虚空境</span><br>
                     <span class='tiaoJian'>(若你拥有【绝界】)</span>你拥有的基础效果无法触发。`,
                 },
-                markimage:'image/card/zhuanShu/juejie.webp',
+                markimage:'image/card/zhuanShu/juejie.png',
                 onremove:'storage',
                 group:['jueJieX_zero','jueJieX_remove','jueJieX_attack','jueJieX_wuFa'],
                 subSkill:{
@@ -1687,7 +1687,7 @@ game.import('character',function(lib,game,ui,get,ai,_status){
                     max:3,
                 },
                 onremove:'storage',
-                markimage:'image/card/zhiShiWu/hong.webp',
+                markimage:'image/card/zhiShiWu/hong.png',
             },
 
             //神秘学者
@@ -1906,7 +1906,7 @@ game.import('character',function(lib,game,ui,get,ai,_status){
                 }
             },
             zhenYanYaZhi:{
-                trigger:{player:'zhenYanShuContentAfterAfter'},
+                trigger:{player:'zhenYanShu_backupContentAfterAfter'},
                 filter:function(event,player){
                     if(!player.canBiShaShuiJing()) return false;
                     if(event.selected) return false;
@@ -1929,15 +1929,15 @@ game.import('character',function(lib,game,ui,get,ai,_status){
                     for(var i=0;i<yanLing.length;i++){
                         if(get.xiBie(yanLing[i])!='guang') cards.push(yanLing[i]);
                     }
-                    var list=['是','否'];
+                    
                     if(cards.length>0){
-                        player.chooseControl(list).set('prompt','是否立即执行一次【真言术】');
+                        player.chooseCardButton(yanLing,1,'是否立即执行一次【真言术】');
                     }else{
                         event.finish();
                     }
                     'step 3'
-                    if(result.control=='是'){
-                        player.useSkill('zhenYanShu');
+                    if(result.bool){
+                        player.useSkillBackup('zhenYanShu',result,player);
                     }
                 }
             },
@@ -1970,7 +1970,7 @@ game.import('character',function(lib,game,ui,get,ai,_status){
                     max:4,
                 },
                 onremove:'storage',
-                markimage:'image/card/zhiShiWu/hong.webp',
+                markimage:'image/card/zhiShiWu/hong.png',
             },
 
             //染污者
@@ -2196,7 +2196,7 @@ game.import('character',function(lib,game,ui,get,ai,_status){
                     max:2,
                 },
                 onremove:'storage',
-                markimage:'image/card/zhiShiWu/hong.webp',
+                markimage:'image/card/zhiShiWu/hong.png',
             },
 
         },
