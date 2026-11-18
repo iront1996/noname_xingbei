@@ -42,6 +42,18 @@ const protectedExact = new Set([
 const protectedPrefixes = [".github/", "tests/", "tools/v2-", "ops/v2-"];
 const isOwned = path => protectedExact.has(path) || protectedPrefixes.some(p => path.startsWith(p));
 
+/**
+ * The trigger may use the legacy SHA-only name or an hourly UTC suffix.
+ * Keep the SHA bound to the actual checked-out upstream revision.
+ * Also used by the workflow preflight to eliminate split validation policy.
+ */
+function assertCandidateBranch(branch, upstreamSha) {
+  assert.match(upstreamSha, /^[0-9a-f]{40}$/, "invalid upstream SHA");
+  const base = "v2-sync-candidate-" + upstreamSha.slice(0, 12);
+  const allowed = branch === base || new RegExp("^" + base + "-20[0-9]{8}$").test(branch);
+  assert.ok(allowed, "refuse changes outside disposable V2 candidate: " + branch);
+}
+
 function git(args, options = {}) {
   return execFileSync("git", args, { cwd: root, encoding: "utf8", maxBuffer: 32 * 1024 * 1024, ...options }).trim();
 }
@@ -118,7 +130,7 @@ function prepare(upstreamSha) {
   assert.match(upstreamSha, /^[0-9a-f]{40}$/);
   assert.equal(process.env.V2_SYNC_DISPOSABLE, "1", "requires explicit disposable-worktree opt-in");
   const branch = git(["branch", "--show-current"]);
-  assert.match(branch, /^v2-sync-candidate-[0-9a-f]{12,40}$/, "refuse changes outside disposable V2 candidate");
+  assertCandidateBranch(branch, upstreamSha);
   assert.equal(git(["status", "--porcelain"]), "", "worktree must be clean");
   const oldHead = git(["rev-parse", "HEAD"]);
   const state = currentState();
@@ -211,4 +223,10 @@ function prepare(upstreamSha) {
 const cmd = process.argv[2], upstreamSha = process.argv[3];
 if (cmd === "--prepare" && upstreamSha) prepare(upstreamSha);
 else if (cmd === "--verify" && upstreamSha) verify(upstreamSha);
-else { console.error("Usage: node tools/v2-upstream-sync.mjs --prepare|--verify <upstream-commit-sha>"); process.exitCode = 2; }
+else if (cmd === "--check-branch" && upstreamSha && process.argv[4]) {
+  assertCandidateBranch(upstreamSha, process.argv[4]);
+  console.log("V2_CANDIDATE_BRANCH_PASS", upstreamSha);
+} else {
+  console.error("Usage: node tools/v2-upstream-sync.mjs --prepare|--verify <upstream-sha> | --check-branch <candidate-branch> <upstream-sha>");
+  process.exitCode = 2;
+}
