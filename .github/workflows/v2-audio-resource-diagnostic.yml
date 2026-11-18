@@ -1,0 +1,73 @@
+name: V2 background audio resource diagnosis and Chromium regression
+on:
+  push:
+    branches:
+      - integration/v2-audio-resource-diagnostic-20261118
+permissions:
+  contents: read
+concurrency:
+  group: v2-audio-resource-diagnostic-only
+  cancel-in-progress: true
+jobs:
+  original-native-chromium-audio:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Establish MP3 asset exists and is byte-identical to original Git source
+        shell: bash
+        run: |
+          set -euo pipefail
+          path=audio/background/music_default.mp3
+          pinned="$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')"
+          git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git "$pinned"
+          upstream_blob="$(git rev-parse "$pinned:$path")"
+          v2_blob="$(git rev-parse "HEAD:$path")"
+          test "$upstream_blob" = "$v2_blob"
+          test "$(git cat-file -s "$v2_blob")" -gt 1024
+          file --mime-type "$path"
+          printf 'V2_BGM_ORIGINAL_GIT_IDENTITY_PASS blob=%s bytes=%s\n' "$v2_blob" "$(git cat-file -s "$v2_blob")"
+      - name: Install disposable Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v2-playwright
+          npm install --prefix /tmp/v2-playwright --no-package-lock --no-save playwright@1.56.1
+          node /tmp/v2-playwright/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Start loopback-only Python HTTP server
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/v2-audio-http.log 2>&1 &
+          echo "$!" >/tmp/v2-audio-server.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8765/audio/background/music_default.mp3 -o /tmp/v2-bgm-get.mp3; then break; fi
+            sleep 1
+          done
+          test -s /tmp/v2-bgm-get.mp3
+          cmp -s audio/background/music_default.mp3 /tmp/v2-bgm-get.mp3
+          curl -sS -D /tmp/v2-bgm-range.headers -H 'Range: bytes=0-2047' http://127.0.0.1:8765/audio/background/music_default.mp3 -o /tmp/v2-bgm-range.mp3
+          printf 'V2_BGM_FULL_HTTP_BYTES_PASS\n'
+          head -n 14 /tmp/v2-bgm-range.headers
+      - name: Native Chromium UI and cache with precise background music network trace
+        run: node tests/v2-original-ui-chromium.mjs
+      - name: Stop loopback server
+        if: always()
+        run: |
+          if test -f /tmp/v2-audio-server.pid; then kill "$(cat /tmp/v2-audio-server.pid)" || true; fi
+      - name: Archive V2-only HTTP diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-audio-http-evidence
+          path: |
+            /tmp/v2-bgm-range.headers
+            /tmp/v2-audio-http.log
+          if-no-files-found: ignore
