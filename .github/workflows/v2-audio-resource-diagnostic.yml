@@ -62,6 +62,71 @@ jobs:
         if: always()
         run: |
           if test -f /tmp/v2-audio-server.pid; then kill "$(cat /tmp/v2-audio-server.pid)" || true; fi
+      - name: Prepare latest official release in disposable CI worktree
+        env:
+          V2_SYNC_DISPOSABLE: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest="$(git ls-remote https://github.com/RancherJie/noname_xingbei.git refs/heads/master | cut -f1)"
+          test "$(printf '%s' "$latest" | wc -c)" -eq 40
+          git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git "$latest"
+          name="v2-sync-candidate-$(printf '%s' "$latest" | cut -c1-12)-2026111808"
+          git worktree add -b "$name" /tmp/v2-latest-official HEAD
+          (
+            cd /tmp/v2-latest-official
+            git config user.name 'V2 CI Only'
+            git config user.email 'v2-ci@users.noreply.github.com'
+            node tools/v2-upstream-sync.mjs --prepare "$latest"
+            node tools/v2-upstream-sync.mjs --verify "$latest"
+            node tools/sync-image-manifest.mjs --check
+            test -z "$(git status --porcelain)"
+            old="$(node -p 'require("./ops/v2-sync-state.json").previousUpstreamSha')"
+            git diff --name-only "$old" "$latest" > /tmp/v2-changed-original-files.txt
+            grep -q -E '^(character/|noname/library/)' /tmp/v2-changed-original-files.txt
+            echo 'V2_LATEST_SOURCE_INHERITANCE_AND_MANUAL_REVIEW_REQUIRED_PASS'
+          )
+          mkdir -p /tmp/v2-original-source
+          git -C /tmp/v2-original-source init --quiet
+          git -C /tmp/v2-original-source fetch --depth 1 https://github.com/RancherJie/noname_xingbei.git "$latest"
+          git -C /tmp/v2-original-source checkout --quiet --detach FETCH_HEAD
+          test "$(git -C /tmp/v2-original-source rev-parse HEAD)" = "$latest"
+      - name: Start isolated newest-original V2 candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 --bind 127.0.0.1 --directory /tmp/v2-latest-official > /tmp/v2-latest-http.log 2>&1 &
+          echo "$!" > /tmp/v2-latest-http.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8765/game/update.js > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Full latest V2 original published text parity
+        shell: bash
+        env:
+          V2_AUDIT_BASE_URL: http://127.0.0.1:8765/
+        run: |
+          set -euo pipefail
+          cd /tmp/v2-latest-official
+          node tests/v2-public-site-audit.mjs
+      - name: Full latest V2 Chromium native modes Hall default cache and BGM integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/v2-latest-official
+          node tests/v2-original-ui-chromium.mjs
+      - name: Full latest V2 Chromium original/extension/UI regression
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd /tmp/v2-latest-official
+          node tests/v2-live-original-ui-regression.mjs
+          echo 'V2_FULL_LATEST_PUBLISHED_UI_EXTENSION_CACHE_REGRESSION_PASS'
+      - name: Stop newest-original loopback HTTP server
+        if: always()
+        run: |
+          if test -f /tmp/v2-latest-http.pid; then kill "$(cat /tmp/v2-latest-http.pid)" || true; fi
       - name: Archive V2-only HTTP diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -70,4 +135,6 @@ jobs:
           path: |
             /tmp/v2-bgm-range.headers
             /tmp/v2-audio-http.log
+            /tmp/v2-latest-http.log
+            /tmp/v2-latest-official/artifacts/v2-live-ui/
           if-no-files-found: ignore
