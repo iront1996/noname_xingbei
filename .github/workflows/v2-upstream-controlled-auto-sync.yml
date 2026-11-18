@@ -153,17 +153,19 @@ jobs:
           # Treat any unresolved optional HTTP errors as a mandatory review hold.
           # Check both prepare and subsequent check reports: a later retry may
           # succeed, but that must not erase an earlier unverified asset.
-          if test -n "$(node -e '
+          node -e '
             const fs=require("node:fs");
             const paths=["/tmp/v2-auto-sync/prepare-publication.json","/tmp/v2-auto-sync/publication.json"];
             let all=[];
             for(const p of paths) {
               if(!fs.existsSync(p)) throw Error("Missing V2 release evidence "+p);
               const r=JSON.parse(fs.readFileSync(p,"utf8"));
+              if(!Array.isArray(r.risky)) throw Error("Malformed risk evidence "+p);
               all.push(...r.risky);
             }
-            process.stdout.write(all.join(","));
-          ')"; then
+            fs.writeFileSync("/tmp/v2-auto-sync/all-risks.txt",all.join("\n"));
+          '
+          if test -s /tmp/v2-auto-sync/all-risks.txt; then
             echo 'REVIEW_REQUIRED: published scripts, extensions, or unverified optional resources'
             node -e 'for(const p of ["/tmp/v2-auto-sync/prepare-publication.json","/tmp/v2-auto-sync/publication.json"]) console.log(p,require(p).risky)'
             risky=true
