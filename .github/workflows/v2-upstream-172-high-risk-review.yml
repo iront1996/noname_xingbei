@@ -1,0 +1,127 @@
+name: V2 isolated original 1.7.2 high-risk review
+on:
+  push:
+    branches:
+      - integration/v2-upstream-172-audit-20261118
+permissions:
+  contents: read
+concurrency:
+  group: v2-upstream-172-manual-review
+  cancel-in-progress: true
+jobs:
+  source-rule-ui-audit:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout isolated V2 review branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify exact original SHA, four changed rules files and unchanged V2-owned runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          original=27ad858dbeea5da35fc434cc226b0302792d2ba3
+          previous=abd687ff7237c24a1fcd05b6524309c73b9cb818
+          baseline=f0510164518037dda1c330849dd6754d10ca1b19
+          test "$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')" = "$original"
+          test "$(node -p 'require("./ops/v2-sync-state.json").previousUpstreamSha')" = "$previous"
+          git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git "$previous" "$original"
+          git merge-base --is-ancestor "$previous" "$original"
+          git diff --name-only "$previous" "$original" | sort > /tmp/v2-172-official-delta.txt
+          printf '%s\n' character/shenZiChuangLin.js character/teDian.js game/update.js noname/library/element/player.js | sort > /tmp/v2-172-expected-delta.txt
+          diff -u /tmp/v2-172-expected-delta.txt /tmp/v2-172-official-delta.txt
+          for path in character/shenZiChuangLin.js character/teDian.js game/update.js noname/library/element/player.js; do
+            test "$(git rev-parse "HEAD:$path")" = "$(git rev-parse "$original:$path")" || {
+              echo "OFFICIAL_CONTENT_MISMATCH: $path"; exit 1;
+            }
+            node --check "$path"
+          done
+          for path in mode/connect.js game/preload-images.mjs game/preload-manifest.json game/v2-preload-gate.mjs xingbei-image-sw.js tools/v2-connect-overlay.patch; do
+            test "$(git rev-parse "HEAD:$path")" = "$(git rev-parse "$baseline:$path")" || {
+              echo "UNAUTHORIZED_V2_RUNTIME_CHANGE: $path"; exit 1;
+            }
+          done
+          git diff --name-only "$baseline" HEAD | sort > /tmp/v2-172-review-changes.txt
+          printf '%s\n' .github/workflows/v2-upstream-172-high-risk-review.yml character/shenZiChuangLin.js character/teDian.js game/update.js noname/library/element/player.js ops/v2-sync-state.json tests/v2-upstream-172-skill-contract.mjs | sort > /tmp/v2-172-review-allowed.txt
+          diff -u /tmp/v2-172-review-allowed.txt /tmp/v2-172-review-changes.txt
+          node tools/v2-upstream-sync.mjs --verify "$original"
+          node tools/sync-image-manifest.mjs --check
+          node tests/v2-upstream-172-skill-contract.mjs
+          node tests/v2-candidate-branch-contract.mjs
+          node tests/v2-published-unavailable-contract.mjs
+          test -z "$(git status --porcelain)"
+          echo 'V2_172_EXACT_OFFICIAL_FOUR_FILE_GAMEPLAY_INHERITANCE_PASS'
+      - name: Compare original public release resources against reviewed candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/v2-published-release-sync.mjs --check abd687ff7237c24a1fcd05b6524309c73b9cb818 27ad858dbeea5da35fc434cc226b0302792d2ba3
+          node - <<'NODE'
+          const assert=require('node:assert/strict');
+          const report=require('/tmp/v2-auto-sync/publication.json');
+          assert.equal(report.changed.length,0,"Public release differs from reviewed candidate");
+          assert.ok(report.verified>=600,"Insufficient accessible original published resources");
+          assert.ok(report.risky.every(x=>x.startsWith("UNVERIFIED_OPTIONAL: ")),
+            "Unexpected or changed published scripts require hold");
+          console.log('V2_172_REQUIRED_PUBLIC_RELEASE_PARITY_PASS',JSON.stringify({
+            verified:report.verified,unverifiedOptional:report.unverifiedOptional.length,
+            optional404:report.missingOptional.length,
+            manualReviewForUnverified:report.unverifiedOptional.length>0
+          }));
+          NODE
+      - name: Install disposable Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v2-playwright
+          npm install --prefix /tmp/v2-playwright --no-save --no-package-lock playwright@1.56.1
+          node /tmp/v2-playwright/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Start isolated V2 candidate HTTP server
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/v2-172-http.log 2>&1 &
+          echo $! > /tmp/v2-172-http.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8765/game/update.js >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Check 202 original published source assets
+        env:
+          V2_AUDIT_BASE_URL: http://127.0.0.1:8765/
+        run: node tests/v2-public-site-audit.mjs
+      - name: Verify unchanged native rules selection Hall and 875 image cache
+        run: node tests/v2-original-ui-chromium.mjs
+      - name: Verify all original extension bytes native UI and image cache
+        run: node tests/v2-live-original-ui-regression.mjs
+      - name: Explicitly hold any automatic release; manual gameplay review only
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'version: "1.7.2"' game/update.js
+          echo 'V2_172_HIGH_RISK_REVIEW_TESTED_NO_PRODUCTION_WRITE'
+          echo 'Changed original character, skill API, and engine sources are exact upstream bytes.'
+          echo 'Human review of evidence is required before a separate non-force V2 fast-forward.'
+      - name: Stop isolated HTTP server
+        if: always()
+        run: |
+          if test -f /tmp/v2-172-http.pid; then kill "$(cat /tmp/v2-172-http.pid)" || true; fi
+      - name: Archive V2 review diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-upstream-172-review
+          path: |
+            /tmp/v2-172-http.log
+            /tmp/v2-172-official-delta.txt
+            /tmp/v2-172-review-changes.txt
+            artifacts/v2-live-ui/
+          if-no-files-found: ignore
