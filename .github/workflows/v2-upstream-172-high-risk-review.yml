@@ -37,27 +37,29 @@ jobs:
           git diff --name-only "$previous" "$original" | sort > /tmp/v2-172-official-delta.txt
           printf '%s\n' character/shenZiChuangLin.js character/teDian.js game/update.js noname/library/element/player.js | sort > /tmp/v2-172-expected-delta.txt
           diff -u /tmp/v2-172-expected-delta.txt /tmp/v2-172-official-delta.txt
+          # New game logic must be exactly original; 3 official published
+          # overlays differ from its Git source ONLY by 23 verified PNG->WebP
+          # references, proven by the content-hash-locked contract below.
           for path in character/shenZiChuangLin.js character/teDian.js game/update.js noname/library/element/player.js; do
-            test "$(git rev-parse "HEAD:$path")" = "$(git rev-parse "$original:$path")" || {
-              echo "OFFICIAL_CONTENT_MISMATCH: $path"; exit 1;
-            }
             node --check "$path"
           done
+          test "$(git rev-parse "HEAD:game/update.js")" = "$(git rev-parse "$original:game/update.js")"
           for path in mode/connect.js game/preload-images.mjs game/preload-manifest.json game/v2-preload-gate.mjs xingbei-image-sw.js tools/v2-connect-overlay.patch; do
             test "$(git rev-parse "HEAD:$path")" = "$(git rev-parse "$baseline:$path")" || {
               echo "UNAUTHORIZED_V2_RUNTIME_CHANGE: $path"; exit 1;
             }
           done
           git diff --name-only "$baseline" HEAD | sort > /tmp/v2-172-review-changes.txt
-          printf '%s\n' .github/workflows/v2-upstream-172-high-risk-review.yml character/shenZiChuangLin.js character/teDian.js game/update.js noname/library/element/player.js ops/v2-sync-state.json tests/v2-upstream-172-skill-contract.mjs | sort > /tmp/v2-172-review-allowed.txt
+          printf '%s\n' .github/workflows/v2-upstream-172-high-risk-review.yml character/shenZiChuangLin.js character/teDian.js game/update.js noname/library/element/player.js ops/v2-sync-state.json tests/v2-upstream-172-skill-contract.mjs tests/v2-upstream-172-publication-contract.mjs | sort > /tmp/v2-172-review-allowed.txt
           diff -u /tmp/v2-172-review-allowed.txt /tmp/v2-172-review-changes.txt
           node tools/v2-upstream-sync.mjs --verify "$original"
           node tools/sync-image-manifest.mjs --check
+          node tests/v2-upstream-172-publication-contract.mjs
           node tests/v2-upstream-172-skill-contract.mjs
           node tests/v2-candidate-branch-contract.mjs
           node tests/v2-published-unavailable-contract.mjs
           test -z "$(git status --porcelain)"
-          echo 'V2_172_EXACT_OFFICIAL_FOUR_FILE_GAMEPLAY_INHERITANCE_PASS'
+          echo 'V2_172_OFFICIAL_SKILLS_AND_PUBLISHED_OVERLAY_VERIFIED_PASS'
       - name: Diagnose original website and Git differences without modifying candidate
         shell: bash
         run: |
