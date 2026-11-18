@@ -47,8 +47,13 @@ jobs:
             echo 'CHANGED=true' >> "$GITHUB_ENV"
             echo 'Original Git revision changed'
           elif node tools/v2-published-release-sync.mjs --check "$old" "$upstream"; then
-            echo 'CHANGED=false' >> "$GITHUB_ENV"
-            echo 'No original-source or public-release changes'
+            if test "$(node -p 'require("/tmp/v2-auto-sync/publication.json").unverifiedOptional.length')" -gt 0; then
+              echo 'CHANGED=true' >> "$GITHUB_ENV"
+              echo 'Original public release has unverified optional resources; candidate requires review'
+            else
+              echo 'CHANGED=false' >> "$GITHUB_ENV"
+              echo 'No original-source or public-release changes'
+            fi
           else
             echo 'CHANGED=true' >> "$GITHUB_ENV"
             echo 'Published original website changed or failed closed'
@@ -68,7 +73,7 @@ jobs:
         shell: bash
         run: |
           if test "$OLD_UPSTREAM_SHA" = "$UPSTREAM_SHA" &&
-             test "$(node -p 'require("/tmp/v2-auto-sync/publication.json").changed.length')" = 0; then
+             test "$(node -p 'const r=require("/tmp/v2-auto-sync/publication.json"); r.changed.length===0 && r.risky.length===0 ? "yes" : "no"')" = yes; then
             echo 'CHANGED=false' >> "$GITHUB_ENV"
             echo 'No changed resources; do not release a no-op'
           fi
@@ -145,9 +150,22 @@ jobs:
               *) echo "GAME_CODE_REQUIRES_REVIEW: $path"; risky=true ;;
             esac
           done < <(git diff --name-only "$OLD_UPSTREAM_SHA" "$UPSTREAM_SHA")
-          if test -n "$(node -p 'require("/tmp/v2-auto-sync/publication.json").risky.join(",")')"; then
-            echo 'REVIEW_REQUIRED: published scripts/extensions changed'
-            node -p 'JSON.stringify(require("/tmp/v2-auto-sync/publication.json").risky)'
+          # Treat any unresolved optional HTTP errors as a mandatory review hold.
+          # Check both prepare and subsequent check reports: a later retry may
+          # succeed, but that must not erase an earlier unverified asset.
+          if test -n "$(node -e '
+            const fs=require("node:fs");
+            const paths=["/tmp/v2-auto-sync/prepare-publication.json","/tmp/v2-auto-sync/publication.json"];
+            let all=[];
+            for(const p of paths) {
+              if(!fs.existsSync(p)) throw Error("Missing V2 release evidence "+p);
+              const r=JSON.parse(fs.readFileSync(p,"utf8"));
+              all.push(...r.risky);
+            }
+            process.stdout.write(all.join(","));
+          ')"; then
+            echo 'REVIEW_REQUIRED: published scripts, extensions, or unverified optional resources'
+            node -e 'for(const p of ["/tmp/v2-auto-sync/prepare-publication.json","/tmp/v2-auto-sync/publication.json"]) console.log(p,require(p).risky)'
             risky=true
           fi
           printf 'RISKY=%s\n' "$risky" >> "$GITHUB_ENV"
