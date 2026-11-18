@@ -3,6 +3,7 @@
   "upstream": {
     "repository": "RancherJie/noname_xingbei",
     "branch": "master",
-    "sha": "abd687ff7237c24a1fcd05b6524309c73b9cb818"
-  }
+    "sha": "27ad858dbeea5da35fc434cc226b0302792d2ba3"
+  },
+  "previousUpstreamSha": "abd687ff7237c24a1fcd05b6524309c73b9cb818"
 }
