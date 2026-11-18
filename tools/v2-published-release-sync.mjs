@@ -27,7 +27,7 @@ const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
 const sentinel = newUpstream.slice(0, 12) + "-" + Date.now();
 const report = {
   oldUpstream, newUpstream, source: pub.originalWebsite,
-  changed: [], risky: [], safe: [], missingOptional: [], verified: 0
+  changed: [], risky: [], safe: [], missingOptional: [], unverifiedOptional: [], verified: 0
 };
 
 async function remote(path, required) {
@@ -58,7 +58,18 @@ async function remote(path, required) {
         throw new Error("invalid published JPEG " + path);
       return content;
     } catch (error) {
-      if (attempt === 5 || /invalid|too large/.test(String(error))) throw error;
+      const integrityError = /invalid|too large/.test(String(error));
+      if (integrityError) throw error;
+      if (attempt === 5) {
+        if (!required) {
+          // No verified bytes: preserve the prior candidate asset, record
+          // a review hold, and never silently count it as parity PASS.
+          report.unverifiedOptional.push({ path, reason: String(error).slice(0, 200) });
+          report.risky.push("UNVERIFIED_OPTIONAL: " + path);
+          return null;
+        }
+        throw error; // Required original scripts/extension entrypoints fail closed.
+      }
       await new Promise(resolve => setTimeout(resolve, Math.min(10000, 900 * 2 ** attempt)));
     }
   }
@@ -122,7 +133,12 @@ const jobs = Array.from({ length: 4 }, async () => {
 await Promise.all(jobs);
 mkdirSync("/tmp/v2-auto-sync", { recursive: true });
 writeFileSync("/tmp/v2-auto-sync/publication.json", JSON.stringify(report, null, 2));
-console.log("V2_OFFICIAL_PUBLICATION_" + (mode === "--sync" ? "SYNC" : "CHECK") + "_PASS",
+// A later --check must never erase risks discovered during --sync.
+if (mode === "--sync") {
+  writeFileSync("/tmp/v2-auto-sync/prepare-publication.json", JSON.stringify(report, null, 2));
+}
+const outcome = report.unverifiedOptional.length > 0 ? "INCOMPLETE_REVIEW_REQUIRED" : "PASS";
+console.log("V2_OFFICIAL_PUBLICATION_" + (mode === "--sync" ? "SYNC" : "CHECK") + "_" + outcome,
   JSON.stringify({ verified: report.verified, changed: report.changed.length,
     risky: report.risky, safe: report.safe, omitted: report.missingOptional.length,
-    upstream: newUpstream }));
+    unverified: report.unverifiedOptional.length, upstream: newUpstream }));
