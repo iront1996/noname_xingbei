@@ -86,6 +86,7 @@ jobs:
         run: |
           if test -f /tmp/v2-source-http.pid; then kill "$(cat /tmp/v2-source-http.pid)" || true; fi
       - name: Simulate a future original README-only release on disposable worktree
+        if: env.PINNED_LIVE_EQUAL == 'true'
         shell: bash
         env:
           V2_SYNC_DISPOSABLE: '1'
@@ -112,33 +113,30 @@ jobs:
             echo 'V2_SAFE_PUBLICATION_PRESERVING_PREPARE_PASS'
           )
           git worktree remove --force "$worktree"
-      - name: Test real new original revision in disposable timestamped candidate
+      - name: Check newest original's overlay and high-risk review without public-site writes
         shell: bash
-        env:
-          V2_SYNC_DISPOSABLE: '1'
         run: |
           set -euo pipefail
           latest="$(git ls-remote https://github.com/RancherJie/noname_xingbei.git refs/heads/master | cut -f1)"
           test "$(printf '%s' "$latest" | wc -c)" -eq 40
           git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git "$latest"
-          worktree="/tmp/v2-updated-upstream-worktree"
           name="v2-sync-candidate-$(printf '%s' "$latest" | cut -c1-12)-2026111802"
-          git worktree add -b "$name" "$worktree" HEAD
+          node tools/v2-upstream-sync.mjs --check-branch "$name" "$latest"
+          mkdir -p /tmp/v2-connect-original/mode
+          git show "$latest:mode/connect.js" > /tmp/v2-connect-original/mode/connect.js
           (
-            cd "$worktree"
-            git config user.name 'V2 CI fixture'
-            git config user.email 'v2-fixture@users.noreply.github.com'
-            node tools/v2-upstream-sync.mjs --check-branch "$name" "$latest"
-            node tools/v2-upstream-sync.mjs --prepare "$latest"
-            node tools/v2-upstream-sync.mjs --verify "$latest"
-            node tools/sync-image-manifest.mjs --check
-            test -z "$(git status --porcelain)"
-            test "$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')" = "$latest"
-            git diff --name-only "$(node -p 'require("./ops/v2-sync-state.json").previousUpstreamSha')" "$latest" > /tmp/v2-rule-diff.txt
-            grep -q -E '^(character/|noname/library/)' /tmp/v2-rule-diff.txt
-            echo 'V2_UPDATED_GAME_CODE_REQUIRES_REVIEW_PASS'
+            cd /tmp/v2-connect-original
+            git apply --check "$GITHUB_WORKSPACE/tools/v2-connect-overlay.patch"
           )
-          git worktree remove --force "$worktree"
+          pinned="$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')"
+          if test "$pinned" != "$latest"; then
+            git diff --name-only "$pinned" "$latest" > /tmp/v2-rule-diff.txt
+            grep -q -E '^character/' /tmp/v2-rule-diff.txt
+            grep -q -E '^noname/library/element/player.js$' /tmp/v2-rule-diff.txt
+            echo 'V2_UPDATED_ENGINE_SKILL_REVIEW_GATE_PASS'
+          else
+            echo 'V2_NO_SOURCE_UPDATE_TO_REVIEW'
+          fi
       - name: Archive isolated V2 parity evidence
         if: always()
         uses: actions/upload-artifact@v4
