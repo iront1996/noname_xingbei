@@ -32,11 +32,9 @@ jobs:
           test "$(git branch --show-current)" = "$GITHUB_REF_NAME"
           upstream="$(git ls-remote https://github.com/RancherJie/noname_xingbei.git refs/heads/master | cut -f1)"
           test "$(printf '%s' "$upstream" | wc -c)" -eq 40
-          expected="v2-sync-candidate-$(printf '%s' "$upstream" | cut -c1-12)"
-          case "$GITHUB_REF_NAME" in
-            "$expected"|"$expected"-*) ;;
-            *) echo 'Candidate name does not match current original'; exit 1 ;;
-          esac
+          # One shared name+upstream policy for this preflight and --prepare.
+          # Accept SHA-only legacy refs or exactly one UTC YYYYMMDDHH suffix.
+          node tools/v2-upstream-sync.mjs --check-branch "$GITHUB_REF_NAME" "$upstream"
           baseline="$(git ls-remote origin refs/heads/feature/image-preload-cache | cut -f1)"
           test "$(printf '%s' "$baseline" | wc -c)" -eq 40
           # The scheduled trigger creates a no-tree-change child of the current V2 head.
