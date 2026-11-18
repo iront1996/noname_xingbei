@@ -1,7 +1,7 @@
 name: V2 safe auto-sync code and published release self-test
 on:
   push:
-    branches: [integration/v2-safe-auto-sync-20261117]
+    branches: [integration/v2-safe-auto-sync-20261117, integration/v2-candidate-branch-fix-20261118]
 permissions:
   contents: read
 concurrency:
@@ -20,6 +20,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Validate V2 scheduled candidate naming regression
+        run: node tests/v2-candidate-branch-contract.mjs
       - name: Syntax and publication manifest schema
         shell: bash
         run: |
@@ -95,6 +97,33 @@ jobs:
             test -z "$(git status --porcelain)"
             test "$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')" = "$fixture"
             echo 'V2_SAFE_PUBLICATION_PRESERVING_PREPARE_PASS'
+          )
+          git worktree remove --force "$worktree"
+      - name: Test real new original revision in disposable timestamped candidate
+        shell: bash
+        env:
+          V2_SYNC_DISPOSABLE: '1'
+        run: |
+          set -euo pipefail
+          latest="$(git ls-remote https://github.com/RancherJie/noname_xingbei.git refs/heads/master | cut -f1)"
+          test "$(printf '%s' "$latest" | wc -c)" -eq 40
+          git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git "$latest"
+          worktree="/tmp/v2-updated-upstream-worktree"
+          name="v2-sync-candidate-$(printf '%s' "$latest" | cut -c1-12)-2026111802"
+          git worktree add -b "$name" "$worktree" HEAD
+          (
+            cd "$worktree"
+            git config user.name 'V2 CI fixture'
+            git config user.email 'v2-fixture@users.noreply.github.com'
+            node tools/v2-upstream-sync.mjs --check-branch "$name" "$latest"
+            node tools/v2-upstream-sync.mjs --prepare "$latest"
+            node tools/v2-upstream-sync.mjs --verify "$latest"
+            node tools/sync-image-manifest.mjs --check
+            test -z "$(git status --porcelain)"
+            test "$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')" = "$latest"
+            git diff --name-only "$(node -p 'require("./ops/v2-sync-state.json").previousUpstreamSha')" "$latest" > /tmp/v2-rule-diff.txt
+            grep -q -E '^(character/|noname/library/)' /tmp/v2-rule-diff.txt
+            echo 'V2_UPDATED_GAME_CODE_REQUIRES_REVIEW_PASS'
           )
           git worktree remove --force "$worktree"
       - name: Archive isolated V2 parity evidence
