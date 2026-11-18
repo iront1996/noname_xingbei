@@ -81,17 +81,51 @@ try {
  const bgm=await page.evaluate(async()=>{
   const res=await fetch("/audio/background/music_default.mp3",{cache:"no-store"});
   const bytes=await res.arrayBuffer();
-  const audio=document.createElement("audio");
+  const decoder=document.createElement("audio");
+  const {game,ui,lib}=await import("/noname.js");
+  const audio=ui.backgroundMusic;
   return {status:res.status,size:bytes.byteLength,contentType:res.headers.get("content-type"),
-   acceptRanges:res.headers.get("accept-ranges"),canPlayMp3:audio.canPlayType("audio/mpeg"),
-   elements:[...document.querySelectorAll("audio")].map(e=>({src:e.currentSrc||e.src,readyState:e.readyState,
-     networkState:e.networkState,paused:e.paused,error:e.error?.code??null}))};
+   acceptRanges:res.headers.get("accept-ranges"),canPlayMp3:decoder.canPlayType("audio/mpeg"),
+   managedMusicHook:game.playBackgroundMusic?._wmbManagedMusic===true,
+   addonEnabled:lib.config?.["extension_无名杯UI优化包_enable"]===true,
+   nativeAudioElement:audio instanceof HTMLAudioElement && audio.isConnected,
+   active:audio?{src:audio.currentSrc||audio.src,readyState:audio.readyState,
+     networkState:audio.networkState,paused:audio.paused,error:audio.error?.code??null}:null};
  });
  console.log("V2_BGM_NETWORK_DIAGNOSTICS",JSON.stringify({bgm,mediaEvents,failed,httpErrors}));
  assert.equal(bgm.status,200,"local original background music must be served by HTTP");
  assert.ok(bgm.size>1024,"original background music must have nonempty MP3 bytes");
+ assert.equal(bgm.contentType,"audio/mpeg","original background MP3 must have correct MIME");
  assert.ok(bgm.canPlayMp3,"Chromium must support the original MP3 codec");
- assert.equal(failed.length,0,JSON.stringify(failed.slice(0,10)));
+
+ // The original enabled UI-optimization extension intentionally replaces
+ // music_default.mp3 with its cang1/fox1 menu track at startup. Its source
+ // assignment cancels the earlier native media request with ERR_ABORTED.
+ // Only accept that exact canceled request if the native audio element,
+ // extension hook, and successor track demonstrate successful playback.
+ const current=bgm.active;
+ const nativeAddonMenuTrack=(()=>{
+  if(!current?.src)return false;
+  const path=decodeURIComponent(new URL(current.src).pathname);
+  return /^\/extension\/无名杯UI优化包\/audio\/bgm\/menu\/(?:cang1|fox1)\.mp3$/.test(path);
+ })();
+ const replacementHealthy=bgm.nativeAudioElement&&bgm.managedMusicHook&&bgm.addonEnabled&&
+  nativeAddonMenuTrack&&current.readyState>=2&&current.networkState!==3&&
+  current.error===null&&current.paused===false;
+ const superseded=failed.filter(f=>f.type==="media"&&
+  f.failure==="net::ERR_ABORTED"&&
+  new URL(f.url).pathname==="/audio/background/music_default.mp3");
+ // Never accept multiple unexpected cancellations or unrelated failures.
+ const verifiedNativeReplacement=superseded.length===1&&replacementHealthy&&
+  !httpErrors.some(f=>/\/audio\/(?:background|bgm)\//.test(new URL(f.url).pathname));
+ const unexpectedFailures=failed.filter(f=>!(verifiedNativeReplacement&&superseded.includes(f)));
+ console.log("V2_NATIVE_BGM_REPLACEMENT_AUDIT",JSON.stringify({
+  verifiedNativeReplacement,replacementHealthy,nativeAddonMenuTrack,
+  supersededRequests:superseded.length,unexpectedFailures
+ }));
+ assert.deepEqual(unexpectedFailures,[],"unexpected network failure beyond proven native audio replacement");
+ if(superseded.length)assert.ok(verifiedNativeReplacement,"unverified background music request cancellation");
+ if(verifiedNativeReplacement)console.log("V2_NATIVE_BGM_INTENTIONAL_SUPERSESSION_PASS");
  assert.equal(errors.length,0,JSON.stringify(errors.slice(0,10)));
  console.log("V2_ORIGINAL_CONNECT_AND_PRELOAD_PASS",JSON.stringify({images:info.count,defaultHall:wss}));
  await context2.close();
