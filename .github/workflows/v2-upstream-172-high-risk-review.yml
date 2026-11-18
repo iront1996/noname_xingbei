@@ -58,6 +58,26 @@ jobs:
           node tests/v2-published-unavailable-contract.mjs
           test -z "$(git status --porcelain)"
           echo 'V2_172_EXACT_OFFICIAL_FOUR_FILE_GAMEPLAY_INHERITANCE_PASS'
+      - name: Diagnose original website and Git differences without modifying candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in character/shenZiChuangLin.js character/teDian.js noname/library/element/player.js game/update.js; do
+            out="/tmp/v2-172-public-$(basename "$path")"
+            curl --fail --retry 4 --retry-all-errors --connect-timeout 10 --max-time 50 --silent --show-error \
+              "https://rancherjie.github.io/noname_xingbei/$path?v2-review=20261118" -o "$out"
+            git show "abd687ff7237c24a1fcd05b6524309c73b9cb818:$path" > "/tmp/v2-172-old-$(basename "$path")"
+            echo "OFFICIAL_WEBSITE_DIFF: $path"
+            sha256sum "$path" "$out" "/tmp/v2-172-old-$(basename "$path")"
+            if cmp -s "$path" "$out"; then
+              echo "WEBSITE_EQUALS_LATEST_MASTER: $path"
+            elif cmp -s "/tmp/v2-172-old-$(basename "$path")" "$out"; then
+              echo "WEBSITE_STILL_OLD_MASTER: $path"
+            else
+              echo "WEBSITE_IS_SEPARATE_RELEASE_OVERLAY: $path"
+            fi
+            git diff --no-index --unified=3 -- "$path" "$out" | head -n 130 || true
+          done
       - name: Compare original public release resources against reviewed candidate
         shell: bash
         run: |
