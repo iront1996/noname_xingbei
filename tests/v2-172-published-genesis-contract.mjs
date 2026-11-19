@@ -9,10 +9,16 @@ const current=path=>readFileSync(path,"utf8");
 const extension="extension/创世纪/extension.js";
 const first='await target.faShuDamage(1, player, "nocard");';
 const second='await target.faShuDamage(2, player, "nocard");';
-const before=old(extension);
-assert.equal(before.split(first).length-1,1,"Genesis source damage anchor changed");
-assert.equal(current(extension),before.replace(first,second),
-  "Genesis public extension contains unreviewed gameplay edits");
+const before=old(extension).split("\n");
+const after=current(extension).split("\n");
+assert.equal(after.length,before.length,"Original Genesis extension line count changed");
+const changes=before.flatMap((value,i)=>value===after[i]?[]:[i]);
+assert.equal(changes.length,1,"Genesis public extension contains unreviewed gameplay edits");
+const line=changes[0];
+assert.equal(before[line].trim(),first,"Original skill damage source differs");
+assert.equal(after[line].trim(),second,"Published skill damage is not exactly original v2.7");
+assert.match(before[line-1],/if\(target && target\.isIn\(\)\)/);
+assert.match(before[line-2],/var target = event\.target/);
 const oldInfo=old("extension/创世纪/info.json");
 assert.equal(oldInfo.split('"version": "2.6"').length-1,1);
 assert.equal(current("extension/创世纪/info.json"),
