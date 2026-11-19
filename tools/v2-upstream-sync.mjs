@@ -26,6 +26,9 @@ const patchFile = "tools/v2-connect-overlay.patch";
 const publication = JSON.parse(readFileSync(join(root, "ops/v2-official-publication.json"), "utf8"));
 assert.equal(publication.schemaVersion, 1);
 const officialOverlay = new Set(publication.publishedTextOverlays);
+const publishedOnly = new Set(publication.publishedOnlyFiles ?? []);
+assert.deepEqual([...publishedOnly].sort(), ["layout/mode/tutorial.css", "mode/tutorial-scene.js"]);
+for (const path of publishedOnly) assert.ok(officialOverlay.has(path), "published-only file not in verified release inventory: " + path);
 const extensionPrefixes = publication.bundledExtensions.map(name => `extension/${name}/`);
 const isOfficialExtension = path => extensionPrefixes.some(prefix => path.startsWith(prefix));
 const isOfficialExtraImage = path =>
@@ -113,7 +116,15 @@ function verify(upstreamSha) {
   const actual = readFileSync(join(root, "mode/connect.js"), "utf8");
   assert.equal(actual, expected, "V2 connect overlay differs from pinned original + two features");
   for (const path of publication.publishedTextOverlays) {
-    assert.ok(theirs.has(path) && ours.has(path), "missing tracked official overlay " + path);
+    // The original's publicly deployed rule tutorial includes two files that
+    // are absent from its current master tree. Allow *only* these explicitly
+    // inventoried files, never arbitrary remote runtime code.
+    if (publishedOnly.has(path)) {
+      assert.ok(!theirs.has(path), "published-only file entered original Git; provenance review required: " + path);
+    } else {
+      assert.ok(theirs.has(path), "original Git source unexpectedly absent: " + path);
+    }
+    assert.ok(ours.has(path), "missing required published original: " + path);
   }
   for (const name of publication.bundledExtensions) {
     assert.ok(ours.has(`extension/${name}/extension.js`), "missing official bundled extension: " + name);
@@ -174,7 +185,11 @@ function prepare(upstreamSha) {
     assert.ok(isOwned(path) || originalTree.has(path) || isPublishedException(path), "unapproved V2 drift: " + path);
   }
   for (const path of officialOverlay) {
-    assert.ok(originalTree.has(path), "upstream removed an audited official published overlay: " + path);
+    if (publishedOnly.has(path)) {
+      assert.ok(!originalTree.has(path), "published-only tutorial entered upstream: requires provenance re-review " + path);
+    } else {
+      assert.ok(originalTree.has(path), "upstream removed an audited official published overlay: " + path);
+    }
   }
   for (const path of originalTree.keys()) {
     if (isOfficialExtension(path) && !oldTree.has(path)) {
