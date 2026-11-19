@@ -45,6 +45,7 @@ jobs:
           node tests/v2-upstream-172-publication-contract.mjs
           node tests/v2-upstream-172-skill-contract.mjs
           node tests/v2-172-official-tutorial-contract.mjs
+          node tests/v2-172-published-genesis-contract.mjs
           node tests/v2-candidate-branch-contract.mjs
           node tests/v2-published-unavailable-contract.mjs
           test -z "$(git status --porcelain)"
