@@ -50,6 +50,8 @@ jobs:
           node tests/v2-published-unavailable-contract.mjs
           test -z "$(git status --porcelain)"
           echo 'V2_172_ORIGINAL_GAMEPLAY_AND_PUBLIC_ONLY_TUTORIAL_PROVENANCE_PASS'
+      - name: Enumerate all official released source and extension drift before approval
+        run: node tests/v2-official-published-source-drift.mjs
       - name: Re-fetch original publicly deployed script, tutorial and asset parity
         shell: bash
         run: |
@@ -120,6 +122,7 @@ jobs:
           path: |
             /tmp/v2-final-http.log
             /tmp/v2-changes.txt
+            /tmp/v2-release-audit/full-drift.json
             artifacts/v2-runtime-parity/
             artifacts/v2-live-ui/
           if-no-files-found: ignore
