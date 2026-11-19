@@ -45,7 +45,7 @@ jobs:
           grep -Fq 'layout/mode/tutorial.css' game/source.js
           grep -Fq 'game.import("extension"' extension/创世纪/extension.js
           git add -u -- game/source.js extension/创世纪/extension.js extension/创世纪/info.json
-          git diff --cached --name-only | LC_ALL=C sort > /tmp/v2-acquire-changes.txt
+          git -c core.quotePath=false diff --cached --name-only | LC_ALL=C sort > /tmp/v2-acquire-changes.txt
           printf '%s\n' extension/创世纪/extension.js extension/创世纪/info.json game/source.js > /tmp/v2-acquire-expected.txt
           diff -u /tmp/v2-acquire-expected.txt /tmp/v2-acquire-changes.txt
           test -z "$(git diff --name-only)"
