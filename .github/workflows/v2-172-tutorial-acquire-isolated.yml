@@ -1,0 +1,71 @@
+name: V2 isolated original tutorial byte acquisition (one-time)
+on:
+  push:
+    branches:
+      - integration/v2-172-public-tutorial-reconcile-20261120
+permissions:
+  contents: write
+concurrency:
+  group: v2-172-tutorial-once
+  cancel-in-progress: false
+jobs:
+  fetch-official-tutorial-bytes:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact upstream and isolated branch safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'integration/v2-172-public-tutorial-reconcile-20261120'
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git ls-remote https://github.com/RancherJie/noname_xingbei.git refs/heads/master | cut -f1)" = '27ad858dbeea5da35fc434cc226b0302792d2ba3'
+          test "$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')" = '27ad858dbeea5da35fc434cc226b0302792d2ba3'
+          test -z "$(git status --porcelain)"
+          test "$(git ls-remote origin refs/heads/feature/image-preload-cache | cut -f1)" = 'f0510164518037dda1c330849dd6754d10ca1b19'
+      - name: Obtain exactly three official tutorial source assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          for p in mode/tutorial.js mode/tutorial-scene.js layout/mode/tutorial.css; do
+            mkdir -p "$(dirname "$p")"
+            curl --fail --silent --show-error --retry 3 --retry-all-errors \
+              --connect-timeout 10 --max-time 40 \
+              "https://rancherjie.github.io/noname_xingbei/$p?v2_review=$GITHUB_SHA" \
+              -o "$p"
+            test -s "$p"
+            test "$(wc -c < "$p")" -lt 150000
+            sha256sum "$p"
+          done
+          node --check mode/tutorial.js
+          node --check mode/tutorial-scene.js
+          grep -Fq './tutorial-scene.js' mode/tutorial.js
+          grep -Fq './xingBei.js' mode/tutorial.js
+          grep -Fq 'export function resumeRuleTutorial()' mode/tutorial-scene.js
+          grep -Fq 'export function startRuleTutorial(' mode/tutorial-scene.js
+          grep -Fq '.tutorial-battle-hint' layout/mode/tutorial.css
+          grep -Fq 'game.createEvent("ruleTutorial"' mode/tutorial-scene.js
+          git add -- mode/tutorial.js mode/tutorial-scene.js layout/mode/tutorial.css
+          git diff --cached --name-only | LC_ALL=C sort > /tmp/v2-official-only-changes.txt
+          printf '%s\n' layout/mode/tutorial.css mode/tutorial-scene.js mode/tutorial.js > /tmp/v2-expected-tutorial-changes.txt
+          diff -u /tmp/v2-expected-tutorial-changes.txt /tmp/v2-official-only-changes.txt
+          test -z "$(git diff --name-only)"
+          echo 'V2_OFFICIAL_PUBLISHED_TUTORIAL_COMPLETE_IMPORT_PROVENANCE_PASS'
+      - name: Commit official bytes only to isolated V2 integration branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'V2 Official Tutorial Evidence'
+          git config user.email 'v2-official-tutorial@users.noreply.github.com'
+          git commit -m 'sync(v2): import exact official published tutorial module and styles for review'
+          auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push origin "HEAD:refs/heads/$GITHUB_REF_NAME"
+          echo 'V2_OFFICIAL_TUTORIAL_BYTES_PUSHED_ISOLATION_ONLY'
