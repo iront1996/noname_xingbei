@@ -32,7 +32,10 @@
     "layout/default/layout.css",
     "layout/default/menu.css",
     "layout/mode/stone.css",
+    "layout/mode/tutorial.css",
     "layout/others/skill.css",
+    "mode/tutorial-scene.js",
+    "mode/tutorial.js",
     "noname/game/index.js",
     "noname/init/index.js",
     "noname/library/element/card.js",
@@ -74,6 +77,10 @@
       ".json",
       ".css"
     ],
-    "note": "Published script, config, extension or unreviewed source drift is review-gated; only validated static image/audio/document changes may auto-release."
-  }
+    "note": "Published script, config, extension or unreviewed source drift is review-gated; only validated static image/audio/document changes may auto-release. Original published-only tutorial modules/styles must be fetched from the verified originalWebsite and remain high-risk review-gated; never infer original Git contains them."
+  },
+  "publishedOnlyFiles": [
+    "layout/mode/tutorial.css",
+    "mode/tutorial-scene.js"
+  ]
 }
