@@ -1,0 +1,124 @@
+name: V2 final original 1.7.2 and live tutorial release review
+on:
+  push:
+    branches:
+      - integration/v2-172-public-tutorial-reconcile-20261120
+permissions:
+  contents: read
+concurrency:
+  group: v2-172-final-release-review
+  cancel-in-progress: true
+jobs:
+  v2-review:
+    if: github.repository == 'iront1996/noname_xingbei'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify original 1.7.2 commit, V2-only isolation, source and rule contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          up=27ad858dbeea5da35fc434cc226b0302792d2ba3
+          old=abd687ff7237c24a1fcd05b6524309c73b9cb818
+          base=f0510164518037dda1c330849dd6754d10ca1b19
+          test "$(git ls-remote https://github.com/RancherJie/noname_xingbei.git refs/heads/master | cut -f1)" = "$up"
+          test "$(node -p 'require("./ops/v2-sync-state.json").upstream.sha')" = "$up"
+          test "$(node -p 'require("./ops/v2-sync-state.json").previousUpstreamSha')" = "$old"
+          git fetch --no-tags https://github.com/RancherJie/noname_xingbei.git "$old" "$up"
+          git merge-base --is-ancestor "$old" "$up"
+          git diff --name-only "$old" "$up" | LC_ALL=C sort > /tmp/v2-changes.txt
+          printf '%s\n' character/shenZiChuangLin.js character/teDian.js game/update.js noname/library/element/player.js > /tmp/v2-changes-expected.txt
+          diff -u /tmp/v2-changes-expected.txt /tmp/v2-changes.txt
+          for p in mode/connect.js game/preload-images.mjs game/preload-manifest.json game/v2-preload-gate.mjs xingbei-image-sw.js tools/v2-connect-overlay.patch; do
+            test "$(git rev-parse "HEAD:$p")" = "$(git rev-parse "$base:$p")"
+          done
+          for p in character/shenZiChuangLin.js character/teDian.js game/update.js noname/library/element/player.js mode/tutorial.js mode/tutorial-scene.js; do node --check "$p"; done
+          node tools/v2-upstream-sync.mjs --verify "$up"
+          node tools/sync-image-manifest.mjs --check
+          node tests/v2-upstream-172-publication-contract.mjs
+          node tests/v2-upstream-172-skill-contract.mjs
+          node tests/v2-172-official-tutorial-contract.mjs
+          node tests/v2-candidate-branch-contract.mjs
+          node tests/v2-published-unavailable-contract.mjs
+          test -z "$(git status --porcelain)"
+          echo 'V2_172_ORIGINAL_GAMEPLAY_AND_PUBLIC_ONLY_TUTORIAL_PROVENANCE_PASS'
+      - name: Re-fetch original publicly deployed script, tutorial and asset parity
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tools/v2-published-release-sync.mjs --check abd687ff7237c24a1fcd05b6524309c73b9cb818 27ad858dbeea5da35fc434cc226b0302792d2ba3
+          node - <<'NODE'
+          const assert=require('node:assert/strict');
+          const r=require('/tmp/v2-auto-sync/publication.json');
+          assert.equal(r.changed.length,0);
+          assert.equal(r.unverifiedOptional.length,0);
+          assert.ok(r.verified>=650);
+          assert.deepEqual(r.risky,[]);
+          console.log('V2_172_OFFICIAL_PUBLISHED_RELEASE_FULL_PARITY_PASS',
+            JSON.stringify({verified:r.verified,optional404:r.missingOptional.length}));
+          NODE
+      - name: Materialize exact original master for source audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v2-original-source
+          git -C /tmp/v2-original-source init --quiet
+          git -C /tmp/v2-original-source fetch --depth 1 https://github.com/RancherJie/noname_xingbei.git 27ad858dbeea5da35fc434cc226b0302792d2ba3
+          git -C /tmp/v2-original-source checkout --quiet --detach FETCH_HEAD
+          test "$(git -C /tmp/v2-original-source rev-parse HEAD)" = 27ad858dbeea5da35fc434cc226b0302792d2ba3
+      - name: Install disposable Chromium
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v2-playwright
+          npm install --prefix /tmp/v2-playwright --no-save --no-package-lock playwright@1.56.1
+          node /tmp/v2-playwright/node_modules/playwright/cli.js install --with-deps chromium
+      - name: Serve verified candidate on loopback only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m http.server 8765 --bind 127.0.0.1 > /tmp/v2-final-http.log 2>&1 &
+          echo $! > /tmp/v2-final-http.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8765/mode/tutorial-scene.js -o /tmp/v2-tutorial-scene-http.js &&
+               curl -fsS http://127.0.0.1:8765/layout/mode/tutorial.css -o /tmp/v2-tutorial-css-http.css; then break; fi
+            sleep 1
+          done
+          cmp -s mode/tutorial-scene.js /tmp/v2-tutorial-scene-http.js
+          cmp -s layout/mode/tutorial.css /tmp/v2-tutorial-css-http.css
+          echo 'V2_172_TUTORIAL_MODULE_AND_CSS_HTTP_PASS'
+      - name: Audit all original Git runtime sources against official and candidate
+        env:
+          V2_AUDIT_BASE_URL: http://127.0.0.1:8765/
+        run: node tests/v2-public-site-audit.mjs
+      - name: Full native Chromium modes Hall and original image cache checks
+        run: node tests/v2-original-ui-chromium.mjs
+      - name: Full original extensions native UI and cache parity checks
+        run: node tests/v2-live-original-ui-regression.mjs
+      - name: Confirm no release actions and mandatory manual v1.7.2 review evidence
+        run: |
+          set -euo pipefail
+          grep -q 'version: "1.7.2"' game/update.js
+          test -z "$(git status --porcelain --untracked-files=no)"
+          echo 'V2_172_FULL_NONHUMAN_REVIEW_PASS_MANUAL_RELEASE_REQUIRED'
+      - name: Stop local server
+        if: always()
+        run: |
+          test ! -f /tmp/v2-final-http.pid || kill "$(cat /tmp/v2-final-http.pid)" || true
+      - name: Archive non-sensitive V2-only review logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-172-source-tutorial-review
+          path: |
+            /tmp/v2-final-http.log
+            /tmp/v2-changes.txt
+            artifacts/v2-runtime-parity/
+            artifacts/v2-live-ui/
+          if-no-files-found: ignore
